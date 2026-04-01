@@ -2,6 +2,112 @@ use bytes::{Buf, BufMut, BytesMut};
 use std::io;
 use tokio_util::codec::{Decoder, Encoder};
 
+const MAX_FRAME_SIZE: usize = 32 * 1024 * 1024;
+
+pub struct ContentLengthCodec {
+    next_payload_len: Option<usize>,
+}
+
+impl ContentLengthCodec {
+    pub fn new() -> Self {
+        Self {
+            next_payload_len: None,
+        }
+    }
+}
+
+impl Default for ContentLengthCodec {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Decoder for ContentLengthCodec {
+    type Item = serde_json::Value;
+    type Error = io::Error;
+
+    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
+        if let Some(payload_len) = self.next_payload_len {
+            if src.len() < payload_len {
+                src.reserve(payload_len - src.len());
+                return Ok(None);
+            }
+            let payload = src.split_to(payload_len);
+            self.next_payload_len = None;
+
+            let value: serde_json::Value = serde_json::from_slice(&payload)
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+            return Ok(Some(value));
+        }
+
+        let header_end = src.windows(4).position(|w| w == b"\r\n\r\n");
+
+        let header_end = match header_end {
+            Some(pos) => pos,
+            None => {
+                if src.len() > 256 {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "Header too long without terminator",
+                    ));
+                }
+                return Ok(None);
+            }
+        };
+
+        let header = std::str::from_utf8(&src[..header_end])
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+
+        let content_length = parse_content_length(header)?;
+
+        if content_length > MAX_FRAME_SIZE {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "Frame of length {} exceeds maximum {}",
+                    content_length, MAX_FRAME_SIZE
+                ),
+            ));
+        }
+
+        src.advance(header_end + 4);
+        self.next_payload_len = Some(content_length);
+
+        self.decode(src)
+    }
+}
+
+impl Encoder<serde_json::Value> for ContentLengthCodec {
+    type Error = io::Error;
+
+    fn encode(&mut self, item: serde_json::Value, dst: &mut BytesMut) -> Result<(), Self::Error> {
+        let payload =
+            serde_json::to_vec(&item).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+
+        let header = format!("Content-Length: {}\r\n\r\n", payload.len());
+
+        dst.reserve(header.len() + payload.len());
+        dst.put_slice(header.as_bytes());
+        dst.put_slice(&payload);
+        Ok(())
+    }
+}
+
+fn parse_content_length(header: &str) -> Result<usize, io::Error> {
+    for line in header.split("\r\n") {
+        if let Some(value) = line.strip_prefix("Content-Length: ") {
+            return value
+                .trim()
+                .parse::<usize>()
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e));
+        }
+    }
+    Err(io::Error::new(
+        io::ErrorKind::InvalidData,
+        "Missing Content-Length header",
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
