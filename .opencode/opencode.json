@@ -1,4 +1,5 @@
 {
+  "$schema": "https://opencode.ai/config.json",
   "permission": {
     "read": {
       "/Users/corey/Projects/protoclaw-rust/.opencode/get-shit-done/*": "allow"
