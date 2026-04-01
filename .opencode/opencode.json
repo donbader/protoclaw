@@ -1,0 +1,10 @@
+{
+  "permission": {
+    "read": {
+      "/Users/corey/Projects/protoclaw-rust/.opencode/get-shit-done/*": "allow"
+    },
+    "external_directory": {
+      "/Users/corey/Projects/protoclaw-rust/.opencode/get-shit-done/*": "allow"
+    }
+  }
+}
