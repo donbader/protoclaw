@@ -1,16 +1,9 @@
-use bytes::BytesMut;
+use bytes::{BufMut, BytesMut};
 use std::io;
 use tokio_util::codec::{Decoder, Encoder};
 
-/// Maximum line size: 32MB safety limit.
 const MAX_LINE_SIZE: usize = 32 * 1024 * 1024;
 
-/// NDJSON (Newline-Delimited JSON) codec for ACP stdio communication.
-///
-/// Encodes `serde_json::Value` as compact JSON terminated by `\n`.
-/// Decodes newline-delimited JSON from a byte stream, splitting only on
-/// byte 0x0A (`\n`). Unicode line separators (U+2028, U+2029) inside
-/// JSON strings are preserved — they are NOT treated as line delimiters.
 pub struct NdJsonCodec;
 
 impl NdJsonCodec {
@@ -29,17 +22,60 @@ impl Decoder for NdJsonCodec {
     type Item = serde_json::Value;
     type Error = io::Error;
 
-    fn decode(&mut self, _src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        // Stub: always returns None (RED phase — tests will fail)
-        Ok(None)
+    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
+        loop {
+            let newline_pos = src.iter().position(|b| *b == b'\n');
+            match newline_pos {
+                Some(pos) => {
+                    let line = src.split_to(pos + 1);
+                    let end = if pos > 0 && line[pos - 1] == b'\r' {
+                        pos - 1
+                    } else {
+                        pos
+                    };
+                    let trimmed = &line[..end];
+                    if trimmed.is_empty() {
+                        continue;
+                    }
+                    if trimmed.len() > MAX_LINE_SIZE {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            format!(
+                                "line of {} bytes exceeds {} byte limit",
+                                trimmed.len(),
+                                MAX_LINE_SIZE
+                            ),
+                        ));
+                    }
+                    let value = serde_json::from_slice(trimmed)
+                        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+                    return Ok(Some(value));
+                }
+                None => {
+                    if src.len() > MAX_LINE_SIZE {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            format!(
+                                "accumulated {} bytes without newline, exceeds {} byte limit",
+                                src.len(),
+                                MAX_LINE_SIZE
+                            ),
+                        ));
+                    }
+                    return Ok(None);
+                }
+            }
+        }
     }
 }
 
 impl Encoder<serde_json::Value> for NdJsonCodec {
     type Error = io::Error;
 
-    fn encode(&mut self, _item: serde_json::Value, _dst: &mut BytesMut) -> Result<(), Self::Error> {
-        // Stub: does nothing (RED phase — tests will fail)
+    fn encode(&mut self, item: serde_json::Value, dst: &mut BytesMut) -> Result<(), Self::Error> {
+        serde_json::to_writer((&mut *dst).writer(), &item)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        dst.extend_from_slice(b"\n");
         Ok(())
     }
 }
