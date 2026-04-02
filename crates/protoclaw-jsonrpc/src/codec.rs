@@ -1,136 +1,126 @@
-use bytes::{Buf, BufMut, BytesMut};
+use bytes::BytesMut;
 use std::io;
 use tokio_util::codec::{Decoder, Encoder};
 
-const MAX_FRAME_SIZE: usize = 32 * 1024 * 1024;
+/// Maximum line size: 32MB safety limit.
+const MAX_LINE_SIZE: usize = 32 * 1024 * 1024;
 
-pub struct ContentLengthCodec {
-    next_payload_len: Option<usize>,
-}
+/// NDJSON (Newline-Delimited JSON) codec for ACP stdio communication.
+///
+/// Encodes `serde_json::Value` as compact JSON terminated by `\n`.
+/// Decodes newline-delimited JSON from a byte stream, splitting only on
+/// byte 0x0A (`\n`). Unicode line separators (U+2028, U+2029) inside
+/// JSON strings are preserved — they are NOT treated as line delimiters.
+pub struct NdJsonCodec;
 
-impl ContentLengthCodec {
+impl NdJsonCodec {
     pub fn new() -> Self {
-        Self {
-            next_payload_len: None,
-        }
+        Self
     }
 }
 
-impl Default for ContentLengthCodec {
+impl Default for NdJsonCodec {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Decoder for ContentLengthCodec {
+impl Decoder for NdJsonCodec {
     type Item = serde_json::Value;
     type Error = io::Error;
 
-    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        if let Some(payload_len) = self.next_payload_len {
-            if src.len() < payload_len {
-                src.reserve(payload_len - src.len());
-                return Ok(None);
-            }
-            let payload = src.split_to(payload_len);
-            self.next_payload_len = None;
-
-            let value: serde_json::Value = serde_json::from_slice(&payload)
-                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-            return Ok(Some(value));
-        }
-
-        let header_end = src.windows(4).position(|w| w == b"\r\n\r\n");
-
-        let header_end = match header_end {
-            Some(pos) => pos,
-            None => {
-                if src.len() > 256 {
-                    return Err(io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        "Header too long without terminator",
-                    ));
-                }
-                return Ok(None);
-            }
-        };
-
-        let header = std::str::from_utf8(&src[..header_end])
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-
-        let content_length = parse_content_length(header)?;
-
-        if content_length > MAX_FRAME_SIZE {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!(
-                    "Frame of length {} exceeds maximum {}",
-                    content_length, MAX_FRAME_SIZE
-                ),
-            ));
-        }
-
-        src.advance(header_end + 4);
-        self.next_payload_len = Some(content_length);
-
-        self.decode(src)
+    fn decode(&mut self, _src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
+        // Stub: always returns None (RED phase — tests will fail)
+        Ok(None)
     }
 }
 
-impl Encoder<serde_json::Value> for ContentLengthCodec {
+impl Encoder<serde_json::Value> for NdJsonCodec {
     type Error = io::Error;
 
-    fn encode(&mut self, item: serde_json::Value, dst: &mut BytesMut) -> Result<(), Self::Error> {
-        let payload =
-            serde_json::to_vec(&item).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-
-        let header = format!("Content-Length: {}\r\n\r\n", payload.len());
-
-        dst.reserve(header.len() + payload.len());
-        dst.put_slice(header.as_bytes());
-        dst.put_slice(&payload);
+    fn encode(&mut self, _item: serde_json::Value, _dst: &mut BytesMut) -> Result<(), Self::Error> {
+        // Stub: does nothing (RED phase — tests will fail)
         Ok(())
     }
-}
-
-fn parse_content_length(header: &str) -> Result<usize, io::Error> {
-    for line in header.split("\r\n") {
-        if let Some(value) = line.strip_prefix("Content-Length: ") {
-            return value
-                .trim()
-                .parse::<usize>()
-                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e));
-        }
-    }
-    Err(io::Error::new(
-        io::ErrorKind::InvalidData,
-        "Missing Content-Length header",
-    ))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bytes::BufMut;
 
-    fn codec() -> ContentLengthCodec {
-        ContentLengthCodec::new()
+    fn codec() -> NdJsonCodec {
+        NdJsonCodec::new()
     }
 
     #[test]
-    fn encode_produces_content_length_header() {
+    fn encode_appends_newline() {
         let mut codec = codec();
         let mut buf = BytesMut::new();
-        let value = serde_json::json!({"jsonrpc": "2.0", "method": "test", "id": 1});
-        codec.encode(value.clone(), &mut buf).unwrap();
-        let output = String::from_utf8(buf.to_vec()).unwrap();
-        assert!(output.starts_with("Content-Length: "));
-        assert!(output.contains("\r\n\r\n"));
-        let payload = serde_json::to_vec(&value).unwrap();
-        assert!(output.starts_with(&format!("Content-Length: {}\r\n\r\n", payload.len())));
+        let value = serde_json::json!({"method": "test"});
+        codec.encode(value, &mut buf).unwrap();
+        assert!(buf.ends_with(b"\n"), "encoded output must end with newline");
+        assert!(
+            buf.len() > 1,
+            "encoded output must have content before newline"
+        );
     }
 
     #[test]
-    fn round_trip_simple_message() {
+    fn encode_produces_compact_json() {
+        let mut codec = codec();
+        let mut buf = BytesMut::new();
+        let value = serde_json::json!({"key": "value", "num": 42});
+        codec.encode(value, &mut buf).unwrap();
+        let output = std::str::from_utf8(&buf).unwrap();
+        let line = output.trim_end_matches('\n');
+        assert!(
+            !line.contains('\n'),
+            "compact JSON must not contain internal newlines"
+        );
+        let reparsed: serde_json::Value = serde_json::from_str(line).unwrap();
+        assert_eq!(reparsed["key"], "value");
+    }
+
+    #[test]
+    fn decode_complete_line() {
+        let mut codec = codec();
+        let mut buf = BytesMut::from("{\"method\":\"test\"}\n");
+        let result = codec.decode(&mut buf).unwrap();
+        assert!(result.is_some(), "complete line must decode");
+        assert_eq!(result.unwrap()["method"], "test");
+    }
+
+    #[test]
+    fn decode_no_newline_returns_none() {
+        let mut codec = codec();
+        let mut buf = BytesMut::from("{\"method\":\"test\"}");
+        let result = codec.decode(&mut buf).unwrap();
+        assert!(
+            result.is_none(),
+            "incomplete line (no newline) must return None"
+        );
+    }
+
+    #[test]
+    fn decode_empty_line_skipped() {
+        let mut codec = codec();
+        let mut buf = BytesMut::from("\n{\"method\":\"test\"}\n");
+        let result = codec.decode(&mut buf).unwrap();
+        assert!(result.is_some(), "must skip empty line and return JSON");
+        assert_eq!(result.unwrap()["method"], "test");
+    }
+
+    #[test]
+    fn decode_invalid_json_returns_error() {
+        let mut codec = codec();
+        let mut buf = BytesMut::from("not-json\n");
+        let result = codec.decode(&mut buf);
+        assert!(result.is_err(), "invalid JSON must return error");
+    }
+
+    #[test]
+    fn round_trip() {
         let mut codec = codec();
         let mut buf = BytesMut::new();
         let value = serde_json::json!({"jsonrpc": "2.0", "method": "test", "id": 1});
@@ -140,106 +130,12 @@ mod tests {
     }
 
     #[test]
-    fn decode_complete_message_returns_some() {
-        let mut codec = codec();
-        let payload = br#"{"jsonrpc":"2.0","method":"test"}"#;
-        let header = format!("Content-Length: {}\r\n\r\n", payload.len());
-        let mut buf = BytesMut::new();
-        buf.put_slice(header.as_bytes());
-        buf.put_slice(payload);
-        let result = codec.decode(&mut buf).unwrap();
-        assert!(result.is_some());
-        assert_eq!(result.unwrap()["method"], "test");
-    }
-
-    #[test]
-    fn decode_incomplete_header_returns_none() {
-        let mut codec = codec();
-        let mut buf = BytesMut::from("Content-Length: 10\r\n");
-        let result = codec.decode(&mut buf).unwrap();
-        assert!(result.is_none());
-    }
-
-    #[test]
-    fn decode_incomplete_payload_returns_none() {
-        let mut codec = codec();
-        let mut buf = BytesMut::from("Content-Length: 100\r\n\r\n{\"partial\":");
-        let result = codec.decode(&mut buf).unwrap();
-        assert!(result.is_none());
-    }
-
-    #[test]
-    fn decode_header_too_long_returns_error() {
-        let mut codec = codec();
-        let long_header = "X-Garbage: ".to_string() + &"a".repeat(300);
-        let mut buf = BytesMut::from(long_header.as_str());
-        let result = codec.decode(&mut buf);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn decode_missing_content_length_returns_error() {
-        let mut codec = codec();
-        let mut buf = BytesMut::from("X-Other: 42\r\n\r\n{}");
-        let result = codec.decode(&mut buf);
-        assert!(result.is_err());
-        let err_msg = result.unwrap_err().to_string();
-        assert!(err_msg.contains("Missing Content-Length"));
-    }
-
-    #[test]
-    fn decode_non_numeric_content_length_returns_error() {
-        let mut codec = codec();
-        let mut buf = BytesMut::from("Content-Length: abc\r\n\r\n");
-        let result = codec.decode(&mut buf);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn decode_oversized_frame_returns_error() {
-        let mut codec = codec();
-        let size = 33 * 1024 * 1024;
-        let header = format!("Content-Length: {}\r\n\r\n", size);
-        let mut buf = BytesMut::from(header.as_str());
-        let result = codec.decode(&mut buf);
-        assert!(result.is_err());
-        let err_msg = result.unwrap_err().to_string();
-        assert!(err_msg.contains("exceeds maximum"));
-    }
-
-    #[test]
-    fn encode_decode_multibyte_utf8_japanese() {
+    fn sequential_messages() {
         let mut codec = codec();
         let mut buf = BytesMut::new();
-        let value = serde_json::json!({"text": "こんにちは"});
-        codec.encode(value.clone(), &mut buf).unwrap();
-        let output = String::from_utf8(buf.to_vec()).unwrap();
-        let payload_bytes = serde_json::to_vec(&value).unwrap();
-        assert!(output.starts_with(&format!("Content-Length: {}\r\n\r\n", payload_bytes.len())));
-        assert_ne!("こんにちは".len(), "こんにちは".chars().count());
-        let mut decode_buf = BytesMut::from(output.as_str());
-        let decoded = codec.decode(&mut decode_buf).unwrap().unwrap();
-        assert_eq!(value, decoded);
-    }
-
-    #[test]
-    fn encode_decode_emoji() {
-        let mut codec = codec();
-        let mut buf = BytesMut::new();
-        let value = serde_json::json!({"text": "Hello 🌍"});
-        codec.encode(value.clone(), &mut buf).unwrap();
-        let mut decode_buf = buf.clone();
-        let decoded = codec.decode(&mut decode_buf).unwrap().unwrap();
-        assert_eq!(value, decoded);
-    }
-
-    #[test]
-    fn multiple_messages_sequential() {
-        let mut codec = codec();
-        let mut buf = BytesMut::new();
-        let msg1 = serde_json::json!({"jsonrpc": "2.0", "method": "first", "id": 1});
-        let msg2 = serde_json::json!({"jsonrpc": "2.0", "method": "second", "id": 2});
-        let msg3 = serde_json::json!({"jsonrpc": "2.0", "method": "third", "id": 3});
+        let msg1 = serde_json::json!({"id": 1});
+        let msg2 = serde_json::json!({"id": 2});
+        let msg3 = serde_json::json!({"id": 3});
         codec.encode(msg1.clone(), &mut buf).unwrap();
         codec.encode(msg2.clone(), &mut buf).unwrap();
         codec.encode(msg3.clone(), &mut buf).unwrap();
@@ -265,7 +161,7 @@ mod tests {
             feed_buf.put_u8(byte);
             let result = codec.decode(&mut feed_buf).unwrap();
             if i < full_bytes.len() - 1 {
-                assert!(result.is_none(), "should not decode at byte {}", i);
+                assert!(result.is_none(), "should not decode at byte {i}");
             } else {
                 assert_eq!(result.unwrap(), value);
             }
@@ -273,10 +169,55 @@ mod tests {
     }
 
     #[test]
-    fn decode_eof_with_remaining_data() {
+    fn multibyte_utf8_japanese() {
         let mut codec = codec();
-        let mut buf = BytesMut::from("Content-Length: 50\r\n\r\n{\"partial\":");
-        let result = codec.decode_eof(&mut buf);
-        assert!(result.is_err() || result.unwrap().is_none());
+        let mut buf = BytesMut::new();
+        let value = serde_json::json!({"text": "こんにちは"});
+        codec.encode(value.clone(), &mut buf).unwrap();
+        let decoded = codec.decode(&mut buf).unwrap().unwrap();
+        assert_eq!(value, decoded);
+    }
+
+    #[test]
+    fn multibyte_utf8_emoji() {
+        let mut codec = codec();
+        let mut buf = BytesMut::new();
+        let value = serde_json::json!({"text": "Hello 🌍"});
+        codec.encode(value.clone(), &mut buf).unwrap();
+        let decoded = codec.decode(&mut buf).unwrap().unwrap();
+        assert_eq!(value, decoded);
+    }
+
+    #[test]
+    fn unicode_line_separator_in_string() {
+        let mut codec = codec();
+        let json_with_ls = "{\"text\":\"before\\u2028after\"}\n";
+        let mut buf = BytesMut::from(json_with_ls);
+        let result = codec.decode(&mut buf).unwrap();
+        assert!(
+            result.is_some(),
+            "U+2028 in JSON string must NOT split the line"
+        );
+        let val = result.unwrap();
+        assert_eq!(val["text"], "before\u{2028}after");
+    }
+
+    #[test]
+    fn oversized_line_returns_error() {
+        let mut codec = codec();
+        let big_value = "x".repeat(33 * 1024 * 1024);
+        let line = format!("{{\"data\":\"{big_value}\"}}\n");
+        let mut buf = BytesMut::from(line.as_str());
+        let result = codec.decode(&mut buf);
+        assert!(result.is_err(), "line exceeding 32MB must return error");
+    }
+
+    #[test]
+    fn crlf_line_ending() {
+        let mut codec = codec();
+        let mut buf = BytesMut::from("{\"method\":\"test\"}\r\n");
+        let result = codec.decode(&mut buf).unwrap();
+        assert!(result.is_some(), "CRLF line ending must decode correctly");
+        assert_eq!(result.unwrap()["method"], "test");
     }
 }
