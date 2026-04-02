@@ -4,11 +4,13 @@ use protoclaw_config::ProtoclawConfig;
 use protoclaw_core::{CrashTracker, ExponentialBackoff, Manager, ManagerError};
 use tokio_util::sync::CancellationToken;
 
-use crate::stubs::{StubAgentsManager, StubChannelsManager};
-use protoclaw_tools::ToolsManager;
+use crate::stubs::StubChannelsManager;
+use protoclaw_agents::AgentsManager;
+use protoclaw_tools::{ToolsCommand, ToolsManager};
 
 pub struct Supervisor {
     config: ProtoclawConfig,
+    tools_tx: Option<tokio::sync::mpsc::Sender<ToolsCommand>>,
 }
 
 struct ManagerSlot {
@@ -37,7 +39,7 @@ async fn shutdown_signal() {
 
 impl Supervisor {
     pub fn new(config: ProtoclawConfig) -> Self {
-        Self { config }
+        Self { config, tools_tx: None }
     }
 
     pub async fn run(self) -> anyhow::Result<()> {
@@ -55,7 +57,7 @@ impl Supervisor {
         result
     }
 
-    pub async fn run_with_cancel(self, cancel: CancellationToken) -> anyhow::Result<()> {
+    pub async fn run_with_cancel(mut self, cancel: CancellationToken) -> anyhow::Result<()> {
         let per_manager_timeout = Duration::from_secs(
             self.config.supervisor.shutdown_timeout_secs / 3,
         );
@@ -104,11 +106,15 @@ impl Supervisor {
         Ok(())
     }
 
-    async fn boot_managers(&self, slots: &mut [ManagerSlot]) -> anyhow::Result<()> {
+    async fn boot_managers(&mut self, slots: &mut [ManagerSlot]) -> anyhow::Result<()> {
+        let (tools_tx, tools_rx) = tokio::sync::mpsc::channel::<ToolsCommand>(16);
+        self.tools_tx = Some(tools_tx.clone());
+        let mut tools_rx = Some(tools_rx);
+
         for slot in slots.iter_mut() {
             tracing::info!(manager = %slot.name, "booting");
 
-            let mut manager = create_manager(&slot.name, &self.config);
+            let mut manager = create_manager(&slot.name, &self.config, &tools_tx, tools_rx.take());
             if let Err(e) = manager.start().await {
                 tracing::error!(manager = %slot.name, error = %e, "boot failed");
                 return Err(anyhow::anyhow!("failed to boot {}: {e}", slot.name));
@@ -149,7 +155,7 @@ impl Supervisor {
     }
 
     async fn check_and_restart_managers(
-        &self,
+        &mut self,
         slots: &mut [ManagerSlot],
         root_cancel: &CancellationToken,
     ) {
@@ -189,7 +195,18 @@ impl Supervisor {
             tracing::info!(manager = %slot.name, delay_ms = delay.as_millis(), "restarting after backoff");
             tokio::time::sleep(delay).await;
 
-            let mut manager = create_manager(&slot.name, &self.config);
+            let tools_tx = self.tools_tx.clone().unwrap_or_else(|| {
+                let (tx, _) = tokio::sync::mpsc::channel::<ToolsCommand>(16);
+                tx
+            });
+            let tools_rx = if slot.name == "tools" {
+                let (new_tx, rx) = tokio::sync::mpsc::channel::<ToolsCommand>(16);
+                self.tools_tx = Some(new_tx);
+                Some(rx)
+            } else {
+                None
+            };
+            let mut manager = create_manager(&slot.name, &self.config, &tools_tx, tools_rx);
             if let Err(e) = manager.start().await {
                 tracing::error!(manager = %slot.name, error = %e, "restart boot failed");
                 continue;
@@ -205,10 +222,17 @@ impl Supervisor {
     }
 }
 
-fn create_manager(name: &str, config: &ProtoclawConfig) -> ManagerKind {
+fn create_manager(name: &str, config: &ProtoclawConfig, tools_tx: &tokio::sync::mpsc::Sender<ToolsCommand>, tools_rx: Option<tokio::sync::mpsc::Receiver<ToolsCommand>>) -> ManagerKind {
     match name {
-        "tools" => ManagerKind::Tools(ToolsManager::new(config.mcp_servers.clone())),
-        "agents" => ManagerKind::Agents(StubAgentsManager),
+        "tools" => {
+            let m = ToolsManager::new(config.mcp_servers.clone())
+                .with_cmd_rx(tools_rx.expect("tools_rx required for tools manager"));
+            ManagerKind::Tools(m)
+        }
+        "agents" => {
+            let handle = protoclaw_core::ManagerHandle::new(tools_tx.clone());
+            ManagerKind::Agents(Box::new(AgentsManager::new(config.agent.clone(), handle)))
+        }
         "channels" => ManagerKind::Channels(StubChannelsManager),
         _ => unreachable!("unknown manager: {name}"),
     }
@@ -216,7 +240,7 @@ fn create_manager(name: &str, config: &ProtoclawConfig) -> ManagerKind {
 
 enum ManagerKind {
     Tools(ToolsManager),
-    Agents(StubAgentsManager),
+    Agents(Box<AgentsManager>),
     Channels(StubChannelsManager),
 }
 
@@ -253,9 +277,19 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     fn test_config() -> ProtoclawConfig {
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        let mock_agent = std::path::Path::new(manifest_dir)
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("target")
+            .join("debug")
+            .join("mock-agent");
+
         ProtoclawConfig {
             agent: protoclaw_config::AgentConfig {
-                binary: "test".into(),
+                binary: mock_agent.to_string_lossy().to_string(),
                 args: vec![],
                 env: std::collections::HashMap::new(),
                 working_dir: None,
@@ -276,7 +310,7 @@ mod tests {
         let cancel = CancellationToken::new();
         let c = cancel.clone();
         tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(50)).await;
+            tokio::time::sleep(Duration::from_millis(500)).await;
             c.cancel();
         });
 
@@ -290,7 +324,7 @@ mod tests {
         let log: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
         let cancel = CancellationToken::new();
 
-        let sup = Supervisor::new(test_config());
+        let mut sup = Supervisor::new(test_config());
         let per_manager_timeout = Duration::from_secs(1);
 
         let mut slots = Vec::with_capacity(3);
@@ -408,7 +442,7 @@ mod tests {
 
         let mut config = test_config();
         config.supervisor.health_check_interval_secs = 1;
-        let sup = Supervisor::new(config);
+        let mut sup = Supervisor::new(config);
 
         let mut slots = Vec::with_capacity(1);
         let token = cancel.child_token();
@@ -439,7 +473,7 @@ mod tests {
     #[tokio::test]
     async fn crash_loop_stops_restarting() {
         let cancel = CancellationToken::new();
-        let sup = Supervisor::new(test_config());
+        let mut sup = Supervisor::new(test_config());
 
         let mut slots = Vec::with_capacity(1);
         let token = cancel.child_token();
@@ -502,7 +536,7 @@ mod tests {
         let c = cancel.clone();
 
         tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(100)).await;
+            tokio::time::sleep(Duration::from_millis(500)).await;
             c.cancel();
         });
 
@@ -516,7 +550,7 @@ mod tests {
     #[tokio::test]
     async fn restart_uses_exponential_backoff() {
         let cancel = CancellationToken::new();
-        let sup = Supervisor::new(test_config());
+        let mut sup = Supervisor::new(test_config());
 
         let mut slots = Vec::with_capacity(1);
         let token = cancel.child_token();

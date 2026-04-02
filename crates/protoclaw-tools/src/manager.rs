@@ -21,6 +21,7 @@ pub struct ToolsManager {
     configs: Vec<McpServerConfig>,
     server_urls: Vec<McpServerUrl>,
     server_handles: Vec<tokio::task::JoinHandle<()>>,
+    cmd_rx: Option<tokio::sync::mpsc::Receiver<ToolsCommand>>,
 }
 
 impl ToolsManager {
@@ -29,7 +30,13 @@ impl ToolsManager {
             configs,
             server_urls: Vec::new(),
             server_handles: Vec::new(),
+            cmd_rx: None,
         }
+    }
+
+    pub fn with_cmd_rx(mut self, rx: tokio::sync::mpsc::Receiver<ToolsCommand>) -> Self {
+        self.cmd_rx = Some(rx);
+        self
     }
 
     pub fn server_urls(&self) -> &[McpServerUrl] {
@@ -83,9 +90,11 @@ impl Manager for ToolsManager {
         Ok(())
     }
 
-    async fn run(self, cancel: CancellationToken) -> Result<(), ManagerError> {
-        let (tx, mut rx) = tokio::sync::mpsc::channel::<ToolsCommand>(16);
-        let _ = tx;
+    async fn run(mut self, cancel: CancellationToken) -> Result<(), ManagerError> {
+        let mut rx = self.cmd_rx.take().unwrap_or_else(|| {
+            let (_tx, rx) = tokio::sync::mpsc::channel::<ToolsCommand>(16);
+            rx
+        });
 
         tracing::info!(manager = self.name(), "manager running");
 
