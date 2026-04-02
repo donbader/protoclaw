@@ -34,3 +34,4 @@ tokio-stream = { version = "0.1", features = ["sync"] }
 protoclaw-channels = { path = "crates/protoclaw-channels" }
 protoclaw-sdk-types = { path = "crates/protoclaw-sdk-types" }
 protoclaw-sdk-channel = { path = "crates/protoclaw-sdk-channel" }
+protoclaw-sdk-tool = { path = "crates/protoclaw-sdk-tool" }
