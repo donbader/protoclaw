@@ -2,6 +2,7 @@ mod channel;
 mod deliver;
 mod dispatcher;
 mod peer;
+mod permissions;
 mod state;
 
 use std::sync::Arc;
