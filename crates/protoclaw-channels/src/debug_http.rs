@@ -8,7 +8,7 @@ use axum::Router;
 use protoclaw_agents::AgentsCommand;
 use protoclaw_core::{Manager, ManagerError, ManagerHandle};
 use serde::Deserialize;
-use tokio::sync::{broadcast, oneshot};
+use tokio::sync::{broadcast, oneshot, watch};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
@@ -17,7 +17,7 @@ pub struct DebugHttpChannel {
     port: u16,
     agents_handle: ManagerHandle<AgentsCommand>,
     event_tx: broadcast::Sender<String>,
-    bound_port: Option<u16>,
+    port_tx: watch::Sender<u16>,
 }
 
 #[derive(Clone)]
@@ -40,20 +40,26 @@ struct PermissionResponseBody {
 impl DebugHttpChannel {
     pub fn new(port: u16, agents_handle: ManagerHandle<AgentsCommand>) -> Self {
         let (event_tx, _) = broadcast::channel(256);
+        let (port_tx, _) = watch::channel(0);
         Self {
             port,
             agents_handle,
             event_tx,
-            bound_port: None,
+            port_tx,
         }
+    }
+
+    pub fn with_port_tx(mut self, port_tx: watch::Sender<u16>) -> Self {
+        self.port_tx = port_tx;
+        self
     }
 
     pub fn event_sender(&self) -> broadcast::Sender<String> {
         self.event_tx.clone()
     }
 
-    pub fn bound_port(&self) -> Option<u16> {
-        self.bound_port
+    pub fn port_rx(&self) -> watch::Receiver<u16> {
+        self.port_tx.subscribe()
     }
 
     fn build_router(state: AppState) -> Router {
@@ -174,7 +180,7 @@ impl Manager for DebugHttpChannel {
         Ok(())
     }
 
-    async fn run(mut self, cancel: CancellationToken) -> Result<(), ManagerError> {
+    async fn run(self, cancel: CancellationToken) -> Result<(), ManagerError> {
         let state = AppState {
             agents_handle: self.agents_handle.clone(),
             event_tx: self.event_tx.clone(),
@@ -188,7 +194,7 @@ impl Manager for DebugHttpChannel {
 
         let bound_addr = listener.local_addr()
             .map_err(|e| ManagerError::Internal(format!("local_addr failed: {e}")))?;
-        self.bound_port = Some(bound_addr.port());
+        let _ = self.port_tx.send(bound_addr.port());
         tracing::info!(port = bound_addr.port(), "debug-http listening");
 
         axum::serve(listener, router)

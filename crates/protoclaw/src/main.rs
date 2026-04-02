@@ -2,7 +2,6 @@ use anyhow::Result;
 use clap::Parser;
 
 mod cli;
-mod supervisor;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -21,7 +20,7 @@ async fn main() -> Result<()> {
 
     tracing::info!(agent = %config.agent.binary, channels = config.channels.len(), "config loaded");
 
-    supervisor::Supervisor::new(config).run().await?;
+    protoclaw::supervisor::Supervisor::new(config).run().await?;
 
     tracing::info!("protoclaw shut down");
     Ok(())

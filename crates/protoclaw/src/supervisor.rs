@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use protoclaw_config::ProtoclawConfig;
 use protoclaw_core::{CrashTracker, ExponentialBackoff, Manager, ManagerError, ManagerHandle};
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, watch};
 use tokio_util::sync::CancellationToken;
 
 use protoclaw_agents::{AgentsCommand, AgentsManager};
@@ -15,6 +15,8 @@ pub struct Supervisor {
     agents_cmd_tx: Option<tokio::sync::mpsc::Sender<AgentsCommand>>,
     #[allow(dead_code)]
     event_tx: broadcast::Sender<String>,
+    debug_http_port_tx: watch::Sender<u16>,
+    debug_http_port_rx: watch::Receiver<u16>,
 }
 
 struct ManagerSlot {
@@ -44,7 +46,19 @@ async fn shutdown_signal() {
 impl Supervisor {
     pub fn new(config: ProtoclawConfig) -> Self {
         let (event_tx, _) = broadcast::channel(256);
-        Self { config, tools_tx: None, agents_cmd_tx: None, event_tx }
+        let (debug_http_port_tx, debug_http_port_rx) = watch::channel(0u16);
+        Self {
+            config,
+            tools_tx: None,
+            agents_cmd_tx: None,
+            event_tx,
+            debug_http_port_tx,
+            debug_http_port_rx,
+        }
+    }
+
+    pub fn debug_http_port_rx(&self) -> watch::Receiver<u16> {
+        self.debug_http_port_rx.clone()
     }
 
     pub async fn run(self) -> anyhow::Result<()> {
@@ -125,6 +139,7 @@ impl Supervisor {
                 &tools_tx,
                 tools_rx.take(),
                 self.agents_cmd_tx.as_ref(),
+                &self.debug_http_port_tx,
             );
 
             if slot.name == "agents" {
@@ -224,7 +239,7 @@ impl Supervisor {
             } else {
                 None
             };
-            let mut manager = create_manager(&slot.name, &self.config, &tools_tx, tools_rx, self.agents_cmd_tx.as_ref());
+            let mut manager = create_manager(&slot.name, &self.config, &tools_tx, tools_rx, self.agents_cmd_tx.as_ref(), &self.debug_http_port_tx);
             if let Err(e) = manager.start().await {
                 tracing::error!(manager = %slot.name, error = %e, "restart boot failed");
                 continue;
@@ -246,6 +261,7 @@ fn create_manager(
     tools_tx: &tokio::sync::mpsc::Sender<ToolsCommand>,
     tools_rx: Option<tokio::sync::mpsc::Receiver<ToolsCommand>>,
     agents_cmd_tx: Option<&tokio::sync::mpsc::Sender<AgentsCommand>>,
+    debug_http_port_tx: &watch::Sender<u16>,
 ) -> ManagerKind {
     match name {
         "tools" => {
@@ -260,7 +276,10 @@ fn create_manager(
         "channels" => {
             let tx = agents_cmd_tx.expect("agents_cmd_tx required for channels manager");
             let agents_handle = ManagerHandle::new(tx.clone());
-            ManagerKind::Channels(DebugHttpChannel::new(0, agents_handle))
+            ManagerKind::Channels(
+                DebugHttpChannel::new(0, agents_handle)
+                    .with_port_tx(debug_http_port_tx.clone()),
+            )
         }
         _ => unreachable!("unknown manager: {name}"),
     }
