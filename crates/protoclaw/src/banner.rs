@@ -60,6 +60,7 @@ mod tests {
                     args: vec![],
                 })
                 .collect(),
+            wasm_tools: vec![],
             supervisor: SupervisorConfig::default(),
         }
     }
