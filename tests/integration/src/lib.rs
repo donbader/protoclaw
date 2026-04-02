@@ -38,6 +38,7 @@ pub fn mock_agent_config_with_env(env: HashMap<String, String>) -> protoclaw_con
             args: vec![],
         }],
         mcp_servers: vec![],
+        wasm_tools: vec![],
         supervisor: protoclaw_config::SupervisorConfig {
             shutdown_timeout_secs: 5,
             health_check_interval_secs: 1,

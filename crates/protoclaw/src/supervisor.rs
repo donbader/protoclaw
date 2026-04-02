@@ -389,6 +389,7 @@ mod tests {
             },
             channels: vec![],
             mcp_servers: vec![],
+            wasm_tools: vec![],
             supervisor: protoclaw_config::SupervisorConfig {
                 shutdown_timeout_secs: 3,
                 health_check_interval_secs: 60,

@@ -139,6 +139,7 @@ mod tests {
             },
             channels: vec![],
             mcp_servers: vec![],
+            wasm_tools: vec![],
             supervisor: SupervisorConfig::default(),
         }
     }

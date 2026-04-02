@@ -13,6 +13,8 @@ pub struct ProtoclawConfig {
     #[serde(default)]
     pub mcp_servers: Vec<McpServerConfig>,
     #[serde(default)]
+    pub wasm_tools: Vec<WasmToolConfig>,
+    #[serde(default)]
     pub supervisor: SupervisorConfig,
 }
 
@@ -44,6 +46,59 @@ pub struct McpServerConfig {
     pub binary: String,
     #[serde(default)]
     pub args: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct WasmToolConfig {
+    pub name: String,
+    pub module: PathBuf,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub input_schema: Option<String>,
+    #[serde(default)]
+    pub sandbox: WasmSandboxConfig,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct WasmSandboxConfig {
+    #[serde(default = "default_fuel_limit")]
+    pub fuel_limit: u64,
+    #[serde(default = "default_epoch_timeout")]
+    pub epoch_timeout_secs: u64,
+    #[serde(default = "default_memory_limit")]
+    pub memory_limit_bytes: u64,
+    #[serde(default)]
+    pub preopened_dirs: Vec<PreopenedDir>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PreopenedDir {
+    pub host: PathBuf,
+    pub guest: String,
+    #[serde(default)]
+    pub readonly: bool,
+}
+
+fn default_fuel_limit() -> u64 {
+    1_000_000
+}
+fn default_epoch_timeout() -> u64 {
+    30
+}
+fn default_memory_limit() -> u64 {
+    67_108_864
+}
+
+impl Default for WasmSandboxConfig {
+    fn default() -> Self {
+        Self {
+            fuel_limit: default_fuel_limit(),
+            epoch_timeout_secs: default_epoch_timeout(),
+            memory_limit_bytes: default_memory_limit(),
+            preopened_dirs: Vec::new(),
+        }
+    }
 }
 
 /// Supervisor settings with sensible defaults.
@@ -121,5 +176,48 @@ mod tests {
         "#;
         let config: AgentConfig = toml::from_str(toml).unwrap();
         assert!(config.working_dir.is_none());
+    }
+
+    #[test]
+    fn wasm_sandbox_config_defaults() {
+        let config = WasmSandboxConfig::default();
+        assert_eq!(config.fuel_limit, 1_000_000);
+        assert_eq!(config.epoch_timeout_secs, 30);
+        assert_eq!(config.memory_limit_bytes, 67_108_864);
+        assert!(config.preopened_dirs.is_empty());
+    }
+
+    #[test]
+    fn wasm_tool_config_deserializes_full() {
+        let toml = r#"
+            name = "my-tool"
+            module = "/path/to/tool.wasm"
+            description = "A test tool"
+            input_schema = '{"type": "object"}'
+
+            [sandbox]
+            fuel_limit = 500000
+            epoch_timeout_secs = 10
+            memory_limit_bytes = 33554432
+        "#;
+        let config: WasmToolConfig = toml::from_str(toml).unwrap();
+        assert_eq!(config.name, "my-tool");
+        assert_eq!(config.module, PathBuf::from("/path/to/tool.wasm"));
+        assert_eq!(config.description, "A test tool");
+        assert!(config.input_schema.is_some());
+        assert_eq!(config.sandbox.fuel_limit, 500_000);
+        assert_eq!(config.sandbox.epoch_timeout_secs, 10);
+    }
+
+    #[test]
+    fn wasm_tool_config_deserializes_with_default_sandbox() {
+        let toml = r#"
+            name = "minimal"
+            module = "tool.wasm"
+        "#;
+        let config: WasmToolConfig = toml::from_str(toml).unwrap();
+        assert_eq!(config.name, "minimal");
+        assert_eq!(config.sandbox.fuel_limit, 1_000_000);
+        assert_eq!(config.sandbox.epoch_timeout_secs, 30);
     }
 }

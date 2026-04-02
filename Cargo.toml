@@ -35,3 +35,5 @@ protoclaw-sdk-types = { path = "crates/protoclaw-sdk-types" }
 protoclaw-sdk-channel = { path = "crates/protoclaw-sdk-channel" }
 protoclaw-sdk-tool = { path = "crates/protoclaw-sdk-tool" }
 protoclaw-sdk-agent = { path = "crates/protoclaw-sdk-agent" }
+wasmtime = "42"
+wasmtime-wasi = "42"
