@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use protoclaw_config::McpServerConfig;
+use protoclaw_config::{McpServerConfig, WasmToolConfig};
 use protoclaw_core::{Manager, ManagerError};
 use protoclaw_sdk_tool::Tool;
 use rmcp::handler::server::ServerHandler;
@@ -14,6 +14,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::external::ExternalMcpServer;
 use crate::mcp_host::McpHost;
+use crate::wasm_runner::WasmToolRunner;
+use crate::wasm_tool::WasmTool;
 
 #[derive(Clone)]
 pub struct McpServerUrl {
@@ -116,6 +118,7 @@ impl ServerHandler for AggregatedToolServer {
 
 pub struct ToolsManager {
     configs: Vec<McpServerConfig>,
+    wasm_configs: Vec<WasmToolConfig>,
     native_tools: Vec<Box<dyn Tool>>,
     server_urls: Vec<McpServerUrl>,
     server_handles: Vec<tokio::task::JoinHandle<()>>,
@@ -128,6 +131,7 @@ impl ToolsManager {
     pub fn new(configs: Vec<McpServerConfig>) -> Self {
         Self {
             configs,
+            wasm_configs: Vec::new(),
             native_tools: Vec::new(),
             server_urls: Vec::new(),
             server_handles: Vec::new(),
@@ -147,6 +151,11 @@ impl ToolsManager {
         self
     }
 
+    pub fn with_wasm_configs(mut self, wasm_configs: Vec<WasmToolConfig>) -> Self {
+        self.wasm_configs = wasm_configs;
+        self
+    }
+
     pub fn server_urls(&self) -> &[McpServerUrl] {
         &self.server_urls
     }
@@ -160,7 +169,28 @@ impl Manager for ToolsManager {
     }
 
     async fn start(&mut self) -> Result<(), ManagerError> {
-        let native_host = Arc::new(McpHost::new(std::mem::take(&mut self.native_tools)));
+        let mut all_tools: Vec<Box<dyn Tool>> = std::mem::take(&mut self.native_tools);
+
+        if !self.wasm_configs.is_empty() {
+            let wasm_runner = Arc::new(
+                WasmToolRunner::new()
+                    .map_err(|e| ManagerError::Internal(format!("wasm runner: {e}")))?,
+            );
+
+            for wasm_config in &self.wasm_configs {
+                match WasmTool::new(wasm_config.clone(), wasm_runner.clone()) {
+                    Ok(tool) => {
+                        tracing::info!(name = %tool.name(), "loaded WASM tool");
+                        all_tools.push(Box::new(tool));
+                    }
+                    Err(e) => {
+                        tracing::warn!(name = %wasm_config.name, error = %e, "failed to load WASM tool, skipping");
+                    }
+                }
+            }
+        }
+
+        let native_host = Arc::new(McpHost::new(all_tools));
         self.native_host = Some(native_host.clone());
 
         let mut external_servers = Vec::new();
@@ -377,6 +407,94 @@ mod tests {
         let list = host.tool_list();
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].name.as_ref(), "native-1");
+
+        for h in &m.server_handles {
+            h.abort();
+        }
+    }
+
+    #[tokio::test]
+    async fn tools_manager_with_wasm_configs_loads_valid_tools() {
+        let dir = tempfile::tempdir().unwrap();
+        let wasm_path = dir.path().join("tool.wasm");
+        let wat = r#"(module (memory (export "memory") 1) (func (export "_start")))"#;
+        let bytes = wat::parse_str(wat).unwrap();
+        std::fs::write(&wasm_path, &bytes).unwrap();
+
+        let wasm_configs = vec![protoclaw_config::WasmToolConfig {
+            name: "wasm-tool-1".into(),
+            module: wasm_path,
+            description: "test wasm tool".into(),
+            input_schema: None,
+            sandbox: protoclaw_config::WasmSandboxConfig::default(),
+        }];
+
+        let mut m = ToolsManager::new(vec![]).with_wasm_configs(wasm_configs);
+        m.start().await.unwrap();
+
+        let host = m.native_host.as_ref().unwrap();
+        let list = host.tool_list();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].name.as_ref(), "wasm-tool-1");
+
+        for h in &m.server_handles {
+            h.abort();
+        }
+    }
+
+    #[tokio::test]
+    async fn tools_manager_with_invalid_wasm_path_skips_and_continues() {
+        let wasm_configs = vec![protoclaw_config::WasmToolConfig {
+            name: "bad-tool".into(),
+            module: std::path::PathBuf::from("/nonexistent/tool.wasm"),
+            description: "bad".into(),
+            input_schema: None,
+            sandbox: protoclaw_config::WasmSandboxConfig::default(),
+        }];
+
+        let mut m = ToolsManager::new(vec![]).with_wasm_configs(wasm_configs);
+        let result = m.start().await;
+        assert!(result.is_ok());
+
+        let host = m.native_host.as_ref().unwrap();
+        let list = host.tool_list();
+        assert!(list.is_empty());
+
+        for h in &m.server_handles {
+            h.abort();
+        }
+    }
+
+    #[tokio::test]
+    async fn tools_manager_wasm_tools_appear_in_aggregated_list() {
+        let dir = tempfile::tempdir().unwrap();
+        let wasm_path = dir.path().join("tool.wasm");
+        let wat = r#"(module (memory (export "memory") 1) (func (export "_start")))"#;
+        let bytes = wat::parse_str(wat).unwrap();
+        std::fs::write(&wasm_path, &bytes).unwrap();
+
+        let native_tools: Vec<Box<dyn Tool>> = vec![
+            Box::new(DummyTool { tool_name: "native-1".into() }),
+        ];
+        let wasm_configs = vec![protoclaw_config::WasmToolConfig {
+            name: "wasm-1".into(),
+            module: wasm_path,
+            description: "wasm".into(),
+            input_schema: None,
+            sandbox: protoclaw_config::WasmSandboxConfig::default(),
+        }];
+
+        let mut m = ToolsManager::new(vec![])
+            .with_native_tools(native_tools)
+            .with_wasm_configs(wasm_configs);
+        m.start().await.unwrap();
+
+        let host = m.native_host.as_ref().unwrap();
+        let list = host.tool_list();
+        assert_eq!(list.len(), 2);
+        let names: Vec<&str> = list.iter().map(|t| t.name.as_ref()).collect();
+        assert!(names.contains(&"native-1"));
+        assert!(names.contains(&"wasm-1"));
 
         for h in &m.server_handles {
             h.abort();
