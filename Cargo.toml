@@ -30,5 +30,5 @@ tokio-test = "0.4"
 tempfile = "3"
 toml = "0.8"
 axum = "0.8"
-tokio-stream = "0.1"
+tokio-stream = { version = "0.1", features = ["sync"] }
 protoclaw-channels = { path = "crates/protoclaw-channels" }

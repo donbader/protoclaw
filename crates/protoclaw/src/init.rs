@@ -1,0 +1,146 @@
+use std::process::{Command, Stdio};
+
+pub fn detect_agent_binary() -> Option<String> {
+    for binary in &["opencode", "claude", "gemini"] {
+        let ok = Command::new(binary)
+            .arg("--version")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if ok {
+            return Some(binary.to_string());
+        }
+    }
+    None
+}
+
+pub fn generate_config_toml(agent_binary: &str) -> String {
+    format!(
+        r#"# Protoclaw configuration
+# Docs: https://github.com/user/protoclaw
+
+[agent]
+binary = "{agent_binary}"
+args = ["acp"]
+# working_dir = "."
+
+# Channel subprocesses
+[[channels]]
+name = "debug-http"
+binary = "protoclaw-debug-http"
+args = ["--port", "3000"]
+
+# MCP tool servers (uncomment to add)
+# [[mcp_servers]]
+# name = "filesystem"
+# binary = "mcp-server-filesystem"
+# args = ["--root", "."]
+
+[supervisor]
+shutdown_timeout_secs = 30
+health_check_interval_secs = 5
+max_restarts = 5
+restart_window_secs = 60
+"#
+    )
+}
+
+pub fn run_init(config_path: &str, force: bool) -> anyhow::Result<()> {
+    let path = std::path::Path::new(config_path);
+    if path.exists() && !force {
+        return Err(anyhow::anyhow!(
+            "{config_path} already exists. Use --force to overwrite."
+        ));
+    }
+
+    let binary = detect_agent_binary().unwrap_or_else(|| {
+        eprintln!("Warning: no known agent binary found on PATH; defaulting to 'opencode'");
+        "opencode".to_string()
+    });
+
+    let content = generate_config_toml(&binary);
+    std::fs::write(config_path, &content)?;
+
+    println!("Created {config_path}");
+    if detect_agent_binary().is_some() {
+        println!("  Detected agent: {binary}");
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn generate_config_toml_contains_binary() {
+        let toml = generate_config_toml("opencode");
+        assert!(toml.contains(r#"binary = "opencode""#));
+    }
+
+    #[test]
+    fn generate_config_toml_contains_comment_lines() {
+        let toml = generate_config_toml("opencode");
+        assert!(toml.lines().any(|l| l.trim_start().starts_with('#')));
+    }
+
+    #[test]
+    fn generate_config_toml_contains_required_sections() {
+        let toml = generate_config_toml("opencode");
+        assert!(toml.contains("[agent]"));
+        assert!(toml.contains("[supervisor]"));
+    }
+
+    #[test]
+    fn generate_config_toml_round_trips_through_protoclaw_config() {
+        let toml = generate_config_toml("opencode");
+        let result = toml::from_str::<protoclaw_config::ProtoclawConfig>(&toml);
+        assert!(result.is_ok(), "TOML failed to parse: {:?}", result.err());
+    }
+
+    #[test]
+    fn run_init_refuses_overwrite_without_force() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("protoclaw.toml");
+        std::fs::write(&path, "existing").unwrap();
+        let path_str = path.to_str().unwrap();
+        let result = run_init(path_str, false);
+        assert!(
+            result.is_err(),
+            "should refuse to overwrite without --force"
+        );
+    }
+
+    #[test]
+    fn run_init_force_overwrites_existing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("protoclaw.toml");
+        std::fs::write(&path, "existing").unwrap();
+        let path_str = path.to_str().unwrap();
+        let result = run_init(path_str, true);
+        assert!(
+            result.is_ok(),
+            "should overwrite with --force: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
+    fn run_init_creates_file_with_valid_toml() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("protoclaw.toml");
+        let path_str = path.to_str().unwrap();
+        run_init(path_str, false).unwrap();
+        assert!(path.exists(), "file should be created");
+        let content = std::fs::read_to_string(&path).unwrap();
+        let result = toml::from_str::<protoclaw_config::ProtoclawConfig>(&content);
+        assert!(
+            result.is_ok(),
+            "created TOML should be valid: {:?}",
+            result.err()
+        );
+    }
+}

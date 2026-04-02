@@ -15,6 +15,12 @@ use tokio_util::sync::CancellationToken;
 use crate::connection::{AgentConnection, IncomingMessage};
 use crate::error::AgentsError;
 
+#[derive(Debug, Clone)]
+pub struct AgentStatusInfo {
+    pub connected: bool,
+    pub session_id: Option<String>,
+}
+
 pub struct PendingPermission {
     pub request: serde_json::Value,
     pub description: String,
@@ -42,6 +48,10 @@ pub enum AgentsCommand {
         reply: oneshot::Sender<Vec<PendingPermissionInfo>>,
     },
     Shutdown,
+    /// Query current agent connection/session status.
+    GetStatus {
+        reply: oneshot::Sender<AgentStatusInfo>,
+    },
     /// Create a new ACP session keyed by channel+peer identity.
     CreateSession {
         session_key: SessionKey,
@@ -220,6 +230,13 @@ impl AgentsManager {
             AgentsCommand::Shutdown => {
                 self.shutdown_agent().await;
                 return true;
+            }
+            AgentsCommand::GetStatus { reply } => {
+                let info = AgentStatusInfo {
+                    connected: self.connection.is_some(),
+                    session_id: self.session_id.clone(),
+                };
+                let _ = reply.send(info);
             }
             AgentsCommand::CreateSession { session_key, reply } => {
                 let result = self.create_session(session_key).await;
@@ -724,5 +741,19 @@ mod tests {
         m.shutdown_agent().await;
         tools_task.abort();
         let _ = original_session;
+    }
+
+    #[tokio::test]
+    async fn get_status_returns_disconnected_when_fresh() {
+        let (handle, _rx) = make_tools_handle();
+        let mut m = AgentsManager::new(mock_agent_config(), handle);
+
+        let (reply_tx, reply_rx) = oneshot::channel();
+        let done = m.handle_command(AgentsCommand::GetStatus { reply: reply_tx }).await;
+        assert!(!done, "GetStatus should not stop the manager");
+
+        let info = reply_rx.await.expect("should receive status info");
+        assert!(!info.connected, "fresh manager should not be connected");
+        assert!(info.session_id.is_none(), "fresh manager should have no session_id");
     }
 }

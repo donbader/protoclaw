@@ -1,8 +1,10 @@
 pub mod error;
 pub mod types;
+pub mod validate;
 
 pub use error::*;
 pub use types::*;
+pub use validate::*;
 
 use figment::{
     providers::{Env, Format, Serialized, Toml},
