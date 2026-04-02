@@ -4,7 +4,8 @@ use protoclaw_config::ProtoclawConfig;
 use protoclaw_core::{CrashTracker, ExponentialBackoff, Manager, ManagerError};
 use tokio_util::sync::CancellationToken;
 
-use crate::stubs::{StubAgentsManager, StubChannelsManager, StubToolsManager};
+use crate::stubs::{StubAgentsManager, StubChannelsManager};
+use protoclaw_tools::ToolsManager;
 
 pub struct Supervisor {
     config: ProtoclawConfig,
@@ -107,7 +108,7 @@ impl Supervisor {
         for slot in slots.iter_mut() {
             tracing::info!(manager = %slot.name, "booting");
 
-            let mut manager = create_manager(&slot.name);
+            let mut manager = create_manager(&slot.name, &self.config);
             if let Err(e) = manager.start().await {
                 tracing::error!(manager = %slot.name, error = %e, "boot failed");
                 return Err(anyhow::anyhow!("failed to boot {}: {e}", slot.name));
@@ -188,7 +189,7 @@ impl Supervisor {
             tracing::info!(manager = %slot.name, delay_ms = delay.as_millis(), "restarting after backoff");
             tokio::time::sleep(delay).await;
 
-            let mut manager = create_manager(&slot.name);
+            let mut manager = create_manager(&slot.name, &self.config);
             if let Err(e) = manager.start().await {
                 tracing::error!(manager = %slot.name, error = %e, "restart boot failed");
                 continue;
@@ -204,9 +205,9 @@ impl Supervisor {
     }
 }
 
-fn create_manager(name: &str) -> ManagerKind {
+fn create_manager(name: &str, config: &ProtoclawConfig) -> ManagerKind {
     match name {
-        "tools" => ManagerKind::Tools(StubToolsManager),
+        "tools" => ManagerKind::Tools(ToolsManager::new(config.mcp_servers.clone())),
         "agents" => ManagerKind::Agents(StubAgentsManager),
         "channels" => ManagerKind::Channels(StubChannelsManager),
         _ => unreachable!("unknown manager: {name}"),
@@ -214,7 +215,7 @@ fn create_manager(name: &str) -> ManagerKind {
 }
 
 enum ManagerKind {
-    Tools(StubToolsManager),
+    Tools(ToolsManager),
     Agents(StubAgentsManager),
     Channels(StubChannelsManager),
 }

@@ -8,6 +8,7 @@ rust-version.workspace = true
 protoclaw-core = { path = "../protoclaw-core" }
 protoclaw-config = { path = "../protoclaw-config" }
 protoclaw-jsonrpc = { path = "../protoclaw-jsonrpc" }
+protoclaw-tools = { workspace = true }
 tokio.workspace = true
 tokio-util = { workspace = true }
 anyhow.workspace = true

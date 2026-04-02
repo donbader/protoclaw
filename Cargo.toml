@@ -9,6 +9,9 @@ rust-version = "1.85"
 [workspace.dependencies]
 protoclaw-acp = { path = "crates/protoclaw-acp" }
 protoclaw-jsonrpc = { path = "crates/protoclaw-jsonrpc" }
+protoclaw-tools = { path = "crates/protoclaw-tools" }
+protoclaw-core = { path = "crates/protoclaw-core" }
+protoclaw-config = { path = "crates/protoclaw-config" }
 tokio = { version = "1.50", features = ["full"] }
 tokio-util = { version = "0.7", features = ["codec"] }
 futures = "0.3"
