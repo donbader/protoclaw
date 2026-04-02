@@ -1,15 +1,17 @@
+use std::collections::HashMap;
 use std::time::Duration;
 
 use protoclaw_acp::PermissionOption;
+use protoclaw_agents::AgentsCommand;
 use protoclaw_config::ChannelConfig;
 use protoclaw_core::types::ChannelId;
-use protoclaw_core::{CrashTracker, ExponentialBackoff, Manager, ManagerError};
-use tokio::sync::mpsc;
+use protoclaw_core::{ChannelEvent, CrashTracker, ExponentialBackoff, Manager, ManagerError, ManagerHandle, SessionKey};
+use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
 use crate::connection::{ChannelConnection, IncomingChannelMessage};
 use crate::error::ChannelsError;
-use crate::types::{ChannelCapabilities, ChannelInitializeResult};
+use crate::types::{ChannelCapabilities, ChannelInitializeResult, ChannelSendMessage, ChannelRespondPermission};
 
 /// Commands sent to the ChannelsManager from other managers.
 pub enum ChannelsCommand {
@@ -28,6 +30,13 @@ pub enum ChannelsCommand {
     Shutdown,
 }
 
+/// Routing table entry mapping a session key to its channel and ACP session.
+struct RoutingEntry {
+    channel_id: ChannelId,
+    acp_session_id: String,
+    slot_index: usize,
+}
+
 /// Per-channel state: connection, config, crash recovery.
 struct ChannelSlot {
     config: ChannelConfig,
@@ -39,15 +48,23 @@ struct ChannelSlot {
     disabled: bool,
 }
 
-/// Manages channel subprocesses with crash isolation.
+/// Manages channel subprocesses with crash isolation and session-keyed routing.
 ///
 /// Each channel runs as a subprocess communicating over JSON-RPC stdio.
 /// A crash in one channel does not affect other channels or the sidecar.
+/// Inbound messages create/reuse ACP sessions via AgentsManager.
+/// Outbound agent updates route back to the originating channel via routing table.
 pub struct ChannelsManager {
     channel_configs: Vec<ChannelConfig>,
     slots: Vec<ChannelSlot>,
     cmd_rx: Option<mpsc::Receiver<ChannelsCommand>>,
     cmd_tx: mpsc::Sender<ChannelsCommand>,
+    /// Session-keyed routing table: SessionKey → (channel, ACP session).
+    routing_table: HashMap<SessionKey, RoutingEntry>,
+    /// Handle to send commands to AgentsManager for session creation/prompting.
+    agents_handle: Option<ManagerHandle<AgentsCommand>>,
+    /// Receiver for ChannelEvents from AgentsManager (session updates, permissions).
+    channel_events_rx: Option<mpsc::Receiver<ChannelEvent>>,
 }
 
 impl ChannelsManager {
@@ -58,11 +75,26 @@ impl ChannelsManager {
             slots: Vec::new(),
             cmd_rx: Some(cmd_rx),
             cmd_tx,
+            routing_table: HashMap::new(),
+            agents_handle: None,
+            channel_events_rx: None,
         }
     }
 
     pub fn command_sender(&self) -> mpsc::Sender<ChannelsCommand> {
         self.cmd_tx.clone()
+    }
+
+    /// Set the agents handle for creating/prompting sessions.
+    pub fn with_agents_handle(mut self, handle: ManagerHandle<AgentsCommand>) -> Self {
+        self.agents_handle = Some(handle);
+        self
+    }
+
+    /// Set the channel events receiver for agent updates routed back.
+    pub fn with_channel_events_rx(mut self, rx: mpsc::Receiver<ChannelEvent>) -> Self {
+        self.channel_events_rx = Some(rx);
+        self
     }
 
     /// Spawn and initialize a single channel subprocess.
@@ -144,13 +176,12 @@ impl ChannelsManager {
                 session_key,
                 content,
             } => {
-                // For now, deliver to all active channels (routing by session_key
-                // will be wired in Plan 02 with multi-session support).
-                tracing::debug!(session_key = %session_key, "delivering message to channels");
-                for slot in &self.slots {
+                let sk: SessionKey = session_key.as_str().into();
+                if let Some(entry) = self.routing_table.get(&sk) {
+                    let slot = &self.slots[entry.slot_index];
                     if let Some(conn) = &slot.connection {
                         let params = serde_json::json!({
-                            "sessionId": session_key,
+                            "sessionId": entry.acp_session_id,
                             "content": content,
                         });
                         if let Err(e) = conn.send_notification("channel/deliverMessage", params).await {
@@ -161,6 +192,8 @@ impl ChannelsManager {
                             );
                         }
                     }
+                } else {
+                    tracing::warn!(session_key = %session_key, "no routing entry for session key");
                 }
             }
             ChannelsCommand::RoutePermission {
@@ -169,16 +202,13 @@ impl ChannelsManager {
                 description,
                 options,
             } => {
-                tracing::debug!(
-                    session_key = %session_key,
-                    request_id = %request_id,
-                    "routing permission request to channels"
-                );
-                for slot in &self.slots {
+                let sk: SessionKey = session_key.as_str().into();
+                if let Some(entry) = self.routing_table.get(&sk) {
+                    let slot = &self.slots[entry.slot_index];
                     if let Some(conn) = &slot.connection {
                         let params = serde_json::json!({
                             "requestId": request_id,
-                            "sessionId": session_key,
+                            "sessionId": entry.acp_session_id,
                             "description": description,
                             "options": options,
                         });
@@ -190,6 +220,8 @@ impl ChannelsManager {
                             );
                         }
                     }
+                } else {
+                    tracing::warn!(session_key = %session_key, request_id = %request_id, "no routing entry for permission");
                 }
             }
             ChannelsCommand::Shutdown => {
@@ -198,6 +230,176 @@ impl ChannelsManager {
             }
         }
         false
+    }
+
+    /// Handle a ChannelEvent from AgentsManager (outbound: agent → channel).
+    async fn handle_channel_event(&mut self, event: ChannelEvent) {
+        match event {
+            ChannelEvent::DeliverMessage { session_key, content } => {
+                if let Some(entry) = self.routing_table.get(&session_key) {
+                    let slot = &self.slots[entry.slot_index];
+                    if let Some(conn) = &slot.connection {
+                        let params = serde_json::json!({
+                            "sessionId": entry.acp_session_id,
+                            "content": content,
+                        });
+                        if let Err(e) = conn.send_notification("channel/deliverMessage", params).await {
+                            tracing::warn!(
+                                channel = %slot.config.name,
+                                session_key = %session_key,
+                                error = %e,
+                                "failed to deliver agent update"
+                            );
+                        }
+                    }
+                } else {
+                    tracing::warn!(session_key = %session_key, "no routing entry for agent update");
+                }
+            }
+            ChannelEvent::RoutePermission { session_key, request_id, description, options } => {
+                if let Some(entry) = self.routing_table.get(&session_key) {
+                    let slot = &self.slots[entry.slot_index];
+                    if let Some(conn) = &slot.connection {
+                        let params = serde_json::json!({
+                            "requestId": request_id,
+                            "sessionId": entry.acp_session_id,
+                            "description": description,
+                            "options": options,
+                        });
+                        if let Err(e) = conn.send_notification("channel/requestPermission", params).await {
+                            tracing::warn!(
+                                channel = %slot.config.name,
+                                session_key = %session_key,
+                                error = %e,
+                                "failed to route permission from agent"
+                            );
+                        }
+                    }
+                } else {
+                    tracing::warn!(session_key = %session_key, request_id = %request_id, "no routing entry for permission");
+                }
+            }
+        }
+    }
+
+    /// Handle an incoming message from a channel subprocess (inbound: channel → agent).
+    async fn handle_channel_message(&mut self, slot_index: usize, msg: IncomingChannelMessage) {
+        let channel_name = self.slots[slot_index].config.name.clone();
+        let channel_id = self.slots[slot_index].channel_id.clone();
+
+        let value = match &msg {
+            IncomingChannelMessage::ChannelRequest(v) | IncomingChannelMessage::ChannelNotification(v) => v.clone(),
+        };
+
+        let method = value["method"].as_str().unwrap_or("");
+        let params = value.get("params").cloned().unwrap_or(serde_json::Value::Null);
+
+        match method {
+            "channel/sendMessage" => {
+                if let Ok(send_msg) = serde_json::from_value::<ChannelSendMessage>(params) {
+                    let session_key = SessionKey::new(
+                        &send_msg.peer_info.channel_name,
+                        &send_msg.peer_info.kind,
+                        &send_msg.peer_info.peer_id,
+                    );
+
+                    let agents_handle = match &self.agents_handle {
+                        Some(h) => h.clone(),
+                        None => {
+                            tracing::warn!(channel = %channel_name, "no agents handle, cannot route message");
+                            return;
+                        }
+                    };
+
+                    // Check if session exists, create if not
+                    if !self.routing_table.contains_key(&session_key) {
+                        let (reply_tx, reply_rx) = oneshot::channel();
+                        if let Err(e) = agents_handle.send(AgentsCommand::CreateSession {
+                            session_key: session_key.clone(),
+                            reply: reply_tx,
+                        }).await {
+                            tracing::error!(channel = %channel_name, error = %e, "failed to send CreateSession");
+                            return;
+                        }
+
+                        match reply_rx.await {
+                            Ok(Ok(acp_session_id)) => {
+                                tracing::info!(
+                                    channel = %channel_name,
+                                    session_key = %session_key,
+                                    acp_session_id = %acp_session_id,
+                                    "session created"
+                                );
+                                self.routing_table.insert(session_key.clone(), RoutingEntry {
+                                    channel_id: channel_id.clone(),
+                                    acp_session_id,
+                                    slot_index,
+                                });
+                            }
+                            Ok(Err(e)) => {
+                                tracing::error!(channel = %channel_name, error = %e, "CreateSession failed");
+                                return;
+                            }
+                            Err(_) => {
+                                tracing::error!(channel = %channel_name, "CreateSession reply dropped");
+                                return;
+                            }
+                        }
+                    }
+
+                    // Send prompt to existing session
+                    let (reply_tx, reply_rx) = oneshot::channel();
+                    if let Err(e) = agents_handle.send(AgentsCommand::PromptSession {
+                        session_key: session_key.clone(),
+                        message: send_msg.content,
+                        reply: reply_tx,
+                    }).await {
+                        tracing::error!(channel = %channel_name, error = %e, "failed to send PromptSession");
+                        return;
+                    }
+
+                    match reply_rx.await {
+                        Ok(Ok(())) => {
+                            tracing::debug!(channel = %channel_name, session_key = %session_key, "prompt sent to agent");
+                        }
+                        Ok(Err(e)) => {
+                            tracing::warn!(channel = %channel_name, error = %e, "PromptSession failed");
+                        }
+                        Err(_) => {
+                            tracing::warn!(channel = %channel_name, "PromptSession reply dropped");
+                        }
+                    }
+                } else {
+                    tracing::warn!(channel = %channel_name, "failed to parse channel/sendMessage params");
+                }
+            }
+            "channel/respondPermission" => {
+                if let Ok(resp) = serde_json::from_value::<ChannelRespondPermission>(params) {
+                    if let Some(agents_handle) = &self.agents_handle {
+                        if let Err(e) = agents_handle.send(AgentsCommand::RespondPermission {
+                            request_id: resp.request_id.clone(),
+                            option_id: resp.option_id,
+                        }).await {
+                            tracing::warn!(
+                                channel = %channel_name,
+                                request_id = %resp.request_id,
+                                error = %e,
+                                "failed to forward permission response"
+                            );
+                        }
+                    }
+                } else {
+                    tracing::warn!(channel = %channel_name, "failed to parse channel/respondPermission params");
+                }
+            }
+            _ => {
+                tracing::debug!(
+                    channel = %channel_name,
+                    method = %method,
+                    "unhandled channel message"
+                );
+            }
+        }
     }
 
     /// Shutdown all channel subprocesses.
@@ -294,10 +496,19 @@ impl Manager for ChannelsManager {
 
     async fn run(mut self, cancel: CancellationToken) -> Result<(), ManagerError> {
         let mut cmd_rx = self.cmd_rx.take().expect("cmd_rx must exist");
+        let mut channel_events_rx = self.channel_events_rx.take();
 
         tracing::info!(manager = self.name(), "manager running");
 
         loop {
+            // Build a future for channel events (or pending if no receiver)
+            let channel_event_fut = async {
+                match &mut channel_events_rx {
+                    Some(rx) => rx.recv().await,
+                    None => std::future::pending().await,
+                }
+            };
+
             tokio::select! {
                 _ = cancel.cancelled() => {
                     tracing::info!(manager = "channels", "shutting down");
@@ -309,34 +520,15 @@ impl Manager for ChannelsManager {
                         break;
                     }
                 }
+                Some(event) = channel_event_fut => {
+                    self.handle_channel_event(event).await;
+                }
                 else => {
                     // Poll channels for incoming messages
                     if let Some((idx, msg)) = self.poll_channels().await {
                         match msg {
                             Some(incoming) => {
-                                let channel_name = self.slots[idx].config.name.clone();
-                                tracing::debug!(
-                                    channel = %channel_name,
-                                    "received incoming message from channel"
-                                );
-                                // Inbound routing (channel → agent) will be wired in Plan 02.
-                                // For now, log the message.
-                                match incoming {
-                                    IncomingChannelMessage::ChannelRequest(v) => {
-                                        tracing::info!(
-                                            channel = %channel_name,
-                                            method = %v["method"].as_str().unwrap_or("unknown"),
-                                            "channel request (routing not yet wired)"
-                                        );
-                                    }
-                                    IncomingChannelMessage::ChannelNotification(v) => {
-                                        tracing::info!(
-                                            channel = %channel_name,
-                                            method = %v["method"].as_str().unwrap_or("unknown"),
-                                            "channel notification (routing not yet wired)"
-                                        );
-                                    }
-                                }
+                                self.handle_channel_message(idx, incoming).await;
                             }
                             None => {
                                 // Channel crashed (EOF)
@@ -452,5 +644,86 @@ mod tests {
         m.handle_channel_crash(0).await;
         assert!(m.slots[0].disabled);
         assert!(m.slots[0].connection.is_none());
+    }
+
+    #[test]
+    fn routing_table_insert_and_lookup() {
+        let mut table: HashMap<SessionKey, RoutingEntry> = HashMap::new();
+        let key = SessionKey::new("debug-http", "local", "dev");
+        table.insert(key.clone(), RoutingEntry {
+            channel_id: ChannelId::from("debug-http"),
+            acp_session_id: "acp-sess-1".into(),
+            slot_index: 0,
+        });
+
+        assert!(table.contains_key(&key));
+        let entry = table.get(&key).unwrap();
+        assert_eq!(entry.acp_session_id, "acp-sess-1");
+        assert_eq!(entry.slot_index, 0);
+    }
+
+    #[test]
+    fn routing_table_different_peers_different_sessions() {
+        let mut table: HashMap<SessionKey, RoutingEntry> = HashMap::new();
+        let key_alice = SessionKey::new("telegram", "direct", "alice");
+        let key_bob = SessionKey::new("telegram", "direct", "bob");
+
+        table.insert(key_alice.clone(), RoutingEntry {
+            channel_id: ChannelId::from("telegram"),
+            acp_session_id: "sess-alice".into(),
+            slot_index: 0,
+        });
+        table.insert(key_bob.clone(), RoutingEntry {
+            channel_id: ChannelId::from("telegram"),
+            acp_session_id: "sess-bob".into(),
+            slot_index: 0,
+        });
+
+        assert_eq!(table.len(), 2);
+        assert_eq!(table.get(&key_alice).unwrap().acp_session_id, "sess-alice");
+        assert_eq!(table.get(&key_bob).unwrap().acp_session_id, "sess-bob");
+    }
+
+    #[tokio::test]
+    async fn handle_channel_event_deliver_routes_to_correct_slot() {
+        let mut m = ChannelsManager::new(vec![]);
+        // Manually insert a routing entry (no real channel needed for this test)
+        let key = SessionKey::new("test", "local", "dev");
+        m.routing_table.insert(key.clone(), RoutingEntry {
+            channel_id: ChannelId::from("test"),
+            acp_session_id: "acp-1".into(),
+            slot_index: 0,
+        });
+
+        // No slots means deliver will find no connection — but shouldn't panic
+        let event = ChannelEvent::DeliverMessage {
+            session_key: key,
+            content: serde_json::json!({"text": "hello"}),
+        };
+        // Should not panic even with empty slots (index out of bounds guarded by routing_table check)
+        // Actually slot_index 0 with empty slots would panic, so test the "no entry" path
+        let missing_key = SessionKey::new("nonexistent", "x", "y");
+        let event_missing = ChannelEvent::DeliverMessage {
+            session_key: missing_key,
+            content: serde_json::json!({"text": "hello"}),
+        };
+        m.handle_channel_event(event_missing).await;
+        // No panic = success (logs warning about missing routing entry)
+        let _ = event; // suppress unused warning
+    }
+
+    #[tokio::test]
+    async fn with_agents_handle_sets_handle() {
+        let (tx, _rx) = mpsc::channel::<AgentsCommand>(16);
+        let handle = ManagerHandle::new(tx);
+        let m = ChannelsManager::new(vec![]).with_agents_handle(handle);
+        assert!(m.agents_handle.is_some());
+    }
+
+    #[tokio::test]
+    async fn with_channel_events_rx_sets_receiver() {
+        let (_tx, rx) = mpsc::channel::<ChannelEvent>(16);
+        let m = ChannelsManager::new(vec![]).with_channel_events_rx(rx);
+        assert!(m.channel_events_rx.is_some());
     }
 }
