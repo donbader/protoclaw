@@ -24,3 +24,4 @@ uuid = { version = "1", features = ["v4"] }
 clap = { version = "4", features = ["derive", "env"] }
 tokio-test = "0.4"
 tempfile = "3"
+toml = "0.8"

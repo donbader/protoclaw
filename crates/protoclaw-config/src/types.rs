@@ -1,4 +1,6 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::path::PathBuf;
 
 /// Top-level protoclaw configuration.
 ///
@@ -20,6 +22,10 @@ pub struct AgentConfig {
     pub binary: String,
     #[serde(default)]
     pub args: Vec<String>,
+    #[serde(default)]
+    pub env: HashMap<String, String>,
+    #[serde(default)]
+    pub working_dir: Option<PathBuf>,
 }
 
 /// Channel subprocess configuration — user-facing interfaces.
@@ -74,5 +80,46 @@ impl Default for SupervisorConfig {
             max_restarts: default_max_restarts(),
             restart_window_secs: default_restart_window(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn agent_config_with_env_deserializes() {
+        let toml = r#"
+            binary = "opencode"
+            args = ["acp"]
+            working_dir = "/workspace"
+
+            [env]
+            OPENCODE_ENABLE_QUESTION_TOOL = "1"
+            MY_VAR = "hello"
+        "#;
+        let config: AgentConfig = toml::from_str(toml).unwrap();
+        assert_eq!(config.binary, "opencode");
+        assert_eq!(config.env.len(), 2);
+        assert_eq!(config.env["OPENCODE_ENABLE_QUESTION_TOOL"], "1");
+        assert_eq!(config.working_dir, Some(PathBuf::from("/workspace")));
+    }
+
+    #[test]
+    fn agent_config_env_defaults_empty() {
+        let toml = r#"
+            binary = "opencode"
+        "#;
+        let config: AgentConfig = toml::from_str(toml).unwrap();
+        assert!(config.env.is_empty());
+    }
+
+    #[test]
+    fn agent_config_working_dir_optional() {
+        let toml = r#"
+            binary = "opencode"
+        "#;
+        let config: AgentConfig = toml::from_str(toml).unwrap();
+        assert!(config.working_dir.is_none());
     }
 }

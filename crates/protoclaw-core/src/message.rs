@@ -14,8 +14,32 @@ pub struct InternalMessage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MessageContent {
     Text(String),
-    PermissionRequest { prompt: String },
-    PermissionResponse { granted: bool },
+    PermissionRequest {
+        prompt: String,
+    },
+    PermissionResponse {
+        granted: bool,
+    },
+    AgentTextDelta(String),
+    AgentThoughtDelta(String),
+    ToolCallStarted {
+        tool_call_id: String,
+        name: String,
+        input: Option<serde_json::Value>,
+    },
+    ToolCallCompleted {
+        tool_call_id: String,
+        name: String,
+        output: Option<String>,
+        success: bool,
+    },
+    UsageUpdate {
+        input_tokens: Option<u64>,
+        output_tokens: Option<u64>,
+    },
+    AgentResponseComplete {
+        content: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -89,5 +113,35 @@ mod tests {
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains("\"source\""));
         assert!(json.contains("\"content\""));
+    }
+
+    #[test]
+    fn message_content_agent_text_delta() {
+        let content = MessageContent::AgentTextDelta("chunk".to_string());
+        assert!(matches!(content, MessageContent::AgentTextDelta(ref s) if s == "chunk"));
+    }
+
+    #[test]
+    fn message_content_tool_call_started() {
+        let content = MessageContent::ToolCallStarted {
+            tool_call_id: "tc-1".to_string(),
+            name: "read_file".to_string(),
+            input: Some(serde_json::json!({"path": "/tmp"})),
+        };
+        assert!(
+            matches!(content, MessageContent::ToolCallStarted { ref name, .. } if name == "read_file")
+        );
+    }
+
+    #[test]
+    fn message_content_serializes_streaming_variants() {
+        let content = MessageContent::AgentResponseComplete {
+            content: Some("done".to_string()),
+        };
+        let json = serde_json::to_string(&content).unwrap();
+        let roundtrip: MessageContent = serde_json::from_str(&json).unwrap();
+        assert!(
+            matches!(roundtrip, MessageContent::AgentResponseComplete { content: Some(ref s) } if s == "done")
+        );
     }
 }

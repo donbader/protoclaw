@@ -256,6 +256,8 @@ mod tests {
             agent: protoclaw_config::AgentConfig {
                 binary: "test".into(),
                 args: vec![],
+                env: std::collections::HashMap::new(),
+                working_dir: None,
             },
             channels: vec![],
             mcp_servers: vec![],

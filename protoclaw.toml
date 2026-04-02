@@ -4,7 +4,11 @@
 # Agent process — the ACP-speaking AI agent
 [agent]
 binary = "opencode"
-args = []
+args = ["acp"]
+working_dir = "."
+
+[agent.env]
+OPENCODE_ENABLE_QUESTION_TOOL = "1"
 
 # Channel subprocesses — user-facing interfaces
 [[channels]]
