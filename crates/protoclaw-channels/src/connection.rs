@@ -14,6 +14,10 @@ use tokio_util::codec::{FramedRead, FramedWrite};
 use crate::error::ChannelsError;
 use crate::types::ChannelCapabilities;
 
+/// Port discovery: channel subprocesses can print `PORT:{port}` to stderr
+/// to advertise their listening port (e.g., debug-http's HTTP server).
+/// This watch channel gets updated when the pattern is detected.
+
 /// Messages received from a channel subprocess.
 #[derive(Debug)]
 pub enum IncomingChannelMessage {
@@ -38,6 +42,7 @@ pub struct ChannelConnection {
     writer_handle: JoinHandle<()>,
     stderr_handle: JoinHandle<()>,
     capabilities: Option<ChannelCapabilities>,
+    port_rx: tokio::sync::watch::Receiver<u16>,
 }
 
 impl std::fmt::Debug for ChannelConnection {
@@ -120,12 +125,18 @@ impl ChannelConnection {
             }
         });
 
-        // Stderr task: log channel stderr at debug level
+        // Stderr task: log channel stderr at debug level, parse PORT:{port} for discovery
         let channel_name = config.name.clone();
+        let (port_tx, port_rx) = tokio::sync::watch::channel(0u16);
         let stderr_handle = tokio::spawn(async move {
             use tokio::io::{AsyncBufReadExt, BufReader};
             let mut lines = BufReader::new(stderr).lines();
             while let Ok(Some(line)) = lines.next_line().await {
+                if let Some(port_str) = line.strip_prefix("PORT:") {
+                    if let Ok(port) = port_str.trim().parse::<u16>() {
+                        let _ = port_tx.send(port);
+                    }
+                }
                 tracing::debug!(target: "channel_stderr", channel = %channel_name, "{}", line);
             }
         });
@@ -141,6 +152,7 @@ impl ChannelConnection {
             writer_handle,
             stderr_handle,
             capabilities: None,
+            port_rx,
         })
     }
 
@@ -223,6 +235,11 @@ impl ChannelConnection {
     /// Set capabilities after successful initialize handshake.
     pub fn set_capabilities(&mut self, caps: ChannelCapabilities) {
         self.capabilities = Some(caps);
+    }
+
+    /// Get a watch receiver for the channel's discovered port (from stderr PORT:{port}).
+    pub fn port_rx(&self) -> tokio::sync::watch::Receiver<u16> {
+        self.port_rx.clone()
     }
 }
 

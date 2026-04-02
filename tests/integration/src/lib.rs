@@ -10,6 +10,16 @@ pub fn mock_agent_path() -> String {
     path.to_string_lossy().to_string()
 }
 
+pub fn debug_http_path() -> String {
+    let mut path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    path.pop();
+    path.pop();
+    path.push("target");
+    path.push("debug");
+    path.push("debug-http");
+    path.to_string_lossy().to_string()
+}
+
 pub fn mock_agent_config() -> protoclaw_config::ProtoclawConfig {
     mock_agent_config_with_env(HashMap::new())
 }
@@ -22,7 +32,11 @@ pub fn mock_agent_config_with_env(env: HashMap<String, String>) -> protoclaw_con
             env,
             working_dir: None,
         },
-        channels: vec![],
+        channels: vec![protoclaw_config::ChannelConfig {
+            name: "debug-http".into(),
+            binary: debug_http_path(),
+            args: vec![],
+        }],
         mcp_servers: vec![],
         supervisor: protoclaw_config::SupervisorConfig {
             shutdown_timeout_secs: 5,

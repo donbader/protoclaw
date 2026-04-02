@@ -97,6 +97,16 @@ impl ChannelsManager {
         self
     }
 
+    /// Get a watch receiver for a named channel's discovered port (from stderr PORT:{port}).
+    /// Returns None if the channel doesn't exist or has no active connection.
+    pub fn channel_port(&self, name: &str) -> Option<tokio::sync::watch::Receiver<u16>> {
+        self.slots
+            .iter()
+            .find(|s| s.config.name == name)
+            .and_then(|s| s.connection.as_ref())
+            .map(|conn| conn.port_rx())
+    }
+
     /// Spawn and initialize a single channel subprocess.
     async fn spawn_and_initialize(
         config: &ChannelConfig,

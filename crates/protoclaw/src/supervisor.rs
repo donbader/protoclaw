@@ -2,21 +2,22 @@ use std::time::Duration;
 
 use protoclaw_config::ProtoclawConfig;
 use protoclaw_core::{CrashTracker, ExponentialBackoff, Manager, ManagerError, ManagerHandle};
-use tokio::sync::{broadcast, watch};
 use tokio_util::sync::CancellationToken;
 
 use protoclaw_agents::{AgentsCommand, AgentsManager};
-use protoclaw_channels::DebugHttpChannel;
+use protoclaw_channels::{ChannelsCommand, ChannelsManager};
+use protoclaw_core::ChannelEvent;
 use protoclaw_tools::{ToolsCommand, ToolsManager};
 
 pub struct Supervisor {
     config: ProtoclawConfig,
     tools_tx: Option<tokio::sync::mpsc::Sender<ToolsCommand>>,
     agents_cmd_tx: Option<tokio::sync::mpsc::Sender<AgentsCommand>>,
-    #[allow(dead_code)]
-    event_tx: broadcast::Sender<String>,
-    debug_http_port_tx: watch::Sender<u16>,
-    debug_http_port_rx: watch::Receiver<u16>,
+    channels_cmd_tx: Option<tokio::sync::mpsc::Sender<ChannelsCommand>>,
+    channel_events_tx: Option<tokio::sync::mpsc::Sender<ChannelEvent>>,
+    channel_events_rx: Option<tokio::sync::mpsc::Receiver<ChannelEvent>>,
+    debug_http_port_tx: tokio::sync::watch::Sender<u16>,
+    debug_http_port_rx: tokio::sync::watch::Receiver<u16>,
 }
 
 struct ManagerSlot {
@@ -45,19 +46,21 @@ async fn shutdown_signal() {
 
 impl Supervisor {
     pub fn new(config: ProtoclawConfig) -> Self {
-        let (event_tx, _) = broadcast::channel(256);
-        let (debug_http_port_tx, debug_http_port_rx) = watch::channel(0u16);
+        let (channel_events_tx, channel_events_rx) = tokio::sync::mpsc::channel(64);
+        let (debug_http_port_tx, debug_http_port_rx) = tokio::sync::watch::channel(0u16);
         Self {
             config,
             tools_tx: None,
             agents_cmd_tx: None,
-            event_tx,
+            channels_cmd_tx: None,
+            channel_events_tx: Some(channel_events_tx),
+            channel_events_rx: Some(channel_events_rx),
             debug_http_port_tx,
             debug_http_port_rx,
         }
     }
 
-    pub fn debug_http_port_rx(&self) -> watch::Receiver<u16> {
+    pub fn debug_http_port_rx(&self) -> tokio::sync::watch::Receiver<u16> {
         self.debug_http_port_rx.clone()
     }
 
@@ -129,6 +132,8 @@ impl Supervisor {
         let (tools_tx, tools_rx) = tokio::sync::mpsc::channel::<ToolsCommand>(16);
         self.tools_tx = Some(tools_tx.clone());
         let mut tools_rx = Some(tools_rx);
+        let mut channel_events_tx = self.channel_events_tx.take();
+        let mut channel_events_rx = self.channel_events_rx.take();
 
         for slot in slots.iter_mut() {
             tracing::info!(manager = %slot.name, "booting");
@@ -139,7 +144,8 @@ impl Supervisor {
                 &tools_tx,
                 tools_rx.take(),
                 self.agents_cmd_tx.as_ref(),
-                &self.debug_http_port_tx,
+                channel_events_tx.take(),
+                channel_events_rx.take(),
             );
 
             if slot.name == "agents" {
@@ -151,6 +157,26 @@ impl Supervisor {
             if let Err(e) = manager.start().await {
                 tracing::error!(manager = %slot.name, error = %e, "boot failed");
                 return Err(anyhow::anyhow!("failed to boot {}: {e}", slot.name));
+            }
+
+            // After channels manager starts, grab port discovery and command sender
+            if slot.name == "channels" {
+                if let ManagerKind::Channels(ref m) = manager {
+                    self.channels_cmd_tx = Some(m.command_sender());
+                    // Forward port discovery from channel subprocess to supervisor's watch
+                    if let Some(mut channel_port_rx) = m.channel_port("debug-http") {
+                        let port_tx = self.debug_http_port_tx.clone();
+                        tokio::spawn(async move {
+                            while channel_port_rx.changed().await.is_ok() {
+                                let port = *channel_port_rx.borrow();
+                                if port != 0 {
+                                    let _ = port_tx.send(port);
+                                    break;
+                                }
+                            }
+                        });
+                    }
+                }
             }
 
             let token = slot.cancel_token.clone();
@@ -239,7 +265,7 @@ impl Supervisor {
             } else {
                 None
             };
-            let mut manager = create_manager(&slot.name, &self.config, &tools_tx, tools_rx, self.agents_cmd_tx.as_ref(), &self.debug_http_port_tx);
+            let mut manager = create_manager(&slot.name, &self.config, &tools_tx, tools_rx, self.agents_cmd_tx.as_ref(), None, None);
             if let Err(e) = manager.start().await {
                 tracing::error!(manager = %slot.name, error = %e, "restart boot failed");
                 continue;
@@ -261,7 +287,8 @@ fn create_manager(
     tools_tx: &tokio::sync::mpsc::Sender<ToolsCommand>,
     tools_rx: Option<tokio::sync::mpsc::Receiver<ToolsCommand>>,
     agents_cmd_tx: Option<&tokio::sync::mpsc::Sender<AgentsCommand>>,
-    debug_http_port_tx: &watch::Sender<u16>,
+    channel_events_tx: Option<tokio::sync::mpsc::Sender<ChannelEvent>>,
+    channel_events_rx: Option<tokio::sync::mpsc::Receiver<ChannelEvent>>,
 ) -> ManagerKind {
     match name {
         "tools" => {
@@ -271,15 +298,21 @@ fn create_manager(
         }
         "agents" => {
             let handle = protoclaw_core::ManagerHandle::new(tools_tx.clone());
-            ManagerKind::Agents(Box::new(AgentsManager::new(config.agent.clone(), handle)))
+            let mut agents = AgentsManager::new(config.agent.clone(), handle);
+            if let Some(tx) = channel_events_tx {
+                agents = agents.with_channels_sender(tx);
+            }
+            ManagerKind::Agents(Box::new(agents))
         }
         "channels" => {
             let tx = agents_cmd_tx.expect("agents_cmd_tx required for channels manager");
             let agents_handle = ManagerHandle::new(tx.clone());
-            ManagerKind::Channels(
-                DebugHttpChannel::new(0, agents_handle)
-                    .with_port_tx(debug_http_port_tx.clone()),
-            )
+            let mut cm = ChannelsManager::new(config.channels.clone())
+                .with_agents_handle(agents_handle);
+            if let Some(rx) = channel_events_rx {
+                cm = cm.with_channel_events_rx(rx);
+            }
+            ManagerKind::Channels(cm)
         }
         _ => unreachable!("unknown manager: {name}"),
     }
@@ -288,7 +321,7 @@ fn create_manager(
 enum ManagerKind {
     Tools(ToolsManager),
     Agents(Box<AgentsManager>),
-    Channels(DebugHttpChannel),
+    Channels(ChannelsManager),
 }
 
 impl ManagerKind {
