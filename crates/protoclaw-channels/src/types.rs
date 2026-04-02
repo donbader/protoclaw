@@ -1,72 +1,11 @@
-use protoclaw_acp::PermissionOption;
-use serde::{Deserialize, Serialize};
-
-/// Channel capabilities advertised during initialize handshake.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct ChannelCapabilities {
-    pub streaming: bool,
-    pub rich_text: bool,
-}
-
-/// Initialize handshake — protoclaw sends to channel subprocess.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct ChannelInitializeParams {
-    pub protocol_version: u32,
-    pub channel_id: String,
-}
-
-/// Initialize handshake — channel subprocess responds.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct ChannelInitializeResult {
-    pub protocol_version: u32,
-    pub capabilities: ChannelCapabilities,
-}
-
-/// Protoclaw → Channel: deliver agent message/streaming update.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct DeliverMessage {
-    pub session_id: String,
-    pub content: serde_json::Value,
-}
-
-/// Protoclaw → Channel: show permission prompt to user.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct ChannelRequestPermission {
-    pub request_id: String,
-    pub session_id: String,
-    pub description: String,
-    pub options: Vec<PermissionOption>,
-}
-
-/// Peer identity information for inbound messages.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct PeerInfo {
-    pub channel_name: String,
-    pub peer_id: String,
-    pub kind: String,
-}
-
-/// Channel → Protoclaw: user sent a message.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct ChannelSendMessage {
-    pub peer_info: PeerInfo,
-    pub content: String,
-}
-
-/// Channel → Protoclaw: user responded to permission prompt.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct ChannelRespondPermission {
-    pub request_id: String,
-    pub option_id: String,
-}
+// Re-export SDK types for backward compatibility
+pub use protoclaw_sdk_types::channel::{
+    ChannelCapabilities, ChannelInitializeParams, ChannelInitializeResult,
+    ChannelRespondPermission, ChannelSendMessage, DeliverMessage, PeerInfo,
+};
+pub use protoclaw_sdk_types::permission::{
+    ChannelRequestPermission, PermissionOption, PermissionRequest, PermissionResponse,
+};
 
 #[cfg(test)]
 mod tests {

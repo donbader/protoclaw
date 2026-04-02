@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use protoclaw_acp::PermissionOption;
+use crate::types::PermissionOption;
 use protoclaw_agents::AgentsCommand;
 use protoclaw_config::ChannelConfig;
 use protoclaw_core::types::ChannelId;
