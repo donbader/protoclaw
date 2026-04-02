@@ -9,10 +9,13 @@ protoclaw-core = { workspace = true }
 protoclaw-config = { workspace = true }
 protoclaw-agents = { workspace = true }
 protoclaw-acp = { workspace = true }
+protoclaw-jsonrpc = { workspace = true }
 axum = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true, features = ["sync"] }
 tokio-util = { workspace = true }
+futures = { workspace = true }
+uuid = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
