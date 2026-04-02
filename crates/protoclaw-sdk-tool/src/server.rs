@@ -42,7 +42,7 @@ impl ToolServer {
         Ok(())
     }
 
-    fn build_tool_list(&self) -> Vec<RmcpTool> {
+    pub fn build_tool_list(&self) -> Vec<RmcpTool> {
         self.tools
             .values()
             .map(|t| {
@@ -58,7 +58,7 @@ impl ToolServer {
             .collect()
     }
 
-    async fn dispatch_tool(
+    pub async fn dispatch_tool(
         &self,
         name: &str,
         arguments: Option<serde_json::Map<String, serde_json::Value>>,
