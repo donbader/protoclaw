@@ -1,0 +1,12 @@
+services:
+  protoclaw:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    volumes:
+      - ./protoclaw.toml:/workspace/protoclaw.toml:ro
+    environment:
+      - RUST_LOG=info
+    env_file:
+      - .env
+    restart: unless-stopped
