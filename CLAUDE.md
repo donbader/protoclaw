@@ -151,7 +151,27 @@ Infrastructure sidecar that connects AI agents to the outside world. Protoclaw w
 <!-- GSD:conventions-start source:CONVENTIONS.md -->
 ## Conventions
 
-Conventions not yet established. Will populate as patterns emerge during development.
+### AGENTS.md Auto-Update Rule
+
+When making code changes that affect any of the following, update the relevant AGENTS.md file(s) in the same commit:
+- Module structure (adding/removing/renaming modules or crates)
+- Public API changes (new traits, renamed types, changed signatures)
+- Conventions (new patterns established, old patterns deprecated)
+- Anti-patterns (new "do not" rules discovered)
+- Build/test commands (new binaries, changed test requirements)
+- Crate dependency changes (new edges in the dependency graph)
+
+Check which AGENTS.md files exist in the affected directories and their parents. Update all that document the changed area. If unsure, update the root AGENTS.md at minimum.
+
+AGENTS.md locations:
+- `./AGENTS.md` — root project knowledge base
+- `./crates/AGENTS.md` — crate overview + SDK grouping
+- `./crates/protoclaw/AGENTS.md` — binary, supervisor, CLI
+- `./crates/protoclaw-core/AGENTS.md` — Manager trait, backoff, ChannelEvent
+- `./crates/protoclaw-agents/AGENTS.md` — ACP protocol, agent lifecycle
+- `./crates/protoclaw-channels/AGENTS.md` — channel routing, crash isolation
+- `./crates/protoclaw-tools/AGENTS.md` — MCP host, WASM sandbox
+- `./ext/channels/AGENTS.md` — external channel binaries
 <!-- GSD:conventions-end -->
 
 <!-- GSD:architecture-start source:ARCHITECTURE.md -->
