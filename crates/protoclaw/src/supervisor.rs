@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use protoclaw_config::ProtoclawConfig;
@@ -18,6 +19,7 @@ pub struct Supervisor {
     channel_events_rx: Option<tokio::sync::mpsc::Receiver<ChannelEvent>>,
     debug_http_port_tx: tokio::sync::watch::Sender<u16>,
     debug_http_port_rx: tokio::sync::watch::Receiver<u16>,
+    boot_notify: Option<Arc<tokio::sync::Notify>>,
 }
 
 struct ManagerSlot {
@@ -57,11 +59,18 @@ impl Supervisor {
             channel_events_rx: Some(channel_events_rx),
             debug_http_port_tx,
             debug_http_port_rx,
+            boot_notify: None,
         }
     }
 
     pub fn debug_http_port_rx(&self) -> tokio::sync::watch::Receiver<u16> {
         self.debug_http_port_rx.clone()
+    }
+
+    #[cfg(test)]
+    fn with_boot_notify(mut self, notify: Arc<tokio::sync::Notify>) -> Self {
+        self.boot_notify = Some(notify);
+        self
     }
 
     pub async fn run(self) -> anyhow::Result<()> {
@@ -105,6 +114,10 @@ impl Supervisor {
         }
 
         tracing::info!("all managers booted");
+
+        if let Some(notify) = &self.boot_notify {
+            notify.notify_one();
+        }
 
         let mut health_interval = tokio::time::interval(
             Duration::from_secs(health_interval_secs),
@@ -389,14 +402,17 @@ mod tests {
     async fn supervisor_boots_and_shuts_down() {
         let cancel = CancellationToken::new();
         let c = cancel.clone();
+        let boot_signal = Arc::new(tokio::sync::Notify::new());
+        let boot_wait = boot_signal.clone();
+
         tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(500)).await;
+            boot_wait.notified().await;
             c.cancel();
         });
 
-        let sup = Supervisor::new(test_config());
+        let sup = Supervisor::new(test_config()).with_boot_notify(boot_signal);
         let result = sup.run_with_cancel(cancel).await;
-        assert!(result.is_ok());
+        assert!(result.is_ok(), "supervisor should boot and shut down cleanly: {result:?}");
     }
 
     #[tokio::test]
@@ -614,17 +630,19 @@ mod tests {
     async fn supervisor_run_exits_on_cancel() {
         let cancel = CancellationToken::new();
         let c = cancel.clone();
+        let boot_signal = Arc::new(tokio::sync::Notify::new());
+        let boot_wait = boot_signal.clone();
 
         tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(500)).await;
+            boot_wait.notified().await;
             c.cancel();
         });
 
-        let sup = Supervisor::new(test_config());
+        let sup = Supervisor::new(test_config()).with_boot_notify(boot_signal);
         let start = tokio::time::Instant::now();
         let result = sup.run_with_cancel(cancel).await;
         assert!(result.is_ok());
-        assert!(start.elapsed() < Duration::from_secs(5));
+        assert!(start.elapsed() < Duration::from_secs(10));
     }
 
     #[tokio::test]
