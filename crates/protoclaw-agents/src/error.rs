@@ -7,7 +7,7 @@ pub enum AgentsError {
     #[error("Agent process exited unexpectedly: {0}")]
     ProcessExited(String),
     #[error("ACP protocol error: {0}")]
-    Protocol(#[from] protoclaw_acp::AcpError),
+    Protocol(#[from] crate::acp_error::AcpError),
     #[error("Request timed out after {0:?}")]
     Timeout(std::time::Duration),
     #[error("Agent connection closed")]

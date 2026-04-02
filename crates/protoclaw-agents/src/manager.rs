@@ -1,13 +1,16 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use protoclaw_acp::{
-    AcpError, ClientCapabilities, InitializeParams, InitializeResult, McpServerInfo,
-    PermissionOption, PromptMessage, SessionCancelParams, SessionLoadParams, SessionNewParams,
+use crate::acp_error::AcpError;
+use crate::acp_types::{
+    ClientCapabilities, InitializeParams, InitializeResult, McpServerInfo,
+    PromptMessage, SessionCancelParams, SessionLoadParams, SessionNewParams,
     SessionPromptParams, SessionUpdateEvent,
 };
 use protoclaw_config::AgentConfig;
 use protoclaw_core::{ChannelEvent, ExponentialBackoff, Manager, ManagerError, ManagerHandle, SessionKey};
+use protoclaw_sdk_agent::{AgentAdapter, GenericAcpAdapter};
+use protoclaw_sdk_types::PermissionOption;
 use protoclaw_tools::{McpServerUrl, ToolsCommand};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
@@ -75,12 +78,10 @@ pub struct AgentsManager {
     pending_permissions: HashMap<String, PendingPermission>,
     cmd_rx: Option<tokio::sync::mpsc::Receiver<AgentsCommand>>,
     cmd_tx: tokio::sync::mpsc::Sender<AgentsCommand>,
-    /// SessionKey → ACP session_id mapping for multi-session support.
     session_map: HashMap<SessionKey, String>,
-    /// ACP session_id → SessionKey reverse mapping for routing updates back.
     reverse_map: HashMap<String, SessionKey>,
-    /// Sender for ChannelEvents back to ChannelsManager (avoids circular dep).
     channels_sender: Option<mpsc::Sender<ChannelEvent>>,
+    adapter: Box<dyn AgentAdapter>,
 }
 
 impl AgentsManager {
@@ -99,7 +100,13 @@ impl AgentsManager {
             session_map: HashMap::new(),
             reverse_map: HashMap::new(),
             channels_sender: None,
+            adapter: Box::new(GenericAcpAdapter),
         }
+    }
+
+    pub fn with_adapter(mut self, adapter: Box<dyn AgentAdapter>) -> Self {
+        self.adapter = adapter;
+        self
     }
 
     /// Set the channels event sender for routing agent updates back to channels.
@@ -174,7 +181,7 @@ impl AgentsManager {
             .map_err(|_| AgentsError::Timeout(Duration::from_secs(30)))?
             .map_err(|_| AgentsError::ConnectionClosed)?;
 
-        let result: protoclaw_acp::SessionNewResult = serde_json::from_value(resp)?;
+        let result: crate::acp_types::SessionNewResult = serde_json::from_value(resp)?;
         self.session_id = Some(result.session_id.clone());
         tracing::info!(session_id = %result.session_id, "session started");
         Ok(())
@@ -310,7 +317,7 @@ impl AgentsManager {
             .map_err(|_| AgentsError::Timeout(Duration::from_secs(30)))?
             .map_err(|_| AgentsError::ConnectionClosed)?;
 
-        let result: protoclaw_acp::SessionNewResult = serde_json::from_value(resp)?;
+        let result: crate::acp_types::SessionNewResult = serde_json::from_value(resp)?;
         let acp_session_id = result.session_id.clone();
 
         self.session_map.insert(session_key.clone(), acp_session_id.clone());

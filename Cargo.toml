@@ -7,7 +7,6 @@ edition = "2024"
 rust-version = "1.85"
 
 [workspace.dependencies]
-protoclaw-acp = { path = "crates/protoclaw-acp" }
 protoclaw-agents = { path = "crates/protoclaw-agents" }
 protoclaw-jsonrpc = { path = "crates/protoclaw-jsonrpc" }
 protoclaw-tools = { path = "crates/protoclaw-tools" }
