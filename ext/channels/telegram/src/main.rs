@@ -1,4 +1,5 @@
 mod channel;
+mod deliver;
 mod dispatcher;
 mod peer;
 mod state;

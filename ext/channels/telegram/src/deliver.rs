@@ -1,0 +1,203 @@
+use std::time::Duration;
+
+use protoclaw_sdk_channel::ChannelSdkError;
+use teloxide::prelude::*;
+use teloxide::types::{ChatId, MessageId};
+use tokio::time::Instant;
+
+use crate::state::SharedState;
+
+pub fn content_to_string(content: &serde_json::Value) -> String {
+    match content {
+        serde_json::Value::String(s) => s.clone(),
+        other => serde_json::to_string(other).unwrap_or_default(),
+    }
+}
+
+pub fn split_message(text: &str, max_len: usize) -> Vec<String> {
+    if text.len() <= max_len {
+        return vec![text.to_string()];
+    }
+    let mut chunks = Vec::new();
+    let mut remaining = text;
+    while !remaining.is_empty() {
+        let end = if remaining.len() <= max_len {
+            remaining.len()
+        } else {
+            let mut boundary = max_len;
+            while boundary > 0 && !remaining.is_char_boundary(boundary) {
+                boundary -= 1;
+            }
+            if boundary == 0 {
+                max_len
+            } else {
+                boundary
+            }
+        };
+        chunks.push(remaining[..end].to_string());
+        remaining = &remaining[end..];
+    }
+    chunks
+}
+
+async fn throttle_edit(state: &SharedState, chat_id: i64) {
+    let last = state.last_edit_time.read().await.get(&chat_id).copied();
+    if let Some(last) = last {
+        let elapsed = last.elapsed();
+        if elapsed < Duration::from_secs(1) {
+            tokio::time::sleep(Duration::from_secs(1) - elapsed).await;
+        }
+    }
+    state
+        .last_edit_time
+        .write()
+        .await
+        .insert(chat_id, Instant::now());
+}
+
+pub async fn deliver_to_chat(
+    bot: &Bot,
+    state: &SharedState,
+    session_id: &str,
+    content: &serde_json::Value,
+) -> Result<(), ChannelSdkError> {
+    let chat_id = *state
+        .session_chat_map
+        .read()
+        .await
+        .get(session_id)
+        .ok_or_else(|| {
+            ChannelSdkError::Protocol(format!("unknown session: {session_id}"))
+        })?;
+
+    let text = content_to_string(content);
+
+    if text.is_empty() {
+        state.active_messages.write().await.remove(&chat_id);
+        return Ok(());
+    }
+
+    let chunks = split_message(&text, 4096);
+
+    for (i, chunk) in chunks.iter().enumerate() {
+        let existing_msg_id = if i == 0 {
+            state.active_messages.read().await.get(&chat_id).copied()
+        } else {
+            None
+        };
+
+        if let Some(msg_id) = existing_msg_id {
+            throttle_edit(state, chat_id).await;
+            let edit_result = bot
+                .edit_message_text(ChatId(chat_id), MessageId(msg_id), chunk)
+                .await;
+            match edit_result {
+                Ok(_) => continue,
+                Err(_) => {}
+            }
+        }
+
+        match bot.send_message(ChatId(chat_id), chunk).await {
+            Ok(sent) => {
+                state
+                    .active_messages
+                    .write()
+                    .await
+                    .insert(chat_id, sent.id.0);
+            }
+            Err(e) => {
+                return Err(ChannelSdkError::Protocol(format!(
+                    "telegram send error: {e}"
+                )));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn content_to_string_extracts_plain_string() {
+        let val = serde_json::Value::String("hello".into());
+        assert_eq!(content_to_string(&val), "hello");
+    }
+
+    #[test]
+    fn content_to_string_serializes_object() {
+        let val = serde_json::json!({"key": "value"});
+        let result = content_to_string(&val);
+        assert!(result.contains("key"));
+        assert!(result.contains("value"));
+    }
+
+    #[test]
+    fn content_to_string_serializes_number() {
+        let val = serde_json::json!(42);
+        assert_eq!(content_to_string(&val), "42");
+    }
+
+    #[test]
+    fn split_message_short_text_returns_single_chunk() {
+        let chunks = split_message("hello", 4096);
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0], "hello");
+    }
+
+    #[test]
+    fn split_message_long_text_splits_at_boundary() {
+        let text = "a".repeat(8192);
+        let chunks = split_message(&text, 4096);
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks[0].len(), 4096);
+        assert_eq!(chunks[1].len(), 4096);
+    }
+
+    #[test]
+    fn split_message_respects_utf8_boundaries() {
+        let text = "é".repeat(3000);
+        let chunks = split_message(&text, 4096);
+        assert!(chunks.len() >= 2);
+        for chunk in &chunks {
+            assert!(chunk.is_char_boundary(chunk.len()));
+        }
+    }
+
+    #[test]
+    fn split_message_empty_returns_single_empty() {
+        let chunks = split_message("", 4096);
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0], "");
+    }
+
+    #[tokio::test]
+    async fn extract_chat_id_returns_error_for_unknown_session() {
+        let state = SharedState::new();
+        let bot = Bot::new("test-token");
+        let content = serde_json::json!("hello");
+        let result = deliver_to_chat(&bot, &state, "unknown-session", &content).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("unknown session"));
+    }
+
+    #[tokio::test]
+    async fn empty_content_clears_active_message() {
+        let state = SharedState::new();
+        state
+            .session_chat_map
+            .write()
+            .await
+            .insert("sess-1".into(), 12345);
+        state.active_messages.write().await.insert(12345, 99);
+
+        let bot = Bot::new("test-token");
+        let content = serde_json::json!("");
+        let result = deliver_to_chat(&bot, &state, "sess-1", &content).await;
+        assert!(result.is_ok());
+        assert!(state.active_messages.read().await.get(&12345).is_none());
+    }
+}

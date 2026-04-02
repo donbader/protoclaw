@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use protoclaw_sdk_types::{ChannelSendMessage, PermissionResponse};
 use tokio::sync::{mpsc, oneshot, Mutex, RwLock};
+use tokio::time::Instant;
 
 pub struct SharedState {
     pub outbound: Mutex<Option<mpsc::Sender<ChannelSendMessage>>>,
@@ -9,6 +10,7 @@ pub struct SharedState {
     pub permission_resolvers: Mutex<HashMap<String, oneshot::Sender<PermissionResponse>>>,
     pub permission_messages: Mutex<HashMap<String, (i64, i32)>>,
     pub session_chat_map: RwLock<HashMap<String, i64>>,
+    pub last_edit_time: RwLock<HashMap<i64, Instant>>,
 }
 
 impl SharedState {
@@ -19,6 +21,7 @@ impl SharedState {
             permission_resolvers: Mutex::new(HashMap::new()),
             permission_messages: Mutex::new(HashMap::new()),
             session_chat_map: RwLock::new(HashMap::new()),
+            last_edit_time: RwLock::new(HashMap::new()),
         }
     }
 }

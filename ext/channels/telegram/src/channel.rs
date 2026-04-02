@@ -40,8 +40,9 @@ impl Channel for TelegramChannel {
         Ok(())
     }
 
-    async fn deliver_message(&mut self, _msg: DeliverMessage) -> Result<(), ChannelSdkError> {
-        todo!("Implemented in Plan 07-02")
+    async fn deliver_message(&mut self, msg: DeliverMessage) -> Result<(), ChannelSdkError> {
+        crate::deliver::deliver_to_chat(&self.bot, &self.state, &msg.session_id, &msg.content)
+            .await
     }
 
     async fn request_permission(
