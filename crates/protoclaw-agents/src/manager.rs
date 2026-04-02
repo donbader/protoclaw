@@ -7,9 +7,9 @@ use protoclaw_acp::{
     SessionPromptParams, SessionUpdateEvent,
 };
 use protoclaw_config::AgentConfig;
-use protoclaw_core::{ExponentialBackoff, Manager, ManagerError, ManagerHandle};
+use protoclaw_core::{ChannelEvent, ExponentialBackoff, Manager, ManagerError, ManagerHandle, SessionKey};
 use protoclaw_tools::{McpServerUrl, ToolsCommand};
-use tokio::sync::oneshot;
+use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
 use crate::connection::{AgentConnection, IncomingMessage};
@@ -42,6 +42,17 @@ pub enum AgentsCommand {
         reply: oneshot::Sender<Vec<PendingPermissionInfo>>,
     },
     Shutdown,
+    /// Create a new ACP session keyed by channel+peer identity.
+    CreateSession {
+        session_key: SessionKey,
+        reply: oneshot::Sender<Result<String, AgentsError>>,
+    },
+    /// Send a prompt to an existing session identified by session key.
+    PromptSession {
+        session_key: SessionKey,
+        message: String,
+        reply: oneshot::Sender<Result<(), AgentsError>>,
+    },
 }
 
 pub struct AgentsManager {
@@ -54,6 +65,12 @@ pub struct AgentsManager {
     pending_permissions: HashMap<String, PendingPermission>,
     cmd_rx: Option<tokio::sync::mpsc::Receiver<AgentsCommand>>,
     cmd_tx: tokio::sync::mpsc::Sender<AgentsCommand>,
+    /// SessionKey → ACP session_id mapping for multi-session support.
+    session_map: HashMap<SessionKey, String>,
+    /// ACP session_id → SessionKey reverse mapping for routing updates back.
+    reverse_map: HashMap<String, SessionKey>,
+    /// Sender for ChannelEvents back to ChannelsManager (avoids circular dep).
+    channels_sender: Option<mpsc::Sender<ChannelEvent>>,
 }
 
 impl AgentsManager {
@@ -69,7 +86,16 @@ impl AgentsManager {
             pending_permissions: HashMap::new(),
             cmd_rx: Some(cmd_rx),
             cmd_tx,
+            session_map: HashMap::new(),
+            reverse_map: HashMap::new(),
+            channels_sender: None,
         }
+    }
+
+    /// Set the channels event sender for routing agent updates back to channels.
+    pub fn with_channels_sender(mut self, sender: mpsc::Sender<ChannelEvent>) -> Self {
+        self.channels_sender = Some(sender);
+        self
     }
 
     pub fn command_sender(&self) -> tokio::sync::mpsc::Sender<AgentsCommand> {
@@ -195,6 +221,14 @@ impl AgentsManager {
                 self.shutdown_agent().await;
                 return true;
             }
+            AgentsCommand::CreateSession { session_key, reply } => {
+                let result = self.create_session(session_key).await;
+                let _ = reply.send(result);
+            }
+            AgentsCommand::PromptSession { session_key, message, reply } => {
+                let result = self.prompt_session(&session_key, &message).await;
+                let _ = reply.send(result);
+            }
         }
         false
     }
@@ -218,6 +252,76 @@ impl AgentsManager {
         Ok(())
     }
 
+    /// Create a new ACP session keyed by SessionKey.
+    async fn create_session(&mut self, session_key: SessionKey) -> Result<String, AgentsError> {
+        // If session already exists for this key, return existing ACP session_id
+        if let Some(acp_id) = self.session_map.get(&session_key) {
+            return Ok(acp_id.clone());
+        }
+
+        // Get MCP server URLs from tools manager
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.tools_handle
+            .send(ToolsCommand::GetMcpUrls { reply: reply_tx })
+            .await
+            .map_err(|e| AgentsError::SpawnFailed(format!("tools handle: {e}")))?;
+
+        let urls: Vec<McpServerUrl> = reply_rx.await.unwrap_or_default();
+        let mcp_servers: Vec<McpServerInfo> = urls
+            .iter()
+            .map(|u| McpServerInfo {
+                name: u.name.clone(),
+                server_type: "http".into(),
+                url: u.url.clone(),
+                headers: None,
+            })
+            .collect();
+
+        let params = serde_json::to_value(SessionNewParams {
+            session_id: None,
+            mcp_servers: if mcp_servers.is_empty() {
+                None
+            } else {
+                Some(mcp_servers)
+            },
+        })?;
+
+        let conn = self.connection.as_ref().ok_or(AgentsError::ConnectionClosed)?;
+        let rx = conn.send_request("session/new", params).await?;
+        let resp = tokio::time::timeout(Duration::from_secs(30), rx)
+            .await
+            .map_err(|_| AgentsError::Timeout(Duration::from_secs(30)))?
+            .map_err(|_| AgentsError::ConnectionClosed)?;
+
+        let result: protoclaw_acp::SessionNewResult = serde_json::from_value(resp)?;
+        let acp_session_id = result.session_id.clone();
+
+        self.session_map.insert(session_key.clone(), acp_session_id.clone());
+        self.reverse_map.insert(acp_session_id.clone(), session_key);
+
+        tracing::info!(session_key = %acp_session_id, "multi-session created");
+        Ok(acp_session_id)
+    }
+
+    /// Send a prompt to an existing session identified by SessionKey.
+    async fn prompt_session(&self, session_key: &SessionKey, message: &str) -> Result<(), AgentsError> {
+        let acp_session_id = self.session_map.get(session_key)
+            .ok_or(AgentsError::ConnectionClosed)?;
+
+        let conn = self.connection.as_ref().ok_or(AgentsError::ConnectionClosed)?;
+
+        let params = serde_json::to_value(SessionPromptParams {
+            session_id: acp_session_id.clone(),
+            message: PromptMessage {
+                role: "user".into(),
+                content: message.into(),
+            },
+        })?;
+
+        let _response_rx = conn.send_request("session/prompt", params).await?;
+        Ok(())
+    }
+
     async fn handle_incoming(&mut self, msg: IncomingMessage) {
         match msg {
             IncomingMessage::AgentNotification(value) | IncomingMessage::AgentRequest(value) => {
@@ -226,12 +330,22 @@ impl AgentsManager {
 
                 match method {
                     "session/update" => {
-                        if let Ok(event) = serde_json::from_value::<SessionUpdateEvent>(params) {
+                        if let Ok(event) = serde_json::from_value::<SessionUpdateEvent>(params.clone()) {
                             tracing::debug!(session_id = %event.session_id, update = ?event.update, "session update");
+
+                            // Route back to originating channel via reverse_map
+                            if let Some(session_key) = self.reverse_map.get(&event.session_id).cloned() {
+                                if let Some(sender) = &self.channels_sender {
+                                    let _ = sender.send(ChannelEvent::DeliverMessage {
+                                        session_key,
+                                        content: params,
+                                    }).await;
+                                }
+                            }
                         }
                     }
                     "session/request_permission" => {
-                        self.handle_permission_request(&value, &params);
+                        self.handle_permission_request(&value, &params).await;
                     }
                     "fs/read_text_file" => {
                         self.handle_fs_read(&value, &params).await;
@@ -247,7 +361,7 @@ impl AgentsManager {
         }
     }
 
-    fn handle_permission_request(&mut self, request: &serde_json::Value, params: &serde_json::Value) {
+    async fn handle_permission_request(&mut self, request: &serde_json::Value, params: &serde_json::Value) {
         let request_id = params["requestId"]
             .as_str()
             .unwrap_or("")
@@ -263,6 +377,20 @@ impl AgentsManager {
             .unwrap_or_default();
 
         tracing::info!(%request_id, %description, "permission requested");
+
+        // Route permission to originating channel via session_id → session_key
+        let session_id = params["sessionId"].as_str().unwrap_or("");
+        if let Some(session_key) = self.reverse_map.get(session_id).cloned() {
+            if let Some(sender) = &self.channels_sender {
+                let options_json = serde_json::to_value(&options).unwrap_or_default();
+                let _ = sender.send(ChannelEvent::RoutePermission {
+                    session_key,
+                    request_id: request_id.clone(),
+                    description: description.clone(),
+                    options: options_json,
+                }).await;
+            }
+        }
 
         self.pending_permissions.insert(
             request_id,
