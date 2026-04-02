@@ -41,6 +41,14 @@ COPY crates/ crates/
 COPY ext/ ext/
 COPY tests/ tests/
 
+# Invalidate cargo fingerprints for workspace crates so they recompile with real sources
+# (third-party deps stay cached from the dummy build above)
+RUN find /build/target/release/.fingerprint \
+    -name "protoclaw-*" -o -name "protoclaw_*" -o \
+    -name "telegram*" -o -name "debug_http*" -o \
+    -name "mock_agent*" -o -name "integration*" \
+    | xargs rm -rf
+
 RUN cargo build --release --bin protoclaw --bin telegram-channel
 
 FROM debian:bookworm-slim AS runtime
