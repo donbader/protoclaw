@@ -3,7 +3,7 @@ use std::sync::Arc;
 use protoclaw_sdk_channel::ChannelSdkError;
 use protoclaw_sdk_types::ChannelSendMessage;
 use teloxide::prelude::*;
-use teloxide::types::{Chat, ChatKind, PublicChatKind};
+use teloxide::types::{Chat, ChatId, ChatKind, InlineKeyboardMarkup, MessageId, PublicChatKind};
 
 use crate::peer::peer_info_from_chat;
 use crate::state::SharedState;
@@ -54,10 +54,41 @@ async fn handle_text_message(
     Ok(())
 }
 
+async fn handle_callback_query(
+    bot: Bot,
+    q: CallbackQuery,
+    state: Arc<SharedState>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let data = match q.data.as_deref() {
+        Some(d) => d,
+        None => return Ok(()),
+    };
+
+    let (request_id, option_id) = match crate::permissions::parse_callback_data(data) {
+        Some(pair) => pair,
+        None => return Ok(()),
+    };
+
+    let _ = bot.answer_callback_query(q.id.clone()).await;
+
+    if let Some((chat_id, msg_id)) = state.permission_messages.lock().await.get(request_id).copied()
+    {
+        let empty_kb = InlineKeyboardMarkup::new(Vec::<Vec<teloxide::types::InlineKeyboardButton>>::new());
+        let _ = bot
+            .edit_message_reply_markup(ChatId(chat_id), MessageId(msg_id))
+            .reply_markup(empty_kb)
+            .await;
+    }
+
+    crate::permissions::process_callback(request_id, option_id, &state).await;
+
+    Ok(())
+}
+
 pub async fn run_dispatcher(bot: Bot, state: Arc<SharedState>) {
-    let handler = dptree::entry().branch(
-        Update::filter_message().endpoint(handle_text_message),
-    );
+    let handler = dptree::entry()
+        .branch(Update::filter_message().endpoint(handle_text_message))
+        .branch(Update::filter_callback_query().endpoint(handle_callback_query));
 
     Dispatcher::builder(bot, handler)
         .dependencies(dptree::deps![state])

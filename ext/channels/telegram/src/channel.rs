@@ -3,6 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use protoclaw_sdk_channel::{Channel, ChannelCapabilities, ChannelSdkError, ChannelSendMessage};
 use protoclaw_sdk_types::{ChannelRequestPermission, DeliverMessage, PermissionResponse};
+use teloxide::payloads::SendMessageSetters;
+use teloxide::prelude::Requester;
 use teloxide::Bot;
 use tokio::sync::mpsc;
 
@@ -47,9 +49,47 @@ impl Channel for TelegramChannel {
 
     async fn request_permission(
         &mut self,
-        _req: ChannelRequestPermission,
+        req: ChannelRequestPermission,
     ) -> Result<PermissionResponse, ChannelSdkError> {
-        todo!("Implemented in Plan 07-03")
+        let chat_id = *self
+            .state
+            .session_chat_map
+            .read()
+            .await
+            .get(&req.session_id)
+            .ok_or_else(|| {
+                ChannelSdkError::Protocol(format!(
+                    "unknown session for permission: {}",
+                    req.session_id
+                ))
+            })?;
+
+        let keyboard =
+            crate::permissions::build_permission_keyboard(&req.request_id, &req.options);
+
+        let sent = self
+            .bot
+            .send_message(teloxide::types::ChatId(chat_id), &req.description)
+            .reply_markup(keyboard)
+            .await
+            .map_err(|e| ChannelSdkError::Protocol(format!("telegram send error: {e}")))?;
+
+        self.state
+            .permission_messages
+            .lock()
+            .await
+            .insert(req.request_id.clone(), (chat_id, sent.id.0));
+
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.state
+            .permission_resolvers
+            .lock()
+            .await
+            .insert(req.request_id.clone(), tx);
+
+        rx.await.map_err(|_| {
+            ChannelSdkError::Protocol("permission response channel closed".into())
+        })
     }
 }
 
