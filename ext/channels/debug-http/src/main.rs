@@ -1,14 +1,19 @@
+use std::collections::HashMap;
 use std::convert::Infallible;
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use axum::extract::{Path, State};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Json};
 use axum::routing::{get, post};
 use axum::Router;
+use protoclaw_sdk_channel::{Channel, ChannelCapabilities, ChannelHarness, ChannelSdkError, ChannelSendMessage};
+use protoclaw_sdk_types::{
+    ChannelRequestPermission, DeliverMessage, PeerInfo, PermissionResponse,
+};
 use serde::Deserialize;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::sync::{broadcast, Mutex, RwLock};
+use tokio::sync::{broadcast, mpsc, oneshot, Mutex, RwLock};
 use tokio_stream::StreamExt;
 
 /// Pending permission request stored for HTTP retrieval.
@@ -22,15 +27,16 @@ struct PendingPermission {
     options: serde_json::Value,
 }
 
-/// Shared state between stdio reader task and axum HTTP handlers.
-#[derive(Clone)]
-struct AppState {
-    /// Send JSON-RPC messages to stdout (channel → protoclaw).
-    stdout_tx: Arc<Mutex<tokio::io::Stdout>>,
+/// Shared state between Channel impl and HTTP handlers.
+struct SharedState {
+    /// Outbound sender provided by ChannelHarness in on_ready.
+    outbound: Mutex<Option<mpsc::Sender<ChannelSendMessage>>>,
     /// Broadcast agent updates to SSE subscribers.
     event_tx: broadcast::Sender<String>,
     /// Pending permission requests from the agent.
-    pending_permissions: Arc<RwLock<Vec<PendingPermission>>>,
+    pending_permissions: RwLock<Vec<PendingPermission>>,
+    /// Oneshot senders for permission responses — HTTP handler resolves these.
+    permission_resolvers: Mutex<HashMap<String, oneshot::Sender<PermissionResponse>>>,
 }
 
 #[derive(Deserialize)]
@@ -42,6 +48,177 @@ struct MessageBody {
 struct PermissionResponseBody {
     #[serde(rename = "optionId")]
     option_id: String,
+}
+
+struct DebugHttpChannel {
+    state: Arc<SharedState>,
+    port: u16,
+}
+
+#[async_trait]
+impl Channel for DebugHttpChannel {
+    fn capabilities(&self) -> ChannelCapabilities {
+        ChannelCapabilities {
+            streaming: true,
+            rich_text: false,
+        }
+    }
+
+    async fn on_ready(
+        &mut self,
+        outbound: mpsc::Sender<ChannelSendMessage>,
+    ) -> Result<(), ChannelSdkError> {
+        *self.state.outbound.lock().await = Some(outbound);
+
+        let router = build_router(self.state.clone());
+        let addr = format!("127.0.0.1:{}", self.port);
+        let listener = tokio::net::TcpListener::bind(&addr)
+            .await
+            .map_err(|e| ChannelSdkError::Io(e))?;
+        let bound_port = listener.local_addr().unwrap().port();
+
+        eprintln!("PORT:{bound_port}");
+        tracing::info!(port = bound_port, "debug-http listening");
+
+        tokio::spawn(async move {
+            axum::serve(listener, router).await.ok();
+        });
+
+        Ok(())
+    }
+
+    async fn deliver_message(&mut self, msg: DeliverMessage) -> Result<(), ChannelSdkError> {
+        let content_str = match msg.content {
+            serde_json::Value::String(s) => s,
+            other => serde_json::to_string(&other).unwrap_or_default(),
+        };
+        let _ = self.state.event_tx.send(content_str);
+        Ok(())
+    }
+
+    async fn request_permission(
+        &mut self,
+        req: ChannelRequestPermission,
+    ) -> Result<PermissionResponse, ChannelSdkError> {
+        let (tx, rx) = oneshot::channel();
+
+        self.state
+            .pending_permissions
+            .write()
+            .await
+            .push(PendingPermission {
+                request_id: req.request_id.clone(),
+                session_id: req.session_id,
+                description: req.description,
+                options: serde_json::to_value(&req.options).unwrap_or_default(),
+            });
+
+        self.state
+            .permission_resolvers
+            .lock()
+            .await
+            .insert(req.request_id.clone(), tx);
+
+        rx.await.map_err(|_| {
+            ChannelSdkError::Protocol("permission response channel closed".into())
+        })
+    }
+}
+
+fn build_router(state: Arc<SharedState>) -> Router {
+    Router::new()
+        .route("/health", get(handle_health))
+        .route("/message", post(handle_message))
+        .route("/events", get(handle_events))
+        .route("/cancel", post(handle_cancel))
+        .route("/permissions/pending", get(handle_permissions_pending))
+        .route("/permissions/{id}/respond", post(handle_permission_respond))
+        .with_state(state)
+}
+
+async fn handle_health() -> Json<serde_json::Value> {
+    Json(serde_json::json!({"status": "ok"}))
+}
+
+async fn handle_message(
+    State(state): State<Arc<SharedState>>,
+    Json(body): Json<MessageBody>,
+) -> impl IntoResponse {
+    let outbound = state.outbound.lock().await;
+    if let Some(tx) = outbound.as_ref() {
+        let msg = ChannelSendMessage {
+            peer_info: PeerInfo {
+                channel_name: "debug-http".into(),
+                peer_id: "local".into(),
+                kind: "local".into(),
+            },
+            content: body.message,
+        };
+        let _ = tx.send(msg).await;
+    }
+    (
+        axum::http::StatusCode::OK,
+        Json(serde_json::json!({"status": "sent"})),
+    )
+}
+
+async fn handle_events(
+    State(state): State<Arc<SharedState>>,
+) -> Sse<impl tokio_stream::Stream<Item = Result<Event, Infallible>>> {
+    let rx = state.event_tx.subscribe();
+    let stream = tokio_stream::wrappers::BroadcastStream::new(rx).filter_map(|result| match result {
+        Ok(data) => Some(Ok(Event::default().data(data))),
+        Err(_) => None,
+    });
+    Sse::new(stream).keep_alive(KeepAlive::default())
+}
+
+async fn handle_cancel(State(state): State<Arc<SharedState>>) -> Json<serde_json::Value> {
+    let outbound = state.outbound.lock().await;
+    if let Some(tx) = outbound.as_ref() {
+        let msg = ChannelSendMessage {
+            peer_info: PeerInfo {
+                channel_name: "debug-http".into(),
+                peer_id: "local".into(),
+                kind: "local".into(),
+            },
+            content: "__cancel__".into(),
+        };
+        let _ = tx.send(msg).await;
+    }
+    Json(serde_json::json!({"status": "cancelled"}))
+}
+
+async fn handle_permissions_pending(
+    State(state): State<Arc<SharedState>>,
+) -> Json<serde_json::Value> {
+    let perms = state.pending_permissions.read().await;
+    let items: Vec<serde_json::Value> = perms
+        .iter()
+        .map(|p| serde_json::to_value(p).unwrap_or(serde_json::json!(null)))
+        .collect();
+    Json(serde_json::Value::Array(items))
+}
+
+async fn handle_permission_respond(
+    State(state): State<Arc<SharedState>>,
+    Path(id): Path<String>,
+    Json(body): Json<PermissionResponseBody>,
+) -> Json<serde_json::Value> {
+    {
+        let mut perms = state.pending_permissions.write().await;
+        perms.retain(|p| p.request_id != id);
+    }
+    {
+        let mut resolvers = state.permission_resolvers.lock().await;
+        if let Some(tx) = resolvers.remove(&id) {
+            let _ = tx.send(PermissionResponse {
+                request_id: id.clone(),
+                option_id: body.option_id,
+            });
+        }
+    }
+    Json(serde_json::json!({"status": "responded"}))
 }
 
 #[tokio::main]
@@ -60,208 +237,191 @@ async fn main() {
         .unwrap_or(0);
 
     let (event_tx, _) = broadcast::channel::<String>(256);
-    let stdout_tx = Arc::new(Mutex::new(tokio::io::stdout()));
 
-    let state = AppState {
-        stdout_tx: stdout_tx.clone(),
-        event_tx: event_tx.clone(),
-        pending_permissions: Arc::new(RwLock::new(Vec::new())),
+    let state = Arc::new(SharedState {
+        outbound: Mutex::new(None),
+        event_tx,
+        pending_permissions: RwLock::new(Vec::new()),
+        permission_resolvers: Mutex::new(HashMap::new()),
+    });
+
+    let channel = DebugHttpChannel {
+        state: state.clone(),
+        port,
     };
 
-    // Handle initialize handshake from protoclaw on stdin
-    let stdin = tokio::io::stdin();
-    let reader = BufReader::new(stdin);
-    let mut lines = reader.lines();
-
-    // Wait for initialize request
-    if let Ok(Some(line)) = lines.next_line().await {
-        if let Ok(msg) = serde_json::from_str::<serde_json::Value>(&line) {
-            let method = msg["method"].as_str().unwrap_or("");
-            if method == "initialize" {
-                let id = msg.get("id").cloned();
-                let resp = serde_json::json!({
-                    "jsonrpc": "2.0",
-                    "id": id,
-                    "result": {
-                        "protocolVersion": 1,
-                        "capabilities": {
-                            "streaming": true,
-                            "richText": false
-                        }
-                    }
-                });
-                write_stdout(&stdout_tx, &resp).await;
-                tracing::info!("initialize handshake complete");
-            }
-        }
-    }
-
-    // Start HTTP server
-    let router = build_router(state.clone());
-    let addr = format!("127.0.0.1:{port}");
-    let listener = tokio::net::TcpListener::bind(&addr)
-        .await
-        .expect("failed to bind");
-    let bound_port = listener.local_addr().unwrap().port();
-
-    // Port discovery: print to stderr for ChannelsManager
-    eprintln!("PORT:{bound_port}");
-    tracing::info!(port = bound_port, "debug-http listening");
-
-    // Spawn HTTP server
-    let http_handle = tokio::spawn(async move {
-        axum::serve(listener, router).await.ok();
-    });
-
-    // Spawn stdin reader task — routes deliver_message to SSE, request_permission to pending store
-    let reader_state = state.clone();
-    let stdin_handle = tokio::spawn(async move {
-        while let Ok(Some(line)) = lines.next_line().await {
-            if line.trim().is_empty() {
-                continue;
-            }
-            let msg: serde_json::Value = match serde_json::from_str(&line) {
-                Ok(v) => v,
-                Err(_) => continue,
-            };
-
-            let method = msg["method"].as_str().unwrap_or("");
-            let params = msg.get("params").cloned().unwrap_or(serde_json::Value::Null);
-
-            match method {
-                "channel/deliverMessage" => {
-                    let content = params.get("content").cloned().unwrap_or(serde_json::Value::Null);
-                    let content_str = match content {
-                        serde_json::Value::String(s) => s,
-                        other => serde_json::to_string(&other).unwrap_or_default(),
-                    };
-                    let _ = reader_state.event_tx.send(content_str);
-                }
-                "channel/requestPermission" => {
-                    let perm = PendingPermission {
-                        request_id: params["requestId"].as_str().unwrap_or("").to_string(),
-                        session_id: params["sessionId"].as_str().unwrap_or("").to_string(),
-                        description: params["description"].as_str().unwrap_or("").to_string(),
-                        options: params.get("options").cloned().unwrap_or(serde_json::json!([])),
-                    };
-                    reader_state.pending_permissions.write().await.push(perm);
-                }
-                _ => {
-                    tracing::debug!(method = %method, "unhandled stdin message");
-                }
-            }
-        }
-        tracing::info!("stdin closed, shutting down");
-    });
-
-    // Wait for stdin EOF (protoclaw killed us) or HTTP server exit
-    tokio::select! {
-        _ = stdin_handle => {
-            tracing::info!("stdin reader exited");
-        }
-        _ = http_handle => {
-            tracing::info!("http server exited");
-        }
+    if let Err(e) = ChannelHarness::new(channel).run_stdio().await {
+        tracing::error!(%e, "channel harness exited with error");
     }
 }
 
-async fn write_stdout(stdout_tx: &Arc<Mutex<tokio::io::Stdout>>, msg: &serde_json::Value) {
-    let mut line = serde_json::to_string(msg).expect("failed to serialize");
-    line.push('\n');
-    let mut stdout = stdout_tx.lock().await;
-    stdout.write_all(line.as_bytes()).await.expect("failed to write stdout");
-    stdout.flush().await.expect("failed to flush stdout");
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use tower::ServiceExt;
 
-fn build_router(state: AppState) -> Router {
-    Router::new()
-        .route("/health", get(handle_health))
-        .route("/message", post(handle_message))
-        .route("/events", get(handle_events))
-        .route("/cancel", post(handle_cancel))
-        .route("/permissions/pending", get(handle_permissions_pending))
-        .route("/permissions/{id}/respond", post(handle_permission_respond))
-        .with_state(state)
-}
-
-async fn handle_health() -> Json<serde_json::Value> {
-    Json(serde_json::json!({"status": "ok"}))
-}
-
-async fn handle_message(
-    State(state): State<AppState>,
-    Json(body): Json<MessageBody>,
-) -> impl IntoResponse {
-    let msg = serde_json::json!({
-        "jsonrpc": "2.0",
-        "method": "channel/sendMessage",
-        "params": {
-            "peerInfo": {
-                "channelName": "debug-http",
-                "peerId": "local",
-                "kind": "local"
-            },
-            "content": body.message
-        }
-    });
-    write_stdout(&state.stdout_tx, &msg).await;
-    (
-        axum::http::StatusCode::OK,
-        Json(serde_json::json!({"status": "sent"})),
-    )
-}
-
-async fn handle_events(
-    State(state): State<AppState>,
-) -> Sse<impl tokio_stream::Stream<Item = Result<Event, Infallible>>> {
-    let rx = state.event_tx.subscribe();
-    let stream = tokio_stream::wrappers::BroadcastStream::new(rx).filter_map(|result| match result {
-        Ok(data) => Some(Ok(Event::default().data(data))),
-        Err(_) => None,
-    });
-    Sse::new(stream).keep_alive(KeepAlive::default())
-}
-
-async fn handle_cancel(State(state): State<AppState>) -> Json<serde_json::Value> {
-    let msg = serde_json::json!({
-        "jsonrpc": "2.0",
-        "method": "channel/cancelOperation",
-        "params": {}
-    });
-    write_stdout(&state.stdout_tx, &msg).await;
-    Json(serde_json::json!({"status": "cancelled"}))
-}
-
-async fn handle_permissions_pending(
-    State(state): State<AppState>,
-) -> Json<serde_json::Value> {
-    let perms = state.pending_permissions.read().await;
-    let items: Vec<serde_json::Value> = perms
-        .iter()
-        .map(|p| serde_json::to_value(p).unwrap_or(serde_json::json!(null)))
-        .collect();
-    Json(serde_json::Value::Array(items))
-}
-
-async fn handle_permission_respond(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    Json(body): Json<PermissionResponseBody>,
-) -> Json<serde_json::Value> {
-    // Remove from pending
-    {
-        let mut perms = state.pending_permissions.write().await;
-        perms.retain(|p| p.request_id != id);
+    fn make_shared_state() -> Arc<SharedState> {
+        let (event_tx, _) = broadcast::channel::<String>(256);
+        Arc::new(SharedState {
+            outbound: Mutex::new(None),
+            event_tx,
+            pending_permissions: RwLock::new(Vec::new()),
+            permission_resolvers: Mutex::new(HashMap::new()),
+        })
     }
 
-    let msg = serde_json::json!({
-        "jsonrpc": "2.0",
-        "method": "channel/respondPermission",
-        "params": {
-            "requestId": id,
-            "optionId": body.option_id
+    #[test]
+    fn debug_http_channel_capabilities() {
+        let state = make_shared_state();
+        let ch = DebugHttpChannel { state, port: 0 };
+        let caps = ch.capabilities();
+        assert!(caps.streaming, "debug-http must support streaming");
+        assert!(!caps.rich_text, "debug-http must not claim rich_text");
+    }
+
+    #[tokio::test]
+    async fn on_ready_stores_outbound_sender() {
+        let state = make_shared_state();
+        let mut ch = DebugHttpChannel {
+            state: state.clone(),
+            port: 0,
+        };
+        let (tx, _rx) = mpsc::channel(16);
+        ch.on_ready(tx).await.unwrap();
+        let outbound = state.outbound.lock().await;
+        assert!(outbound.is_some(), "on_ready must store the outbound sender");
+    }
+
+    #[tokio::test]
+    async fn deliver_message_broadcasts_to_sse() {
+        let state = make_shared_state();
+        let mut rx = state.event_tx.subscribe();
+        let mut ch = DebugHttpChannel {
+            state: state.clone(),
+            port: 0,
+        };
+        let msg = DeliverMessage {
+            session_id: "s1".into(),
+            content: serde_json::json!("hello from agent"),
+        };
+        ch.deliver_message(msg).await.unwrap();
+        let received = rx.try_recv().expect("should have received broadcast");
+        assert_eq!(received, "hello from agent");
+    }
+
+    #[tokio::test]
+    async fn request_permission_resolves_via_oneshot() {
+        let state = make_shared_state();
+        let mut ch = DebugHttpChannel {
+            state: state.clone(),
+            port: 0,
+        };
+        let req = ChannelRequestPermission {
+            request_id: "perm-1".into(),
+            session_id: "s1".into(),
+            description: "Allow?".into(),
+            options: vec![protoclaw_sdk_types::PermissionOption {
+                option_id: "allow".into(),
+                label: "Allow".into(),
+            }],
+        };
+
+        // Spawn the request_permission call
+        let state2 = state.clone();
+        let handle = tokio::spawn(async move { ch.request_permission(req).await });
+
+        // Give it a moment to register the oneshot
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        // Simulate HTTP handler resolving the permission
+        {
+            let mut resolvers = state2.permission_resolvers.lock().await;
+            if let Some(tx) = resolvers.remove("perm-1") {
+                tx.send(PermissionResponse {
+                    request_id: "perm-1".into(),
+                    option_id: "allow".into(),
+                })
+                .unwrap();
+            }
         }
-    });
-    write_stdout(&state.stdout_tx, &msg).await;
-    Json(serde_json::json!({"status": "responded"}))
+
+        let resp = handle.await.unwrap().unwrap();
+        assert_eq!(resp.request_id, "perm-1");
+        assert_eq!(resp.option_id, "allow");
+    }
+
+    #[tokio::test]
+    async fn health_endpoint_returns_ok() {
+        let state = make_shared_state();
+        let app = build_router(state);
+        let req = Request::builder()
+            .uri("/health")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), 1024).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["status"], "ok");
+    }
+
+    #[tokio::test]
+    async fn message_endpoint_sends_via_outbound() {
+        let state = make_shared_state();
+        let (tx, mut rx) = mpsc::channel(16);
+        *state.outbound.lock().await = Some(tx);
+
+        let app = build_router(state);
+        let req = Request::builder()
+            .method("POST")
+            .uri("/message")
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"message":"hello"}"#))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let msg = rx.try_recv().expect("should have received outbound message");
+        assert_eq!(msg.content, "hello");
+        assert_eq!(msg.peer_info.channel_name, "debug-http");
+    }
+
+    #[tokio::test]
+    async fn permission_respond_endpoint_resolves_pending() {
+        let state = make_shared_state();
+        // Add a pending permission
+        state.pending_permissions.write().await.push(PendingPermission {
+            request_id: "perm-1".into(),
+            session_id: "s1".into(),
+            description: "Allow?".into(),
+            options: serde_json::json!([{"optionId": "allow", "label": "Allow"}]),
+        });
+        // Add a resolver
+        let (tx, rx) = oneshot::channel();
+        state
+            .permission_resolvers
+            .lock()
+            .await
+            .insert("perm-1".into(), tx);
+
+        let app = build_router(state.clone());
+        let req = Request::builder()
+            .method("POST")
+            .uri("/permissions/perm-1/respond")
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"optionId":"allow"}"#))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        // Verify the oneshot was resolved
+        let perm_resp = rx.await.expect("oneshot should have been resolved");
+        assert_eq!(perm_resp.option_id, "allow");
+
+        // Verify pending was removed
+        let pending = state.pending_permissions.read().await;
+        assert!(pending.is_empty());
+    }
 }
