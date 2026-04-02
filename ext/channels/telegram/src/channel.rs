@@ -33,6 +33,10 @@ impl Channel for TelegramChannel {
         outbound: mpsc::Sender<ChannelSendMessage>,
     ) -> Result<(), ChannelSdkError> {
         *self.state.outbound.lock().await = Some(outbound);
+        tokio::spawn(crate::dispatcher::run_dispatcher(
+            self.bot.clone(),
+            self.state.clone(),
+        ));
         Ok(())
     }
 
