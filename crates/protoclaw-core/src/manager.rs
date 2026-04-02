@@ -12,9 +12,17 @@ pub trait Manager: Send + 'static {
     fn health_check(&self) -> impl std::future::Future<Output = bool> + Send;
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ManagerHandle<C: Send + 'static> {
     sender: mpsc::Sender<C>,
+}
+
+impl<C: Send + 'static> Clone for ManagerHandle<C> {
+    fn clone(&self) -> Self {
+        Self {
+            sender: self.sender.clone(),
+        }
+    }
 }
 
 impl<C: Send + 'static> ManagerHandle<C> {

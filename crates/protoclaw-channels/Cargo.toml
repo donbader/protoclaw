@@ -1,0 +1,23 @@
+[package]
+name = "protoclaw-channels"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+protoclaw-core = { workspace = true }
+protoclaw-config = { workspace = true }
+protoclaw-agents = { workspace = true }
+protoclaw-acp = { workspace = true }
+axum = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true, features = ["sync"] }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+reqwest = { version = "0.12", features = ["json"] }
+tokio-test = { workspace = true }

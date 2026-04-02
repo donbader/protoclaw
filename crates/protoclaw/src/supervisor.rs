@@ -1,16 +1,20 @@
 use std::time::Duration;
 
 use protoclaw_config::ProtoclawConfig;
-use protoclaw_core::{CrashTracker, ExponentialBackoff, Manager, ManagerError};
+use protoclaw_core::{CrashTracker, ExponentialBackoff, Manager, ManagerError, ManagerHandle};
+use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
 
-use crate::stubs::StubChannelsManager;
-use protoclaw_agents::AgentsManager;
+use protoclaw_agents::{AgentsCommand, AgentsManager};
+use protoclaw_channels::DebugHttpChannel;
 use protoclaw_tools::{ToolsCommand, ToolsManager};
 
 pub struct Supervisor {
     config: ProtoclawConfig,
     tools_tx: Option<tokio::sync::mpsc::Sender<ToolsCommand>>,
+    agents_cmd_tx: Option<tokio::sync::mpsc::Sender<AgentsCommand>>,
+    #[allow(dead_code)]
+    event_tx: broadcast::Sender<String>,
 }
 
 struct ManagerSlot {
@@ -39,7 +43,8 @@ async fn shutdown_signal() {
 
 impl Supervisor {
     pub fn new(config: ProtoclawConfig) -> Self {
-        Self { config, tools_tx: None }
+        let (event_tx, _) = broadcast::channel(256);
+        Self { config, tools_tx: None, agents_cmd_tx: None, event_tx }
     }
 
     pub async fn run(self) -> anyhow::Result<()> {
@@ -114,7 +119,20 @@ impl Supervisor {
         for slot in slots.iter_mut() {
             tracing::info!(manager = %slot.name, "booting");
 
-            let mut manager = create_manager(&slot.name, &self.config, &tools_tx, tools_rx.take());
+            let mut manager = create_manager(
+                &slot.name,
+                &self.config,
+                &tools_tx,
+                tools_rx.take(),
+                self.agents_cmd_tx.as_ref(),
+            );
+
+            if slot.name == "agents" {
+                if let ManagerKind::Agents(ref m) = manager {
+                    self.agents_cmd_tx = Some(m.command_sender());
+                }
+            }
+
             if let Err(e) = manager.start().await {
                 tracing::error!(manager = %slot.name, error = %e, "boot failed");
                 return Err(anyhow::anyhow!("failed to boot {}: {e}", slot.name));
@@ -206,7 +224,7 @@ impl Supervisor {
             } else {
                 None
             };
-            let mut manager = create_manager(&slot.name, &self.config, &tools_tx, tools_rx);
+            let mut manager = create_manager(&slot.name, &self.config, &tools_tx, tools_rx, self.agents_cmd_tx.as_ref());
             if let Err(e) = manager.start().await {
                 tracing::error!(manager = %slot.name, error = %e, "restart boot failed");
                 continue;
@@ -222,7 +240,13 @@ impl Supervisor {
     }
 }
 
-fn create_manager(name: &str, config: &ProtoclawConfig, tools_tx: &tokio::sync::mpsc::Sender<ToolsCommand>, tools_rx: Option<tokio::sync::mpsc::Receiver<ToolsCommand>>) -> ManagerKind {
+fn create_manager(
+    name: &str,
+    config: &ProtoclawConfig,
+    tools_tx: &tokio::sync::mpsc::Sender<ToolsCommand>,
+    tools_rx: Option<tokio::sync::mpsc::Receiver<ToolsCommand>>,
+    agents_cmd_tx: Option<&tokio::sync::mpsc::Sender<AgentsCommand>>,
+) -> ManagerKind {
     match name {
         "tools" => {
             let m = ToolsManager::new(config.mcp_servers.clone())
@@ -233,7 +257,11 @@ fn create_manager(name: &str, config: &ProtoclawConfig, tools_tx: &tokio::sync::
             let handle = protoclaw_core::ManagerHandle::new(tools_tx.clone());
             ManagerKind::Agents(Box::new(AgentsManager::new(config.agent.clone(), handle)))
         }
-        "channels" => ManagerKind::Channels(StubChannelsManager),
+        "channels" => {
+            let tx = agents_cmd_tx.expect("agents_cmd_tx required for channels manager");
+            let agents_handle = ManagerHandle::new(tx.clone());
+            ManagerKind::Channels(DebugHttpChannel::new(0, agents_handle))
+        }
         _ => unreachable!("unknown manager: {name}"),
     }
 }
@@ -241,7 +269,7 @@ fn create_manager(name: &str, config: &ProtoclawConfig, tools_tx: &tokio::sync::
 enum ManagerKind {
     Tools(ToolsManager),
     Agents(Box<AgentsManager>),
-    Channels(StubChannelsManager),
+    Channels(DebugHttpChannel),
 }
 
 impl ManagerKind {
