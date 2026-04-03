@@ -16,4 +16,6 @@ pub enum AgentsError {
     Io(#[from] std::io::Error),
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
+    #[error("Agent not found: {0}")]
+    AgentNotFound(String),
 }
