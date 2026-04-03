@@ -18,6 +18,12 @@ pub enum ChannelEvent {
         description: String,
         options: serde_json::Value,
     },
+    AckMessage {
+        session_key: SessionKey,
+        channel_name: String,
+        peer_id: String,
+        message_id: Option<String>,
+    },
 }
 
 #[cfg(test)]
@@ -46,5 +52,37 @@ mod tests {
         let json = serde_json::to_value(&event).unwrap();
         let deser: ChannelEvent = serde_json::from_value(json).unwrap();
         assert!(matches!(deser, ChannelEvent::RoutePermission { .. }));
+    }
+
+    #[test]
+    fn channel_event_ack_message_round_trip() {
+        let event = ChannelEvent::AckMessage {
+            session_key: SessionKey::new("telegram", "direct", "alice"),
+            channel_name: "telegram".into(),
+            peer_id: "alice".into(),
+            message_id: Some("msg-123".into()),
+        };
+        let json = serde_json::to_value(&event).unwrap();
+        let deser: ChannelEvent = serde_json::from_value(json).unwrap();
+        assert!(matches!(deser, ChannelEvent::AckMessage { .. }));
+    }
+
+    #[test]
+    fn channel_event_ack_message_none_message_id() {
+        let event = ChannelEvent::AckMessage {
+            session_key: SessionKey::new("debug-http", "local", "dev"),
+            channel_name: "debug-http".into(),
+            peer_id: "dev".into(),
+            message_id: None,
+        };
+        let json = serde_json::to_value(&event).unwrap();
+        let deser: ChannelEvent = serde_json::from_value(json).unwrap();
+        assert!(matches!(
+            deser,
+            ChannelEvent::AckMessage {
+                message_id: None,
+                ..
+            }
+        ));
     }
 }
