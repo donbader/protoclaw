@@ -1,4 +1,5 @@
 pub mod connection;
+pub mod debounce;
 pub mod debug_http;
 pub mod error;
 pub mod manager;
