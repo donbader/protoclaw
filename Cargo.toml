@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/*", "tests/mock-agent", "tests/integration", "ext/channels/debug-http", "ext/channels/telegram"]
+members = ["crates/*", "tests/integration", "ext/channels/debug-http", "ext/channels/telegram", "ext/agents/mock-agent"]
 
 [workspace.package]
 edition = "2024"
