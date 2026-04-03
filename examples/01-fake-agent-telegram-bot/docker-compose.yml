@@ -1,0 +1,14 @@
+services:
+  protoclaw:
+    build:
+      context: ../..
+      dockerfile: examples/01-fake-agent-telegram-bot/Dockerfile
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./protoclaw.toml:/workspace/protoclaw.toml:ro
+    environment:
+      - LOG_LEVEL=debug
+    env_file:
+      - .env
+    restart: unless-stopped
