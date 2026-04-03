@@ -5,7 +5,7 @@ use crate::acp_error::AcpError;
 use crate::acp_types::{
     ClientCapabilities, InitializeParams, InitializeResult, McpServerInfo,
     PromptMessage, SessionCancelParams, SessionLoadParams, SessionNewParams,
-    SessionPromptParams, SessionUpdateEvent,
+    SessionPromptParams, SessionUpdateEvent, SessionUpdateType,
 };
 use protoclaw_config::AgentConfig;
 use protoclaw_core::{ChannelEvent, ExponentialBackoff, Manager, ManagerError, ManagerHandle, SessionKey};
@@ -356,6 +356,10 @@ impl AgentsManager {
                     "session/update" => {
                         if let Ok(event) = serde_json::from_value::<SessionUpdateEvent>(params.clone()) {
                             tracing::debug!(session_id = %event.session_id, update = ?event.update, "session update");
+
+                            if matches!(&event.update, SessionUpdateType::AgentThoughtChunk { .. }) {
+                                tracing::debug!(session_id = %event.session_id, "agent thought chunk received, routing to channel");
+                            }
 
                             // Route back to originating channel via reverse_map
                             if let Some(session_key) = self.reverse_map.get(&event.session_id).cloned() {

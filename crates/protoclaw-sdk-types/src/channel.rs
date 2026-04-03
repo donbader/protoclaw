@@ -49,6 +49,44 @@ pub struct ChannelSendMessage {
     pub content: String,
 }
 
+/// Helper for channel implementations to extract thought content from DeliverMessage.
+/// When DeliverMessage.content has type "agent_thought_chunk", channels can use this
+/// to deserialize the thought payload.
+///
+/// # Example
+/// ```
+/// use protoclaw_sdk_types::channel::ThoughtContent;
+/// let content = serde_json::json!({
+///     "sessionId": "s1",
+///     "type": "agent_thought_chunk",
+///     "content": "thinking..."
+/// });
+/// if let Some(thought) = ThoughtContent::from_content(&content) {
+///     assert_eq!(thought.content, "thinking...");
+/// }
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThoughtContent {
+    pub session_id: String,
+    #[serde(rename = "type")]
+    pub update_type: String,
+    pub content: String,
+}
+
+impl ThoughtContent {
+    /// Try to extract thought content from a DeliverMessage content value.
+    /// Returns Some if the content type is "agent_thought_chunk", None otherwise.
+    pub fn from_content(content: &serde_json::Value) -> Option<Self> {
+        let update_type = content.get("type")?.as_str()?;
+        if update_type == "agent_thought_chunk" {
+            serde_json::from_value(content.clone()).ok()
+        } else {
+            None
+        }
+    }
+}
+
 /// Channel → Protoclaw: user responded to permission prompt.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -145,6 +183,57 @@ mod tests {
         assert_eq!(json["channelId"], "ch-1");
         let deser: ChannelInitializeParams = serde_json::from_value(json).unwrap();
         assert_eq!(deser, params);
+    }
+
+    #[test]
+    fn thought_content_from_valid_thought() {
+        let content = serde_json::json!({
+            "sessionId": "s1",
+            "type": "agent_thought_chunk",
+            "content": "Analyzing..."
+        });
+        let thought = ThoughtContent::from_content(&content).unwrap();
+        assert_eq!(thought.session_id, "s1");
+        assert_eq!(thought.update_type, "agent_thought_chunk");
+        assert_eq!(thought.content, "Analyzing...");
+    }
+
+    #[test]
+    fn thought_content_from_non_thought_returns_none() {
+        let content = serde_json::json!({
+            "sessionId": "s1",
+            "type": "agent_message_chunk",
+            "content": "Hello"
+        });
+        assert!(ThoughtContent::from_content(&content).is_none());
+    }
+
+    #[test]
+    fn thought_content_round_trip() {
+        let thought = ThoughtContent {
+            session_id: "s1".into(),
+            update_type: "agent_thought_chunk".into(),
+            content: "Thinking...".into(),
+        };
+        let json = serde_json::to_value(&thought).unwrap();
+        assert_eq!(json["sessionId"], "s1");
+        assert_eq!(json["type"], "agent_thought_chunk");
+        let deser: ThoughtContent = serde_json::from_value(json).unwrap();
+        assert_eq!(deser, thought);
+    }
+
+    #[test]
+    fn thought_content_from_deliver_message_content() {
+        let msg = DeliverMessage {
+            session_id: "sess-1".into(),
+            content: serde_json::json!({
+                "sessionId": "sess-1",
+                "type": "agent_thought_chunk",
+                "content": "deep thought"
+            }),
+        };
+        let thought = ThoughtContent::from_content(&msg.content).unwrap();
+        assert_eq!(thought.content, "deep thought");
     }
 
     #[test]
