@@ -259,14 +259,20 @@ impl ChannelsManager {
         false
     }
 
+    /// Check if a DeliverMessage content payload is a "result" update.
+    /// Content is the raw session/update params: `{"sessionId": "...", "type": "result", ...}`.
+    fn is_result_content(content: &serde_json::Value) -> bool {
+        content.get("type")
+            .and_then(|t| t.as_str())
+            .map(|t| t == "result")
+            .unwrap_or(false)
+    }
+
     /// Handle a ChannelEvent from AgentsManager (outbound: agent → channel).
     async fn handle_channel_event(&mut self, event: ChannelEvent) {
         match event {
             ChannelEvent::DeliverMessage { session_key, content } => {
-                let is_result = content.get("type")
-                    .and_then(|t| t.as_str())
-                    .map(|t| t == "result")
-                    .unwrap_or(false);
+                let is_result = Self::is_result_content(&content);
 
                 if is_result {
                     self.debounce.mark_session_idle(&session_key);
@@ -927,5 +933,40 @@ mod tests {
         let result = m.start().await;
         assert!(result.is_ok());
         assert!(m.slots.is_empty(), "disabled channel should not create a slot");
+    }
+
+    #[test]
+    fn is_result_content_detects_result_type() {
+        let result_content = serde_json::json!({
+            "sessionId": "abc-123",
+            "type": "result",
+            "content": "Echo: hello"
+        });
+        assert!(ChannelsManager::is_result_content(&result_content));
+    }
+
+    #[test]
+    fn is_result_content_rejects_thought_chunk() {
+        let thought = serde_json::json!({
+            "sessionId": "abc-123",
+            "type": "agent_thought_chunk",
+            "content": "thinking..."
+        });
+        assert!(!ChannelsManager::is_result_content(&thought));
+    }
+
+    #[test]
+    fn is_result_content_rejects_message_chunk() {
+        let chunk = serde_json::json!({
+            "sessionId": "abc-123",
+            "type": "agent_message_chunk",
+            "content": "Echo: "
+        });
+        assert!(!ChannelsManager::is_result_content(&chunk));
+    }
+
+    #[test]
+    fn is_result_content_rejects_empty_object() {
+        assert!(!ChannelsManager::is_result_content(&serde_json::json!({})));
     }
 }

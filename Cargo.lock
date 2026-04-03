@@ -2199,6 +2199,7 @@ dependencies = [
  "reqwest",
  "serde_json",
  "tokio",
+ "tokio-stream",
  "tokio-test",
  "tokio-util",
  "toml 0.8.23",

@@ -6,42 +6,41 @@ log_level = "debug"
 extensions_dir = "/usr/local/bin"
 
 # OpenCode agent (enabled by default)
-[[agents]]
-name = "opencode"
+[agents-manager.agents.opencode]
 binary = "opencode"
 args = ["acp"]
 enabled = true
 tools = ["system-info"]
-
-[agents.env]
-ANTHROPIC_API_KEY = "${ANTHROPIC_API_KEY}"
-XDG_CONFIG_HOME = "/home/protoclaw/.config"
+env = { ANTHROPIC_API_KEY = "${ANTHROPIC_API_KEY:}", XDG_CONFIG_HOME = "/home/protoclaw/.config" }
 
 # Claude Code agent (disabled by default — see README to switch)
-[[agents]]
-name = "claude-code"
+[agents-manager.agents.claude-code]
 binary = "claude"
 args = ["--acp"]
 enabled = false
 tools = ["system-info"]
+env = { ANTHROPIC_API_KEY = "${ANTHROPIC_API_KEY:}", CLAUDE_CONFIG_DIR = "/home/protoclaw/.claude" }
 
-[agents.env]
-ANTHROPIC_API_KEY = "${ANTHROPIC_API_KEY}"
-CLAUDE_CONFIG_DIR = "/home/protoclaw/.claude"
-
-[[channels]]
-name = "debug-http"
+[channels-manager.channels.debug-http]
 binary = "@built-in/debug-http"
 agent = "opencode"
 
-[[channels]]
-name = "telegram"
+[channels-manager.channels.debug-http.ack]
+reaction = false
+typing = false
+
+[channels-manager.channels.telegram]
 binary = "@built-in/telegram-channel"
-enabled = false
+enabled = "${TELEGRAM_ENABLED:false}"
 agent = "opencode"
 
-[[mcp_servers]]
-name = "system-info"
+[channels-manager.channels.telegram.ack]
+reaction = true
+reaction_emoji = "👀"
+typing = true
+reaction_lifecycle = "remove"
+
+[tools-manager.tools.system-info]
 binary = "@built-in/system-info"
 
 [supervisor]

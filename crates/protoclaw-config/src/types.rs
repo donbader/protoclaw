@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -61,7 +61,7 @@ pub struct AgentConfig {
     pub args: Vec<String>,
     #[serde(default = "default_true")]
     pub enabled: bool,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_string_map")]
     pub env: HashMap<String, String>,
     #[serde(default)]
     pub working_dir: Option<PathBuf>,
@@ -178,6 +178,28 @@ pub struct SupervisorConfig {
     pub max_restarts: u32,
     #[serde(default = "default_restart_window")]
     pub restart_window_secs: u64,
+}
+
+/// Deserialize a map where values may have been coerced from strings to integers/bools
+/// by the env-substitution layer. Coerces all scalar values back to strings.
+fn deserialize_string_map<'de, D>(deserializer: D) -> Result<HashMap<String, String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let map: HashMap<String, toml::Value> = HashMap::deserialize(deserializer)?;
+    Ok(map
+        .into_iter()
+        .map(|(k, v)| {
+            let s = match v {
+                toml::Value::String(s) => s,
+                toml::Value::Integer(n) => n.to_string(),
+                toml::Value::Float(f) => f.to_string(),
+                toml::Value::Boolean(b) => b.to_string(),
+                other => other.to_string(),
+            };
+            (k, s)
+        })
+        .collect())
 }
 
 fn default_log_level() -> String {

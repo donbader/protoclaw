@@ -36,3 +36,46 @@ fn test_fake_agent_example_has_channels() {
     assert!(config.channels_manager.channels.contains_key("debug-http"));
     assert!(config.channels_manager.channels.contains_key("telegram"));
 }
+
+#[test]
+fn test_real_agent_example_toml_parses() {
+    let toml_path = workspace_root().join("examples/02-real-agents-telegram-bot/protoclaw.toml");
+    let config = protoclaw_config::ProtoclawConfig::load(Some(toml_path.to_str().unwrap()))
+        .unwrap_or_else(|e| panic!("failed to load protoclaw.toml: {e}"));
+
+    assert_eq!(config.agents_manager.agents.len(), 2);
+    let opencode = config
+        .agents_manager
+        .agents
+        .get("opencode")
+        .expect("missing 'opencode' agent");
+    assert_eq!(opencode.binary, "opencode");
+    assert!(opencode.enabled);
+
+    let claude = config
+        .agents_manager
+        .agents
+        .get("claude-code")
+        .expect("missing 'claude-code' agent");
+    assert_eq!(claude.binary, "claude");
+    assert!(!claude.enabled);
+}
+
+#[test]
+fn test_real_agent_example_has_channels() {
+    let toml_path = workspace_root().join("examples/02-real-agents-telegram-bot/protoclaw.toml");
+    let config =
+        protoclaw_config::ProtoclawConfig::load(Some(toml_path.to_str().unwrap())).unwrap();
+
+    assert_eq!(
+        config.channels_manager.channels.len(),
+        2,
+        "expected two channels"
+    );
+    assert!(config.channels_manager.channels.contains_key("debug-http"));
+    assert!(config.channels_manager.channels.contains_key("telegram"));
+    assert_eq!(
+        config.channels_manager.channels["debug-http"].agent,
+        "opencode"
+    );
+}

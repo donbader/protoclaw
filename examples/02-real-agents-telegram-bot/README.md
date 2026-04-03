@@ -76,7 +76,7 @@ After verifying debug-http works:
 
 1. Message [@BotFather](https://t.me/BotFather) on Telegram, send `/newbot`, copy the token
 2. Set `TELEGRAM_BOT_TOKEN` in `.env`
-3. Uncomment `PROTOCLAW_CHANNELS__1__ENABLED=true` in `.env`
+3. Uncomment `TELEGRAM_ENABLED=true` in `.env`
 4. Restart: `docker compose restart`
 5. Message your bot on Telegram
 
@@ -86,10 +86,10 @@ After verifying debug-http works:
 |---------|---------|
 | `log_level` | Logging verbosity (default: debug) |
 | `extensions_dir` | Where `@built-in/` binaries live (default: /usr/local/bin) |
-| `[[agents]]` | Agent definitions — opencode (enabled) and claude-code (disabled) |
-| `[agents.env]` | Per-agent environment variables injected at spawn |
-| `[[channels]]` | debug-http (enabled) and telegram (disabled by default) |
-| `[[mcp_servers]]` | system-info tool — returns host/OS/arch info |
+| `[agents-manager.agents.*]` | Agent definitions — opencode (enabled) and claude-code (disabled) |
+| `[channels-manager.channels.*]` | debug-http (enabled) and telegram (disabled by default) |
+| `[channels-manager.channels.*.ack]` | Per-channel ack reactions and typing indicators |
+| `[tools-manager.tools.*]` | system-info tool — returns host/OS/arch info |
 | `[supervisor]` | Restart policy, health checks, shutdown timeout |
 
 ## Troubleshooting
@@ -104,7 +104,7 @@ After verifying debug-http works:
 
 **Port 8080 already in use** — Change the port mapping in `docker-compose.yml`: `"9090:8080"`.
 
-**Telegram bot doesn't respond** — Verify `TELEGRAM_BOT_TOKEN` is correct, `PROTOCLAW_CHANNELS__1__ENABLED=true` is uncommented in `.env`, and no other instance is using the same token.
+**Telegram bot doesn't respond** — Verify `TELEGRAM_BOT_TOKEN` is correct, `TELEGRAM_ENABLED=true` is uncommented in `.env`, and no other instance is using the same token.
 
 ## Files
 
@@ -112,7 +112,7 @@ After verifying debug-http works:
 |------|---------|
 | `Dockerfile` | Multi-stage cargo-chef build with `--target opencode` and `--target claude-code` |
 | `docker-compose.yml` | Single service with agent config mount, port 8080 |
-| `protoclaw.toml` | Multi-agent config: opencode + claude-code with `[[agents]]` array |
+| `protoclaw.toml` | Multi-agent config: opencode + claude-code with named agent maps |
 | `.env.example` | Environment template — copy to `.env`, set API key |
 | `.dockerignore` | Build context exclusions |
 | `README.md` | This file |

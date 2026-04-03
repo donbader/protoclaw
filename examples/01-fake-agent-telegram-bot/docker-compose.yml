@@ -11,7 +11,6 @@ services:
       - LOG_LEVEL=debug
       - PORT=8080
       - HOST=0.0.0.0
-      - MOCK_AGENT_THINK=1
     env_file:
       - .env
     restart: unless-stopped
