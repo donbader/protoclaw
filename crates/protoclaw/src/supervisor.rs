@@ -325,18 +325,7 @@ fn create_manager(
         }
         "agents" => {
             let handle = protoclaw_core::ManagerHandle::new(tools_tx.clone());
-            let agent_config = config.agents.first().cloned().unwrap_or_else(|| {
-                protoclaw_config::AgentConfig {
-                    name: "default".into(),
-                    binary: "echo".into(),
-                    args: vec![],
-                    enabled: false,
-                    env: std::collections::HashMap::new(),
-                    working_dir: None,
-                    tools: vec![],
-                }
-            });
-            let mut agents = AgentsManager::new(agent_config, handle);
+            let mut agents = AgentsManager::new(config.agents.clone(), handle);
             if let Some(tx) = channel_events_tx {
                 agents = agents.with_channels_sender(tx);
             }

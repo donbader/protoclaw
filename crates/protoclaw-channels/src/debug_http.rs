@@ -91,11 +91,15 @@ async fn handle_health(State(state): State<AppState>) -> Json<serde_json::Value>
     };
 
     let agent_json = match agent_status {
-        Some(info) => serde_json::json!({
-            "connected": info.connected,
-            "session_id": info.session_id,
-        }),
-        None => serde_json::json!({ "connected": false }),
+        Some(statuses) => {
+            let agents: Vec<_> = statuses.iter().map(|s| serde_json::json!({
+                "name": s.name,
+                "connected": s.connected,
+                "session_count": s.session_count,
+            })).collect();
+            serde_json::json!(agents)
+        }
+        None => serde_json::json!([]),
     };
 
     Json(serde_json::json!({
@@ -167,10 +171,11 @@ mod tests {
         tokio::spawn(async move {
             while let Some(cmd) = agents_rx.recv().await {
                 if let AgentsCommand::GetStatus { reply } = cmd {
-                    let _ = reply.send(AgentStatusInfo {
+                    let _ = reply.send(vec![AgentStatusInfo {
+                        name: "default".to_string(),
                         connected: false,
-                        session_id: None,
-                    });
+                        session_count: 0,
+                    }]);
                 }
             }
         });
@@ -198,10 +203,11 @@ mod tests {
         tokio::spawn(async move {
             while let Some(cmd) = agents_rx.recv().await {
                 if let AgentsCommand::GetStatus { reply } = cmd {
-                    let _ = reply.send(AgentStatusInfo {
+                    let _ = reply.send(vec![AgentStatusInfo {
+                        name: "default".to_string(),
                         connected: false,
-                        session_id: None,
-                    });
+                        session_count: 0,
+                    }]);
                 }
             }
         });
@@ -215,14 +221,7 @@ mod tests {
 
         let body: serde_json::Value = resp.json().await.unwrap();
         let agent = &body["agent"];
-        assert!(
-            agent.get("connected").is_some(),
-            "agent object missing 'connected' field"
-        );
-        assert!(
-            agent["connected"].is_boolean(),
-            "'connected' should be a boolean"
-        );
+        assert!(agent.is_array(), "agent should be an array");
 
         cancel.cancel();
     }
@@ -234,10 +233,11 @@ mod tests {
         tokio::spawn(async move {
             while let Some(cmd) = agents_rx.recv().await {
                 if let AgentsCommand::GetStatus { reply } = cmd {
-                    let _ = reply.send(AgentStatusInfo {
+                    let _ = reply.send(vec![AgentStatusInfo {
+                        name: "default".to_string(),
                         connected: false,
-                        session_id: None,
-                    });
+                        session_count: 0,
+                    }]);
                 }
             }
         });

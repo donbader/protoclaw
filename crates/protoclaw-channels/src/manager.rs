@@ -321,10 +321,14 @@ impl ChannelsManager {
                         }
                     };
 
-                    // Check if session exists, create if not
+                    let agent_name = self.slots[slot_index].config.agent
+                        .clone()
+                        .unwrap_or_else(|| "default".to_string());
+
                     if !self.routing_table.contains_key(&session_key) {
                         let (reply_tx, reply_rx) = oneshot::channel();
                         if let Err(e) = agents_handle.send(AgentsCommand::CreateSession {
+                            agent_name: agent_name.clone(),
                             session_key: session_key.clone(),
                             reply: reply_tx,
                         }).await {
@@ -374,6 +378,7 @@ impl ChannelsManager {
                     // Send prompt to existing session
                     let (reply_tx, reply_rx) = oneshot::channel();
                     if let Err(e) = agents_handle.send(AgentsCommand::PromptSession {
+                        agent_name: agent_name.clone(),
                         session_key: session_key.clone(),
                         message: send_msg.content,
                         reply: reply_tx,

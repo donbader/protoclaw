@@ -1,14 +1,14 @@
-use std::collections::HashMap;
 use std::time::Duration;
 
 use crate::acp_error::AcpError;
 use crate::acp_types::{
-    ClientCapabilities, InitializeParams, InitializeResult, McpServerInfo,
-    PromptMessage, SessionCancelParams, SessionLoadParams, SessionNewParams,
-    SessionPromptParams, SessionUpdateEvent, SessionUpdateType,
+    ClientCapabilities, InitializeParams, InitializeResult, McpServerInfo, PromptMessage,
+    SessionCancelParams, SessionLoadParams, SessionNewParams, SessionPromptParams,
+    SessionUpdateEvent, SessionUpdateType,
 };
+use crate::slot::{find_slot_by_name, AgentSlot};
 use protoclaw_config::AgentConfig;
-use protoclaw_core::{ChannelEvent, ExponentialBackoff, Manager, ManagerError, ManagerHandle, SessionKey};
+use protoclaw_core::{ChannelEvent, Manager, ManagerError, ManagerHandle, SessionKey};
 use protoclaw_sdk_agent::{AgentAdapter, GenericAcpAdapter};
 use protoclaw_sdk_types::PermissionOption;
 use protoclaw_tools::{McpServerUrl, ToolsCommand};
@@ -20,8 +20,9 @@ use crate::error::AgentsError;
 
 #[derive(Debug, Clone)]
 pub struct AgentStatusInfo {
+    pub name: String,
     pub connected: bool,
-    pub session_id: Option<String>,
+    pub session_count: usize,
 }
 
 pub struct PendingPermission {
@@ -51,17 +52,16 @@ pub enum AgentsCommand {
         reply: oneshot::Sender<Vec<PendingPermissionInfo>>,
     },
     Shutdown,
-    /// Query current agent connection/session status.
     GetStatus {
-        reply: oneshot::Sender<AgentStatusInfo>,
+        reply: oneshot::Sender<Vec<AgentStatusInfo>>,
     },
-    /// Create a new ACP session keyed by channel+peer identity.
     CreateSession {
+        agent_name: String,
         session_key: SessionKey,
         reply: oneshot::Sender<Result<String, AgentsError>>,
     },
-    /// Send a prompt to an existing session identified by session key.
     PromptSession {
+        agent_name: String,
         session_key: SessionKey,
         message: String,
         reply: oneshot::Sender<Result<(), AgentsError>>,
@@ -69,38 +69,28 @@ pub enum AgentsCommand {
 }
 
 pub struct AgentsManager {
-    agent_config: AgentConfig,
+    agent_configs: Vec<AgentConfig>,
     tools_handle: ManagerHandle<ToolsCommand>,
-    connection: Option<AgentConnection>,
-    session_id: Option<String>,
-    agent_capabilities: Option<InitializeResult>,
-    backoff: ExponentialBackoff,
-    pending_permissions: HashMap<String, PendingPermission>,
+    slots: Vec<AgentSlot>,
     cmd_rx: Option<tokio::sync::mpsc::Receiver<AgentsCommand>>,
     cmd_tx: tokio::sync::mpsc::Sender<AgentsCommand>,
-    session_map: HashMap<SessionKey, String>,
-    reverse_map: HashMap<String, SessionKey>,
     channels_sender: Option<mpsc::Sender<ChannelEvent>>,
     adapter: Box<dyn AgentAdapter>,
+    parent_cancel: CancellationToken,
 }
 
 impl AgentsManager {
-    pub fn new(agent_config: AgentConfig, tools_handle: ManagerHandle<ToolsCommand>) -> Self {
+    pub fn new(agent_configs: Vec<AgentConfig>, tools_handle: ManagerHandle<ToolsCommand>) -> Self {
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::channel(16);
         Self {
-            agent_config,
+            agent_configs,
             tools_handle,
-            connection: None,
-            session_id: None,
-            agent_capabilities: None,
-            backoff: ExponentialBackoff::default(),
-            pending_permissions: HashMap::new(),
+            slots: Vec::new(),
             cmd_rx: Some(cmd_rx),
             cmd_tx,
-            session_map: HashMap::new(),
-            reverse_map: HashMap::new(),
             channels_sender: None,
             adapter: Box::new(GenericAcpAdapter),
+            parent_cancel: CancellationToken::new(),
         }
     }
 
@@ -109,7 +99,6 @@ impl AgentsManager {
         self
     }
 
-    /// Set the channels event sender for routing agent updates back to channels.
     pub fn with_channels_sender(mut self, sender: mpsc::Sender<ChannelEvent>) -> Self {
         self.channels_sender = Some(sender);
         self
@@ -119,8 +108,8 @@ impl AgentsManager {
         self.cmd_tx.clone()
     }
 
-    async fn initialize_agent(&mut self) -> Result<(), AgentsError> {
-        let conn = self.connection.as_ref().ok_or(AgentsError::ConnectionClosed)?;
+    async fn initialize_agent(slot: &mut AgentSlot) -> Result<(), AgentsError> {
+        let conn = slot.connection.as_ref().ok_or(AgentsError::ConnectionClosed)?;
 
         let params = serde_json::to_value(InitializeParams {
             protocol_version: 1,
@@ -142,13 +131,13 @@ impl AgentsManager {
             .into());
         }
 
-        self.agent_capabilities = Some(result);
+        slot.agent_capabilities = Some(result);
         Ok(())
     }
 
-    async fn start_session(&mut self) -> Result<(), AgentsError> {
+    async fn start_session(slot: &mut AgentSlot, tools_handle: &ManagerHandle<ToolsCommand>) -> Result<String, AgentsError> {
         let (reply_tx, reply_rx) = oneshot::channel();
-        self.tools_handle
+        tools_handle
             .send(ToolsCommand::GetMcpUrls { reply: reply_tx })
             .await
             .map_err(|e| AgentsError::SpawnFailed(format!("tools handle: {e}")))?;
@@ -174,7 +163,7 @@ impl AgentsManager {
             },
         })?;
 
-        let conn = self.connection.as_ref().ok_or(AgentsError::ConnectionClosed)?;
+        let conn = slot.connection.as_ref().ok_or(AgentsError::ConnectionClosed)?;
         let rx = conn.send_request("session/new", params).await?;
         let resp = tokio::time::timeout(Duration::from_secs(30), rx)
             .await
@@ -182,25 +171,32 @@ impl AgentsManager {
             .map_err(|_| AgentsError::ConnectionClosed)?;
 
         let result: crate::acp_types::SessionNewResult = serde_json::from_value(resp)?;
-        self.session_id = Some(result.session_id.clone());
-        tracing::info!(session_id = %result.session_id, "session started");
-        Ok(())
+        tracing::info!(agent = %slot.name(), session_id = %result.session_id, "session started");
+        Ok(result.session_id)
     }
 
     async fn handle_command(&mut self, cmd: AgentsCommand) -> bool {
         match cmd {
             AgentsCommand::SendPrompt { message, reply } => {
-                let result = self.send_prompt(&message).await;
+                let result = if let Some(slot) = self.slots.first() {
+                    Self::send_prompt_to_slot(slot, &message).await
+                } else {
+                    Err(AgentsError::ConnectionClosed)
+                };
                 let _ = reply.send(result);
             }
             AgentsCommand::CancelOperation => {
-                if let (Some(conn), Some(sid)) = (self.connection.as_ref(), &self.session_id) {
-                    let params = serde_json::to_value(SessionCancelParams {
-                        session_id: sid.clone(),
-                    })
-                    .ok();
-                    if let Some(p) = params {
-                        let _ = conn.send_notification("session/cancel", p).await;
+                for slot in &self.slots {
+                    if let Some(conn) = &slot.connection {
+                        for acp_id in slot.session_map.values() {
+                            let params = serde_json::to_value(SessionCancelParams {
+                                session_id: acp_id.clone(),
+                            })
+                            .ok();
+                            if let Some(p) = params {
+                                let _ = conn.send_notification("session/cancel", p).await;
+                            }
+                        }
                     }
                 }
             }
@@ -208,64 +204,71 @@ impl AgentsManager {
                 request_id,
                 option_id,
             } => {
-                if let Some(perm) = self.pending_permissions.remove(&request_id) {
-                    if let Some(conn) = self.connection.as_ref() {
-                        let resp = serde_json::json!({
-                            "jsonrpc": "2.0",
-                            "id": perm.request.get("id").cloned().unwrap_or(serde_json::Value::Null),
-                            "result": {
-                                "requestId": request_id,
-                                "optionId": option_id,
-                            }
-                        });
-                        let _ = conn.send_notification("_raw_response", resp).await;
+                for slot in &mut self.slots {
+                    if let Some(perm) = slot.pending_permissions.remove(&request_id) {
+                        if let Some(conn) = slot.connection.as_ref() {
+                            let resp = serde_json::json!({
+                                "jsonrpc": "2.0",
+                                "id": perm.request.get("id").cloned().unwrap_or(serde_json::Value::Null),
+                                "result": {
+                                    "requestId": request_id,
+                                    "optionId": option_id,
+                                }
+                            });
+                            let _ = conn.send_notification("_raw_response", resp).await;
+                        }
+                        break;
                     }
                 }
             }
             AgentsCommand::GetPendingPermissions { reply } => {
-                let infos: Vec<PendingPermissionInfo> = self
-                    .pending_permissions
-                    .iter()
-                    .map(|(id, p)| PendingPermissionInfo {
-                        request_id: id.clone(),
-                        description: p.description.clone(),
-                        options: p.options.clone(),
-                    })
-                    .collect();
+                let mut infos = Vec::new();
+                for slot in &self.slots {
+                    for (id, p) in &slot.pending_permissions {
+                        infos.push(PendingPermissionInfo {
+                            request_id: id.clone(),
+                            description: p.description.clone(),
+                            options: p.options.clone(),
+                        });
+                    }
+                }
                 let _ = reply.send(infos);
             }
             AgentsCommand::Shutdown => {
-                self.shutdown_agent().await;
+                self.shutdown_all().await;
                 return true;
             }
             AgentsCommand::GetStatus { reply } => {
-                let info = AgentStatusInfo {
-                    connected: self.connection.is_some(),
-                    session_id: self.session_id.clone(),
-                };
-                let _ = reply.send(info);
+                let statuses: Vec<AgentStatusInfo> = self
+                    .slots
+                    .iter()
+                    .map(|slot| AgentStatusInfo {
+                        name: slot.name().to_string(),
+                        connected: slot.connection.is_some(),
+                        session_count: slot.session_map.len(),
+                    })
+                    .collect();
+                let _ = reply.send(statuses);
             }
-            AgentsCommand::CreateSession { session_key, reply } => {
-                let result = self.create_session(session_key).await;
+            AgentsCommand::CreateSession { agent_name, session_key, reply } => {
+                let result = self.create_session(&agent_name, session_key).await;
                 let _ = reply.send(result);
             }
-            AgentsCommand::PromptSession { session_key, message, reply } => {
-                let result = self.prompt_session(&session_key, &message).await;
+            AgentsCommand::PromptSession { agent_name, session_key, message, reply } => {
+                let result = self.prompt_session(&agent_name, &session_key, &message).await;
                 let _ = reply.send(result);
             }
         }
         false
     }
 
-    async fn send_prompt(&self, message: &str) -> Result<(), AgentsError> {
-        let conn = self.connection.as_ref().ok_or(AgentsError::ConnectionClosed)?;
-        let sid = self
-            .session_id
-            .as_ref()
+    async fn send_prompt_to_slot(slot: &AgentSlot, message: &str) -> Result<(), AgentsError> {
+        let conn = slot.connection.as_ref().ok_or(AgentsError::ConnectionClosed)?;
+        let acp_id = slot.session_map.values().next()
             .ok_or(AgentsError::ConnectionClosed)?;
 
         let params = serde_json::to_value(SessionPromptParams {
-            session_id: sid.clone(),
+            session_id: acp_id.clone(),
             message: PromptMessage {
                 role: "user".into(),
                 content: message.into(),
@@ -276,63 +279,34 @@ impl AgentsManager {
         Ok(())
     }
 
-    /// Create a new ACP session keyed by SessionKey.
-    async fn create_session(&mut self, session_key: SessionKey) -> Result<String, AgentsError> {
-        // If session already exists for this key, return existing ACP session_id
-        if let Some(acp_id) = self.session_map.get(&session_key) {
+    async fn create_session(&mut self, agent_name: &str, session_key: SessionKey) -> Result<String, AgentsError> {
+        let slot_idx = find_slot_by_name(&self.slots, agent_name)
+            .ok_or_else(|| AgentsError::AgentNotFound(agent_name.to_string()))?;
+
+        let slot = &self.slots[slot_idx];
+        if let Some(acp_id) = slot.session_map.get(&session_key) {
             return Ok(acp_id.clone());
         }
 
-        // Get MCP server URLs from tools manager
-        let (reply_tx, reply_rx) = oneshot::channel();
-        self.tools_handle
-            .send(ToolsCommand::GetMcpUrls { reply: reply_tx })
-            .await
-            .map_err(|e| AgentsError::SpawnFailed(format!("tools handle: {e}")))?;
+        let acp_session_id = Self::start_session(&mut self.slots[slot_idx], &self.tools_handle).await?;
 
-        let urls: Vec<McpServerUrl> = reply_rx.await.unwrap_or_default();
-        let mcp_servers: Vec<McpServerInfo> = urls
-            .iter()
-            .map(|u| McpServerInfo {
-                name: u.name.clone(),
-                server_type: "http".into(),
-                url: u.url.clone(),
-                headers: None,
-            })
-            .collect();
+        let slot = &mut self.slots[slot_idx];
+        slot.session_map.insert(session_key.clone(), acp_session_id.clone());
+        slot.reverse_map.insert(acp_session_id.clone(), session_key);
 
-        let params = serde_json::to_value(SessionNewParams {
-            session_id: None,
-            mcp_servers: if mcp_servers.is_empty() {
-                None
-            } else {
-                Some(mcp_servers)
-            },
-        })?;
-
-        let conn = self.connection.as_ref().ok_or(AgentsError::ConnectionClosed)?;
-        let rx = conn.send_request("session/new", params).await?;
-        let resp = tokio::time::timeout(Duration::from_secs(30), rx)
-            .await
-            .map_err(|_| AgentsError::Timeout(Duration::from_secs(30)))?
-            .map_err(|_| AgentsError::ConnectionClosed)?;
-
-        let result: crate::acp_types::SessionNewResult = serde_json::from_value(resp)?;
-        let acp_session_id = result.session_id.clone();
-
-        self.session_map.insert(session_key.clone(), acp_session_id.clone());
-        self.reverse_map.insert(acp_session_id.clone(), session_key);
-
-        tracing::info!(session_key = %acp_session_id, "multi-session created");
+        tracing::info!(agent = %agent_name, session_key = %acp_session_id, "multi-session created");
         Ok(acp_session_id)
     }
 
-    /// Send a prompt to an existing session identified by SessionKey.
-    async fn prompt_session(&self, session_key: &SessionKey, message: &str) -> Result<(), AgentsError> {
-        let acp_session_id = self.session_map.get(session_key)
+    async fn prompt_session(&self, agent_name: &str, session_key: &SessionKey, message: &str) -> Result<(), AgentsError> {
+        let slot_idx = find_slot_by_name(&self.slots, agent_name)
+            .ok_or_else(|| AgentsError::AgentNotFound(agent_name.to_string()))?;
+
+        let slot = &self.slots[slot_idx];
+        let acp_session_id = slot.session_map.get(session_key)
             .ok_or(AgentsError::ConnectionClosed)?;
 
-        let conn = self.connection.as_ref().ok_or(AgentsError::ConnectionClosed)?;
+        let conn = slot.connection.as_ref().ok_or(AgentsError::ConnectionClosed)?;
 
         let params = serde_json::to_value(SessionPromptParams {
             session_id: acp_session_id.clone(),
@@ -346,50 +320,49 @@ impl AgentsManager {
         Ok(())
     }
 
-    async fn handle_incoming(&mut self, msg: IncomingMessage) {
-        match msg {
-            IncomingMessage::AgentNotification(value) | IncomingMessage::AgentRequest(value) => {
-                let method = value["method"].as_str().unwrap_or("");
-                let params = value.get("params").cloned().unwrap_or(serde_json::Value::Null);
+    async fn handle_incoming(&mut self, slot_idx: usize, msg: IncomingMessage) {
+        let value = match &msg {
+            IncomingMessage::AgentNotification(v) | IncomingMessage::AgentRequest(v) => v.clone(),
+        };
 
-                match method {
-                    "session/update" => {
-                        if let Ok(event) = serde_json::from_value::<SessionUpdateEvent>(params.clone()) {
-                            tracing::debug!(session_id = %event.session_id, update = ?event.update, "session update");
+        let method = value["method"].as_str().unwrap_or("");
+        let params = value.get("params").cloned().unwrap_or(serde_json::Value::Null);
 
-                            if matches!(&event.update, SessionUpdateType::AgentThoughtChunk { .. }) {
-                                tracing::debug!(session_id = %event.session_id, "agent thought chunk received, routing to channel");
-                            }
+        match method {
+            "session/update" => {
+                if let Ok(event) = serde_json::from_value::<SessionUpdateEvent>(params.clone()) {
+                    tracing::debug!(agent = %self.slots[slot_idx].name(), session_id = %event.session_id, update = ?event.update, "session update");
 
-                            // Route back to originating channel via reverse_map
-                            if let Some(session_key) = self.reverse_map.get(&event.session_id).cloned() {
-                                if let Some(sender) = &self.channels_sender {
-                                    let _ = sender.send(ChannelEvent::DeliverMessage {
-                                        session_key,
-                                        content: params,
-                                    }).await;
-                                }
-                            }
+                    if matches!(&event.update, SessionUpdateType::AgentThoughtChunk { .. }) {
+                        tracing::debug!(session_id = %event.session_id, "agent thought chunk received, routing to channel");
+                    }
+
+                    if let Some(session_key) = self.slots[slot_idx].reverse_map.get(&event.session_id).cloned() {
+                        if let Some(sender) = &self.channels_sender {
+                            let _ = sender.send(ChannelEvent::DeliverMessage {
+                                session_key,
+                                content: params,
+                            }).await;
                         }
                     }
-                    "session/request_permission" => {
-                        self.handle_permission_request(&value, &params).await;
-                    }
-                    "fs/read_text_file" => {
-                        self.handle_fs_read(&value, &params).await;
-                    }
-                    "fs/write_text_file" => {
-                        self.handle_fs_write(&value, &params).await;
-                    }
-                    _ => {
-                        self.send_error_response(&value, -32601, "Method not found").await;
-                    }
                 }
+            }
+            "session/request_permission" => {
+                self.handle_permission_request(slot_idx, &value, &params).await;
+            }
+            "fs/read_text_file" => {
+                Self::handle_fs_read(&self.slots[slot_idx], &value, &params).await;
+            }
+            "fs/write_text_file" => {
+                Self::handle_fs_write(&self.slots[slot_idx], &value, &params).await;
+            }
+            _ => {
+                Self::send_error_response(&self.slots[slot_idx], &value, -32601, "Method not found").await;
             }
         }
     }
 
-    async fn handle_permission_request(&mut self, request: &serde_json::Value, params: &serde_json::Value) {
+    async fn handle_permission_request(&mut self, slot_idx: usize, request: &serde_json::Value, params: &serde_json::Value) {
         let request_id = params["requestId"]
             .as_str()
             .unwrap_or("")
@@ -404,11 +377,10 @@ impl AgentsManager {
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default();
 
-        tracing::info!(%request_id, %description, "permission requested");
+        tracing::info!(agent = %self.slots[slot_idx].name(), %request_id, %description, "permission requested");
 
-        // Route permission to originating channel via session_id → session_key
         let session_id = params["sessionId"].as_str().unwrap_or("");
-        if let Some(session_key) = self.reverse_map.get(session_id).cloned() {
+        if let Some(session_key) = self.slots[slot_idx].reverse_map.get(session_id).cloned() {
             if let Some(sender) = &self.channels_sender {
                 let options_json = serde_json::to_value(&options).unwrap_or_default();
                 let _ = sender.send(ChannelEvent::RoutePermission {
@@ -420,7 +392,7 @@ impl AgentsManager {
             }
         }
 
-        self.pending_permissions.insert(
+        self.slots[slot_idx].pending_permissions.insert(
             request_id,
             PendingPermission {
                 request: request.clone(),
@@ -431,37 +403,33 @@ impl AgentsManager {
         );
     }
 
-    async fn handle_fs_read(&self, request: &serde_json::Value, params: &serde_json::Value) {
+    async fn handle_fs_read(slot: &AgentSlot, request: &serde_json::Value, params: &serde_json::Value) {
         let path = params["path"].as_str().unwrap_or("");
         match tokio::fs::read_to_string(path).await {
             Ok(content) => {
-                self.send_success_response(request, serde_json::json!({ "content": content }))
-                    .await;
+                Self::send_success_response(slot, request, serde_json::json!({ "content": content })).await;
             }
             Err(e) => {
-                self.send_error_response(request, -32000, &e.to_string())
-                    .await;
+                Self::send_error_response(slot, request, -32000, &e.to_string()).await;
             }
         }
     }
 
-    async fn handle_fs_write(&self, request: &serde_json::Value, params: &serde_json::Value) {
+    async fn handle_fs_write(slot: &AgentSlot, request: &serde_json::Value, params: &serde_json::Value) {
         let path = params["path"].as_str().unwrap_or("");
         let content = params["content"].as_str().unwrap_or("");
         match tokio::fs::write(path, content).await {
             Ok(()) => {
-                self.send_success_response(request, serde_json::json!({}))
-                    .await;
+                Self::send_success_response(slot, request, serde_json::json!({})).await;
             }
             Err(e) => {
-                self.send_error_response(request, -32000, &e.to_string())
-                    .await;
+                Self::send_error_response(slot, request, -32000, &e.to_string()).await;
             }
         }
     }
 
-    async fn send_success_response(&self, request: &serde_json::Value, result: serde_json::Value) {
-        if let Some(conn) = self.connection.as_ref() {
+    async fn send_success_response(slot: &AgentSlot, request: &serde_json::Value, result: serde_json::Value) {
+        if let Some(conn) = slot.connection.as_ref() {
             let resp = serde_json::json!({
                 "jsonrpc": "2.0",
                 "id": request.get("id").cloned().unwrap_or(serde_json::Value::Null),
@@ -471,8 +439,8 @@ impl AgentsManager {
         }
     }
 
-    async fn send_error_response(&self, request: &serde_json::Value, code: i64, message: &str) {
-        if let Some(conn) = self.connection.as_ref() {
+    async fn send_error_response(slot: &AgentSlot, request: &serde_json::Value, code: i64, message: &str) {
+        if let Some(conn) = slot.connection.as_ref() {
             let resp = serde_json::json!({
                 "jsonrpc": "2.0",
                 "id": request.get("id").cloned().unwrap_or(serde_json::Value::Null),
@@ -482,80 +450,88 @@ impl AgentsManager {
         }
     }
 
-    async fn shutdown_agent(&mut self) {
-        if let (Some(conn), Some(sid)) = (self.connection.as_ref(), &self.session_id) {
-            let params = serde_json::json!({ "sessionId": sid });
-            let _ = conn.send_notification("session/close", params).await;
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        }
-        if let Some(mut conn) = self.connection.take() {
-            let _ = conn.kill().await;
+    async fn shutdown_all(&mut self) {
+        for slot in &mut self.slots {
+            if let Some(conn) = &slot.connection {
+                for acp_id in slot.session_map.values() {
+                    let params = serde_json::json!({ "sessionId": acp_id });
+                    let _ = conn.send_notification("session/close", params).await;
+                }
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+            if let Some(mut conn) = slot.connection.take() {
+                let _ = conn.kill().await;
+            }
         }
     }
 
-    async fn handle_crash(&mut self, _cancel: &CancellationToken) {
-        tracing::warn!("agent process exited, attempting recovery");
-        self.connection = None;
+    async fn handle_crash(&mut self, slot_idx: usize) {
+        let slot = &mut self.slots[slot_idx];
+        let agent_name = slot.name().to_string();
+        tracing::warn!(agent = %agent_name, "agent process exited, attempting recovery");
+        slot.connection = None;
 
-        let delay = self.backoff.next_delay();
-        tracing::info!(delay_ms = delay.as_millis(), "waiting before restart");
+        let delay = slot.backoff.next_delay();
+        tracing::info!(agent = %agent_name, delay_ms = delay.as_millis(), "waiting before restart");
         tokio::time::sleep(delay).await;
 
-        match AgentConnection::spawn(&self.agent_config) {
+        match AgentConnection::spawn(&slot.config) {
             Ok(conn) => {
-                self.connection = Some(conn);
+                slot.connection = Some(conn);
             }
             Err(e) => {
-                tracing::error!(error = %e, "failed to respawn agent");
+                tracing::error!(agent = %agent_name, error = %e, "failed to respawn agent");
                 return;
             }
         }
 
-        if let Err(e) = self.initialize_agent().await {
-            tracing::error!(error = %e, "failed to re-initialize agent");
-            self.connection = None;
+        if let Err(e) = Self::initialize_agent(slot).await {
+            tracing::error!(agent = %agent_name, error = %e, "failed to re-initialize agent");
+            slot.connection = None;
             return;
         }
 
-        let supports_load = self
+        let supports_load = slot
             .agent_capabilities
             .as_ref()
             .and_then(|c| c.load_session)
             .unwrap_or(false);
 
         if supports_load {
-            if let Some(sid) = &self.session_id {
+            if let Some(first_acp_id) = slot.session_map.values().next().cloned() {
                 let params = serde_json::to_value(SessionLoadParams {
-                    session_id: sid.clone(),
+                    session_id: first_acp_id,
                 })
                 .unwrap_or_default();
 
-                let conn = self.connection.as_ref().unwrap();
+                let conn = slot.connection.as_ref().expect("connection just spawned");
                 if let Ok(rx) = conn.send_request("session/load", params).await {
                     match tokio::time::timeout(Duration::from_secs(30), rx).await {
                         Ok(Ok(resp)) => {
                             if resp.get("sessionId").is_some() {
-                                tracing::info!("session restored via session/load");
-                                self.backoff.reset();
+                                tracing::info!(agent = %agent_name, "session restored via session/load");
+                                slot.backoff.reset();
                                 return;
                             }
                         }
                         _ => {
-                            tracing::warn!("session/load failed, starting fresh session");
+                            tracing::warn!(agent = %agent_name, "session/load failed, starting fresh session");
                         }
                     }
                 }
             }
         }
 
-        if let Err(e) = self.start_session().await {
-            tracing::error!(error = %e, "failed to start new session after crash");
-            self.connection = None;
-            return;
+        match Self::start_session(slot, &self.tools_handle).await {
+            Ok(_session_id) => {
+                slot.backoff.reset();
+                tracing::info!(agent = %agent_name, "agent recovered successfully");
+            }
+            Err(e) => {
+                tracing::error!(agent = %agent_name, error = %e, "failed to start new session after crash");
+                slot.connection = None;
+            }
         }
-
-        self.backoff.reset();
-        tracing::info!("agent recovered successfully");
     }
 }
 
@@ -567,19 +543,39 @@ impl Manager for AgentsManager {
     }
 
     async fn start(&mut self) -> Result<(), ManagerError> {
-        let conn = AgentConnection::spawn(&self.agent_config)
-            .map_err(|e| ManagerError::Internal(e.to_string()))?;
-        self.connection = Some(conn);
+        for config in &self.agent_configs {
+            if !config.enabled {
+                tracing::info!(agent = %config.name, "agent disabled, skipping");
+                continue;
+            }
 
-        self.initialize_agent()
-            .await
-            .map_err(|e| ManagerError::Internal(e.to_string()))?;
+            let mut slot = AgentSlot::new(config.clone(), &self.parent_cancel);
 
-        self.start_session()
-            .await
-            .map_err(|e| ManagerError::Internal(e.to_string()))?;
+            let conn = AgentConnection::spawn(&config)
+                .map_err(|e| ManagerError::Internal(format!("{}: {e}", config.name)))?;
+            slot.connection = Some(conn);
 
-        tracing::info!(manager = self.name(), "manager started");
+            Self::initialize_agent(&mut slot)
+                .await
+                .map_err(|e| ManagerError::Internal(format!("{}: {e}", config.name)))?;
+
+            let session_id = Self::start_session(&mut slot, &self.tools_handle)
+                .await
+                .map_err(|e| ManagerError::Internal(format!("{}: {e}", config.name)))?;
+
+            let default_key = SessionKey::new(&config.name, "default", "default");
+            slot.session_map.insert(default_key.clone(), session_id.clone());
+            slot.reverse_map.insert(session_id, default_key);
+
+            self.slots.push(slot);
+        }
+
+        tracing::info!(
+            manager = self.name(),
+            active = self.slots.len(),
+            total = self.agent_configs.len(),
+            "manager started"
+        );
         Ok(())
     }
 
@@ -590,17 +586,24 @@ impl Manager for AgentsManager {
 
         loop {
             let incoming = async {
-                if let Some(conn) = self.connection.as_mut() {
-                    conn.recv_incoming().await
-                } else {
-                    std::future::pending().await
+                for (i, slot) in self.slots.iter_mut().enumerate() {
+                    if slot.disabled {
+                        continue;
+                    }
+                    if let Some(conn) = slot.connection.as_mut() {
+                        match tokio::time::timeout(Duration::from_millis(1), conn.recv_incoming()).await {
+                            Ok(msg) => return Some((i, msg)),
+                            Err(_) => continue,
+                        }
+                    }
                 }
+                std::future::pending().await
             };
 
             tokio::select! {
                 _ = cancel.cancelled() => {
                     tracing::info!(manager = "agents", "shutting down");
-                    self.shutdown_agent().await;
+                    self.shutdown_all().await;
                     break;
                 }
                 Some(cmd) = cmd_rx.recv() => {
@@ -609,10 +612,12 @@ impl Manager for AgentsManager {
                     }
                 }
                 result = incoming => {
-                    match result {
-                        Some(msg) => self.handle_incoming(msg).await,
-                        None => {
-                            self.handle_crash(&cancel).await;
+                    if let Some((idx, msg)) = result {
+                        match msg {
+                            Some(incoming_msg) => self.handle_incoming(idx, incoming_msg).await,
+                            None => {
+                                self.handle_crash(idx).await;
+                            }
                         }
                     }
                 }
@@ -624,7 +629,11 @@ impl Manager for AgentsManager {
     }
 
     async fn health_check(&self) -> bool {
-        self.connection.is_some()
+        let enabled_slots: Vec<_> = self.slots.iter().filter(|s| !s.disabled).collect();
+        if enabled_slots.is_empty() {
+            return self.agent_configs.iter().all(|c| !c.enabled);
+        }
+        enabled_slots.iter().all(|s| s.connection.is_some())
     }
 }
 
@@ -674,7 +683,7 @@ mod tests {
     #[test]
     fn agents_manager_name() {
         let (handle, _rx) = make_tools_handle();
-        let m = AgentsManager::new(mock_agent_config(), handle);
+        let m = AgentsManager::new(vec![mock_agent_config()], handle);
         assert_eq!(m.name(), "agents");
     }
 
@@ -683,14 +692,15 @@ mod tests {
         let (handle, rx) = make_tools_handle();
         let tools_task = tokio::spawn(serve_tools_urls(rx));
 
-        let mut m = AgentsManager::new(mock_agent_config(), handle);
+        let mut m = AgentsManager::new(vec![mock_agent_config()], handle);
         let result = m.start().await;
         assert!(result.is_ok(), "start failed: {result:?}");
-        assert!(m.session_id.is_some());
-        assert!(m.agent_capabilities.is_some());
-        assert_eq!(m.agent_capabilities.as_ref().unwrap().protocol_version, 1);
+        assert_eq!(m.slots.len(), 1);
+        assert!(m.slots[0].connection.is_some());
+        assert!(m.slots[0].agent_capabilities.is_some());
+        assert_eq!(m.slots[0].agent_capabilities.as_ref().unwrap().protocol_version, 1);
 
-        m.shutdown_agent().await;
+        m.shutdown_all().await;
         tools_task.abort();
     }
 
@@ -699,19 +709,35 @@ mod tests {
         let (handle, rx) = make_tools_handle();
         let tools_task = tokio::spawn(serve_tools_urls(rx));
 
-        let mut m = AgentsManager::new(mock_agent_config(), handle);
+        let mut m = AgentsManager::new(vec![mock_agent_config()], handle);
         m.start().await.unwrap();
         assert!(m.health_check().await);
 
-        m.shutdown_agent().await;
+        m.shutdown_all().await;
         tools_task.abort();
     }
 
     #[tokio::test]
     async fn agents_manager_health_check_dead() {
         let (handle, _rx) = make_tools_handle();
-        let m = AgentsManager::new(mock_agent_config(), handle);
+        let m = AgentsManager::new(vec![mock_agent_config()], handle);
         assert!(!m.health_check().await);
+    }
+
+    #[tokio::test]
+    async fn agents_manager_health_check_no_agents_configured() {
+        let (handle, _rx) = make_tools_handle();
+        let m = AgentsManager::new(vec![], handle);
+        assert!(m.health_check().await);
+    }
+
+    #[tokio::test]
+    async fn agents_manager_health_check_all_disabled() {
+        let mut config = mock_agent_config();
+        config.enabled = false;
+        let (handle, _rx) = make_tools_handle();
+        let m = AgentsManager::new(vec![config], handle);
+        assert!(m.health_check().await);
     }
 
     #[tokio::test]
@@ -719,15 +745,15 @@ mod tests {
         let (handle, rx) = make_tools_handle();
         let tools_task = tokio::spawn(serve_tools_urls(rx));
 
-        let mut m = AgentsManager::new(mock_agent_config(), handle);
+        let mut m = AgentsManager::new(vec![mock_agent_config()], handle);
         m.start().await.unwrap();
 
-        let result = m.send_prompt("hello").await;
+        let result = AgentsManager::send_prompt_to_slot(&m.slots[0], "hello").await;
         assert!(result.is_ok());
 
         tokio::time::sleep(Duration::from_millis(200)).await;
 
-        m.shutdown_agent().await;
+        m.shutdown_all().await;
         tools_task.abort();
     }
 
@@ -739,35 +765,86 @@ mod tests {
         let (handle, rx) = make_tools_handle();
         let tools_task = tokio::spawn(serve_tools_urls(rx));
 
-        let mut m = AgentsManager::new(config, handle);
+        let mut m = AgentsManager::new(vec![config], handle);
         m.start().await.unwrap();
-        let original_session = m.session_id.clone();
 
-        let _ = m.send_prompt("trigger-crash").await;
+        let _ = AgentsManager::send_prompt_to_slot(&m.slots[0], "trigger-crash").await;
         tokio::time::sleep(Duration::from_millis(500)).await;
 
-        let cancel = CancellationToken::new();
-        m.handle_crash(&cancel).await;
+        m.handle_crash(0).await;
 
-        assert!(m.connection.is_some(), "should have reconnected");
-        assert!(m.session_id.is_some(), "should have new session");
+        assert!(m.slots[0].connection.is_some(), "should have reconnected");
 
-        m.shutdown_agent().await;
+        m.shutdown_all().await;
         tools_task.abort();
-        let _ = original_session;
     }
 
     #[tokio::test]
-    async fn get_status_returns_disconnected_when_fresh() {
+    async fn get_status_returns_vec_of_agent_info() {
         let (handle, _rx) = make_tools_handle();
-        let mut m = AgentsManager::new(mock_agent_config(), handle);
+        let mut m = AgentsManager::new(vec![mock_agent_config()], handle);
+
+        let mut slot = AgentSlot::new(mock_agent_config(), &m.parent_cancel);
+        slot.session_map.insert(
+            SessionKey::new("test", "local", "dev"),
+            "acp-1".to_string(),
+        );
+        m.slots.push(slot);
 
         let (reply_tx, reply_rx) = oneshot::channel();
         let done = m.handle_command(AgentsCommand::GetStatus { reply: reply_tx }).await;
-        assert!(!done, "GetStatus should not stop the manager");
+        assert!(!done);
 
-        let info = reply_rx.await.expect("should receive status info");
-        assert!(!info.connected, "fresh manager should not be connected");
-        assert!(info.session_id.is_none(), "fresh manager should have no session_id");
+        let statuses = reply_rx.await.expect("should receive status");
+        assert_eq!(statuses.len(), 1);
+        assert_eq!(statuses[0].name, "default");
+        assert!(!statuses[0].connected);
+        assert_eq!(statuses[0].session_count, 1);
+    }
+
+    #[tokio::test]
+    async fn create_session_with_unknown_agent_returns_error() {
+        let (handle, _rx) = make_tools_handle();
+        let mut m = AgentsManager::new(vec![], handle);
+
+        let result = m.create_session("nonexistent", SessionKey::new("ch", "k", "p")).await;
+        assert!(matches!(result, Err(AgentsError::AgentNotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn start_skips_disabled_agents() {
+        let mut config = mock_agent_config();
+        config.enabled = false;
+
+        let (handle, _rx) = make_tools_handle();
+        let mut m = AgentsManager::new(vec![config], handle);
+        let result = m.start().await;
+        assert!(result.is_ok());
+        assert!(m.slots.is_empty(), "disabled agent should not create a slot");
+    }
+
+    #[tokio::test]
+    async fn create_session_routes_to_correct_slot() {
+        let (handle, rx) = make_tools_handle();
+        let tools_task = tokio::spawn(serve_tools_urls(rx));
+
+        let mut config_a = mock_agent_config();
+        config_a.name = "agent-a".to_string();
+        let mut config_b = mock_agent_config();
+        config_b.name = "agent-b".to_string();
+
+        let mut m = AgentsManager::new(vec![config_a, config_b], handle);
+        m.start().await.unwrap();
+        assert_eq!(m.slots.len(), 2);
+
+        let key = SessionKey::new("telegram", "direct", "alice");
+        let result = m.create_session("agent-b", key.clone()).await;
+        assert!(result.is_ok());
+
+        assert!(m.slots[1].session_map.contains_key(&key));
+        assert!(!m.slots[0].session_map.contains_key(&key));
+
+        m.shutdown_all().await;
+        tools_task.abort();
     }
 }
