@@ -14,6 +14,8 @@ pub struct ChannelCapabilities {
 pub struct ChannelInitializeParams {
     pub protocol_version: u32,
     pub channel_id: String,
+    #[serde(default)]
+    pub ack: Option<ChannelAckConfig>,
 }
 
 /// Initialize handshake — channel subprocess responds.
@@ -85,6 +87,37 @@ impl ThoughtContent {
             None
         }
     }
+}
+
+/// Protoclaw → Channel: acknowledge message receipt.
+/// Channel uses this to add emoji reaction and/or show typing indicator.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AckNotification {
+    pub session_id: String,
+    pub channel_name: String,
+    pub peer_id: String,
+    pub message_id: Option<String>,
+}
+
+/// Protoclaw → Channel: ack lifecycle event (e.g., response started).
+/// Channel uses this to remove/replace reaction based on its ack config.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AckLifecycleNotification {
+    pub session_id: String,
+    pub action: String,
+}
+
+/// Ack configuration passed to channels via initialize handshake.
+/// Lightweight mirror of config crate's AckConfig — SDK types must not depend on config.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelAckConfig {
+    pub reaction: bool,
+    pub typing: bool,
+    pub reaction_emoji: String,
+    pub reaction_lifecycle: String,
 }
 
 /// Channel → Protoclaw: user responded to permission prompt.
@@ -187,6 +220,7 @@ mod tests {
         let params = ChannelInitializeParams {
             protocol_version: 1,
             channel_id: "ch-1".into(),
+            ack: None,
         };
         let json = serde_json::to_value(&params).unwrap();
         assert_eq!(json["protocolVersion"], 1);
@@ -260,5 +294,97 @@ mod tests {
         assert_eq!(json["capabilities"]["streaming"], true);
         let deser: ChannelInitializeResult = serde_json::from_value(json).unwrap();
         assert_eq!(deser, result);
+    }
+
+    #[test]
+    fn ack_notification_round_trip() {
+        let ack = AckNotification {
+            session_id: "sess-1".into(),
+            channel_name: "telegram".into(),
+            peer_id: "telegram:12345".into(),
+            message_id: Some("msg-42".into()),
+        };
+        let json = serde_json::to_value(&ack).unwrap();
+        assert_eq!(json["sessionId"], "sess-1");
+        assert_eq!(json["channelName"], "telegram");
+        assert_eq!(json["peerId"], "telegram:12345");
+        assert_eq!(json["messageId"], "msg-42");
+        assert!(json.get("session_id").is_none());
+        let deser: AckNotification = serde_json::from_value(json).unwrap();
+        assert_eq!(deser, ack);
+    }
+
+    #[test]
+    fn ack_notification_none_message_id() {
+        let ack = AckNotification {
+            session_id: "sess-1".into(),
+            channel_name: "debug-http".into(),
+            peer_id: "local".into(),
+            message_id: None,
+        };
+        let json = serde_json::to_value(&ack).unwrap();
+        assert!(json["messageId"].is_null());
+        let deser: AckNotification = serde_json::from_value(json).unwrap();
+        assert_eq!(deser.message_id, None);
+    }
+
+    #[test]
+    fn ack_lifecycle_notification_round_trip() {
+        let lifecycle = AckLifecycleNotification {
+            session_id: "sess-1".into(),
+            action: "response_started".into(),
+        };
+        let json = serde_json::to_value(&lifecycle).unwrap();
+        assert_eq!(json["sessionId"], "sess-1");
+        assert_eq!(json["action"], "response_started");
+        let deser: AckLifecycleNotification = serde_json::from_value(json).unwrap();
+        assert_eq!(deser, lifecycle);
+    }
+
+    #[test]
+    fn channel_ack_config_round_trip() {
+        let cfg = ChannelAckConfig {
+            reaction: true,
+            typing: true,
+            reaction_emoji: "👀".into(),
+            reaction_lifecycle: "remove".into(),
+        };
+        let json = serde_json::to_value(&cfg).unwrap();
+        assert_eq!(json["reaction"], true);
+        assert_eq!(json["typing"], true);
+        assert_eq!(json["reactionEmoji"], "👀");
+        assert_eq!(json["reactionLifecycle"], "remove");
+        assert!(json.get("reaction_emoji").is_none());
+        let deser: ChannelAckConfig = serde_json::from_value(json).unwrap();
+        assert_eq!(deser, cfg);
+    }
+
+    #[test]
+    fn channel_initialize_params_with_ack() {
+        let params = ChannelInitializeParams {
+            protocol_version: 1,
+            channel_id: "telegram".into(),
+            ack: Some(ChannelAckConfig {
+                reaction: true,
+                typing: true,
+                reaction_emoji: "👀".into(),
+                reaction_lifecycle: "remove".into(),
+            }),
+        };
+        let json = serde_json::to_value(&params).unwrap();
+        assert_eq!(json["ack"]["reaction"], true);
+        assert_eq!(json["ack"]["reactionEmoji"], "👀");
+        let deser: ChannelInitializeParams = serde_json::from_value(json).unwrap();
+        assert_eq!(deser, params);
+    }
+
+    #[test]
+    fn channel_initialize_params_without_ack() {
+        let json = serde_json::json!({
+            "protocolVersion": 1,
+            "channelId": "debug-http"
+        });
+        let deser: ChannelInitializeParams = serde_json::from_value(json).unwrap();
+        assert_eq!(deser.ack, None);
     }
 }

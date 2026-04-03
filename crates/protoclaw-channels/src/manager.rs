@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
 use crate::types::PermissionOption;
@@ -67,6 +67,7 @@ pub struct ChannelsManager {
     agents_handle: Option<ManagerHandle<AgentsCommand>>,
     channel_events_rx: Option<mpsc::Receiver<ChannelEvent>>,
     debounce: DebounceBuffer,
+    acked_sessions: HashSet<SessionKey>,
 }
 
 impl ChannelsManager {
@@ -82,6 +83,7 @@ impl ChannelsManager {
             agents_handle: None,
             channel_events_rx: None,
             debounce: DebounceBuffer::new(debounce_config),
+            acked_sessions: HashSet::new(),
         }
     }
 
@@ -273,6 +275,19 @@ impl ChannelsManager {
 
                 if let Some(entry) = self.routing_table.get(&session_key) {
                     let slot = &self.slots[entry.slot_index];
+
+                    // Send ack lifecycle on first response for this session
+                    if !self.acked_sessions.contains(&session_key) {
+                        self.acked_sessions.insert(session_key.clone());
+                        if let Some(conn) = &slot.connection {
+                            let lifecycle_params = serde_json::json!({
+                                "sessionId": entry.acp_session_id,
+                                "action": "response_started",
+                            });
+                            let _ = conn.send_notification("channel/ackLifecycle", lifecycle_params).await;
+                        }
+                    }
+
                     if let Some(conn) = &slot.connection {
                         let params = serde_json::json!({
                             "sessionId": entry.acp_session_id,
@@ -315,13 +330,16 @@ impl ChannelsManager {
                 }
             }
             ChannelEvent::AckMessage { session_key, channel_name, peer_id, message_id } => {
-                tracing::debug!(session_key = %session_key, channel = %channel_name, peer = %peer_id, message_id = ?message_id, "ack message received (not yet implemented)");
+                tracing::debug!(session_key = %session_key, channel = %channel_name, peer = %peer_id, message_id = ?message_id, "ack message event received");
             }
         }
     }
 
     /// Dispatch a merged/immediate message to the agent as a PromptSession.
-    async fn dispatch_to_agent(&self, session_key: &SessionKey, message: &str, agent_name: &str) {
+    async fn dispatch_to_agent(&mut self, session_key: &SessionKey, message: &str, agent_name: &str) {
+        // Reset ack lifecycle tracking so next response triggers lifecycle again
+        self.acked_sessions.remove(session_key);
+
         let agents_handle = match &self.agents_handle {
             Some(h) => h.clone(),
             None => {
@@ -374,6 +392,25 @@ impl ChannelsManager {
                         &send_msg.peer_info.kind,
                         &send_msg.peer_info.peer_id,
                     );
+
+                    // Send ack notification back to channel BEFORE debounce — instant feedback
+                    if let Some(conn) = &self.slots[slot_index].connection {
+                        let ack_params = serde_json::json!({
+                            "sessionId": self.routing_table.get(&session_key)
+                                .map(|e| e.acp_session_id.as_str())
+                                .unwrap_or(""),
+                            "channelName": send_msg.peer_info.channel_name,
+                            "peerId": send_msg.peer_info.peer_id,
+                            "messageId": serde_json::Value::Null,
+                        });
+                        if let Err(e) = conn.send_notification("channel/ackMessage", ack_params).await {
+                            tracing::warn!(
+                                channel = %channel_name,
+                                error = %e,
+                                "failed to send ack notification"
+                            );
+                        }
+                    }
 
                     let agents_handle = match &self.agents_handle {
                         Some(h) => h.clone(),
