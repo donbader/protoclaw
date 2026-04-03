@@ -1,7 +1,7 @@
 use serde_json::{json, Value};
 use std::env;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 
 static PROMPT_COUNT: AtomicUsize = AtomicUsize::new(0);
 
@@ -15,6 +15,7 @@ async fn main() {
         .and_then(|v| v.parse().ok());
     let request_permission = env::var("MOCK_AGENT_REQUEST_PERMISSION").ok().is_some_and(|v| v == "1");
     let reject_load = env::var("MOCK_AGENT_REJECT_LOAD").ok().is_some_and(|v| v == "1");
+    let think = env::var("MOCK_AGENT_THINK").ok().is_some_and(|v| v != "0");
 
     let stdin = tokio::io::stdin();
     let mut stdout = tokio::io::stdout();
@@ -56,6 +57,7 @@ async fn main() {
                     &sid,
                     &user_msg,
                     request_permission,
+                    think,
                     &mut lines,
                 )
                 .await;
@@ -89,11 +91,11 @@ async fn main() {
     }
 }
 
-async fn write_message(stdout: &mut tokio::io::Stdout, msg: &Value) {
+async fn write_message<W: AsyncWrite + Unpin>(writer: &mut W, msg: &Value) {
     let mut line = serde_json::to_string(msg).expect("failed to serialize");
     line.push('\n');
-    stdout.write_all(line.as_bytes()).await.expect("failed to write");
-    stdout.flush().await.expect("failed to flush");
+    writer.write_all(line.as_bytes()).await.expect("failed to write");
+    writer.flush().await.expect("failed to flush");
 }
 
 fn extract_prompt_message(msg: &Value) -> String {
@@ -130,12 +132,13 @@ async fn handle_session_new(stdout: &mut tokio::io::Stdout, id: Option<Value>) -
     sid
 }
 
-async fn handle_session_prompt(
-    stdout: &mut tokio::io::Stdout,
+async fn handle_session_prompt<W: AsyncWrite + Unpin>(
+    stdout: &mut W,
     id: Option<Value>,
     session_id: &str,
     user_msg: &str,
     request_permission: bool,
+    think: bool,
     lines: &mut tokio::io::Lines<BufReader<tokio::io::Stdin>>,
 ) {
     let count = PROMPT_COUNT.load(Ordering::SeqCst);
@@ -159,6 +162,22 @@ async fn handle_session_prompt(
 
         if let Ok(Some(resp_line)) = lines.next_line().await {
             let _resp: Value = serde_json::from_str(&resp_line).unwrap_or(json!(null));
+        }
+    }
+
+    if think {
+        for thought in ["Analyzing your message...", "Formulating response..."] {
+            let chunk = json!({
+                "jsonrpc": "2.0",
+                "method": "session/update",
+                "params": {
+                    "sessionId": session_id,
+                    "type": "agent_thought_chunk",
+                    "content": thought
+                }
+            });
+            write_message(stdout, &chunk).await;
+            tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
         }
     }
 
