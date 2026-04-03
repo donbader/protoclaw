@@ -3,13 +3,14 @@ use std::time::Duration;
 
 use crate::types::PermissionOption;
 use protoclaw_agents::AgentsCommand;
-use protoclaw_config::ChannelConfig;
+use protoclaw_config::{ChannelConfig, DebounceConfig};
 use protoclaw_core::types::ChannelId;
 use protoclaw_core::{ChannelEvent, CrashTracker, ExponentialBackoff, Manager, ManagerError, ManagerHandle, SessionKey};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
 use crate::connection::{ChannelConnection, IncomingChannelMessage};
+use crate::debounce::{DebounceAction, DebounceBuffer};
 use crate::error::ChannelsError;
 use crate::types::{ChannelCapabilities, ChannelInitializeResult, ChannelSendMessage, ChannelRespondPermission};
 
@@ -62,16 +63,14 @@ pub struct ChannelsManager {
     slots: Vec<ChannelSlot>,
     cmd_rx: Option<mpsc::Receiver<ChannelsCommand>>,
     cmd_tx: mpsc::Sender<ChannelsCommand>,
-    /// Session-keyed routing table: SessionKey → (channel, ACP session).
     routing_table: HashMap<SessionKey, RoutingEntry>,
-    /// Handle to send commands to AgentsManager for session creation/prompting.
     agents_handle: Option<ManagerHandle<AgentsCommand>>,
-    /// Receiver for ChannelEvents from AgentsManager (session updates, permissions).
     channel_events_rx: Option<mpsc::Receiver<ChannelEvent>>,
+    debounce: DebounceBuffer,
 }
 
 impl ChannelsManager {
-    pub fn new(channel_configs: HashMap<String, ChannelConfig>, default_agent_name: String) -> Self {
+    pub fn new(channel_configs: HashMap<String, ChannelConfig>, debounce_config: DebounceConfig, default_agent_name: String) -> Self {
         let (cmd_tx, cmd_rx) = mpsc::channel(16);
         Self {
             channel_configs,
@@ -82,6 +81,7 @@ impl ChannelsManager {
             routing_table: HashMap::new(),
             agents_handle: None,
             channel_events_rx: None,
+            debounce: DebounceBuffer::new(debounce_config),
         }
     }
 
@@ -254,6 +254,23 @@ impl ChannelsManager {
     async fn handle_channel_event(&mut self, event: ChannelEvent) {
         match event {
             ChannelEvent::DeliverMessage { session_key, content } => {
+                let is_result = content.get("type")
+                    .and_then(|t| t.as_str())
+                    .map(|t| t == "result")
+                    .unwrap_or(false);
+
+                if is_result {
+                    self.debounce.mark_session_idle(&session_key);
+                    if let Some(queued_msg) = self.debounce.drain_queued(&session_key) {
+                        let agent_name = self.routing_table
+                            .get(&session_key)
+                            .map(|e| e.agent_name.clone())
+                            .unwrap_or_default();
+                        self.debounce.mark_session_active(&session_key);
+                        self.dispatch_to_agent(&session_key, &queued_msg, &agent_name).await;
+                    }
+                }
+
                 if let Some(entry) = self.routing_table.get(&session_key) {
                     let slot = &self.slots[entry.slot_index];
                     if let Some(conn) = &slot.connection {
@@ -299,6 +316,40 @@ impl ChannelsManager {
             }
             ChannelEvent::AckMessage { session_key, channel_name, peer_id, message_id } => {
                 tracing::debug!(session_key = %session_key, channel = %channel_name, peer = %peer_id, message_id = ?message_id, "ack message received (not yet implemented)");
+            }
+        }
+    }
+
+    /// Dispatch a merged/immediate message to the agent as a PromptSession.
+    async fn dispatch_to_agent(&self, session_key: &SessionKey, message: &str, agent_name: &str) {
+        let agents_handle = match &self.agents_handle {
+            Some(h) => h.clone(),
+            None => {
+                tracing::warn!(session_key = %session_key, "no agents handle, cannot dispatch");
+                return;
+            }
+        };
+
+        let (reply_tx, reply_rx) = oneshot::channel();
+        if let Err(e) = agents_handle.send(AgentsCommand::PromptSession {
+            agent_name: agent_name.to_string(),
+            session_key: session_key.clone(),
+            message: message.to_string(),
+            reply: reply_tx,
+        }).await {
+            tracing::error!(session_key = %session_key, error = %e, "failed to send PromptSession");
+            return;
+        }
+
+        match reply_rx.await {
+            Ok(Ok(())) => {
+                tracing::debug!(session_key = %session_key, "prompt sent to agent");
+            }
+            Ok(Err(e)) => {
+                tracing::warn!(session_key = %session_key, error = %e, "PromptSession failed");
+            }
+            Err(_) => {
+                tracing::warn!(session_key = %session_key, "PromptSession reply dropped");
             }
         }
     }
@@ -385,27 +436,24 @@ impl ChannelsManager {
                         }
                     }
 
-                    // Send prompt to existing session
-                    let (reply_tx, reply_rx) = oneshot::channel();
-                    if let Err(e) = agents_handle.send(AgentsCommand::PromptSession {
-                        agent_name: agent_name.clone(),
-                        session_key: session_key.clone(),
-                        message: send_msg.content,
-                        reply: reply_tx,
-                    }).await {
-                        tracing::error!(channel = %channel_name, error = %e, "failed to send PromptSession");
-                        return;
-                    }
-
-                    match reply_rx.await {
-                        Ok(Ok(())) => {
-                            tracing::debug!(channel = %channel_name, session_key = %session_key, "prompt sent to agent");
+                    match self.debounce.push(&session_key, send_msg.content.clone()) {
+                        DebounceAction::Immediate(msg) => {
+                            self.debounce.mark_session_active(&session_key);
+                            self.dispatch_to_agent(&session_key, &msg, &agent_name).await;
                         }
-                        Ok(Err(e)) => {
-                            tracing::warn!(channel = %channel_name, error = %e, "PromptSession failed");
+                        DebounceAction::Buffered => {
+                            tracing::debug!(
+                                channel = %channel_name,
+                                session_key = %session_key,
+                                "message buffered for debounce"
+                            );
                         }
-                        Err(_) => {
-                            tracing::warn!(channel = %channel_name, "PromptSession reply dropped");
+                        DebounceAction::Queued => {
+                            tracing::debug!(
+                                channel = %channel_name,
+                                session_key = %session_key,
+                                "message queued (agent mid-response)"
+                            );
                         }
                     }
                 } else {
@@ -548,10 +596,16 @@ impl Manager for ChannelsManager {
         let mut poll_interval = tokio::time::interval(Duration::from_millis(50));
 
         loop {
-            // Build a future for channel events (or pending if no receiver)
             let channel_event_fut = async {
                 match &mut channel_events_rx {
                     Some(rx) => rx.recv().await,
+                    None => std::future::pending().await,
+                }
+            };
+
+            let debounce_sleep = async {
+                match self.debounce.next_deadline() {
+                    Some(deadline) => tokio::time::sleep_until(tokio::time::Instant::from_std(deadline)).await,
                     None => std::future::pending().await,
                 }
             };
@@ -570,15 +624,26 @@ impl Manager for ChannelsManager {
                 Some(event) = channel_event_fut => {
                     self.handle_channel_event(event).await;
                 }
+                _ = debounce_sleep => {
+                    let ready = self.debounce.ready_sessions();
+                    for session_key in ready {
+                        if let Some(merged) = self.debounce.drain(&session_key) {
+                            let agent_name = self.routing_table
+                                .get(&session_key)
+                                .map(|e| e.agent_name.clone())
+                                .unwrap_or_default();
+                            self.debounce.mark_session_active(&session_key);
+                            self.dispatch_to_agent(&session_key, &merged, &agent_name).await;
+                        }
+                    }
+                }
                 _ = poll_interval.tick() => {
-                    // Poll channels for incoming messages
                     if let Some((idx, msg)) = self.poll_channels().await {
                         match msg {
                             Some(incoming) => {
                                 self.handle_channel_message(idx, incoming).await;
                             }
                             None => {
-                                // Channel crashed (EOF)
                                 let channel_name = self.slots[idx].name.clone();
                                 tracing::warn!(channel = %channel_name, "channel subprocess exited");
                                 self.handle_channel_crash(idx).await;
@@ -618,13 +683,13 @@ mod tests {
 
     #[test]
     fn channels_manager_name() {
-        let m = ChannelsManager::new(HashMap::new(), "default".into());
+        let m = ChannelsManager::new(HashMap::new(), DebounceConfig::default(), "default".into());
         assert_eq!(m.name(), "channels");
     }
 
     #[tokio::test]
     async fn channels_manager_start_with_no_channels() {
-        let mut m = ChannelsManager::new(HashMap::new(), "default".into());
+        let mut m = ChannelsManager::new(HashMap::new(), DebounceConfig::default(), "default".into());
         let result = m.start().await;
         assert!(result.is_ok());
         assert!(m.slots.is_empty());
@@ -632,7 +697,7 @@ mod tests {
 
     #[tokio::test]
     async fn channels_manager_health_check_no_channels() {
-        let m = ChannelsManager::new(HashMap::new(), "default".into());
+        let m = ChannelsManager::new(HashMap::new(), DebounceConfig::default(), "default".into());
         assert!(!m.health_check().await);
     }
 
@@ -641,7 +706,7 @@ mod tests {
         let configs = make_channel_map(vec![
             ("bad-channel", test_channel_config("nonexistent-binary-xyz-99999", true, "default")),
         ]);
-        let mut m = ChannelsManager::new(configs, "default".into());
+        let mut m = ChannelsManager::new(configs, DebounceConfig::default(), "default".into());
         let result = m.start().await;
         assert!(result.is_ok());
         assert_eq!(m.slots.len(), 1);
@@ -650,7 +715,7 @@ mod tests {
 
     #[tokio::test]
     async fn channels_manager_shutdown_command() {
-        let m = ChannelsManager::new(HashMap::new(), "default".into());
+        let m = ChannelsManager::new(HashMap::new(), DebounceConfig::default(), "default".into());
         let tx = m.command_sender();
         tx.send(ChannelsCommand::Shutdown).await.unwrap();
     }
@@ -679,7 +744,7 @@ mod tests {
         let configs = make_channel_map(vec![
             ("crasher", test_channel_config("nonexistent-binary-xyz-99999", true, "default")),
         ]);
-        let mut m = ChannelsManager::new(configs, "default".into());
+        let mut m = ChannelsManager::new(configs, DebounceConfig::default(), "default".into());
         m.start().await.unwrap();
         let slot = &mut m.slots[0];
         for _ in 0..5 {
@@ -734,7 +799,7 @@ mod tests {
 
     #[tokio::test]
     async fn handle_channel_event_deliver_routes_to_correct_slot() {
-        let mut m = ChannelsManager::new(HashMap::new(), "default".into());
+        let mut m = ChannelsManager::new(HashMap::new(), DebounceConfig::default(), "default".into());
         let key = SessionKey::new("test", "local", "dev");
         m.routing_table.insert(key.clone(), RoutingEntry {
             channel_id: ChannelId::from("test"),
@@ -760,14 +825,14 @@ mod tests {
     async fn with_agents_handle_sets_handle() {
         let (tx, _rx) = mpsc::channel::<AgentsCommand>(16);
         let handle = ManagerHandle::new(tx);
-        let m = ChannelsManager::new(HashMap::new(), "default".into()).with_agents_handle(handle);
+        let m = ChannelsManager::new(HashMap::new(), DebounceConfig::default(), "default".into()).with_agents_handle(handle);
         assert!(m.agents_handle.is_some());
     }
 
     #[tokio::test]
     async fn with_channel_events_rx_sets_receiver() {
         let (_tx, rx) = mpsc::channel::<ChannelEvent>(16);
-        let m = ChannelsManager::new(HashMap::new(), "default".into()).with_channel_events_rx(rx);
+        let m = ChannelsManager::new(HashMap::new(), DebounceConfig::default(), "default".into()).with_channel_events_rx(rx);
         assert!(m.channel_events_rx.is_some());
     }
 
@@ -776,7 +841,7 @@ mod tests {
         let configs = make_channel_map(vec![
             ("telegram", test_channel_config("telegram-channel", true, "opencode")),
         ]);
-        let mut m = ChannelsManager::new(configs, "default-agent".to_string());
+        let mut m = ChannelsManager::new(configs, DebounceConfig::default(), "default-agent".to_string());
         m.slots.push(ChannelSlot {
             name: "telegram".into(),
             config: test_channel_config("telegram-channel", true, "opencode"),
@@ -795,7 +860,7 @@ mod tests {
         let configs = make_channel_map(vec![
             ("debug-http", test_channel_config("debug-http", true, "default")),
         ]);
-        let mut m = ChannelsManager::new(configs, "first-enabled".to_string());
+        let mut m = ChannelsManager::new(configs, DebounceConfig::default(), "first-enabled".to_string());
         m.slots.push(ChannelSlot {
             name: "debug-http".into(),
             config: test_channel_config("debug-http", true, "default"),
@@ -814,7 +879,7 @@ mod tests {
         let configs = make_channel_map(vec![
             ("disabled-ch", test_channel_config("nonexistent-binary-xyz-99999", false, "default")),
         ]);
-        let mut m = ChannelsManager::new(configs, "default".into());
+        let mut m = ChannelsManager::new(configs, DebounceConfig::default(), "default".into());
         let result = m.start().await;
         assert!(result.is_ok());
         assert!(m.slots.is_empty(), "disabled channel should not create a slot");
