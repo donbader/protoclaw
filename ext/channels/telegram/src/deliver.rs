@@ -101,6 +101,54 @@ pub async fn deliver_to_chat(
             }
             return Ok(());
         }
+        "agent_message_chunk" => {
+            let chunk_content = content
+                .get("content")
+                .map(content_to_string)
+                .unwrap_or_default();
+
+            let accumulated = {
+                let mut buffers = state.message_buffers.write().await;
+                let buf = buffers.entry(chat_id).or_default();
+                buf.push_str(&chunk_content);
+                buf.clone()
+            };
+
+            if accumulated.is_empty() {
+                return Ok(());
+            }
+
+            let chunks = split_message(&accumulated, 4096);
+            let display_text = &chunks[0];
+
+            let existing_msg_id = state.active_messages.read().await.get(&chat_id).copied();
+            if let Some(msg_id) = existing_msg_id {
+                throttle_edit(state, chat_id).await;
+                let edit_result = bot
+                    .edit_message_text(ChatId(chat_id), MessageId(msg_id), display_text)
+                    .await;
+                match edit_result {
+                    Ok(_) => {}
+                    Err(e) => {
+                        tracing::warn!(%e, "failed to edit message chunk");
+                    }
+                }
+            } else {
+                match bot.send_message(ChatId(chat_id), display_text).await {
+                    Ok(sent) => {
+                        state
+                            .active_messages
+                            .write()
+                            .await
+                            .insert(chat_id, sent.id.0);
+                    }
+                    Err(e) => {
+                        tracing::warn!(%e, "failed to send message chunk");
+                    }
+                }
+            }
+            return Ok(());
+        }
         "result" => {
             if let Some((msg_id, start_time)) = state.thinking_messages.write().await.remove(&chat_id) {
                 let elapsed = start_time.elapsed().as_secs_f32();
@@ -112,6 +160,8 @@ pub async fn deliver_to_chat(
                     .await;
             }
             state.active_messages.write().await.remove(&chat_id);
+            state.message_buffers.write().await.remove(&chat_id);
+            return Ok(());
         }
         _ => {}
     }
@@ -142,7 +192,9 @@ pub async fn deliver_to_chat(
                 .await;
             match edit_result {
                 Ok(_) => continue,
-                Err(_) => {}
+                Err(e) => {
+                    tracing::warn!(%e, "failed to edit message text");
+                }
             }
         }
 
@@ -155,9 +207,7 @@ pub async fn deliver_to_chat(
                     .insert(chat_id, sent.id.0);
             }
             Err(e) => {
-                return Err(ChannelSdkError::Protocol(format!(
-                    "telegram send error: {e}"
-                )));
+                tracing::warn!(%e, "failed to send message");
             }
         }
     }

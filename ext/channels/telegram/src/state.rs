@@ -7,6 +7,7 @@ use tokio::time::Instant;
 pub struct SharedState {
     pub outbound: Mutex<Option<mpsc::Sender<ChannelSendMessage>>>,
     pub active_messages: RwLock<HashMap<i64, i32>>,
+    pub message_buffers: RwLock<HashMap<i64, String>>,
     pub permission_resolvers: Mutex<HashMap<String, oneshot::Sender<PermissionResponse>>>,
     pub permission_messages: Mutex<HashMap<String, (i64, i32)>>,
     pub session_chat_map: RwLock<HashMap<String, i64>>,
@@ -19,6 +20,7 @@ impl SharedState {
         Self {
             outbound: Mutex::new(None),
             active_messages: RwLock::new(HashMap::new()),
+            message_buffers: RwLock::new(HashMap::new()),
             permission_resolvers: Mutex::new(HashMap::new()),
             permission_messages: Mutex::new(HashMap::new()),
             session_chat_map: RwLock::new(HashMap::new()),
