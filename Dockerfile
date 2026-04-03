@@ -1,65 +1,39 @@
-FROM rust:1.91-bookworm AS builder
-
+# Stage 1: Chef base — install cargo-chef, cached across all builds
+FROM lukemathwalker/cargo-chef:latest-rust-1.91-bookworm AS chef
 WORKDIR /build
 
-COPY Cargo.toml Cargo.lock ./
-COPY crates/protoclaw/Cargo.toml crates/protoclaw/Cargo.toml
-COPY crates/protoclaw-core/Cargo.toml crates/protoclaw-core/Cargo.toml
-COPY crates/protoclaw-config/Cargo.toml crates/protoclaw-config/Cargo.toml
-COPY crates/protoclaw-jsonrpc/Cargo.toml crates/protoclaw-jsonrpc/Cargo.toml
-COPY crates/protoclaw-agents/Cargo.toml crates/protoclaw-agents/Cargo.toml
-COPY crates/protoclaw-channels/Cargo.toml crates/protoclaw-channels/Cargo.toml
-COPY crates/protoclaw-tools/Cargo.toml crates/protoclaw-tools/Cargo.toml
-COPY crates/protoclaw-sdk-types/Cargo.toml crates/protoclaw-sdk-types/Cargo.toml
-COPY crates/protoclaw-sdk-channel/Cargo.toml crates/protoclaw-sdk-channel/Cargo.toml
-COPY crates/protoclaw-sdk-tool/Cargo.toml crates/protoclaw-sdk-tool/Cargo.toml
-COPY crates/protoclaw-sdk-agent/Cargo.toml crates/protoclaw-sdk-agent/Cargo.toml
-COPY ext/channels/debug-http/Cargo.toml ext/channels/debug-http/Cargo.toml
-COPY ext/channels/telegram/Cargo.toml ext/channels/telegram/Cargo.toml
-COPY tests/mock-agent/Cargo.toml tests/mock-agent/Cargo.toml
-COPY tests/integration/Cargo.toml tests/integration/Cargo.toml
+# Stage 2: Planner — generate recipe.json from workspace manifests
+FROM chef AS planner
+COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
 
-RUN mkdir -p crates/protoclaw/src && echo "fn main() {}" > crates/protoclaw/src/main.rs \
-    && mkdir -p crates/protoclaw-core/src && echo "" > crates/protoclaw-core/src/lib.rs \
-    && mkdir -p crates/protoclaw-config/src && echo "" > crates/protoclaw-config/src/lib.rs \
-    && mkdir -p crates/protoclaw-jsonrpc/src && echo "" > crates/protoclaw-jsonrpc/src/lib.rs \
-    && mkdir -p crates/protoclaw-agents/src && echo "" > crates/protoclaw-agents/src/lib.rs \
-    && mkdir -p crates/protoclaw-channels/src && echo "" > crates/protoclaw-channels/src/lib.rs \
-    && mkdir -p crates/protoclaw-tools/src && echo "" > crates/protoclaw-tools/src/lib.rs \
-    && mkdir -p crates/protoclaw-sdk-types/src && echo "" > crates/protoclaw-sdk-types/src/lib.rs \
-    && mkdir -p crates/protoclaw-sdk-channel/src && echo "" > crates/protoclaw-sdk-channel/src/lib.rs \
-    && mkdir -p crates/protoclaw-sdk-tool/src && echo "" > crates/protoclaw-sdk-tool/src/lib.rs \
-    && mkdir -p crates/protoclaw-sdk-agent/src && echo "" > crates/protoclaw-sdk-agent/src/lib.rs \
-    && mkdir -p ext/channels/debug-http/src && echo "fn main() {}" > ext/channels/debug-http/src/main.rs \
-    && mkdir -p ext/channels/telegram/src && echo "fn main() {}" > ext/channels/telegram/src/main.rs \
-    && mkdir -p tests/mock-agent/src && echo "fn main() {}" > tests/mock-agent/src/main.rs \
-    && mkdir -p tests/integration/src && echo "" > tests/integration/src/lib.rs
+# Stage 3: Builder — cook deps from recipe, then build all binaries
+FROM chef AS builder
+COPY --from=planner /build/recipe.json recipe.json
+RUN cargo chef cook --release --recipe-path recipe.json
+COPY . .
+RUN cargo build --release \
+    --bin protoclaw \
+    --bin telegram-channel \
+    --bin debug-http \
+    --bin mock-agent
 
-RUN cargo build --release --bin protoclaw --bin telegram-channel 2>/dev/null || true
-
-COPY crates/ crates/
-COPY ext/ ext/
-COPY tests/ tests/
-
-# Invalidate cargo fingerprints for workspace crates so they recompile with real sources
-# (third-party deps stay cached from the dummy build above)
-RUN find /build/target/release/.fingerprint \
-    -name "protoclaw-*" -o -name "protoclaw_*" -o \
-    -name "telegram*" -o -name "debug_http*" -o \
-    -name "mock_agent*" -o -name "integration*" \
-    | xargs rm -rf
-
-RUN cargo build --release --bin protoclaw --bin telegram-channel
-
-FROM debian:bookworm-slim AS runtime
-
+# Stage 4: Core runtime — protoclaw binary only (D-01)
+FROM debian:bookworm-slim AS core
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-
+    ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /build/target/release/protoclaw /usr/local/bin/protoclaw
+WORKDIR /workspace
+ENTRYPOINT ["protoclaw"]
+
+# Stage 5: Telegram — core + telegram-channel binary
+FROM core AS telegram
 COPY --from=builder /build/target/release/telegram-channel /usr/local/bin/telegram-channel
 
-WORKDIR /workspace
+# Stage 6: debug-http — core + debug-http binary
+FROM core AS debug-http
+COPY --from=builder /build/target/release/debug-http /usr/local/bin/debug-http
 
-ENTRYPOINT ["protoclaw"]
+# Stage 7: mock-agent — core + mock-agent binary
+FROM core AS mock-agent
+COPY --from=builder /build/target/release/mock-agent /usr/local/bin/mock-agent
