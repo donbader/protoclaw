@@ -1,5 +1,4 @@
 use crate::ProtoclawConfig;
-use std::collections::HashSet;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
@@ -21,8 +20,6 @@ pub enum ValidationError {
     BinaryNotFound { field: String, binary: String },
     #[error("agent.working_dir: directory '{}' does not exist", path.display())]
     WorkingDirNotFound { path: std::path::PathBuf },
-    #[error("duplicate {kind} name: '{name}'")]
-    DuplicateName { kind: String, name: String },
 }
 
 #[derive(Debug, Clone)]
@@ -68,10 +65,10 @@ pub fn validate_config(config: &ProtoclawConfig) -> ValidationResult {
     let mut errors = Vec::new();
     let warnings = Vec::new();
 
-    for (i, agent) in config.agents.iter().enumerate() {
+    for (name, agent) in &config.agents_manager.agents {
         if !binary_exists(&agent.binary) {
             errors.push(ValidationError::BinaryNotFound {
-                field: format!("agents[{i}].binary"),
+                field: format!("agents-manager.agents.{name}.binary"),
                 binary: agent.binary.clone(),
             });
         }
@@ -82,41 +79,25 @@ pub fn validate_config(config: &ProtoclawConfig) -> ValidationResult {
         }
     }
 
-    for (i, ch) in config.channels.iter().enumerate() {
-        if !binary_exists(&ch.binary) {
-            errors.push(ValidationError::BinaryNotFound {
-                field: format!("channels[{i}].binary"),
-                binary: ch.binary.clone(),
-            });
+    for (name, ch) in &config.channels_manager.channels {
+        if let Some(ref bin) = Some(&ch.binary) {
+            if !binary_exists(bin) {
+                errors.push(ValidationError::BinaryNotFound {
+                    field: format!("channels-manager.channels.{name}.binary"),
+                    binary: ch.binary.clone(),
+                });
+            }
         }
     }
 
-    for (i, mcp) in config.mcp_servers.iter().enumerate() {
-        if !binary_exists(&mcp.binary) {
-            errors.push(ValidationError::BinaryNotFound {
-                field: format!("mcp_servers[{i}].binary"),
-                binary: mcp.binary.clone(),
-            });
-        }
-    }
-
-    let mut seen_channels: HashSet<&str> = HashSet::new();
-    for ch in &config.channels {
-        if !seen_channels.insert(ch.name.as_str()) {
-            errors.push(ValidationError::DuplicateName {
-                kind: "channel".to_string(),
-                name: ch.name.clone(),
-            });
-        }
-    }
-
-    let mut seen_mcps: HashSet<&str> = HashSet::new();
-    for mcp in &config.mcp_servers {
-        if !seen_mcps.insert(mcp.name.as_str()) {
-            errors.push(ValidationError::DuplicateName {
-                kind: "mcp_server".to_string(),
-                name: mcp.name.clone(),
-            });
+    for (name, tool) in &config.tools_manager.tools {
+        if let Some(ref bin) = tool.binary {
+            if !binary_exists(bin) {
+                errors.push(ValidationError::BinaryNotFound {
+                    field: format!("tools-manager.tools.{name}.binary"),
+                    binary: bin.clone(),
+                });
+            }
         }
     }
 
@@ -126,28 +107,33 @@ pub fn validate_config(config: &ProtoclawConfig) -> ValidationResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{AgentConfig, ChannelConfig, McpServerConfig, SupervisorConfig};
+    use crate::{
+        AgentConfig, AgentsManagerConfig, ChannelConfig, ChannelsManagerConfig, SupervisorConfig,
+        ToolsManagerConfig,
+    };
     use std::collections::HashMap;
     use std::path::PathBuf;
 
     fn valid_config() -> ProtoclawConfig {
-        ProtoclawConfig {
-            agent: None,
-            agents: vec![AgentConfig {
-                name: "default".to_string(),
+        let mut agents = HashMap::new();
+        agents.insert(
+            "default".to_string(),
+            AgentConfig {
                 binary: "echo".to_string(),
                 args: vec![],
                 enabled: true,
                 env: HashMap::new(),
                 working_dir: None,
                 tools: vec![],
-            }],
-            channels: vec![],
-            mcp_servers: vec![],
-            wasm_tools: vec![],
-            supervisor: SupervisorConfig::default(),
+            },
+        );
+        ProtoclawConfig {
             log_level: "info".into(),
             extensions_dir: "/usr/local/bin".into(),
+            agents_manager: AgentsManagerConfig { agents },
+            channels_manager: ChannelsManagerConfig::default(),
+            tools_manager: ToolsManagerConfig::default(),
+            supervisor: SupervisorConfig::default(),
         }
     }
 
@@ -166,84 +152,23 @@ mod tests {
     #[test]
     fn missing_agent_binary_is_error() {
         let mut config = valid_config();
-        config.agents[0].binary = "nonexistent-xyz-99999".to_string();
+        config
+            .agents_manager
+            .agents
+            .get_mut("default")
+            .unwrap()
+            .binary = "nonexistent-xyz-99999".to_string();
         let result = validate_config(&config);
         let has_error = result.errors.iter().any(|e| {
             matches!(
                 e,
                 ValidationError::BinaryNotFound { field, binary }
-                if field == "agents[0].binary" && binary == "nonexistent-xyz-99999"
+                if field.contains("default") && binary == "nonexistent-xyz-99999"
             )
         });
         assert!(
             has_error,
-            "expected BinaryNotFound for agents[0].binary, got: {:?}",
-            result.errors
-        );
-    }
-
-    #[test]
-    fn duplicate_channel_names_is_error() {
-        let mut config = valid_config();
-        config.channels = vec![
-            ChannelConfig {
-                name: "debug-http".to_string(),
-                binary: "echo".to_string(),
-                args: vec![],
-                enabled: true,
-                agent: None,
-            },
-            ChannelConfig {
-                name: "debug-http".to_string(),
-                binary: "echo".to_string(),
-                args: vec![],
-                enabled: true,
-                agent: None,
-            },
-        ];
-        let result = validate_config(&config);
-        let has_error = result.errors.iter().any(|e| {
-            matches!(
-                e,
-                ValidationError::DuplicateName { kind, name }
-                if kind == "channel" && name == "debug-http"
-            )
-        });
-        assert!(
-            has_error,
-            "expected DuplicateName for channel 'debug-http', got: {:?}",
-            result.errors
-        );
-    }
-
-    #[test]
-    fn duplicate_mcp_server_names_is_error() {
-        let mut config = valid_config();
-        config.mcp_servers = vec![
-            McpServerConfig {
-                name: "fs".to_string(),
-                binary: "echo".to_string(),
-                args: vec![],
-                enabled: true,
-            },
-            McpServerConfig {
-                name: "fs".to_string(),
-                binary: "echo".to_string(),
-                args: vec![],
-                enabled: true,
-            },
-        ];
-        let result = validate_config(&config);
-        let has_error = result.errors.iter().any(|e| {
-            matches!(
-                e,
-                ValidationError::DuplicateName { kind, name }
-                if kind == "mcp_server" && name == "fs"
-            )
-        });
-        assert!(
-            has_error,
-            "expected DuplicateName for mcp_server 'fs', got: {:?}",
+            "expected BinaryNotFound, got: {:?}",
             result.errors
         );
     }
@@ -251,7 +176,12 @@ mod tests {
     #[test]
     fn nonexistent_working_dir_is_error() {
         let mut config = valid_config();
-        config.agents[0].working_dir = Some(PathBuf::from("/nonexistent/path/xyz-99999"));
+        config
+            .agents_manager
+            .agents
+            .get_mut("default")
+            .unwrap()
+            .working_dir = Some(PathBuf::from("/nonexistent/path/xyz-99999"));
         let result = validate_config(&config);
         let has_error = result
             .errors
@@ -267,48 +197,50 @@ mod tests {
     #[test]
     fn missing_channel_binary_is_error() {
         let mut config = valid_config();
-        config.channels = vec![ChannelConfig {
-            name: "ch".to_string(),
-            binary: "nonexistent-xyz-99999".to_string(),
-            args: vec![],
-            enabled: true,
-            agent: None,
-        }];
+        config.channels_manager.channels.insert(
+            "ch".to_string(),
+            ChannelConfig {
+                binary: "nonexistent-xyz-99999".to_string(),
+                args: vec![],
+                enabled: true,
+                agent: "default".into(),
+                ack: Default::default(),
+            },
+        );
         let result = validate_config(&config);
-        let has_error = result.errors.iter().any(|e| {
-            matches!(
-                e,
-                ValidationError::BinaryNotFound { field, .. }
-                if field == "channels[0].binary"
-            )
-        });
+        let has_error = result.errors.iter().any(
+            |e| matches!(e, ValidationError::BinaryNotFound { field, .. } if field.contains("ch")),
+        );
         assert!(
             has_error,
-            "expected BinaryNotFound for channels[0].binary, got: {:?}",
+            "expected BinaryNotFound, got: {:?}",
             result.errors
         );
     }
 
     #[test]
-    fn missing_mcp_server_binary_is_error() {
+    fn missing_tool_binary_is_error() {
         let mut config = valid_config();
-        config.mcp_servers = vec![McpServerConfig {
-            name: "fs".to_string(),
-            binary: "nonexistent-xyz-99999".to_string(),
-            args: vec![],
-            enabled: true,
-        }];
+        config.tools_manager.tools.insert(
+            "fs".to_string(),
+            crate::ToolConfig {
+                tool_type: "mcp".into(),
+                binary: Some("nonexistent-xyz-99999".into()),
+                args: vec![],
+                enabled: true,
+                module: None,
+                description: String::new(),
+                input_schema: None,
+                sandbox: Default::default(),
+            },
+        );
         let result = validate_config(&config);
-        let has_error = result.errors.iter().any(|e| {
-            matches!(
-                e,
-                ValidationError::BinaryNotFound { field, .. }
-                if field == "mcp_servers[0].binary"
-            )
-        });
+        let has_error = result.errors.iter().any(
+            |e| matches!(e, ValidationError::BinaryNotFound { field, .. } if field.contains("fs")),
+        );
         assert!(
             has_error,
-            "expected BinaryNotFound for mcp_servers[0].binary, got: {:?}",
+            "expected BinaryNotFound, got: {:?}",
             result.errors
         );
     }

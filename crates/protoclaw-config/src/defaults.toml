@@ -1,0 +1,18 @@
+log_level = "info"
+extensions_dir = "/usr/local/bin"
+
+[agents-manager]
+
+[channels-manager.debounce]
+enabled = true
+window_ms = 1000
+separator = "\n"
+mid_response = "queue"
+
+[tools-manager]
+
+[supervisor]
+shutdown_timeout_secs = 30
+health_check_interval_secs = 5
+max_restarts = 5
+restart_window_secs = 60

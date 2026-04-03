@@ -25,7 +25,7 @@ impl ProtoclawConfig {
             });
         }
 
-        let mut config: Self = Figment::from(Serialized::defaults(SupervisorConfig::default()))
+        let config: Self = Figment::from(Serialized::defaults(SupervisorConfig::default()))
             .merge(subst_toml::SubstToml::file(path))
             .merge(Env::prefixed("PROTOCLAW_").split("__"))
             .extract()
@@ -34,7 +34,6 @@ impl ProtoclawConfig {
                 reason: e.to_string(),
             })?;
 
-        config.normalize_agents();
         Ok(config)
     }
 }
@@ -50,17 +49,14 @@ mod tests {
             jail.create_file(
                 "protoclaw.toml",
                 r#"
-                [[agents]]
-                name = "default"
+                [agents-manager.agents.default]
                 binary = "opencode"
                 args = ["--headless"]
 
-                [[channels]]
-                name = "debug-http"
+                [channels-manager.channels.debug-http]
                 binary = "protoclaw-debug-http"
 
-                [[mcp_servers]]
-                name = "filesystem"
+                [tools-manager.tools.filesystem]
                 binary = "mcp-server-filesystem"
                 args = ["--root", "/workspace"]
 
@@ -69,13 +65,16 @@ mod tests {
             "#,
             )?;
             let config = ProtoclawConfig::load(Some("protoclaw.toml")).unwrap();
-            assert_eq!(config.agents.len(), 1);
-            assert_eq!(config.agents[0].binary, "opencode");
-            assert_eq!(config.agents[0].args, vec!["--headless"]);
-            assert_eq!(config.channels.len(), 1);
-            assert_eq!(config.channels[0].name, "debug-http");
-            assert_eq!(config.mcp_servers.len(), 1);
-            assert_eq!(config.mcp_servers[0].name, "filesystem");
+            assert_eq!(config.agents_manager.agents.len(), 1);
+            assert_eq!(config.agents_manager.agents["default"].binary, "opencode");
+            assert_eq!(
+                config.agents_manager.agents["default"].args,
+                vec!["--headless"]
+            );
+            assert_eq!(config.channels_manager.channels.len(), 1);
+            assert!(config.channels_manager.channels.contains_key("debug-http"));
+            assert_eq!(config.tools_manager.tools.len(), 1);
+            assert!(config.tools_manager.tools.contains_key("filesystem"));
             assert_eq!(config.supervisor.shutdown_timeout_secs, 15);
             Ok(())
         });
@@ -102,8 +101,7 @@ mod tests {
             jail.create_file(
                 "protoclaw.toml",
                 r#"
-                [[agents]]
-                name = "default"
+                [agents-manager.agents.default]
                 binary = "opencode"
             "#,
             )?;
@@ -117,52 +115,33 @@ mod tests {
     }
 
     #[test]
-    fn empty_channels_defaults_to_empty_vec() {
+    fn empty_channels_defaults_to_empty_map() {
         Jail::expect_with(|jail| {
             jail.create_file(
                 "protoclaw.toml",
                 r#"
-                [[agents]]
-                name = "default"
+                [agents-manager.agents.default]
                 binary = "opencode"
             "#,
             )?;
             let config = ProtoclawConfig::load(Some("protoclaw.toml")).unwrap();
-            assert!(config.channels.is_empty());
+            assert!(config.channels_manager.channels.is_empty());
             Ok(())
         });
     }
 
     #[test]
-    fn empty_mcp_servers_defaults_to_empty_vec() {
+    fn empty_tools_defaults_to_empty_map() {
         Jail::expect_with(|jail| {
             jail.create_file(
                 "protoclaw.toml",
                 r#"
-                [[agents]]
-                name = "default"
+                [agents-manager.agents.default]
                 binary = "opencode"
             "#,
             )?;
             let config = ProtoclawConfig::load(Some("protoclaw.toml")).unwrap();
-            assert!(config.mcp_servers.is_empty());
-            Ok(())
-        });
-    }
-
-    #[test]
-    fn env_var_overrides_agent_binary() {
-        Jail::expect_with(|jail| {
-            jail.create_file(
-                "protoclaw.toml",
-                r#"
-                [agent]
-                binary = "opencode"
-            "#,
-            )?;
-            jail.set_env("PROTOCLAW_AGENT__BINARY", "claude-code");
-            let config = ProtoclawConfig::load(Some("protoclaw.toml")).unwrap();
-            assert_eq!(config.agents[0].binary, "claude-code");
+            assert!(config.tools_manager.tools.is_empty());
             Ok(())
         });
     }
@@ -173,8 +152,7 @@ mod tests {
             jail.create_file(
                 "protoclaw.toml",
                 r#"
-                [[agents]]
-                name = "default"
+                [agents-manager.agents.default]
                 binary = "opencode"
 
                 [supervisor]
@@ -194,8 +172,7 @@ mod tests {
             jail.create_file(
                 "protoclaw.toml",
                 r#"
-                [[agents]]
-                name = "default"
+                [agents-manager.agents.default]
                 binary = "opencode"
                 unknown_field = "should be ignored"
 
@@ -219,33 +196,14 @@ mod tests {
             jail.create_file(
                 "protoclaw.toml",
                 r#"
-                [[agents]]
-                name = "default"
+                [agents-manager.agents.default]
                 binary = "opencode"
             "#,
             )?;
             let config = ProtoclawConfig::load(Some("protoclaw.toml")).unwrap();
-            assert_eq!(config.agents[0].binary, "opencode");
-            assert!(config.channels.is_empty());
-            assert!(config.mcp_servers.is_empty());
-            Ok(())
-        });
-    }
-
-    #[test]
-    fn legacy_agent_format_loads_via_normalize() {
-        Jail::expect_with(|jail| {
-            jail.create_file(
-                "protoclaw.toml",
-                r#"
-                [agent]
-                binary = "@built-in/mock-agent"
-            "#,
-            )?;
-            let config = ProtoclawConfig::load(Some("protoclaw.toml")).unwrap();
-            assert_eq!(config.agents.len(), 1);
-            assert_eq!(config.agents[0].name, "default");
-            assert_eq!(config.agents[0].binary, "@built-in/mock-agent");
+            assert_eq!(config.agents_manager.agents["default"].binary, "opencode");
+            assert!(config.channels_manager.channels.is_empty());
+            assert!(config.tools_manager.tools.is_empty());
             Ok(())
         });
     }
