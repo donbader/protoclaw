@@ -4,8 +4,8 @@ use tokio::sync::mpsc;
 use crate::error::ChannelSdkError;
 use crate::trait_def::Channel;
 use protoclaw_sdk_types::{
-    ChannelInitializeResult, ChannelRequestPermission, ChannelSendMessage,
-    DeliverMessage, SessionCreated,
+    ChannelInitializeParams, ChannelInitializeResult, ChannelRequestPermission,
+    ChannelSendMessage, DeliverMessage, SessionCreated,
 };
 
 pub struct ChannelHarness<C: Channel> {
@@ -90,6 +90,9 @@ impl<C: Channel> ChannelHarness<C> {
                     protocol_version: 1,
                     capabilities: caps,
                 };
+                if let Ok(init_params) = serde_json::from_value::<ChannelInitializeParams>(params) {
+                    self.channel.on_initialize(init_params).await?;
+                }
                 self.channel.on_ready(outbound_tx.clone()).await?;
                 if let Some(req_id) = id {
                     return Ok(Some(serde_json::json!({

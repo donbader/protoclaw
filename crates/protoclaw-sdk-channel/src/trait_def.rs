@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use protoclaw_sdk_types::{
-    ChannelCapabilities, ChannelRequestPermission, ChannelSendMessage, DeliverMessage,
-    PermissionResponse, SessionCreated,
+    ChannelCapabilities, ChannelInitializeParams, ChannelRequestPermission,
+    ChannelSendMessage, DeliverMessage, PermissionResponse, SessionCreated,
 };
 use tokio::sync::mpsc;
 
@@ -10,6 +10,13 @@ use crate::error::ChannelSdkError;
 #[async_trait]
 pub trait Channel: Send + 'static {
     fn capabilities(&self) -> ChannelCapabilities;
+
+    async fn on_initialize(
+        &mut self,
+        _params: ChannelInitializeParams,
+    ) -> Result<(), ChannelSdkError> {
+        Ok(())
+    }
 
     async fn on_ready(
         &mut self,

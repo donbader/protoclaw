@@ -48,6 +48,8 @@ async fn handle_text_message(
     state: Arc<SharedState>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     if let Some(text) = msg.text() {
+        state.last_message_ids.write().await
+            .insert(msg.chat.id.0, msg.id.0);
         let chat_type = chat_type_str(&msg.chat);
         let _ = process_text_message(msg.chat.id.0, chat_type, text, &state).await;
     }

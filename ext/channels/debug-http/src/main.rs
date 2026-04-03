@@ -180,7 +180,7 @@ async fn handle_message(
     }
     (
         axum::http::StatusCode::OK,
-        Json(serde_json::json!({"status": "sent"})),
+        Json(serde_json::json!({"status": "queued", "message": "Message received and queued for processing"})),
     )
 }
 
@@ -451,6 +451,10 @@ mod tests {
         let msg = rx.try_recv().expect("should have received outbound message");
         assert_eq!(msg.content, "hello");
         assert_eq!(msg.peer_info.channel_name, "debug-http");
+
+        let body = axum::body::to_bytes(resp.into_body(), 1024).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["status"], "queued");
     }
 
     #[tokio::test]

@@ -124,9 +124,16 @@ impl ChannelsManager {
     ) -> Result<(ChannelConnection, ChannelCapabilities), ChannelsError> {
         let mut conn = ChannelConnection::spawn(config, channel_id.clone())?;
 
+        let ack_json = serde_json::json!({
+            "reaction": config.ack.reaction,
+            "typing": config.ack.typing,
+            "reactionEmoji": config.ack.reaction_emoji,
+            "reactionLifecycle": config.ack.reaction_lifecycle,
+        });
         let params = serde_json::json!({
             "protocolVersion": 1,
             "channelId": channel_id.as_ref(),
+            "ack": ack_json,
         });
 
         let rx = conn.send_request("initialize", params).await?;

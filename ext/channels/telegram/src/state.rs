@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use protoclaw_sdk_channel::ChannelAckConfig;
 use protoclaw_sdk_types::{ChannelSendMessage, PermissionResponse};
 use tokio::sync::{mpsc, oneshot, Mutex, RwLock};
 use tokio::time::Instant;
@@ -13,6 +14,8 @@ pub struct SharedState {
     pub session_chat_map: RwLock<HashMap<String, i64>>,
     pub last_edit_time: RwLock<HashMap<i64, Instant>>,
     pub thinking_messages: RwLock<HashMap<i64, (i32, Instant)>>,
+    pub last_message_ids: RwLock<HashMap<i64, i32>>,
+    pub ack_config: RwLock<Option<ChannelAckConfig>>,
 }
 
 impl SharedState {
@@ -26,6 +29,8 @@ impl SharedState {
             session_chat_map: RwLock::new(HashMap::new()),
             last_edit_time: RwLock::new(HashMap::new()),
             thinking_messages: RwLock::new(HashMap::new()),
+            last_message_ids: RwLock::new(HashMap::new()),
+            ack_config: RwLock::new(None),
         }
     }
 }
@@ -47,5 +52,7 @@ mod tests {
         assert!(state.permission_resolvers.lock().await.is_empty());
         assert!(state.permission_messages.lock().await.is_empty());
         assert!(state.session_chat_map.read().await.is_empty());
+        assert!(state.last_message_ids.read().await.is_empty());
+        assert!(state.ack_config.read().await.is_none());
     }
 }
