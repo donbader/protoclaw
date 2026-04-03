@@ -243,3 +243,65 @@ async fn e2e_debounce_merges_rapid_messages() {
     cancel.cancel();
     let _ = tokio::time::timeout(std::time::Duration::from_secs(5), handle).await;
 }
+
+#[tokio::test]
+async fn e2e_thinking_agent_completes_full_response() {
+    let mut env = HashMap::new();
+    env.insert("MOCK_AGENT_THINK".into(), "1".into());
+    let mut config = mock_agent_config_with_env(env);
+    config.channels_manager.debounce.window_ms = 100;
+    let (cancel, handle, port) = boot_supervisor_with_port(config).await;
+
+    let client = reqwest::Client::new();
+
+    let sse_resp = client
+        .get(format!("http://127.0.0.1:{port}/events"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(sse_resp.status(), 200);
+    let mut sse_stream = sse_resp.bytes_stream();
+
+    let resp = client
+        .post(format!("http://127.0.0.1:{port}/message"))
+        .json(&serde_json::json!({"message": "think-test"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+
+    let mut saw_thought = false;
+    let mut saw_result = false;
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
+
+    use tokio_stream::StreamExt;
+    while tokio::time::Instant::now() < deadline {
+        let chunk = tokio::time::timeout_at(deadline, sse_stream.next()).await;
+        match chunk {
+            Ok(Some(Ok(bytes))) => {
+                let text = String::from_utf8_lossy(&bytes);
+                for line in text.lines() {
+                    if line.starts_with("event: thought") || line.starts_with("event:thought") {
+                        saw_thought = true;
+                    }
+                    if let Some(data) = line.strip_prefix("data:") {
+                        let data = data.trim();
+                        if let Ok(v) = serde_json::from_str::<serde_json::Value>(data) {
+                            if v.get("type").and_then(|t| t.as_str()) == Some("result") {
+                                saw_result = true;
+                            }
+                        }
+                    }
+                }
+                if saw_result { break; }
+            }
+            _ => break,
+        }
+    }
+
+    assert!(saw_thought, "should have received at least one thought chunk via SSE");
+    assert!(saw_result, "thinking agent should complete and return result via SSE");
+
+    cancel.cancel();
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(5), handle).await;
+}

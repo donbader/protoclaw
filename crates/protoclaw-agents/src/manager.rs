@@ -604,7 +604,8 @@ impl Manager for AgentsManager {
                         }
                     }
                 }
-                std::future::pending().await
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                None
             };
 
             tokio::select! {
