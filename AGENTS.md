@@ -26,7 +26,9 @@ protoclaw-rust/
 │       └── debug-http/             # Debug HTTP channel (minimal)
 ├── tests/
 │   └── integration/                # E2E tests (spawn real supervisor + mock-agent)
-└── examples/telegram-bot/          # Example config + docker-compose (no Rust source)
+├── examples/telegram-bot/          # Example config + docker-compose (no Rust source)
+└── examples/01-fake-agent-telegram-bot/  # Fake agent example (Docker, mock-agent, debug-http)
+    └── tools/system-info/          # Demo MCP tool binary (uses protoclaw-sdk-tool)
 ```
 
 ## Where to Look
@@ -40,6 +42,7 @@ protoclaw-rust/
 | Add channel type | `crates/protoclaw-channels/` + `ext/channels/` | Manager routes, binary in ext/ |
 | Add MCP tool | `crates/protoclaw-tools/src/mcp_host.rs` | McpHost manages external MCP server connections |
 | Add WASM tool | `crates/protoclaw-tools/src/wasm_runner.rs` | WasmToolRunner + WasmTool for sandboxed execution |
+| Build demo tool | `examples/01-fake-agent-telegram-bot/tools/system-info/` | Workspace member, uses protoclaw-sdk-tool |
 | Change config schema | `crates/protoclaw-config/src/types.rs` | Serde structs, update tests in `lib.rs` |
 | Modify JSON-RPC framing | `crates/protoclaw-jsonrpc/src/codec.rs` | LinesCodec-based, line-delimited JSON |
 | Build channel SDK | `crates/protoclaw-sdk-channel/` | Channel trait + ChannelHarness |
@@ -62,6 +65,9 @@ SDK crates (for external implementors):
 ├── protoclaw-sdk-agent ──→ sdk-types, jsonrpc
 ├── protoclaw-sdk-channel ─→ sdk-types, jsonrpc
 └── protoclaw-sdk-tool ───→ sdk-types
+
+Example binaries:
+└── system-info (example) ──→ sdk-tool
 ```
 
 ## Conventions

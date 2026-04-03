@@ -1,0 +1,15 @@
+[package]
+name = "system-info"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "system-info"
+path = "src/main.rs"
+
+[dependencies]
+protoclaw-sdk-tool = { path = "../../../../crates/protoclaw-sdk-tool" }
+async-trait = "0.1"
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
