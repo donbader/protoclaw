@@ -14,7 +14,7 @@ fn test_fake_agent_example_toml_parses() {
         .unwrap_or_else(|e| panic!("failed to load protoclaw.toml: {e}"));
 
     assert_eq!(config.agents.len(), 1);
-    assert_eq!(config.agents[0].name, "default");
+    assert_eq!(config.agents[0].name, "mock-agent");
     assert_eq!(config.agents[0].binary, "@built-in/mock-agent");
 }
 
