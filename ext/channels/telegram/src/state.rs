@@ -11,6 +11,7 @@ pub struct SharedState {
     pub permission_messages: Mutex<HashMap<String, (i64, i32)>>,
     pub session_chat_map: RwLock<HashMap<String, i64>>,
     pub last_edit_time: RwLock<HashMap<i64, Instant>>,
+    pub thinking_messages: RwLock<HashMap<i64, (i32, Instant)>>,
 }
 
 impl SharedState {
@@ -22,6 +23,7 @@ impl SharedState {
             permission_messages: Mutex::new(HashMap::new()),
             session_chat_map: RwLock::new(HashMap::new()),
             last_edit_time: RwLock::new(HashMap::new()),
+            thinking_messages: RwLock::new(HashMap::new()),
         }
     }
 }

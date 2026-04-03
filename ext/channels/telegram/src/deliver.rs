@@ -55,6 +55,10 @@ async fn throttle_edit(state: &SharedState, chat_id: i64) {
         .insert(chat_id, Instant::now());
 }
 
+fn thought_emoji() -> String {
+    std::env::var("TELEGRAM_THOUGHT_EMOJI").unwrap_or_else(|_| "🧠".to_string())
+}
+
 pub async fn deliver_to_chat(
     bot: &Bot,
     state: &SharedState,
@@ -69,6 +73,47 @@ pub async fn deliver_to_chat(
         .ok_or_else(|| {
             ChannelSdkError::Protocol(format!("unknown session: {session_id}"))
         })?;
+
+    let update_type = content.get("type").and_then(|t| t.as_str()).unwrap_or("");
+
+    match update_type {
+        "agent_thought_chunk" => {
+            let thought_content = content.get("content").and_then(|c| c.as_str()).unwrap_or("");
+            let emoji = thought_emoji();
+            let thought_text = format!("{emoji} {thought_content}");
+
+            let existing = state.thinking_messages.read().await.get(&chat_id).map(|(mid, _)| *mid);
+            if let Some(msg_id) = existing {
+                throttle_edit(state, chat_id).await;
+                let _ = bot
+                    .edit_message_text(ChatId(chat_id), MessageId(msg_id), &thought_text)
+                    .await;
+            } else {
+                match bot.send_message(ChatId(chat_id), &thought_text).await {
+                    Ok(sent) => {
+                        state.thinking_messages.write().await
+                            .insert(chat_id, (sent.id.0, Instant::now()));
+                    }
+                    Err(e) => {
+                        tracing::warn!(%e, "failed to send thinking message");
+                    }
+                }
+            }
+            return Ok(());
+        }
+        "result" => {
+            if let Some((msg_id, start_time)) = state.thinking_messages.write().await.remove(&chat_id) {
+                let elapsed = start_time.elapsed().as_secs_f32();
+                let emoji = thought_emoji();
+                let collapse_text = format!("{emoji} Thought for {elapsed:.1}s");
+                throttle_edit(state, chat_id).await;
+                let _ = bot
+                    .edit_message_text(ChatId(chat_id), MessageId(msg_id), &collapse_text)
+                    .await;
+            }
+        }
+        _ => {}
+    }
 
     let text = content_to_string(content);
 
@@ -199,5 +244,22 @@ mod tests {
         let result = deliver_to_chat(&bot, &state, "sess-1", &content).await;
         assert!(result.is_ok());
         assert!(state.active_messages.read().await.get(&12345).is_none());
+    }
+
+    #[tokio::test]
+    async fn thinking_messages_state_initialized_empty() {
+        let state = SharedState::new();
+        assert!(state.thinking_messages.read().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn thinking_messages_tracks_chat_id_to_msg_and_time() {
+        let state = SharedState::new();
+        let now = Instant::now();
+        state.thinking_messages.write().await.insert(12345, (42, now));
+        let entry = state.thinking_messages.read().await.get(&12345).copied();
+        assert!(entry.is_some());
+        let (msg_id, _start) = entry.unwrap();
+        assert_eq!(msg_id, 42);
     }
 }
