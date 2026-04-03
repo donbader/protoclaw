@@ -18,12 +18,14 @@ protoclaw-rust/
 │   ├── protoclaw-sdk-agent/        # SDK: AgentAdapter trait + GenericAcpAdapter
 │   ├── protoclaw-sdk-channel/      # SDK: Channel trait + ChannelHarness
 │   └── protoclaw-sdk-tool/         # SDK: Tool trait + ToolServer
-├── ext/channels/                   # External channel binaries (spawned as subprocesses)
-│   ├── telegram/                   # Telegram channel implementation
-│   └── debug-http/                 # Debug HTTP channel (minimal)
+├── ext/                            # External binaries (spawned as subprocesses)
+│   ├── agents/
+│   │   └── mock-agent/             # Mock ACP agent binary (echo + thinking simulation)
+│   └── channels/
+│       ├── telegram/               # Telegram channel implementation
+│       └── debug-http/             # Debug HTTP channel (minimal)
 ├── tests/
-│   ├── integration/                # E2E tests (spawn real supervisor + mock-agent)
-│   └── mock-agent/                 # Mock ACP agent binary for test harness
+│   └── integration/                # E2E tests (spawn real supervisor + mock-agent)
 └── examples/telegram-bot/          # Example config + docker-compose (no Rust source)
 ```
 
@@ -42,6 +44,7 @@ protoclaw-rust/
 | Modify JSON-RPC framing | `crates/protoclaw-jsonrpc/src/codec.rs` | LinesCodec-based, line-delimited JSON |
 | Build channel SDK | `crates/protoclaw-sdk-channel/` | Channel trait + ChannelHarness |
 | Build tool SDK | `crates/protoclaw-sdk-tool/` | Tool trait + ToolServer |
+| Mock agent binary | `ext/agents/mock-agent/` | Mock ACP agent for testing (echo + thinking simulation) |
 | Integration tests | `tests/integration/tests/e2e.rs` | Requires `cargo build` first (needs mock-agent binary) |
 
 ## Crate Dependency Flow
