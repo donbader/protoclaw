@@ -227,3 +227,89 @@ async fn handle_session_close(stdout: &mut tokio::io::Stdout, id: Option<Value>)
     let resp = json!({ "jsonrpc": "2.0", "id": id, "result": {} });
     write_message(stdout, &resp).await;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::Value;
+
+    async fn collect_prompt_output(user_msg: &str, think: bool) -> Vec<Value> {
+        use tokio::io::AsyncBufReadExt;
+
+        let (reader, mut writer) = tokio::io::duplex(8192);
+
+        let msg = user_msg.to_string();
+        let write_handle = tokio::spawn(async move {
+            let stdin = tokio::io::stdin();
+            let buf = BufReader::new(stdin);
+            let mut lines = buf.lines();
+            handle_session_prompt(
+                &mut writer,
+                Some(json!(1)),
+                "test-session",
+                &msg,
+                false,
+                think,
+                &mut lines,
+            )
+            .await;
+            drop(writer);
+        });
+
+        let buf_reader = tokio::io::BufReader::new(reader);
+        let mut read_lines = buf_reader.lines();
+        let mut messages = Vec::new();
+        while let Ok(Some(line)) = read_lines.next_line().await {
+            if let Ok(v) = serde_json::from_str::<Value>(&line) {
+                messages.push(v);
+            }
+        }
+        write_handle.await.unwrap();
+        messages
+    }
+
+    #[tokio::test]
+    async fn no_thought_chunks_when_think_disabled() {
+        let msgs = collect_prompt_output("hello", false).await;
+        assert_eq!(msgs.len(), 4);
+        for msg in &msgs {
+            if let Some(params) = msg.get("params") {
+                assert_ne!(
+                    params.get("type").and_then(|t| t.as_str()),
+                    Some("agent_thought_chunk"),
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn thought_chunks_emitted_when_think_enabled() {
+        let msgs = collect_prompt_output("hello", true).await;
+        assert_eq!(msgs.len(), 6);
+
+        let t1 = &msgs[0]["params"];
+        assert_eq!(t1["type"], "agent_thought_chunk");
+        assert_eq!(t1["content"], "Analyzing your message...");
+
+        let t2 = &msgs[1]["params"];
+        assert_eq!(t2["type"], "agent_thought_chunk");
+        assert_eq!(t2["content"], "Formulating response...");
+    }
+
+    #[tokio::test]
+    async fn echo_still_works_after_thoughts() {
+        let msgs = collect_prompt_output("test msg", true).await;
+
+        let echo_chunk = &msgs[2]["params"];
+        assert_eq!(echo_chunk["type"], "agent_message_chunk");
+        assert_eq!(echo_chunk["content"], "Echo: ");
+
+        let echo_content = &msgs[3]["params"];
+        assert_eq!(echo_content["type"], "agent_message_chunk");
+        assert_eq!(echo_content["content"], "test msg");
+
+        let result = &msgs[4]["params"];
+        assert_eq!(result["type"], "result");
+        assert_eq!(result["content"], "Echo: test msg");
+    }
+}
