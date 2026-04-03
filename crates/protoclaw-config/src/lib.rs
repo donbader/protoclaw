@@ -1,5 +1,6 @@
 pub mod error;
 pub mod resolve;
+pub mod subst_toml;
 pub mod types;
 pub mod validate;
 
@@ -9,7 +10,7 @@ pub use types::*;
 pub use validate::*;
 
 use figment::{
-    providers::{Env, Format, Serialized, Toml},
+    providers::{Env, Serialized},
     Figment,
 };
 
@@ -18,7 +19,7 @@ impl ProtoclawConfig {
         let path = config_path.unwrap_or("protoclaw.toml");
 
         let config: Self = Figment::from(Serialized::defaults(SupervisorConfig::default()))
-            .merge(Toml::file(path))
+            .merge(subst_toml::SubstToml::file(path))
             .merge(Env::prefixed("PROTOCLAW_").split("__"))
             .extract()
             .map_err(|e| ConfigError::LoadFailed {

@@ -15,7 +15,7 @@ binary = "@built-in/debug-http"
 [[channels]]
 name = "telegram"
 binary = "@built-in/telegram-channel"
-enabled = false
+enabled = "${TELEGRAM_ENABLED:false}"
 
 [[mcp_servers]]
 name = "system-info"

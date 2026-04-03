@@ -37,3 +37,4 @@ protoclaw-sdk-tool = { path = "crates/protoclaw-sdk-tool" }
 protoclaw-sdk-agent = { path = "crates/protoclaw-sdk-agent" }
 wasmtime = "42"
 wasmtime-wasi = "42"
+subst = { version = "0.3", features = ["toml"] }
