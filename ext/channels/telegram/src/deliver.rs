@@ -111,11 +111,15 @@ pub async fn deliver_to_chat(
                     .edit_message_text(ChatId(chat_id), MessageId(msg_id), &collapse_text)
                     .await;
             }
+            state.active_messages.write().await.remove(&chat_id);
         }
         _ => {}
     }
 
-    let text = content_to_string(content);
+    let text = content
+        .get("content")
+        .map(|c| content_to_string(c))
+        .unwrap_or_default();
 
     if text.is_empty() {
         state.active_messages.write().await.remove(&chat_id);
