@@ -5,7 +5,7 @@ use crate::error::ChannelSdkError;
 use crate::trait_def::Channel;
 use protoclaw_sdk_types::{
     ChannelInitializeResult, ChannelRequestPermission, ChannelSendMessage,
-    DeliverMessage,
+    DeliverMessage, SessionCreated,
 };
 
 pub struct ChannelHarness<C: Channel> {
@@ -102,6 +102,11 @@ impl<C: Channel> ChannelHarness<C> {
             "channel/deliverMessage" => {
                 if let Ok(deliver) = serde_json::from_value::<DeliverMessage>(params) {
                     self.channel.deliver_message(deliver).await?;
+                }
+            }
+            "channel/sessionCreated" => {
+                if let Ok(msg) = serde_json::from_value::<SessionCreated>(params) {
+                    self.channel.on_session_created(msg).await?;
                 }
             }
             "channel/requestPermission" => {

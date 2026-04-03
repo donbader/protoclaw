@@ -3144,6 +3144,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "system-info"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "protoclaw-sdk-tool",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "system-interface"
 version = "0.27.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

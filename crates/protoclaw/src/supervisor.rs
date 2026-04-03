@@ -160,14 +160,17 @@ impl Supervisor {
         for slot in slots.iter_mut() {
             tracing::info!(manager = %slot.name, "booting");
 
+            let ce_tx = if slot.name == "agents" { channel_events_tx.take() } else { None };
+            let ce_rx = if slot.name == "channels" { channel_events_rx.take() } else { None };
+
             let mut manager = create_manager(
                 &slot.name,
                 &self.config,
                 &tools_tx,
                 tools_rx.take(),
                 self.agents_cmd_tx.as_ref(),
-                channel_events_tx.take(),
-                channel_events_rx.take(),
+                ce_tx,
+                ce_rx,
             );
 
             if slot.name == "agents" {

@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use protoclaw_sdk_types::{
     ChannelCapabilities, ChannelRequestPermission, ChannelSendMessage, DeliverMessage,
-    PermissionResponse,
+    PermissionResponse, SessionCreated,
 };
 use tokio::sync::mpsc;
 
@@ -31,6 +31,13 @@ pub trait Channel: Send + 'static {
         Err(ChannelSdkError::Protocol(format!(
             "unknown method: {method}"
         )))
+    }
+
+    async fn on_session_created(
+        &mut self,
+        _msg: SessionCreated,
+    ) -> Result<(), ChannelSdkError> {
+        Ok(())
     }
 }
 

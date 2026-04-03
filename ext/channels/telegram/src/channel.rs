@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use protoclaw_sdk_channel::{Channel, ChannelCapabilities, ChannelSdkError, ChannelSendMessage};
-use protoclaw_sdk_types::{ChannelRequestPermission, DeliverMessage, PermissionResponse};
+use protoclaw_sdk_types::{ChannelRequestPermission, DeliverMessage, PermissionResponse, SessionCreated};
 use teloxide::payloads::SendMessageSetters;
 use teloxide::prelude::Requester;
 use teloxide::Bot;
@@ -45,6 +45,18 @@ impl Channel for TelegramChannel {
     async fn deliver_message(&mut self, msg: DeliverMessage) -> Result<(), ChannelSdkError> {
         crate::deliver::deliver_to_chat(&self.bot, &self.state, &msg.session_id, &msg.content)
             .await
+    }
+
+    async fn on_session_created(&mut self, msg: SessionCreated) -> Result<(), ChannelSdkError> {
+        let chat_id: i64 = msg.peer_info.peer_id
+            .strip_prefix("telegram:")
+            .and_then(|s| s.parse().ok())
+            .ok_or_else(|| ChannelSdkError::Protocol(
+                format!("invalid peer_id for telegram: {}", msg.peer_info.peer_id)
+            ))?;
+        self.state.session_chat_map.write().await
+            .insert(msg.session_id, chat_id);
+        Ok(())
     }
 
     async fn request_permission(

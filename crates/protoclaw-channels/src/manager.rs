@@ -332,7 +332,7 @@ impl ChannelsManager {
                             return;
                         }
 
-                        match reply_rx.await {
+                         match reply_rx.await {
                             Ok(Ok(acp_session_id)) => {
                                 tracing::info!(
                                     channel = %channel_name,
@@ -342,9 +342,23 @@ impl ChannelsManager {
                                 );
                                 self.routing_table.insert(session_key.clone(), RoutingEntry {
                                     channel_id: channel_id.clone(),
-                                    acp_session_id,
+                                    acp_session_id: acp_session_id.clone(),
                                     slot_index,
                                 });
+
+                                if let Some(conn) = &self.slots[slot_index].connection {
+                                    let params = serde_json::json!({
+                                        "sessionId": acp_session_id,
+                                        "peerInfo": serde_json::to_value(&send_msg.peer_info).unwrap_or_default(),
+                                    });
+                                    if let Err(e) = conn.send_notification("channel/sessionCreated", params).await {
+                                        tracing::warn!(
+                                            channel = %channel_name,
+                                            error = %e,
+                                            "failed to notify channel of session creation"
+                                        );
+                                    }
+                                }
                             }
                             Ok(Err(e)) => {
                                 tracing::error!(channel = %channel_name, error = %e, "CreateSession failed");
@@ -514,6 +528,8 @@ impl Manager for ChannelsManager {
 
         tracing::info!(manager = self.name(), "manager running");
 
+        let mut poll_interval = tokio::time::interval(Duration::from_millis(50));
+
         loop {
             // Build a future for channel events (or pending if no receiver)
             let channel_event_fut = async {
@@ -537,7 +553,7 @@ impl Manager for ChannelsManager {
                 Some(event) = channel_event_fut => {
                     self.handle_channel_event(event).await;
                 }
-                else => {
+                _ = poll_interval.tick() => {
                     // Poll channels for incoming messages
                     if let Some((idx, msg)) = self.poll_channels().await {
                         match msg {
@@ -551,9 +567,6 @@ impl Manager for ChannelsManager {
                                 self.handle_channel_crash(idx).await;
                             }
                         }
-                    } else {
-                        // No messages ready, yield briefly to avoid busy-loop
-                        tokio::time::sleep(Duration::from_millis(50)).await;
                     }
                 }
             }

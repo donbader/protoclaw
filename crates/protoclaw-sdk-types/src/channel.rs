@@ -95,6 +95,16 @@ pub struct ChannelRespondPermission {
     pub option_id: String,
 }
 
+/// Protoclaw → Channel: notify channel that a session was created for a peer.
+/// Channels can use this to map ACP session IDs back to their internal identifiers
+/// (e.g., Telegram chat IDs).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionCreated {
+    pub session_id: String,
+    pub peer_info: PeerInfo,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

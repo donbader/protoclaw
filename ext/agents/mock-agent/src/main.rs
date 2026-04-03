@@ -102,6 +102,7 @@ fn extract_prompt_message(msg: &Value) -> String {
     msg["params"]["prompt"]
         .as_str()
         .or_else(|| msg["params"]["message"].as_str())
+        .or_else(|| msg["params"]["message"]["content"].as_str())
         .unwrap_or("")
         .to_string()
 }

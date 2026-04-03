@@ -9,6 +9,8 @@ services:
       - ./protoclaw.toml:/workspace/protoclaw.toml:ro
     environment:
       - LOG_LEVEL=debug
+      - PORT=8080
+      - HOST=0.0.0.0
     env_file:
       - .env
     restart: unless-stopped

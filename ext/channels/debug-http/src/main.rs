@@ -58,6 +58,7 @@ struct PermissionResponseBody {
 
 struct DebugHttpChannel {
     state: Arc<SharedState>,
+    host: String,
     port: u16,
 }
 
@@ -77,7 +78,7 @@ impl Channel for DebugHttpChannel {
         *self.state.outbound.lock().await = Some(outbound);
 
         let router = build_router(self.state.clone());
-        let addr = format!("127.0.0.1:{}", self.port);
+        let addr = format!("{}:{}", self.host, self.port);
         let listener = tokio::net::TcpListener::bind(&addr)
             .await
             .map_err(|e| ChannelSdkError::Io(e))?;
@@ -258,6 +259,7 @@ async fn main() {
         )
         .init();
 
+    let host = std::env::var("HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
     let port: u16 = std::env::var("PORT")
         .ok()
         .and_then(|v| v.parse().ok())
@@ -274,6 +276,7 @@ async fn main() {
 
     let channel = DebugHttpChannel {
         state: state.clone(),
+        host,
         port,
     };
 
@@ -302,7 +305,7 @@ mod tests {
     #[test]
     fn debug_http_channel_capabilities() {
         let state = make_shared_state();
-        let ch = DebugHttpChannel { state, port: 0 };
+        let ch = DebugHttpChannel { state, host: "127.0.0.1".to_string(), port: 0 };
         let caps = ch.capabilities();
         assert!(caps.streaming, "debug-http must support streaming");
         assert!(!caps.rich_text, "debug-http must not claim rich_text");
@@ -311,10 +314,7 @@ mod tests {
     #[tokio::test]
     async fn on_ready_stores_outbound_sender() {
         let state = make_shared_state();
-        let mut ch = DebugHttpChannel {
-            state: state.clone(),
-            port: 0,
-        };
+        let mut ch = DebugHttpChannel { state: state.clone(), host: "127.0.0.1".to_string(), port: 0 };
         let (tx, _rx) = mpsc::channel(16);
         ch.on_ready(tx).await.unwrap();
         let outbound = state.outbound.lock().await;
@@ -325,10 +325,7 @@ mod tests {
     async fn deliver_message_broadcasts_to_sse() {
         let state = make_shared_state();
         let mut rx = state.event_tx.subscribe();
-        let mut ch = DebugHttpChannel {
-            state: state.clone(),
-            port: 0,
-        };
+        let mut ch = DebugHttpChannel { state: state.clone(), host: "127.0.0.1".to_string(), port: 0 };
         let msg = DeliverMessage {
             session_id: "s1".into(),
             content: serde_json::json!("hello from agent"),
@@ -343,7 +340,7 @@ mod tests {
     async fn thought_chunk_broadcasts_as_named_event() {
         let state = make_shared_state();
         let mut rx = state.event_tx.subscribe();
-        let mut ch = DebugHttpChannel { state: state.clone(), port: 0 };
+        let mut ch = DebugHttpChannel { state: state.clone(), host: "127.0.0.1".to_string(), port: 0 };
         let msg = DeliverMessage {
             session_id: "s1".into(),
             content: serde_json::json!({"type": "agent_thought_chunk", "content": "thinking..."}),
@@ -358,7 +355,7 @@ mod tests {
     async fn message_chunk_broadcasts_as_default_event() {
         let state = make_shared_state();
         let mut rx = state.event_tx.subscribe();
-        let mut ch = DebugHttpChannel { state: state.clone(), port: 0 };
+        let mut ch = DebugHttpChannel { state: state.clone(), host: "127.0.0.1".to_string(), port: 0 };
         let msg = DeliverMessage {
             session_id: "s1".into(),
             content: serde_json::json!({"type": "agent_message_chunk", "content": "hello"}),
@@ -372,7 +369,7 @@ mod tests {
     async fn result_broadcasts_as_default_event() {
         let state = make_shared_state();
         let mut rx = state.event_tx.subscribe();
-        let mut ch = DebugHttpChannel { state: state.clone(), port: 0 };
+        let mut ch = DebugHttpChannel { state: state.clone(), host: "127.0.0.1".to_string(), port: 0 };
         let msg = DeliverMessage {
             session_id: "s1".into(),
             content: serde_json::json!({"type": "result", "content": "done"}),
@@ -385,10 +382,7 @@ mod tests {
     #[tokio::test]
     async fn request_permission_resolves_via_oneshot() {
         let state = make_shared_state();
-        let mut ch = DebugHttpChannel {
-            state: state.clone(),
-            port: 0,
-        };
+        let mut ch = DebugHttpChannel { state: state.clone(), host: "127.0.0.1".to_string(), port: 0 };
         let req = ChannelRequestPermission {
             request_id: "perm-1".into(),
             session_id: "s1".into(),
