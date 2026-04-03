@@ -141,6 +141,8 @@ mod tests {
             mcp_servers: vec![],
             wasm_tools: vec![],
             supervisor: SupervisorConfig::default(),
+            log_level: "info".into(),
+            extensions_dir: "/usr/local/bin".into(),
         }
     }
 
@@ -183,11 +185,13 @@ mod tests {
                 name: "debug-http".to_string(),
                 binary: "echo".to_string(),
                 args: vec![],
+                enabled: true,
             },
             ChannelConfig {
                 name: "debug-http".to_string(),
                 binary: "echo".to_string(),
                 args: vec![],
+                enabled: true,
             },
         ];
         let result = validate_config(&config);
@@ -213,11 +217,13 @@ mod tests {
                 name: "fs".to_string(),
                 binary: "echo".to_string(),
                 args: vec![],
+                enabled: true,
             },
             McpServerConfig {
                 name: "fs".to_string(),
                 binary: "echo".to_string(),
                 args: vec![],
+                enabled: true,
             },
         ];
         let result = validate_config(&config);
@@ -258,6 +264,7 @@ mod tests {
             name: "ch".to_string(),
             binary: "nonexistent-xyz-99999".to_string(),
             args: vec![],
+            enabled: true,
         }];
         let result = validate_config(&config);
         let has_error = result.errors.iter().any(|e| {
@@ -281,6 +288,7 @@ mod tests {
             name: "fs".to_string(),
             binary: "nonexistent-xyz-99999".to_string(),
             args: vec![],
+            enabled: true,
         }];
         let result = validate_config(&config);
         let has_error = result.errors.iter().any(|e| {

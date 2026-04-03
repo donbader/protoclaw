@@ -396,6 +396,8 @@ mod tests {
                 max_restarts: 5,
                 restart_window_secs: 60,
             },
+            log_level: "info".into(),
+            extensions_dir: "/usr/local/bin".into(),
         }
     }
 

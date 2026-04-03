@@ -36,6 +36,7 @@ pub fn mock_agent_config_with_env(env: HashMap<String, String>) -> protoclaw_con
             name: "debug-http".into(),
             binary: debug_http_path(),
             args: vec![],
+            enabled: true,
         }],
         mcp_servers: vec![],
         wasm_tools: vec![],
@@ -45,6 +46,8 @@ pub fn mock_agent_config_with_env(env: HashMap<String, String>) -> protoclaw_con
             max_restarts: 3,
             restart_window_secs: 60,
         },
+        log_level: "info".into(),
+        extensions_dir: "/usr/local/bin".into(),
     }
 }
 

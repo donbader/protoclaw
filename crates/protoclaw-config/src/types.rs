@@ -7,6 +7,10 @@ use std::path::PathBuf;
 /// Loaded from layered providers: defaults → TOML file → environment variables.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ProtoclawConfig {
+    #[serde(default = "default_log_level")]
+    pub log_level: String,
+    #[serde(default = "default_extensions_dir")]
+    pub extensions_dir: String,
     pub agent: AgentConfig,
     #[serde(default)]
     pub channels: Vec<ChannelConfig>,
@@ -37,6 +41,8 @@ pub struct ChannelConfig {
     pub binary: String,
     #[serde(default)]
     pub args: Vec<String>,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
 }
 
 /// MCP tool server configuration.
@@ -46,6 +52,8 @@ pub struct McpServerConfig {
     pub binary: String,
     #[serde(default)]
     pub args: Vec<String>,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -88,6 +96,15 @@ fn default_epoch_timeout() -> u64 {
 }
 fn default_memory_limit() -> u64 {
     67_108_864
+}
+fn default_log_level() -> String {
+    "info".into()
+}
+fn default_extensions_dir() -> String {
+    "/usr/local/bin".into()
+}
+fn default_true() -> bool {
+    true
 }
 
 impl Default for WasmSandboxConfig {
@@ -141,6 +158,90 @@ impl Default for SupervisorConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn log_level_defaults_to_info() {
+        let toml = r#"
+            [agent]
+            binary = "opencode"
+        "#;
+        let config: ProtoclawConfig = toml::from_str(toml).unwrap();
+        assert_eq!(config.log_level, "info");
+    }
+
+    #[test]
+    fn log_level_from_toml() {
+        let toml = r#"
+            log_level = "debug"
+            [agent]
+            binary = "opencode"
+        "#;
+        let config: ProtoclawConfig = toml::from_str(toml).unwrap();
+        assert_eq!(config.log_level, "debug");
+    }
+
+    #[test]
+    fn extensions_dir_defaults() {
+        let toml = r#"
+            [agent]
+            binary = "opencode"
+        "#;
+        let config: ProtoclawConfig = toml::from_str(toml).unwrap();
+        assert_eq!(config.extensions_dir, "/usr/local/bin");
+    }
+
+    #[test]
+    fn extensions_dir_from_toml() {
+        let toml = r#"
+            extensions_dir = "/custom/path"
+            [agent]
+            binary = "opencode"
+        "#;
+        let config: ProtoclawConfig = toml::from_str(toml).unwrap();
+        assert_eq!(config.extensions_dir, "/custom/path");
+    }
+
+    #[test]
+    fn channel_enabled_defaults_true() {
+        let toml = r#"
+            name = "debug-http"
+            binary = "debug-http"
+        "#;
+        let config: ChannelConfig = toml::from_str(toml).unwrap();
+        assert!(config.enabled);
+    }
+
+    #[test]
+    fn channel_enabled_false() {
+        let toml = r#"
+            name = "telegram"
+            binary = "telegram-channel"
+            enabled = false
+        "#;
+        let config: ChannelConfig = toml::from_str(toml).unwrap();
+        assert!(!config.enabled);
+    }
+
+    #[test]
+    fn mcp_server_enabled_defaults_true() {
+        let toml = r#"
+            name = "filesystem"
+            binary = "mcp-server-filesystem"
+        "#;
+        let config: McpServerConfig = toml::from_str(toml).unwrap();
+        assert!(config.enabled);
+    }
+
+    #[test]
+    fn mcp_server_enabled_false() {
+        let toml = r#"
+            name = "filesystem"
+            binary = "mcp-server-filesystem"
+            enabled = false
+        "#;
+        let config: McpServerConfig = toml::from_str(toml).unwrap();
+        assert!(!config.enabled);
+    }
 
     #[test]
     fn agent_config_with_env_deserializes() {
