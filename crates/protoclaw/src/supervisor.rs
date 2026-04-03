@@ -334,7 +334,10 @@ fn create_manager(
         "channels" => {
             let tx = agents_cmd_tx.expect("agents_cmd_tx required for channels manager");
             let agents_handle = ManagerHandle::new(tx.clone());
-            let mut cm = ChannelsManager::new(config.channels.clone())
+            let default_agent = config.default_agent_name()
+                .unwrap_or("default")
+                .to_string();
+            let mut cm = ChannelsManager::new(config.channels.clone(), default_agent)
                 .with_agents_handle(agents_handle);
             if let Some(rx) = channel_events_rx {
                 cm = cm.with_channel_events_rx(rx);

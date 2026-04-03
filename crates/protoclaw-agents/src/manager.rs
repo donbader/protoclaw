@@ -137,8 +137,13 @@ impl AgentsManager {
 
     async fn start_session(slot: &mut AgentSlot, tools_handle: &ManagerHandle<ToolsCommand>) -> Result<String, AgentsError> {
         let (reply_tx, reply_rx) = oneshot::channel();
+        let tool_names = if slot.config.tools.is_empty() {
+            None
+        } else {
+            Some(slot.config.tools.clone())
+        };
         tools_handle
-            .send(ToolsCommand::GetMcpUrls { reply: reply_tx })
+            .send(ToolsCommand::GetMcpUrls { tool_names, reply: reply_tx })
             .await
             .map_err(|e| AgentsError::SpawnFailed(format!("tools handle: {e}")))?;
 
@@ -672,7 +677,7 @@ mod tests {
     async fn serve_tools_urls(mut rx: tokio::sync::mpsc::Receiver<ToolsCommand>) {
         while let Some(cmd) = rx.recv().await {
             match cmd {
-                ToolsCommand::GetMcpUrls { reply } => {
+                ToolsCommand::GetMcpUrls { tool_names: _, reply } => {
                     let _ = reply.send(vec![]);
                 }
                 ToolsCommand::Shutdown => break,

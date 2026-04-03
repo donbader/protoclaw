@@ -35,6 +35,7 @@ struct RoutingEntry {
     channel_id: ChannelId,
     acp_session_id: String,
     slot_index: usize,
+    agent_name: String,
 }
 
 /// Per-channel state: connection, config, crash recovery.
@@ -56,6 +57,7 @@ struct ChannelSlot {
 /// Outbound agent updates route back to the originating channel via routing table.
 pub struct ChannelsManager {
     channel_configs: Vec<ChannelConfig>,
+    default_agent_name: String,
     slots: Vec<ChannelSlot>,
     cmd_rx: Option<mpsc::Receiver<ChannelsCommand>>,
     cmd_tx: mpsc::Sender<ChannelsCommand>,
@@ -68,10 +70,11 @@ pub struct ChannelsManager {
 }
 
 impl ChannelsManager {
-    pub fn new(channel_configs: Vec<ChannelConfig>) -> Self {
+    pub fn new(channel_configs: Vec<ChannelConfig>, default_agent_name: String) -> Self {
         let (cmd_tx, cmd_rx) = mpsc::channel(16);
         Self {
             channel_configs,
+            default_agent_name,
             slots: Vec::new(),
             cmd_rx: Some(cmd_rx),
             cmd_tx,
@@ -95,6 +98,11 @@ impl ChannelsManager {
     pub fn with_channel_events_rx(mut self, rx: mpsc::Receiver<ChannelEvent>) -> Self {
         self.channel_events_rx = Some(rx);
         self
+    }
+
+    fn agent_name_for_channel(&self, slot_index: usize) -> &str {
+        self.slots[slot_index].config.agent.as_deref()
+            .unwrap_or(&self.default_agent_name)
     }
 
     /// Get a watch receiver for a named channel's discovered port (from stderr PORT:{port}).
@@ -321,9 +329,7 @@ impl ChannelsManager {
                         }
                     };
 
-                    let agent_name = self.slots[slot_index].config.agent
-                        .clone()
-                        .unwrap_or_else(|| "default".to_string());
+                    let agent_name = self.agent_name_for_channel(slot_index).to_string();
 
                     if !self.routing_table.contains_key(&session_key) {
                         let (reply_tx, reply_rx) = oneshot::channel();
@@ -348,6 +354,7 @@ impl ChannelsManager {
                                     channel_id: channel_id.clone(),
                                     acp_session_id: acp_session_id.clone(),
                                     slot_index,
+                                    agent_name: agent_name.clone(),
                                 });
 
                                 if let Some(conn) = &self.slots[slot_index].connection {
@@ -592,13 +599,13 @@ mod tests {
 
     #[test]
     fn channels_manager_name() {
-        let m = ChannelsManager::new(vec![]);
+        let m = ChannelsManager::new(vec![], "default".into());
         assert_eq!(m.name(), "channels");
     }
 
     #[tokio::test]
     async fn channels_manager_start_with_no_channels() {
-        let mut m = ChannelsManager::new(vec![]);
+        let mut m = ChannelsManager::new(vec![], "default".into());
         let result = m.start().await;
         assert!(result.is_ok());
         assert!(m.slots.is_empty());
@@ -606,7 +613,7 @@ mod tests {
 
     #[tokio::test]
     async fn channels_manager_health_check_no_channels() {
-        let m = ChannelsManager::new(vec![]);
+        let m = ChannelsManager::new(vec![], "default".into());
         assert!(!m.health_check().await);
     }
 
@@ -619,9 +626,8 @@ mod tests {
             enabled: true,
             agent: None,
         }];
-        let mut m = ChannelsManager::new(configs);
+        let mut m = ChannelsManager::new(configs, "default".into());
         let result = m.start().await;
-        // Should succeed — bad channels are logged but don't block startup
         assert!(result.is_ok());
         assert_eq!(m.slots.len(), 1);
         assert!(m.slots[0].connection.is_none());
@@ -629,7 +635,7 @@ mod tests {
 
     #[tokio::test]
     async fn channels_manager_shutdown_command() {
-        let m = ChannelsManager::new(vec![]);
+        let m = ChannelsManager::new(vec![], "default".into());
         let tx = m.command_sender();
         tx.send(ChannelsCommand::Shutdown).await.unwrap();
     }
@@ -669,10 +675,8 @@ mod tests {
             enabled: true,
             agent: None,
         }];
-        let mut m = ChannelsManager::new(configs);
+        let mut m = ChannelsManager::new(configs, "default".into());
         m.start().await.unwrap();
-
-        // Simulate crash loop by recording enough crashes
         let slot = &mut m.slots[0];
         for _ in 0..5 {
             slot.crash_tracker.record_crash();
@@ -692,6 +696,7 @@ mod tests {
             channel_id: ChannelId::from("debug-http"),
             acp_session_id: "acp-sess-1".into(),
             slot_index: 0,
+            agent_name: "default".into(),
         });
 
         assert!(table.contains_key(&key));
@@ -710,11 +715,13 @@ mod tests {
             channel_id: ChannelId::from("telegram"),
             acp_session_id: "sess-alice".into(),
             slot_index: 0,
+            agent_name: "default".into(),
         });
         table.insert(key_bob.clone(), RoutingEntry {
             channel_id: ChannelId::from("telegram"),
             acp_session_id: "sess-bob".into(),
             slot_index: 0,
+            agent_name: "default".into(),
         });
 
         assert_eq!(table.len(), 2);
@@ -724,13 +731,13 @@ mod tests {
 
     #[tokio::test]
     async fn handle_channel_event_deliver_routes_to_correct_slot() {
-        let mut m = ChannelsManager::new(vec![]);
-        // Manually insert a routing entry (no real channel needed for this test)
+        let mut m = ChannelsManager::new(vec![], "default".into());
         let key = SessionKey::new("test", "local", "dev");
         m.routing_table.insert(key.clone(), RoutingEntry {
             channel_id: ChannelId::from("test"),
             acp_session_id: "acp-1".into(),
             slot_index: 0,
+            agent_name: "default".into(),
         });
 
         // No slots means deliver will find no connection — but shouldn't panic
@@ -754,15 +761,71 @@ mod tests {
     async fn with_agents_handle_sets_handle() {
         let (tx, _rx) = mpsc::channel::<AgentsCommand>(16);
         let handle = ManagerHandle::new(tx);
-        let m = ChannelsManager::new(vec![]).with_agents_handle(handle);
+        let m = ChannelsManager::new(vec![], "default".into()).with_agents_handle(handle);
         assert!(m.agents_handle.is_some());
     }
 
     #[tokio::test]
     async fn with_channel_events_rx_sets_receiver() {
         let (_tx, rx) = mpsc::channel::<ChannelEvent>(16);
-        let m = ChannelsManager::new(vec![]).with_channel_events_rx(rx);
+        let m = ChannelsManager::new(vec![], "default".into()).with_channel_events_rx(rx);
         assert!(m.channel_events_rx.is_some());
+    }
+
+    #[test]
+    fn agent_name_for_channel_uses_config_agent_field() {
+        let configs = vec![ChannelConfig {
+            name: "telegram".into(),
+            binary: "telegram-channel".into(),
+            args: vec![],
+            enabled: true,
+            agent: Some("opencode".to_string()),
+        }];
+        let mut m = ChannelsManager::new(configs, "default-agent".to_string());
+        m.slots.push(ChannelSlot {
+            config: ChannelConfig {
+                name: "telegram".into(),
+                binary: "telegram-channel".into(),
+                args: vec![],
+                enabled: true,
+                agent: Some("opencode".to_string()),
+            },
+            connection: None,
+            channel_id: ChannelId::from("telegram"),
+            cancel_token: CancellationToken::new(),
+            backoff: ExponentialBackoff::default(),
+            crash_tracker: CrashTracker::default(),
+            disabled: false,
+        });
+        assert_eq!(m.agent_name_for_channel(0), "opencode");
+    }
+
+    #[test]
+    fn agent_name_for_channel_defaults_to_default_agent() {
+        let configs = vec![ChannelConfig {
+            name: "debug-http".into(),
+            binary: "debug-http".into(),
+            args: vec![],
+            enabled: true,
+            agent: None,
+        }];
+        let mut m = ChannelsManager::new(configs, "first-enabled".to_string());
+        m.slots.push(ChannelSlot {
+            config: ChannelConfig {
+                name: "debug-http".into(),
+                binary: "debug-http".into(),
+                args: vec![],
+                enabled: true,
+                agent: None,
+            },
+            connection: None,
+            channel_id: ChannelId::from("debug-http"),
+            cancel_token: CancellationToken::new(),
+            backoff: ExponentialBackoff::default(),
+            crash_tracker: CrashTracker::default(),
+            disabled: false,
+        });
+        assert_eq!(m.agent_name_for_channel(0), "first-enabled");
     }
 
     #[tokio::test]
@@ -774,7 +837,7 @@ mod tests {
             enabled: false,
             agent: None,
         }];
-        let mut m = ChannelsManager::new(configs);
+        let mut m = ChannelsManager::new(configs, "default".into());
         let result = m.start().await;
         assert!(result.is_ok());
         assert!(m.slots.is_empty(), "disabled channel should not create a slot");

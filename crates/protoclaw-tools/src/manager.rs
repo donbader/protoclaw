@@ -25,6 +25,7 @@ pub struct McpServerUrl {
 
 pub enum ToolsCommand {
     GetMcpUrls {
+        tool_names: Option<Vec<String>>,
         reply: tokio::sync::oneshot::Sender<Vec<McpServerUrl>>,
     },
     Shutdown,
@@ -261,8 +262,15 @@ impl Manager for ToolsManager {
                 }
                 cmd = rx.recv() => {
                     match cmd {
-                        Some(ToolsCommand::GetMcpUrls { reply }) => {
-                            let _ = reply.send(self.server_urls.clone());
+                        Some(ToolsCommand::GetMcpUrls { tool_names, reply }) => {
+                            let urls = match tool_names {
+                                Some(names) => self.server_urls.iter()
+                                    .filter(|u| names.iter().any(|n| n == &u.name))
+                                    .cloned()
+                                    .collect(),
+                                None => self.server_urls.clone(),
+                            };
+                            let _ = reply.send(urls);
                         }
                         Some(ToolsCommand::Shutdown) | None => {
                             break;
@@ -503,6 +511,59 @@ mod tests {
         for h in &m.server_handles {
             h.abort();
         }
+    }
+
+    #[tokio::test]
+    async fn get_mcp_urls_with_no_filter_returns_all() {
+        let mut m = ToolsManager::new(vec![]);
+        m.start().await.unwrap();
+
+        m.server_urls.push(McpServerUrl { name: "tool-a".into(), url: "http://a".into() });
+        m.server_urls.push(McpServerUrl { name: "tool-b".into(), url: "http://b".into() });
+
+        let urls = m.server_urls.clone();
+        let filtered: Vec<McpServerUrl> = match None::<Vec<String>> {
+            Some(names) => urls.iter().filter(|u| names.iter().any(|n| n == &u.name)).cloned().collect(),
+            None => urls,
+        };
+        assert_eq!(filtered.len(), 3);
+
+        for h in &m.server_handles { h.abort(); }
+    }
+
+    #[tokio::test]
+    async fn get_mcp_urls_with_filter_returns_matching_only() {
+        let mut m = ToolsManager::new(vec![]);
+        m.start().await.unwrap();
+        m.server_urls.push(McpServerUrl { name: "system-info".into(), url: "http://si".into() });
+        m.server_urls.push(McpServerUrl { name: "filesystem".into(), url: "http://fs".into() });
+
+        let urls = m.server_urls.clone();
+        let names = vec!["system-info".to_string()];
+        let filtered: Vec<McpServerUrl> = urls.iter()
+            .filter(|u| names.iter().any(|n| n == &u.name))
+            .cloned()
+            .collect();
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].name, "system-info");
+
+        for h in &m.server_handles { h.abort(); }
+    }
+
+    #[tokio::test]
+    async fn get_mcp_urls_with_nonexistent_filter_returns_empty() {
+        let mut m = ToolsManager::new(vec![]);
+        m.start().await.unwrap();
+
+        let urls = m.server_urls.clone();
+        let names = vec!["nonexistent".to_string()];
+        let filtered: Vec<McpServerUrl> = urls.iter()
+            .filter(|u| names.iter().any(|n| n == &u.name))
+            .cloned()
+            .collect();
+        assert!(filtered.is_empty());
+
+        for h in &m.server_handles { h.abort(); }
     }
 
     #[tokio::test]
