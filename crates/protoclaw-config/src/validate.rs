@@ -68,16 +68,17 @@ pub fn validate_config(config: &ProtoclawConfig) -> ValidationResult {
     let mut errors = Vec::new();
     let warnings = Vec::new();
 
-    if !binary_exists(&config.agent.binary) {
-        errors.push(ValidationError::BinaryNotFound {
-            field: "agent.binary".to_string(),
-            binary: config.agent.binary.clone(),
-        });
-    }
-
-    if let Some(path) = &config.agent.working_dir {
-        if !path.exists() {
-            errors.push(ValidationError::WorkingDirNotFound { path: path.clone() });
+    for (i, agent) in config.agents.iter().enumerate() {
+        if !binary_exists(&agent.binary) {
+            errors.push(ValidationError::BinaryNotFound {
+                field: format!("agents[{i}].binary"),
+                binary: agent.binary.clone(),
+            });
+        }
+        if let Some(path) = &agent.working_dir {
+            if !path.exists() {
+                errors.push(ValidationError::WorkingDirNotFound { path: path.clone() });
+            }
         }
     }
 
@@ -131,12 +132,16 @@ mod tests {
 
     fn valid_config() -> ProtoclawConfig {
         ProtoclawConfig {
-            agent: AgentConfig {
+            agent: None,
+            agents: vec![AgentConfig {
+                name: "default".to_string(),
                 binary: "echo".to_string(),
                 args: vec![],
+                enabled: true,
                 env: HashMap::new(),
                 working_dir: None,
-            },
+                tools: vec![],
+            }],
             channels: vec![],
             mcp_servers: vec![],
             wasm_tools: vec![],
@@ -161,18 +166,18 @@ mod tests {
     #[test]
     fn missing_agent_binary_is_error() {
         let mut config = valid_config();
-        config.agent.binary = "nonexistent-xyz-99999".to_string();
+        config.agents[0].binary = "nonexistent-xyz-99999".to_string();
         let result = validate_config(&config);
         let has_error = result.errors.iter().any(|e| {
             matches!(
                 e,
                 ValidationError::BinaryNotFound { field, binary }
-                if field == "agent.binary" && binary == "nonexistent-xyz-99999"
+                if field == "agents[0].binary" && binary == "nonexistent-xyz-99999"
             )
         });
         assert!(
             has_error,
-            "expected BinaryNotFound for agent.binary, got: {:?}",
+            "expected BinaryNotFound for agents[0].binary, got: {:?}",
             result.errors
         );
     }
@@ -186,12 +191,14 @@ mod tests {
                 binary: "echo".to_string(),
                 args: vec![],
                 enabled: true,
+                agent: None,
             },
             ChannelConfig {
                 name: "debug-http".to_string(),
                 binary: "echo".to_string(),
                 args: vec![],
                 enabled: true,
+                agent: None,
             },
         ];
         let result = validate_config(&config);
@@ -244,7 +251,7 @@ mod tests {
     #[test]
     fn nonexistent_working_dir_is_error() {
         let mut config = valid_config();
-        config.agent.working_dir = Some(PathBuf::from("/nonexistent/path/xyz-99999"));
+        config.agents[0].working_dir = Some(PathBuf::from("/nonexistent/path/xyz-99999"));
         let result = validate_config(&config);
         let has_error = result
             .errors
@@ -265,6 +272,7 @@ mod tests {
             binary: "nonexistent-xyz-99999".to_string(),
             args: vec![],
             enabled: true,
+            agent: None,
         }];
         let result = validate_config(&config);
         let has_error = result.errors.iter().any(|e| {

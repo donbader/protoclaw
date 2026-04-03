@@ -11,7 +11,11 @@ pub struct ProtoclawConfig {
     pub log_level: String,
     #[serde(default = "default_extensions_dir")]
     pub extensions_dir: String,
-    pub agent: AgentConfig,
+    /// Legacy single-agent config (deprecated, use [[agents]]).
+    #[serde(default)]
+    pub agent: Option<LegacyAgentConfig>,
+    #[serde(default)]
+    pub agents: Vec<AgentConfig>,
     #[serde(default)]
     pub channels: Vec<ChannelConfig>,
     #[serde(default)]
@@ -22,9 +26,12 @@ pub struct ProtoclawConfig {
     pub supervisor: SupervisorConfig,
 }
 
-/// Agent process configuration — the ACP-speaking AI agent.
+/// Legacy single-agent config (deprecated, use [[agents]]).
+///
+/// Kept for backward compatibility with `[agent]` TOML format.
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct AgentConfig {
+pub struct LegacyAgentConfig {
+    #[serde(default)]
     pub binary: String,
     #[serde(default)]
     pub args: Vec<String>,
@@ -32,6 +39,23 @@ pub struct AgentConfig {
     pub env: HashMap<String, String>,
     #[serde(default)]
     pub working_dir: Option<PathBuf>,
+}
+
+/// Agent process configuration — the ACP-speaking AI agent.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct AgentConfig {
+    pub name: String,
+    pub binary: String,
+    #[serde(default)]
+    pub args: Vec<String>,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub env: HashMap<String, String>,
+    #[serde(default)]
+    pub working_dir: Option<PathBuf>,
+    #[serde(default)]
+    pub tools: Vec<String>,
 }
 
 /// Channel subprocess configuration — user-facing interfaces.
@@ -43,6 +67,8 @@ pub struct ChannelConfig {
     pub args: Vec<String>,
     #[serde(default = "default_true")]
     pub enabled: bool,
+    #[serde(default)]
+    pub agent: Option<String>,
 }
 
 /// MCP tool server configuration.
@@ -118,6 +144,32 @@ impl Default for WasmSandboxConfig {
     }
 }
 
+impl ProtoclawConfig {
+    pub fn normalize_agents(&mut self) {
+        if self.agents.is_empty() {
+            if let Some(legacy) = self.agent.take() {
+                tracing::warn!("[agent] is deprecated, use [[agents]] instead");
+                self.agents.push(AgentConfig {
+                    name: "default".into(),
+                    binary: legacy.binary,
+                    args: legacy.args,
+                    enabled: true,
+                    env: legacy.env,
+                    working_dir: legacy.working_dir,
+                    tools: vec![],
+                });
+            }
+        }
+    }
+
+    pub fn default_agent_name(&self) -> Option<&str> {
+        self.agents
+            .iter()
+            .find(|a| a.enabled)
+            .map(|a| a.name.as_str())
+    }
+}
+
 /// Supervisor settings with sensible defaults.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct SupervisorConfig {
@@ -162,7 +214,8 @@ mod tests {
     #[test]
     fn log_level_defaults_to_info() {
         let toml = r#"
-            [agent]
+            [[agents]]
+            name = "default"
             binary = "opencode"
         "#;
         let config: ProtoclawConfig = toml::from_str(toml).unwrap();
@@ -173,7 +226,8 @@ mod tests {
     fn log_level_from_toml() {
         let toml = r#"
             log_level = "debug"
-            [agent]
+            [[agents]]
+            name = "default"
             binary = "opencode"
         "#;
         let config: ProtoclawConfig = toml::from_str(toml).unwrap();
@@ -183,7 +237,8 @@ mod tests {
     #[test]
     fn extensions_dir_defaults() {
         let toml = r#"
-            [agent]
+            [[agents]]
+            name = "default"
             binary = "opencode"
         "#;
         let config: ProtoclawConfig = toml::from_str(toml).unwrap();
@@ -194,7 +249,8 @@ mod tests {
     fn extensions_dir_from_toml() {
         let toml = r#"
             extensions_dir = "/custom/path"
-            [agent]
+            [[agents]]
+            name = "default"
             binary = "opencode"
         "#;
         let config: ProtoclawConfig = toml::from_str(toml).unwrap();
@@ -244,7 +300,7 @@ mod tests {
     }
 
     #[test]
-    fn agent_config_with_env_deserializes() {
+    fn legacy_agent_config_with_env_deserializes() {
         let toml = r#"
             binary = "opencode"
             args = ["acp"]
@@ -254,7 +310,7 @@ mod tests {
             OPENCODE_ENABLE_QUESTION_TOOL = "1"
             MY_VAR = "hello"
         "#;
-        let config: AgentConfig = toml::from_str(toml).unwrap();
+        let config: LegacyAgentConfig = toml::from_str(toml).unwrap();
         assert_eq!(config.binary, "opencode");
         assert_eq!(config.env.len(), 2);
         assert_eq!(config.env["OPENCODE_ENABLE_QUESTION_TOOL"], "1");
@@ -262,20 +318,20 @@ mod tests {
     }
 
     #[test]
-    fn agent_config_env_defaults_empty() {
+    fn legacy_agent_config_env_defaults_empty() {
         let toml = r#"
             binary = "opencode"
         "#;
-        let config: AgentConfig = toml::from_str(toml).unwrap();
+        let config: LegacyAgentConfig = toml::from_str(toml).unwrap();
         assert!(config.env.is_empty());
     }
 
     #[test]
-    fn agent_config_working_dir_optional() {
+    fn legacy_agent_config_working_dir_optional() {
         let toml = r#"
             binary = "opencode"
         "#;
-        let config: AgentConfig = toml::from_str(toml).unwrap();
+        let config: LegacyAgentConfig = toml::from_str(toml).unwrap();
         assert!(config.working_dir.is_none());
     }
 
@@ -320,5 +376,138 @@ mod tests {
         assert_eq!(config.name, "minimal");
         assert_eq!(config.sandbox.fuel_limit, 1_000_000);
         assert_eq!(config.sandbox.epoch_timeout_secs, 30);
+    }
+
+    #[test]
+    fn agents_array_deserializes() {
+        let toml = r#"
+            [[agents]]
+            name = "opencode"
+            binary = "opencode"
+            args = ["acp"]
+            tools = ["system-info", "filesystem"]
+
+            [agents.env]
+            ANTHROPIC_API_KEY = "sk-test"
+
+            [[agents]]
+            name = "claude-code"
+            binary = "claude"
+            enabled = false
+        "#;
+        let config: ProtoclawConfig = toml::from_str(toml).unwrap();
+        assert_eq!(config.agents.len(), 2);
+        assert_eq!(config.agents[0].name, "opencode");
+        assert_eq!(config.agents[0].binary, "opencode");
+        assert_eq!(config.agents[0].args, vec!["acp"]);
+        assert!(config.agents[0].enabled);
+        assert_eq!(config.agents[0].tools, vec!["system-info", "filesystem"]);
+        assert_eq!(config.agents[0].env["ANTHROPIC_API_KEY"], "sk-test");
+        assert_eq!(config.agents[1].name, "claude-code");
+        assert!(!config.agents[1].enabled);
+    }
+
+    #[test]
+    fn legacy_agent_normalizes_to_agents_vec() {
+        let toml = r#"
+            [agent]
+            binary = "opencode"
+            args = ["acp"]
+
+            [agent.env]
+            MY_KEY = "val"
+        "#;
+        let mut config: ProtoclawConfig = toml::from_str(toml).unwrap();
+        assert!(config.agents.is_empty());
+        config.normalize_agents();
+        assert_eq!(config.agents.len(), 1);
+        assert_eq!(config.agents[0].name, "default");
+        assert_eq!(config.agents[0].binary, "opencode");
+        assert_eq!(config.agents[0].args, vec!["acp"]);
+        assert!(config.agents[0].enabled);
+        assert_eq!(config.agents[0].env["MY_KEY"], "val");
+        assert!(config.agents[0].tools.is_empty());
+        assert!(config.agent.is_none());
+    }
+
+    #[test]
+    fn agents_array_takes_precedence_over_legacy_agent() {
+        let toml = r#"
+            [agent]
+            binary = "should-be-ignored"
+
+            [[agents]]
+            name = "real"
+            binary = "opencode"
+        "#;
+        let mut config: ProtoclawConfig = toml::from_str(toml).unwrap();
+        config.normalize_agents();
+        assert_eq!(config.agents.len(), 1);
+        assert_eq!(config.agents[0].binary, "opencode");
+    }
+
+    #[test]
+    fn agent_config_enabled_defaults_true() {
+        let toml = r#"
+            name = "test"
+            binary = "test-agent"
+        "#;
+        let config: AgentConfig = toml::from_str(toml).unwrap();
+        assert!(config.enabled);
+        assert!(config.tools.is_empty());
+        assert!(config.env.is_empty());
+        assert!(config.args.is_empty());
+    }
+
+    #[test]
+    fn channel_config_agent_field() {
+        let toml = r#"
+            name = "telegram"
+            binary = "telegram-channel"
+            agent = "opencode"
+        "#;
+        let config: ChannelConfig = toml::from_str(toml).unwrap();
+        assert_eq!(config.agent, Some("opencode".to_string()));
+    }
+
+    #[test]
+    fn channel_config_agent_defaults_none() {
+        let toml = r#"
+            name = "debug-http"
+            binary = "debug-http"
+        "#;
+        let config: ChannelConfig = toml::from_str(toml).unwrap();
+        assert!(config.agent.is_none());
+    }
+
+    #[test]
+    fn empty_config_normalize_agents_no_panic() {
+        let toml = r#""#;
+        let mut config: ProtoclawConfig = toml::from_str(toml).unwrap();
+        config.normalize_agents();
+        assert!(config.agents.is_empty());
+    }
+
+    #[test]
+    fn default_agent_name_returns_first_enabled() {
+        let toml = r#"
+            [[agents]]
+            name = "disabled-one"
+            binary = "x"
+            enabled = false
+
+            [[agents]]
+            name = "enabled-one"
+            binary = "y"
+        "#;
+        let config: ProtoclawConfig = toml::from_str(toml).unwrap();
+        assert_eq!(config.default_agent_name(), Some("enabled-one"));
+    }
+
+    #[test]
+    fn default_agent_name_none_when_empty() {
+        let toml = r#""#;
+        let config: ProtoclawConfig = toml::from_str(toml).unwrap();
+        assert_eq!(config.default_agent_name(), None);
     }
 }

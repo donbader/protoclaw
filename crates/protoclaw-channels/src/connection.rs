@@ -253,6 +253,7 @@ mod tests {
             binary: "cat".into(),
             args: vec![],
             enabled: true,
+            agent: None,
         }
     }
 
@@ -272,6 +273,7 @@ mod tests {
             binary: "nonexistent-binary-xyz-99999".into(),
             args: vec![],
             enabled: true,
+            agent: None,
         };
         let result = ChannelConnection::spawn(&config, ChannelId::from("bad"));
         assert!(result.is_err());
@@ -323,6 +325,7 @@ mod tests {
             binary: "true".into(),
             args: vec![],
             enabled: true,
+            agent: None,
         };
         let channel_id = ChannelId::from("exits");
         let mut conn = ChannelConnection::spawn(&config, channel_id).unwrap();

@@ -612,6 +612,7 @@ mod tests {
             binary: "nonexistent-binary-xyz-99999".into(),
             args: vec![],
             enabled: true,
+            agent: None,
         }];
         let mut m = ChannelsManager::new(configs);
         let result = m.start().await;
@@ -637,6 +638,7 @@ mod tests {
                 binary: "true".into(),
                 args: vec![],
                 enabled: true,
+                agent: None,
             },
             connection: None,
             channel_id: ChannelId::from("test"),
@@ -660,6 +662,7 @@ mod tests {
             binary: "nonexistent-binary-xyz-99999".into(),
             args: vec![],
             enabled: true,
+            agent: None,
         }];
         let mut m = ChannelsManager::new(configs);
         m.start().await.unwrap();
@@ -764,6 +767,7 @@ mod tests {
             binary: "nonexistent-binary-xyz-99999".into(),
             args: vec![],
             enabled: false,
+            agent: None,
         }];
         let mut m = ChannelsManager::new(configs);
         let result = m.start().await;

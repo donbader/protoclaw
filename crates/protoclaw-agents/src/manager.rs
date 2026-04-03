@@ -645,10 +645,13 @@ mod tests {
             .join("mock-agent");
 
         AgentConfig {
+            name: "default".to_string(),
             binary: target_dir.to_string_lossy().to_string(),
             args: vec![],
+            enabled: true,
             env: HashMap::new(),
             working_dir: None,
+            tools: vec![],
         }
     }
 

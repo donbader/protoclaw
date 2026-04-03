@@ -49,7 +49,9 @@ async fn shutdown_signal() {
 impl Supervisor {
     pub fn new(mut config: ProtoclawConfig) -> Self {
         let extensions_dir = config.extensions_dir.clone();
-        config.agent.binary = resolve_binary_path(&config.agent.binary, &extensions_dir);
+        for agent in &mut config.agents {
+            agent.binary = resolve_binary_path(&agent.binary, &extensions_dir);
+        }
         for ch in &mut config.channels {
             ch.binary = resolve_binary_path(&ch.binary, &extensions_dir);
         }
@@ -323,7 +325,18 @@ fn create_manager(
         }
         "agents" => {
             let handle = protoclaw_core::ManagerHandle::new(tools_tx.clone());
-            let mut agents = AgentsManager::new(config.agent.clone(), handle);
+            let agent_config = config.agents.first().cloned().unwrap_or_else(|| {
+                protoclaw_config::AgentConfig {
+                    name: "default".into(),
+                    binary: "echo".into(),
+                    args: vec![],
+                    enabled: false,
+                    env: std::collections::HashMap::new(),
+                    working_dir: None,
+                    tools: vec![],
+                }
+            });
+            let mut agents = AgentsManager::new(agent_config, handle);
             if let Some(tx) = channel_events_tx {
                 agents = agents.with_channels_sender(tx);
             }
@@ -393,12 +406,16 @@ mod tests {
             .join("mock-agent");
 
         ProtoclawConfig {
-            agent: protoclaw_config::AgentConfig {
+            agent: None,
+            agents: vec![protoclaw_config::AgentConfig {
+                name: "default".into(),
                 binary: mock_agent.to_string_lossy().to_string(),
                 args: vec![],
+                enabled: true,
                 env: std::collections::HashMap::new(),
                 working_dir: None,
-            },
+                tools: vec![],
+            }],
             channels: vec![],
             mcp_servers: vec![],
             wasm_tools: vec![],

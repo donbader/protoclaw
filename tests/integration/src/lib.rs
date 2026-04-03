@@ -26,17 +26,22 @@ pub fn mock_agent_config() -> protoclaw_config::ProtoclawConfig {
 
 pub fn mock_agent_config_with_env(env: HashMap<String, String>) -> protoclaw_config::ProtoclawConfig {
     protoclaw_config::ProtoclawConfig {
-        agent: protoclaw_config::AgentConfig {
+        agent: None,
+        agents: vec![protoclaw_config::AgentConfig {
+            name: "default".into(),
             binary: mock_agent_path(),
             args: vec![],
+            enabled: true,
             env,
             working_dir: None,
-        },
+            tools: vec![],
+        }],
         channels: vec![protoclaw_config::ChannelConfig {
             name: "debug-http".into(),
             binary: debug_http_path(),
             args: vec![],
             enabled: true,
+            agent: None,
         }],
         mcp_servers: vec![],
         wasm_tools: vec![],

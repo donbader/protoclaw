@@ -210,10 +210,13 @@ mod tests {
             .join("mock-agent");
 
         AgentConfig {
+            name: "default".to_string(),
             binary: target_dir.to_string_lossy().to_string(),
             args: vec![],
+            enabled: true,
             env: HashMap::new(),
             working_dir: None,
+            tools: vec![],
         }
     }
 
@@ -228,10 +231,13 @@ mod tests {
     #[tokio::test]
     async fn spawn_nonexistent_binary_returns_error() {
         let config = AgentConfig {
+            name: "test".to_string(),
             binary: "nonexistent-binary-xyz-12345".to_string(),
             args: vec![],
+            enabled: true,
             env: HashMap::new(),
             working_dir: None,
+            tools: vec![],
         };
         let result = AgentConnection::spawn(&config);
         assert!(result.is_err());

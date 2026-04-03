@@ -2,15 +2,21 @@ use protoclaw_config::ProtoclawConfig;
 
 pub fn format_banner(config: &ProtoclawConfig, config_path: &str) -> String {
     let mut out = format!("protoclaw v{}\n", env!("CARGO_PKG_VERSION"));
-    out.push_str(&format!(
-        "  Agent:    {} (args: {})\n",
-        config.agent.binary,
-        if config.agent.args.is_empty() {
-            "(none)".to_string()
-        } else {
-            config.agent.args.join(" ")
-        }
-    ));
+    for agent in &config.agents {
+        out.push_str(&format!(
+            "  Agent:    {} [{}] (args: {})\n",
+            agent.name,
+            agent.binary,
+            if agent.args.is_empty() {
+                "(none)".to_string()
+            } else {
+                agent.args.join(" ")
+            }
+        ));
+    }
+    if config.agents.is_empty() {
+        out.push_str("  Agent:    (none configured)\n");
+    }
     for ch in &config.channels {
         out.push_str(&format!("  Channel:  {} ({})\n", ch.name, ch.binary));
     }
@@ -40,12 +46,16 @@ mod tests {
         ProtoclawConfig {
             log_level: "info".into(),
             extensions_dir: "/usr/local/bin".into(),
-            agent: AgentConfig {
+            agent: None,
+            agents: vec![AgentConfig {
+                name: "default".to_string(),
                 binary: agent_binary.to_string(),
                 args: vec![],
+                enabled: true,
                 env: HashMap::new(),
                 working_dir: None,
-            },
+                tools: vec![],
+            }],
             channels: channels
                 .into_iter()
                 .map(|(name, binary)| ChannelConfig {
@@ -53,6 +63,7 @@ mod tests {
                     binary: binary.to_string(),
                     args: vec![],
                     enabled: true,
+                    agent: None,
                 })
                 .collect(),
             mcp_servers: mcp_servers
