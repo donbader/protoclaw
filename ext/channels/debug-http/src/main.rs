@@ -16,6 +16,12 @@ use serde::Deserialize;
 use tokio::sync::{broadcast, mpsc, oneshot, Mutex, RwLock};
 use tokio_stream::StreamExt;
 
+#[derive(Clone, Debug)]
+struct SsePayload {
+    event_type: Option<String>,
+    data: String,
+}
+
 /// Pending permission request stored for HTTP retrieval.
 #[derive(Clone, serde::Serialize)]
 struct PendingPermission {
@@ -32,7 +38,7 @@ struct SharedState {
     /// Outbound sender provided by ChannelHarness in on_ready.
     outbound: Mutex<Option<mpsc::Sender<ChannelSendMessage>>>,
     /// Broadcast agent updates to SSE subscribers.
-    event_tx: broadcast::Sender<String>,
+    event_tx: broadcast::Sender<SsePayload>,
     /// Pending permission requests from the agent.
     pending_permissions: RwLock<Vec<PendingPermission>>,
     /// Oneshot senders for permission responses — HTTP handler resolves these.
@@ -88,11 +94,26 @@ impl Channel for DebugHttpChannel {
     }
 
     async fn deliver_message(&mut self, msg: DeliverMessage) -> Result<(), ChannelSdkError> {
-        let content_str = match msg.content {
-            serde_json::Value::String(s) => s,
-            other => serde_json::to_string(&other).unwrap_or_default(),
+        let update_type = msg.content.get("type").and_then(|t| t.as_str());
+        let payload = match update_type {
+            Some("agent_thought_chunk") => {
+                let thought = msg.content.get("content")
+                    .and_then(|c| c.as_str())
+                    .unwrap_or("");
+                SsePayload {
+                    event_type: Some("thought".into()),
+                    data: thought.to_string(),
+                }
+            }
+            _ => {
+                let content_str = match msg.content {
+                    serde_json::Value::String(s) => s,
+                    other => serde_json::to_string(&other).unwrap_or_default(),
+                };
+                SsePayload { event_type: None, data: content_str }
+            }
         };
-        let _ = self.state.event_tx.send(content_str);
+        let _ = self.state.event_tx.send(payload);
         Ok(())
     }
 
@@ -167,7 +188,13 @@ async fn handle_events(
 ) -> Sse<impl tokio_stream::Stream<Item = Result<Event, Infallible>>> {
     let rx = state.event_tx.subscribe();
     let stream = tokio_stream::wrappers::BroadcastStream::new(rx).filter_map(|result| match result {
-        Ok(data) => Some(Ok(Event::default().data(data))),
+        Ok(payload) => {
+            let mut event = Event::default().data(payload.data);
+            if let Some(ref et) = payload.event_type {
+                event = event.event(et);
+            }
+            Some(Ok(event))
+        }
         Err(_) => None,
     });
     Sse::new(stream).keep_alive(KeepAlive::default())
@@ -236,7 +263,7 @@ async fn main() {
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
 
-    let (event_tx, _) = broadcast::channel::<String>(256);
+    let (event_tx, _) = broadcast::channel::<SsePayload>(256);
 
     let state = Arc::new(SharedState {
         outbound: Mutex::new(None),
@@ -263,7 +290,7 @@ mod tests {
     use tower::ServiceExt;
 
     fn make_shared_state() -> Arc<SharedState> {
-        let (event_tx, _) = broadcast::channel::<String>(256);
+        let (event_tx, _) = broadcast::channel::<SsePayload>(256);
         Arc::new(SharedState {
             outbound: Mutex::new(None),
             event_tx,
@@ -308,7 +335,51 @@ mod tests {
         };
         ch.deliver_message(msg).await.unwrap();
         let received = rx.try_recv().expect("should have received broadcast");
-        assert_eq!(received, "hello from agent");
+        assert!(received.event_type.is_none(), "plain string should have no event type");
+        assert_eq!(received.data, "hello from agent");
+    }
+
+    #[tokio::test]
+    async fn thought_chunk_broadcasts_as_named_event() {
+        let state = make_shared_state();
+        let mut rx = state.event_tx.subscribe();
+        let mut ch = DebugHttpChannel { state: state.clone(), port: 0 };
+        let msg = DeliverMessage {
+            session_id: "s1".into(),
+            content: serde_json::json!({"type": "agent_thought_chunk", "content": "thinking..."}),
+        };
+        ch.deliver_message(msg).await.unwrap();
+        let received = rx.try_recv().expect("should have received broadcast");
+        assert_eq!(received.event_type.as_deref(), Some("thought"));
+        assert_eq!(received.data, "thinking...");
+    }
+
+    #[tokio::test]
+    async fn message_chunk_broadcasts_as_default_event() {
+        let state = make_shared_state();
+        let mut rx = state.event_tx.subscribe();
+        let mut ch = DebugHttpChannel { state: state.clone(), port: 0 };
+        let msg = DeliverMessage {
+            session_id: "s1".into(),
+            content: serde_json::json!({"type": "agent_message_chunk", "content": "hello"}),
+        };
+        ch.deliver_message(msg).await.unwrap();
+        let received = rx.try_recv().expect("should have received broadcast");
+        assert!(received.event_type.is_none(), "message chunk should use default event");
+    }
+
+    #[tokio::test]
+    async fn result_broadcasts_as_default_event() {
+        let state = make_shared_state();
+        let mut rx = state.event_tx.subscribe();
+        let mut ch = DebugHttpChannel { state: state.clone(), port: 0 };
+        let msg = DeliverMessage {
+            session_id: "s1".into(),
+            content: serde_json::json!({"type": "result", "content": "done"}),
+        };
+        ch.deliver_message(msg).await.unwrap();
+        let received = rx.try_recv().expect("should have received broadcast");
+        assert!(received.event_type.is_none(), "result should use default event");
     }
 
     #[tokio::test]
