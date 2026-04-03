@@ -168,7 +168,7 @@ pub async fn deliver_to_chat(
 
     let text = content
         .get("content")
-        .map(|c| content_to_string(c))
+        .map(content_to_string)
         .unwrap_or_default();
 
     if text.is_empty() {
