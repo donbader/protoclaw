@@ -20,6 +20,17 @@ Both channels follow the same structure:
 2. Call `ChannelHarness::run_stdio(channel).await` in `main()`
 3. The harness handles all JSON-RPC framing, initialization handshake, and message routing
 
+## Thought Rendering
+
+Both channels inspect `content["type"]` in `DeliverMessage` to render thoughts differently:
+
+- `"agent_thought_chunk"` — thought content from the agent's reasoning process
+- All other types — existing behavior (message chunks, results, etc.)
+
+**debug-http:** Emits thoughts as named SSE event `"thought"` via `SsePayload` struct. Regular messages use default SSE data events. SSE clients filter by event type.
+
+**telegram:** Sends thoughts as separate 🧠-prefixed messages. On `"result"`, collapses the thinking message to "🧠 Thought for X.Xs". Emoji prefix configurable via `TELEGRAM_THOUGHT_EMOJI` env var (default: 🧠). Thinking state tracked in `SharedState.thinking_messages`.
+
 ## telegram/ (7 files)
 
 | File | Purpose |
@@ -27,7 +38,7 @@ Both channels follow the same structure:
 | `main.rs` | Entry point, `ChannelHarness::run_stdio()` |
 | `channel.rs` | `TelegramChannel` impl of `Channel` trait |
 | `dispatcher.rs` | Teloxide dispatcher setup, message/callback handlers |
-| `deliver.rs` | Outbound: agent updates → Telegram messages |
+| `deliver.rs` | Outbound: agent updates → Telegram messages, thought rendering + collapse |
 | `permissions.rs` | Permission request → inline keyboard buttons |
 | `peer.rs` | `PeerInfo` extraction from Telegram update context |
 | `state.rs` | Shared state: bot instance, session tracking |
@@ -36,7 +47,7 @@ Requires `TELEGRAM_BOT_TOKEN` env var.
 
 ## debug-http/ (1 file)
 
-Single `main.rs` — axum HTTP server. Emits `PORT:{n}` to stderr on bind for port discovery by supervisor. Used in integration tests and local development.
+Single `main.rs` — axum HTTP server with `SsePayload` typed broadcast for named SSE events. Emits `PORT:{n}` to stderr on bind for port discovery by supervisor. Used in integration tests and local development.
 
 ## Adding a New Channel
 
