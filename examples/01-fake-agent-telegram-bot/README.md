@@ -42,7 +42,7 @@ After verifying debug-http works:
 
 1. Message [@BotFather](https://t.me/BotFather) on Telegram, send `/newbot`, copy the token
 2. Set `TELEGRAM_BOT_TOKEN` in `.env`
-3. Uncomment `PROTOCLAW_CHANNELS__1__ENABLED=true` in `.env`
+3. Uncomment `TELEGRAM_ENABLED=true` in `.env`
 4. Restart: `docker compose restart`
 5. Message your bot on Telegram
 
@@ -61,9 +61,10 @@ With `LOG_LEVEL=debug` (the default), Docker logs show:
 |---------|---------|
 | `log_level` | Logging verbosity (default: debug) |
 | `extensions_dir` | Where `@built-in/` binaries live (default: /usr/local/bin) |
-| `[agent]` | Mock agent binary — echoes messages with simulated thinking |
-| `[[channels]]` | debug-http (enabled) and telegram (disabled by default) |
-| `[[mcp_servers]]` | system-info tool — returns host/OS/arch info |
+| `[agents-manager.agents.*]` | Mock agent binary — echoes messages with simulated thinking |
+| `[channels-manager.channels.*]` | debug-http (enabled) and telegram (disabled by default) |
+| `[channels-manager.debounce]` | Message debounce settings (window, enabled) |
+| `[tools-manager.tools.*]` | system-info tool — returns host/OS/arch info |
 | `[supervisor]` | Restart policy, health checks, shutdown timeout |
 
 ## Troubleshooting
@@ -72,7 +73,7 @@ With `LOG_LEVEL=debug` (the default), Docker logs show:
 
 **Port 8080 already in use** — Change the port mapping in `docker-compose.yml`: `"9090:8080"`.
 
-**Telegram bot doesn't respond** — Verify `TELEGRAM_BOT_TOKEN` is correct, `PROTOCLAW_CHANNELS__1__ENABLED=true` is uncommented in `.env`, and no other instance is using the same token.
+**Telegram bot doesn't respond** — Verify `TELEGRAM_BOT_TOKEN` is correct, `TELEGRAM_ENABLED=true` is uncommented in `.env`, and no other instance is using the same token.
 
 ## Files
 

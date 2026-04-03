@@ -5,21 +5,36 @@
 log_level = "debug"
 extensions_dir = "/usr/local/bin"
 
-[[agents]]
-name = "mock-agent"
+[agents-manager.agents.mock]
 binary = "@built-in/mock-agent"
+tools = ["system-info"]
 
-[[channels]]
-name = "debug-http"
+[channels-manager]
+
+[channels-manager.debounce]
+enabled = true
+window_ms = 1000
+
+[channels-manager.channels.debug-http]
 binary = "@built-in/debug-http"
+agent = "mock"
 
-[[channels]]
-name = "telegram"
+[channels-manager.channels.debug-http.ack]
+reaction = false
+typing = false
+
+[channels-manager.channels.telegram]
 binary = "@built-in/telegram-channel"
 enabled = "${TELEGRAM_ENABLED:false}"
+agent = "mock"
 
-[[mcp_servers]]
-name = "system-info"
+[channels-manager.channels.telegram.ack]
+reaction = true
+reaction_emoji = "👀"
+typing = true
+reaction_lifecycle = "remove"
+
+[tools-manager.tools.system-info]
 binary = "@built-in/system-info"
 
 [supervisor]
