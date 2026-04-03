@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use protoclaw_config::ProtoclawConfig;
+use protoclaw_config::{resolve_binary_path, ProtoclawConfig};
 use protoclaw_core::{CrashTracker, ExponentialBackoff, Manager, ManagerError, ManagerHandle};
 use tokio_util::sync::CancellationToken;
 
@@ -47,7 +47,16 @@ async fn shutdown_signal() {
 }
 
 impl Supervisor {
-    pub fn new(config: ProtoclawConfig) -> Self {
+    pub fn new(mut config: ProtoclawConfig) -> Self {
+        let extensions_dir = config.extensions_dir.clone();
+        config.agent.binary = resolve_binary_path(&config.agent.binary, &extensions_dir);
+        for ch in &mut config.channels {
+            ch.binary = resolve_binary_path(&ch.binary, &extensions_dir);
+        }
+        for mcp in &mut config.mcp_servers {
+            mcp.binary = resolve_binary_path(&mcp.binary, &extensions_dir);
+        }
+
         let (channel_events_tx, channel_events_rx) = tokio::sync::mpsc::channel(64);
         let (debug_http_port_tx, debug_http_port_rx) = tokio::sync::watch::channel(0u16);
         Self {

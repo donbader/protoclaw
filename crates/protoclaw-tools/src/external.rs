@@ -77,6 +77,7 @@ mod tests {
             name: "bad-server".into(),
             binary: "/nonexistent/binary/path".into(),
             args: vec![],
+            enabled: true,
         };
         let result = ExternalMcpServer::spawn(&config).await;
         assert!(result.is_err());

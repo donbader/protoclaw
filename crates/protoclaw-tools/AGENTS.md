@@ -45,3 +45,4 @@ Implements rmcp's `ServerHandler` trait. Aggregates tools from all three sources
 - Do not assume tools are callable end-to-end over TCP — the accept loop is a stub
 - Failed external MCP servers and invalid WASM modules are logged and skipped, not fatal
 - `cmd_rx` uses `unwrap_or_else` fallback (creates dummy channel) unlike other managers — this is intentional because tools manager can run without external commands
+- `start()` skips MCP servers with `enabled = false` — no spawn attempt for disabled servers

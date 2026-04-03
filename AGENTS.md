@@ -71,7 +71,7 @@ SDK crates (for external implementors):
 - **unwrap() rule**: `.expect("reason")` for true invariants (piped stdio, consumed-once fields). Bare `.unwrap()` only in tests. Use `?` for fallible paths.
 - **Module structure**: Flat `lib.rs` with `pub mod` + `pub use` re-exports. No `mod.rs` files.
 - **Manager communication**: `tokio::sync::mpsc` channels via `ManagerHandle<C>`. No shared mutable state between managers.
-- **Config layering**: Defaults → TOML file → env vars (`PROTOCLAW_` prefix, `__` separator)
+- **Config layering**: Defaults → TOML file → env vars (`PROTOCLAW_` prefix, `__` separator). Top-level fields: `log_level` (default "info"), `extensions_dir` (default "/usr/local/bin"). `@built-in/` binary prefix resolved against `extensions_dir` in supervisor before manager construction.
 - **Tracing**: Use `tracing` spans/events, not `println!` or `log` crate
 - **AGENTS.md maintenance**: When making code changes that affect module structure, public APIs, conventions, or anti-patterns documented in any AGENTS.md file, update the relevant AGENTS.md file(s) in the same commit. See "AGENTS.md Auto-Update Rule" below.
 

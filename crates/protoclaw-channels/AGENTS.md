@@ -51,3 +51,4 @@ The `poll_channels()` method uses 1ms timeout polling per connection — it's a 
 - Do not remove the 50ms sleep in `poll_channels()` else branch
 - Bad channel binaries don't block startup — they log errors and continue with `connection: None`
 - `cmd_rx.take().expect("cmd_rx must exist")` — same consumed-once pattern as agents
+- `start()` skips channels with `enabled = false` — no slot is created for disabled channels

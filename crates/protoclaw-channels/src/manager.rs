@@ -455,6 +455,10 @@ impl Manager for ChannelsManager {
         let parent_cancel = CancellationToken::new();
 
         for config in &self.channel_configs {
+            if !config.enabled {
+                tracing::info!(channel = %config.name, "channel disabled, skipping");
+                continue;
+            }
             let channel_id = ChannelId::from(config.name.as_str());
             let cancel_token = parent_cancel.child_token();
 
@@ -738,5 +742,19 @@ mod tests {
         let (_tx, rx) = mpsc::channel::<ChannelEvent>(16);
         let m = ChannelsManager::new(vec![]).with_channel_events_rx(rx);
         assert!(m.channel_events_rx.is_some());
+    }
+
+    #[tokio::test]
+    async fn disabled_channel_not_spawned() {
+        let configs = vec![ChannelConfig {
+            name: "disabled-ch".into(),
+            binary: "nonexistent-binary-xyz-99999".into(),
+            args: vec![],
+            enabled: false,
+        }];
+        let mut m = ChannelsManager::new(configs);
+        let result = m.start().await;
+        assert!(result.is_ok());
+        assert!(m.slots.is_empty(), "disabled channel should not create a slot");
     }
 }

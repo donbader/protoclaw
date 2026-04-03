@@ -195,6 +195,10 @@ impl Manager for ToolsManager {
 
         let mut external_servers = Vec::new();
         for config in &self.configs {
+            if !config.enabled {
+                tracing::info!(name = %config.name, "MCP server disabled, skipping");
+                continue;
+            }
             match ExternalMcpServer::spawn(config).await {
                 Ok(server) => {
                     tracing::info!(name = %config.name, "spawned external MCP server");
@@ -496,6 +500,23 @@ mod tests {
         assert!(names.contains(&"native-1"));
         assert!(names.contains(&"wasm-1"));
 
+        for h in &m.server_handles {
+            h.abort();
+        }
+    }
+
+    #[tokio::test]
+    async fn disabled_mcp_server_not_spawned() {
+        let configs = vec![McpServerConfig {
+            name: "disabled-tool".into(),
+            binary: "nonexistent-binary-xyz-99999".into(),
+            args: vec![],
+            enabled: false,
+        }];
+        let mut m = ToolsManager::new(configs);
+        m.start().await.unwrap();
+        let ext = m.external_servers.as_ref().unwrap();
+        assert!(ext.is_empty(), "disabled MCP server should not be spawned");
         for h in &m.server_handles {
             h.abort();
         }

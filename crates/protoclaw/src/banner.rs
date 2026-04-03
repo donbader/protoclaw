@@ -38,6 +38,8 @@ mod tests {
         mcp_servers: Vec<(&str, &str)>,
     ) -> ProtoclawConfig {
         ProtoclawConfig {
+            log_level: "info".into(),
+            extensions_dir: "/usr/local/bin".into(),
             agent: AgentConfig {
                 binary: agent_binary.to_string(),
                 args: vec![],
@@ -50,6 +52,7 @@ mod tests {
                     name: name.to_string(),
                     binary: binary.to_string(),
                     args: vec![],
+                    enabled: true,
                 })
                 .collect(),
             mcp_servers: mcp_servers
@@ -58,6 +61,7 @@ mod tests {
                     name: name.to_string(),
                     binary: binary.to_string(),
                     args: vec![],
+                    enabled: true,
                 })
                 .collect(),
             wasm_tools: vec![],

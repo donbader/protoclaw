@@ -26,7 +26,14 @@ SDK crates (`protoclaw-sdk-*`) are the public API for external implementors buil
 
 ## Config Crate (`protoclaw-config`)
 
-Config structs in `types.rs`: `ProtoclawConfig`, `AgentConfig`, `ChannelConfig`, `McpServerConfig`, `WasmToolConfig`, `WasmSandboxConfig`, `SupervisorConfig`.
+Config structs in `types.rs`: `ProtoclawConfig` (with `log_level`, `extensions_dir`), `AgentConfig`, `ChannelConfig` (with `enabled`), `McpServerConfig` (with `enabled`), `WasmToolConfig`, `WasmSandboxConfig`, `SupervisorConfig`.
+
+Files:
+- `types.rs`: Config structs with serde defaults
+- `lib.rs`: Figment loading + `ProtoclawConfig::load()`
+- `resolve.rs`: Binary path resolution (`@built-in/` prefix → `extensions_dir`)
+- `validate.rs`: Config validation rules
+- `error.rs`: `ConfigError`
 
 Loading in `lib.rs`: `Figment::from(defaults).merge(Toml::file(path)).merge(Env::prefixed("PROTOCLAW_").split("__"))`.
 
