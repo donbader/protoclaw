@@ -1,0 +1,21 @@
+services:
+  protoclaw:
+    build:
+      context: ../..
+      dockerfile: examples/02-real-agents-telegram-bot/Dockerfile
+      target: opencode  # Change to 'claude-code' for Claude Code
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./protoclaw.toml:/workspace/protoclaw.toml:ro
+      # OpenCode config mount (D-03):
+      - ~/.config/opencode:/home/protoclaw/.config/opencode:ro
+      # Claude Code config mount — uncomment when using claude-code target (D-03):
+      # - ~/.claude:/home/protoclaw/.claude:ro
+    environment:
+      - LOG_LEVEL=debug
+      - PORT=8080
+      - HOST=0.0.0.0
+    env_file:
+      - .env
+    restart: unless-stopped

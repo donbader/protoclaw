@@ -1,0 +1,51 @@
+# Protoclaw Real Agent Example
+# Uses real AI agents (opencode or claude-code).
+# See README.md for setup instructions.
+
+log_level = "debug"
+extensions_dir = "/usr/local/bin"
+
+# OpenCode agent (enabled by default)
+[[agents]]
+name = "opencode"
+binary = "opencode"
+args = ["acp"]
+enabled = true
+tools = ["system-info"]
+
+[agents.env]
+ANTHROPIC_API_KEY = "${ANTHROPIC_API_KEY}"
+XDG_CONFIG_HOME = "/home/protoclaw/.config"
+
+# Claude Code agent (disabled by default — see README to switch)
+[[agents]]
+name = "claude-code"
+binary = "claude"
+args = ["--acp"]
+enabled = false
+tools = ["system-info"]
+
+[agents.env]
+ANTHROPIC_API_KEY = "${ANTHROPIC_API_KEY}"
+CLAUDE_CONFIG_DIR = "/home/protoclaw/.claude"
+
+[[channels]]
+name = "debug-http"
+binary = "@built-in/debug-http"
+agent = "opencode"
+
+[[channels]]
+name = "telegram"
+binary = "@built-in/telegram-channel"
+enabled = false
+agent = "opencode"
+
+[[mcp_servers]]
+name = "system-info"
+binary = "@built-in/system-info"
+
+[supervisor]
+shutdown_timeout_secs = 30
+health_check_interval_secs = 5
+max_restarts = 5
+restart_window_secs = 60
