@@ -126,7 +126,7 @@ impl ChannelConnection {
         });
 
         // Stderr task: log channel stderr at debug level, parse PORT:{port} for discovery
-        let channel_name = config.name.clone();
+        let channel_name = channel_id.as_ref().to_string();
         let (port_tx, port_rx) = tokio::sync::watch::channel(0u16);
         let stderr_handle = tokio::spawn(async move {
             use tokio::io::{AsyncBufReadExt, BufReader};
@@ -249,11 +249,11 @@ mod tests {
 
     fn cat_channel_config() -> ChannelConfig {
         ChannelConfig {
-            name: "test-channel".into(),
             binary: "cat".into(),
             args: vec![],
             enabled: true,
-            agent: None,
+            agent: "default".into(),
+            ack: Default::default(),
         }
     }
 
@@ -269,11 +269,11 @@ mod tests {
     #[tokio::test]
     async fn spawn_nonexistent_binary_returns_error() {
         let config = ChannelConfig {
-            name: "bad".into(),
             binary: "nonexistent-binary-xyz-99999".into(),
             args: vec![],
             enabled: true,
-            agent: None,
+            agent: "default".into(),
+            ack: Default::default(),
         };
         let result = ChannelConnection::spawn(&config, ChannelId::from("bad"));
         assert!(result.is_err());
@@ -321,11 +321,11 @@ mod tests {
     async fn recv_incoming_returns_none_on_exit() {
         // Use `true` which exits immediately
         let config = ChannelConfig {
-            name: "exits-fast".into(),
             binary: "true".into(),
             args: vec![],
             enabled: true,
-            agent: None,
+            agent: "default".into(),
+            ack: Default::default(),
         };
         let channel_id = ChannelId::from("exits");
         let mut conn = ChannelConnection::spawn(&config, channel_id).unwrap();

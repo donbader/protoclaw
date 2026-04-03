@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use protoclaw_config::McpServerConfig;
+use protoclaw_config::ToolConfig;
 use rmcp::model::{CallToolRequestParams, CallToolResult, Tool as RmcpTool};
 use rmcp::service::RunningService;
 use rmcp::{RoleClient, ServiceError};
@@ -22,21 +22,23 @@ impl std::fmt::Debug for ExternalMcpServer {
 }
 
 impl ExternalMcpServer {
-    pub async fn spawn(config: &McpServerConfig) -> Result<Self, ToolsError> {
-        let mut cmd = Command::new(&config.binary);
+    pub async fn spawn(name: &str, config: &ToolConfig) -> Result<Self, ToolsError> {
+        let binary = config.binary.as_deref()
+            .ok_or_else(|| ToolsError::ExternalServerFailed(format!("{name}: no binary specified")))?;
+        let mut cmd = Command::new(binary);
         cmd.args(&config.args);
 
         let child_transport =
             rmcp::transport::child_process::TokioChildProcess::new(cmd)
-                .map_err(|e| ToolsError::ExternalServerFailed(format!("{}: {e}", config.name)))?;
+                .map_err(|e| ToolsError::ExternalServerFailed(format!("{name}: {e}")))?;
 
         let client: RunningService<RoleClient, ()> =
             rmcp::serve_client((), child_transport)
                 .await
-                .map_err(|e| ToolsError::ExternalServerFailed(format!("{}: {e}", config.name)))?;
+                .map_err(|e| ToolsError::ExternalServerFailed(format!("{name}: {e}")))?;
 
         Ok(Self {
-            name: config.name.clone(),
+            name: name.to_string(),
             client: Arc::new(client),
         })
     }
@@ -73,13 +75,17 @@ mod tests {
 
     #[tokio::test]
     async fn external_mcp_server_spawn_nonexistent_binary_returns_error() {
-        let config = McpServerConfig {
-            name: "bad-server".into(),
-            binary: "/nonexistent/binary/path".into(),
+        let config = ToolConfig {
+            tool_type: "mcp".into(),
+            binary: Some("/nonexistent/binary/path".into()),
             args: vec![],
             enabled: true,
+            module: None,
+            description: String::new(),
+            input_schema: None,
+            sandbox: Default::default(),
         };
-        let result = ExternalMcpServer::spawn(&config).await;
+        let result = ExternalMcpServer::spawn("bad-server", &config).await;
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("bad-server"), "error should contain server name: {err}");

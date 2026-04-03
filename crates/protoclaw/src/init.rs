@@ -21,20 +21,18 @@ pub fn generate_config_toml(agent_binary: &str) -> String {
         r#"# Protoclaw configuration
 # Docs: https://github.com/user/protoclaw
 
-[agent]
+[agents-manager.agents.default]
 binary = "{agent_binary}"
 args = ["acp"]
 # working_dir = "."
 
 # Channel subprocesses
-[[channels]]
-name = "debug-http"
+[channels-manager.channels.debug-http]
 binary = "protoclaw-debug-http"
 args = ["--port", "3000"]
 
 # MCP tool servers (uncomment to add)
-# [[mcp_servers]]
-# name = "filesystem"
+# [tools-manager.tools.filesystem]
 # binary = "mcp-server-filesystem"
 # args = ["--root", "."]
 
@@ -90,7 +88,7 @@ mod tests {
     #[test]
     fn generate_config_toml_contains_required_sections() {
         let toml = generate_config_toml("opencode");
-        assert!(toml.contains("[agent]"));
+        assert!(toml.contains("[agents-manager.agents.default]"));
         assert!(toml.contains("[supervisor]"));
     }
 

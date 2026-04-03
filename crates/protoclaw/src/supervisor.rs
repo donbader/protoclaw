@@ -49,14 +49,16 @@ async fn shutdown_signal() {
 impl Supervisor {
     pub fn new(mut config: ProtoclawConfig) -> Self {
         let extensions_dir = config.extensions_dir.clone();
-        for agent in &mut config.agents {
+        for (_, agent) in &mut config.agents_manager.agents {
             agent.binary = resolve_binary_path(&agent.binary, &extensions_dir);
         }
-        for ch in &mut config.channels {
+        for (_, ch) in &mut config.channels_manager.channels {
             ch.binary = resolve_binary_path(&ch.binary, &extensions_dir);
         }
-        for mcp in &mut config.mcp_servers {
-            mcp.binary = resolve_binary_path(&mcp.binary, &extensions_dir);
+        for (_, tool) in &mut config.tools_manager.tools {
+            if let Some(ref mut bin) = tool.binary {
+                *bin = resolve_binary_path(bin, &extensions_dir);
+            }
         }
 
         let (channel_events_tx, channel_events_rx) = tokio::sync::mpsc::channel(64);
@@ -319,13 +321,13 @@ fn create_manager(
 ) -> ManagerKind {
     match name {
         "tools" => {
-            let m = ToolsManager::new(config.mcp_servers.clone())
+            let m = ToolsManager::new(config.tools_manager.tools.clone())
                 .with_cmd_rx(tools_rx.expect("tools_rx required for tools manager"));
             ManagerKind::Tools(m)
         }
         "agents" => {
             let handle = protoclaw_core::ManagerHandle::new(tools_tx.clone());
-            let mut agents = AgentsManager::new(config.agents.clone(), handle);
+            let mut agents = AgentsManager::new(config.agents_manager.agents.clone(), handle);
             if let Some(tx) = channel_events_tx {
                 agents = agents.with_channels_sender(tx);
             }
@@ -337,7 +339,7 @@ fn create_manager(
             let default_agent = config.default_agent_name()
                 .unwrap_or("default")
                 .to_string();
-            let mut cm = ChannelsManager::new(config.channels.clone(), default_agent)
+            let mut cm = ChannelsManager::new(config.channels_manager.channels.clone(), default_agent)
                 .with_agents_handle(agents_handle);
             if let Some(rx) = channel_events_rx {
                 cm = cm.with_channel_events_rx(rx);
@@ -397,20 +399,20 @@ mod tests {
             .join("debug")
             .join("mock-agent");
 
+        let mut agents = std::collections::HashMap::new();
+        agents.insert("default".to_string(), protoclaw_config::AgentConfig {
+            binary: mock_agent.to_string_lossy().to_string(),
+            args: vec![],
+            enabled: true,
+            env: std::collections::HashMap::new(),
+            working_dir: None,
+            tools: vec![],
+        });
+
         ProtoclawConfig {
-            agent: None,
-            agents: vec![protoclaw_config::AgentConfig {
-                name: "default".into(),
-                binary: mock_agent.to_string_lossy().to_string(),
-                args: vec![],
-                enabled: true,
-                env: std::collections::HashMap::new(),
-                working_dir: None,
-                tools: vec![],
-            }],
-            channels: vec![],
-            mcp_servers: vec![],
-            wasm_tools: vec![],
+            agents_manager: protoclaw_config::AgentsManagerConfig { agents },
+            channels_manager: protoclaw_config::ChannelsManagerConfig::default(),
+            tools_manager: protoclaw_config::ToolsManagerConfig::default(),
             supervisor: protoclaw_config::SupervisorConfig {
                 shutdown_timeout_secs: 3,
                 health_check_interval_secs: 60,

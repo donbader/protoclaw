@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::time::Duration;
 
 use crate::acp_error::AcpError;
@@ -69,7 +70,7 @@ pub enum AgentsCommand {
 }
 
 pub struct AgentsManager {
-    agent_configs: Vec<AgentConfig>,
+    agent_configs: Vec<(String, AgentConfig)>,
     tools_handle: ManagerHandle<ToolsCommand>,
     slots: Vec<AgentSlot>,
     cmd_rx: Option<tokio::sync::mpsc::Receiver<AgentsCommand>>,
@@ -80,10 +81,11 @@ pub struct AgentsManager {
 }
 
 impl AgentsManager {
-    pub fn new(agent_configs: Vec<AgentConfig>, tools_handle: ManagerHandle<ToolsCommand>) -> Self {
+    pub fn new(agent_configs: HashMap<String, AgentConfig>, tools_handle: ManagerHandle<ToolsCommand>) -> Self {
+        let configs: Vec<(String, AgentConfig)> = agent_configs.into_iter().collect();
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::channel(16);
         Self {
-            agent_configs,
+            agent_configs: configs,
             tools_handle,
             slots: Vec::new(),
             cmd_rx: Some(cmd_rx),
@@ -548,27 +550,27 @@ impl Manager for AgentsManager {
     }
 
     async fn start(&mut self) -> Result<(), ManagerError> {
-        for config in &self.agent_configs {
+        for (name, config) in &self.agent_configs {
             if !config.enabled {
-                tracing::info!(agent = %config.name, "agent disabled, skipping");
+                tracing::info!(agent = %name, "agent disabled, skipping");
                 continue;
             }
 
-            let mut slot = AgentSlot::new(config.clone(), &self.parent_cancel);
+            let mut slot = AgentSlot::new(name.clone(), config.clone(), &self.parent_cancel);
 
             let conn = AgentConnection::spawn(&config)
-                .map_err(|e| ManagerError::Internal(format!("{}: {e}", config.name)))?;
+                .map_err(|e| ManagerError::Internal(format!("{name}: {e}")))?;
             slot.connection = Some(conn);
 
             Self::initialize_agent(&mut slot)
                 .await
-                .map_err(|e| ManagerError::Internal(format!("{}: {e}", config.name)))?;
+                .map_err(|e| ManagerError::Internal(format!("{name}: {e}")))?;
 
             let session_id = Self::start_session(&mut slot, &self.tools_handle)
                 .await
-                .map_err(|e| ManagerError::Internal(format!("{}: {e}", config.name)))?;
+                .map_err(|e| ManagerError::Internal(format!("{name}: {e}")))?;
 
-            let default_key = SessionKey::new(&config.name, "default", "default");
+            let default_key = SessionKey::new(name, "default", "default");
             slot.session_map.insert(default_key.clone(), session_id.clone());
             slot.reverse_map.insert(session_id, default_key);
 
@@ -636,7 +638,7 @@ impl Manager for AgentsManager {
     async fn health_check(&self) -> bool {
         let enabled_slots: Vec<_> = self.slots.iter().filter(|s| !s.disabled).collect();
         if enabled_slots.is_empty() {
-            return self.agent_configs.iter().all(|c| !c.enabled);
+            return self.agent_configs.iter().all(|(_, c)| !c.enabled);
         }
         enabled_slots.iter().all(|s| s.connection.is_some())
     }
@@ -659,7 +661,6 @@ mod tests {
             .join("mock-agent");
 
         AgentConfig {
-            name: "default".to_string(),
             binary: target_dir.to_string_lossy().to_string(),
             args: vec![],
             enabled: true,
@@ -667,6 +668,10 @@ mod tests {
             working_dir: None,
             tools: vec![],
         }
+    }
+
+    fn mock_agents_map() -> HashMap<String, AgentConfig> {
+        HashMap::from([("default".to_string(), mock_agent_config())])
     }
 
     fn make_tools_handle() -> (ManagerHandle<ToolsCommand>, tokio::sync::mpsc::Receiver<ToolsCommand>) {
@@ -688,7 +693,7 @@ mod tests {
     #[test]
     fn agents_manager_name() {
         let (handle, _rx) = make_tools_handle();
-        let m = AgentsManager::new(vec![mock_agent_config()], handle);
+        let m = AgentsManager::new(mock_agents_map(), handle);
         assert_eq!(m.name(), "agents");
     }
 
@@ -697,7 +702,7 @@ mod tests {
         let (handle, rx) = make_tools_handle();
         let tools_task = tokio::spawn(serve_tools_urls(rx));
 
-        let mut m = AgentsManager::new(vec![mock_agent_config()], handle);
+        let mut m = AgentsManager::new(mock_agents_map(), handle);
         let result = m.start().await;
         assert!(result.is_ok(), "start failed: {result:?}");
         assert_eq!(m.slots.len(), 1);
@@ -714,7 +719,7 @@ mod tests {
         let (handle, rx) = make_tools_handle();
         let tools_task = tokio::spawn(serve_tools_urls(rx));
 
-        let mut m = AgentsManager::new(vec![mock_agent_config()], handle);
+        let mut m = AgentsManager::new(mock_agents_map(), handle);
         m.start().await.unwrap();
         assert!(m.health_check().await);
 
@@ -725,14 +730,14 @@ mod tests {
     #[tokio::test]
     async fn agents_manager_health_check_dead() {
         let (handle, _rx) = make_tools_handle();
-        let m = AgentsManager::new(vec![mock_agent_config()], handle);
+        let m = AgentsManager::new(mock_agents_map(), handle);
         assert!(!m.health_check().await);
     }
 
     #[tokio::test]
     async fn agents_manager_health_check_no_agents_configured() {
         let (handle, _rx) = make_tools_handle();
-        let m = AgentsManager::new(vec![], handle);
+        let m = AgentsManager::new(HashMap::new(), handle);
         assert!(m.health_check().await);
     }
 
@@ -741,7 +746,7 @@ mod tests {
         let mut config = mock_agent_config();
         config.enabled = false;
         let (handle, _rx) = make_tools_handle();
-        let m = AgentsManager::new(vec![config], handle);
+        let m = AgentsManager::new(HashMap::from([("default".into(), config)]), handle);
         assert!(m.health_check().await);
     }
 
@@ -750,7 +755,7 @@ mod tests {
         let (handle, rx) = make_tools_handle();
         let tools_task = tokio::spawn(serve_tools_urls(rx));
 
-        let mut m = AgentsManager::new(vec![mock_agent_config()], handle);
+        let mut m = AgentsManager::new(mock_agents_map(), handle);
         m.start().await.unwrap();
 
         let result = AgentsManager::send_prompt_to_slot(&m.slots[0], "hello").await;
@@ -770,7 +775,7 @@ mod tests {
         let (handle, rx) = make_tools_handle();
         let tools_task = tokio::spawn(serve_tools_urls(rx));
 
-        let mut m = AgentsManager::new(vec![config], handle);
+        let mut m = AgentsManager::new(HashMap::from([("default".into(), config)]), handle);
         m.start().await.unwrap();
 
         let _ = AgentsManager::send_prompt_to_slot(&m.slots[0], "trigger-crash").await;
@@ -787,9 +792,9 @@ mod tests {
     #[tokio::test]
     async fn get_status_returns_vec_of_agent_info() {
         let (handle, _rx) = make_tools_handle();
-        let mut m = AgentsManager::new(vec![mock_agent_config()], handle);
+        let mut m = AgentsManager::new(mock_agents_map(), handle);
 
-        let mut slot = AgentSlot::new(mock_agent_config(), &m.parent_cancel);
+        let mut slot = AgentSlot::new("default".into(), mock_agent_config(), &m.parent_cancel);
         slot.session_map.insert(
             SessionKey::new("test", "local", "dev"),
             "acp-1".to_string(),
@@ -810,7 +815,7 @@ mod tests {
     #[tokio::test]
     async fn create_session_with_unknown_agent_returns_error() {
         let (handle, _rx) = make_tools_handle();
-        let mut m = AgentsManager::new(vec![], handle);
+        let mut m = AgentsManager::new(HashMap::new(), handle);
 
         let result = m.create_session("nonexistent", SessionKey::new("ch", "k", "p")).await;
         assert!(matches!(result, Err(AgentsError::AgentNotFound(_))));
@@ -822,7 +827,7 @@ mod tests {
         config.enabled = false;
 
         let (handle, _rx) = make_tools_handle();
-        let mut m = AgentsManager::new(vec![config], handle);
+        let mut m = AgentsManager::new(HashMap::from([("default".into(), config)]), handle);
         let result = m.start().await;
         assert!(result.is_ok());
         assert!(m.slots.is_empty(), "disabled agent should not create a slot");
@@ -833,12 +838,12 @@ mod tests {
         let (handle, rx) = make_tools_handle();
         let tools_task = tokio::spawn(serve_tools_urls(rx));
 
-        let mut config_a = mock_agent_config();
-        config_a.name = "agent-a".to_string();
-        let mut config_b = mock_agent_config();
-        config_b.name = "agent-b".to_string();
+        let agents = HashMap::from([
+            ("agent-a".to_string(), mock_agent_config()),
+            ("agent-b".to_string(), mock_agent_config()),
+        ]);
 
-        let mut m = AgentsManager::new(vec![config_a, config_b], handle);
+        let mut m = AgentsManager::new(agents, handle);
         m.start().await.unwrap();
         assert_eq!(m.slots.len(), 2);
 
@@ -846,8 +851,10 @@ mod tests {
         let result = m.create_session("agent-b", key.clone()).await;
         assert!(result.is_ok());
 
-        assert!(m.slots[1].session_map.contains_key(&key));
-        assert!(!m.slots[0].session_map.contains_key(&key));
+        let b_idx = find_slot_by_name(&m.slots, "agent-b").unwrap();
+        let a_idx = find_slot_by_name(&m.slots, "agent-a").unwrap();
+        assert!(m.slots[b_idx].session_map.contains_key(&key));
+        assert!(!m.slots[a_idx].session_map.contains_key(&key));
 
         m.shutdown_all().await;
         tools_task.abort();

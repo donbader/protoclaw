@@ -40,6 +40,7 @@ struct RoutingEntry {
 
 /// Per-channel state: connection, config, crash recovery.
 struct ChannelSlot {
+    name: String,
     config: ChannelConfig,
     connection: Option<ChannelConnection>,
     channel_id: ChannelId,
@@ -56,7 +57,7 @@ struct ChannelSlot {
 /// Inbound messages create/reuse ACP sessions via AgentsManager.
 /// Outbound agent updates route back to the originating channel via routing table.
 pub struct ChannelsManager {
-    channel_configs: Vec<ChannelConfig>,
+    channel_configs: HashMap<String, ChannelConfig>,
     default_agent_name: String,
     slots: Vec<ChannelSlot>,
     cmd_rx: Option<mpsc::Receiver<ChannelsCommand>>,
@@ -70,7 +71,7 @@ pub struct ChannelsManager {
 }
 
 impl ChannelsManager {
-    pub fn new(channel_configs: Vec<ChannelConfig>, default_agent_name: String) -> Self {
+    pub fn new(channel_configs: HashMap<String, ChannelConfig>, default_agent_name: String) -> Self {
         let (cmd_tx, cmd_rx) = mpsc::channel(16);
         Self {
             channel_configs,
@@ -101,8 +102,7 @@ impl ChannelsManager {
     }
 
     fn agent_name_for_channel(&self, slot_index: usize) -> &str {
-        self.slots[slot_index].config.agent.as_deref()
-            .unwrap_or(&self.default_agent_name)
+        &self.slots[slot_index].config.agent
     }
 
     /// Get a watch receiver for a named channel's discovered port (from stderr PORT:{port}).
@@ -110,7 +110,7 @@ impl ChannelsManager {
     pub fn channel_port(&self, name: &str) -> Option<tokio::sync::watch::Receiver<u16>> {
         self.slots
             .iter()
-            .find(|s| s.config.name == name)
+            .find(|s| s.name == name)
             .and_then(|s| s.connection.as_ref())
             .map(|conn| conn.port_rx())
     }
@@ -143,7 +143,7 @@ impl ChannelsManager {
     /// Handle a crashed channel: backoff, respawn, re-initialize.
     async fn handle_channel_crash(&mut self, slot_index: usize) {
         let slot = &mut self.slots[slot_index];
-        let channel_name = &slot.config.name;
+        let channel_name = &slot.name;
 
         slot.crash_tracker.record_crash();
 
@@ -204,7 +204,7 @@ impl ChannelsManager {
                         });
                         if let Err(e) = conn.send_notification("channel/deliverMessage", params).await {
                             tracing::warn!(
-                                channel = %slot.config.name,
+                                channel = %slot.name,
                                 error = %e,
                                 "failed to deliver message"
                             );
@@ -232,7 +232,7 @@ impl ChannelsManager {
                         });
                         if let Err(e) = conn.send_notification("channel/requestPermission", params).await {
                             tracing::warn!(
-                                channel = %slot.config.name,
+                                channel = %slot.name,
                                 error = %e,
                                 "failed to route permission"
                             );
@@ -263,7 +263,7 @@ impl ChannelsManager {
                         });
                         if let Err(e) = conn.send_notification("channel/deliverMessage", params).await {
                             tracing::warn!(
-                                channel = %slot.config.name,
+                                channel = %slot.name,
                                 session_key = %session_key,
                                 error = %e,
                                 "failed to deliver agent update"
@@ -286,7 +286,7 @@ impl ChannelsManager {
                         });
                         if let Err(e) = conn.send_notification("channel/requestPermission", params).await {
                             tracing::warn!(
-                                channel = %slot.config.name,
+                                channel = %slot.name,
                                 session_key = %session_key,
                                 error = %e,
                                 "failed to route permission from agent"
@@ -297,12 +297,15 @@ impl ChannelsManager {
                     tracing::warn!(session_key = %session_key, request_id = %request_id, "no routing entry for permission");
                 }
             }
+            ChannelEvent::AckMessage { session_key, channel_name, peer_id, message_id } => {
+                tracing::debug!(session_key = %session_key, channel = %channel_name, peer = %peer_id, message_id = ?message_id, "ack message received (not yet implemented)");
+            }
         }
     }
 
     /// Handle an incoming message from a channel subprocess (inbound: channel → agent).
     async fn handle_channel_message(&mut self, slot_index: usize, msg: IncomingChannelMessage) {
-        let channel_name = self.slots[slot_index].config.name.clone();
+        let channel_name = self.slots[slot_index].name.clone();
         let channel_id = self.slots[slot_index].channel_id.clone();
 
         let value = match &msg {
@@ -480,23 +483,24 @@ impl Manager for ChannelsManager {
     async fn start(&mut self) -> Result<(), ManagerError> {
         let parent_cancel = CancellationToken::new();
 
-        for config in &self.channel_configs {
+        for (name, config) in &self.channel_configs {
             if !config.enabled {
-                tracing::info!(channel = %config.name, "channel disabled, skipping");
+                tracing::info!(channel = %name, "channel disabled, skipping");
                 continue;
             }
-            let channel_id = ChannelId::from(config.name.as_str());
+            let channel_id = ChannelId::from(name.as_str());
             let cancel_token = parent_cancel.child_token();
 
             match Self::spawn_and_initialize(config, &channel_id).await {
                 Ok((conn, caps)) => {
                     tracing::info!(
-                        channel = %config.name,
+                        channel = %name,
                         streaming = caps.streaming,
                         rich_text = caps.rich_text,
                         "channel initialized"
                     );
                     self.slots.push(ChannelSlot {
+                        name: name.clone(),
                         config: config.clone(),
                         connection: Some(conn),
                         channel_id,
@@ -508,11 +512,12 @@ impl Manager for ChannelsManager {
                 }
                 Err(e) => {
                     tracing::error!(
-                        channel = %config.name,
+                        channel = %name,
                         error = %e,
                         "failed to initialize channel, continuing without it"
                     );
                     self.slots.push(ChannelSlot {
+                        name: name.clone(),
                         config: config.clone(),
                         connection: None,
                         channel_id,
@@ -574,7 +579,7 @@ impl Manager for ChannelsManager {
                             }
                             None => {
                                 // Channel crashed (EOF)
-                                let channel_name = self.slots[idx].config.name.clone();
+                                let channel_name = self.slots[idx].name.clone();
                                 tracing::warn!(channel = %channel_name, "channel subprocess exited");
                                 self.handle_channel_crash(idx).await;
                             }
@@ -597,15 +602,29 @@ impl Manager for ChannelsManager {
 mod tests {
     use super::*;
 
+    fn make_channel_map(entries: Vec<(&str, ChannelConfig)>) -> HashMap<String, ChannelConfig> {
+        entries.into_iter().map(|(k, v)| (k.to_string(), v)).collect()
+    }
+
+    fn test_channel_config(binary: &str, enabled: bool, agent: &str) -> ChannelConfig {
+        ChannelConfig {
+            binary: binary.into(),
+            args: vec![],
+            enabled,
+            agent: agent.into(),
+            ack: Default::default(),
+        }
+    }
+
     #[test]
     fn channels_manager_name() {
-        let m = ChannelsManager::new(vec![], "default".into());
+        let m = ChannelsManager::new(HashMap::new(), "default".into());
         assert_eq!(m.name(), "channels");
     }
 
     #[tokio::test]
     async fn channels_manager_start_with_no_channels() {
-        let mut m = ChannelsManager::new(vec![], "default".into());
+        let mut m = ChannelsManager::new(HashMap::new(), "default".into());
         let result = m.start().await;
         assert!(result.is_ok());
         assert!(m.slots.is_empty());
@@ -613,19 +632,15 @@ mod tests {
 
     #[tokio::test]
     async fn channels_manager_health_check_no_channels() {
-        let m = ChannelsManager::new(vec![], "default".into());
+        let m = ChannelsManager::new(HashMap::new(), "default".into());
         assert!(!m.health_check().await);
     }
 
     #[tokio::test]
     async fn channels_manager_start_with_bad_binary_continues() {
-        let configs = vec![ChannelConfig {
-            name: "bad-channel".into(),
-            binary: "nonexistent-binary-xyz-99999".into(),
-            args: vec![],
-            enabled: true,
-            agent: None,
-        }];
+        let configs = make_channel_map(vec![
+            ("bad-channel", test_channel_config("nonexistent-binary-xyz-99999", true, "default")),
+        ]);
         let mut m = ChannelsManager::new(configs, "default".into());
         let result = m.start().await;
         assert!(result.is_ok());
@@ -635,22 +650,16 @@ mod tests {
 
     #[tokio::test]
     async fn channels_manager_shutdown_command() {
-        let m = ChannelsManager::new(vec![], "default".into());
+        let m = ChannelsManager::new(HashMap::new(), "default".into());
         let tx = m.command_sender();
         tx.send(ChannelsCommand::Shutdown).await.unwrap();
     }
 
     #[tokio::test]
     async fn channels_manager_crash_isolation() {
-        // Verify that ChannelSlot crash tracking is per-channel
         let mut slot = ChannelSlot {
-            config: ChannelConfig {
-                name: "test".into(),
-                binary: "true".into(),
-                args: vec![],
-                enabled: true,
-                agent: None,
-            },
+            name: "test".into(),
+            config: test_channel_config("true", true, "default"),
             connection: None,
             channel_id: ChannelId::from("test"),
             cancel_token: CancellationToken::new(),
@@ -659,7 +668,6 @@ mod tests {
             disabled: false,
         };
 
-        // Record crashes — should not affect other slots
         slot.crash_tracker.record_crash();
         slot.crash_tracker.record_crash();
         assert!(!slot.crash_tracker.is_crash_loop());
@@ -668,13 +676,9 @@ mod tests {
 
     #[tokio::test]
     async fn channels_manager_crash_loop_disables_channel() {
-        let configs = vec![ChannelConfig {
-            name: "crasher".into(),
-            binary: "nonexistent-binary-xyz-99999".into(),
-            args: vec![],
-            enabled: true,
-            agent: None,
-        }];
+        let configs = make_channel_map(vec![
+            ("crasher", test_channel_config("nonexistent-binary-xyz-99999", true, "default")),
+        ]);
         let mut m = ChannelsManager::new(configs, "default".into());
         m.start().await.unwrap();
         let slot = &mut m.slots[0];
@@ -682,7 +686,6 @@ mod tests {
             slot.crash_tracker.record_crash();
         }
 
-        // Now handle_channel_crash should disable the channel
         m.handle_channel_crash(0).await;
         assert!(m.slots[0].disabled);
         assert!(m.slots[0].connection.is_none());
@@ -731,7 +734,7 @@ mod tests {
 
     #[tokio::test]
     async fn handle_channel_event_deliver_routes_to_correct_slot() {
-        let mut m = ChannelsManager::new(vec![], "default".into());
+        let mut m = ChannelsManager::new(HashMap::new(), "default".into());
         let key = SessionKey::new("test", "local", "dev");
         m.routing_table.insert(key.clone(), RoutingEntry {
             channel_id: ChannelId::from("test"),
@@ -740,56 +743,43 @@ mod tests {
             agent_name: "default".into(),
         });
 
-        // No slots means deliver will find no connection — but shouldn't panic
         let event = ChannelEvent::DeliverMessage {
             session_key: key,
             content: serde_json::json!({"text": "hello"}),
         };
-        // Should not panic even with empty slots (index out of bounds guarded by routing_table check)
-        // Actually slot_index 0 with empty slots would panic, so test the "no entry" path
         let missing_key = SessionKey::new("nonexistent", "x", "y");
         let event_missing = ChannelEvent::DeliverMessage {
             session_key: missing_key,
             content: serde_json::json!({"text": "hello"}),
         };
         m.handle_channel_event(event_missing).await;
-        // No panic = success (logs warning about missing routing entry)
-        let _ = event; // suppress unused warning
+        let _ = event;
     }
 
     #[tokio::test]
     async fn with_agents_handle_sets_handle() {
         let (tx, _rx) = mpsc::channel::<AgentsCommand>(16);
         let handle = ManagerHandle::new(tx);
-        let m = ChannelsManager::new(vec![], "default".into()).with_agents_handle(handle);
+        let m = ChannelsManager::new(HashMap::new(), "default".into()).with_agents_handle(handle);
         assert!(m.agents_handle.is_some());
     }
 
     #[tokio::test]
     async fn with_channel_events_rx_sets_receiver() {
         let (_tx, rx) = mpsc::channel::<ChannelEvent>(16);
-        let m = ChannelsManager::new(vec![], "default".into()).with_channel_events_rx(rx);
+        let m = ChannelsManager::new(HashMap::new(), "default".into()).with_channel_events_rx(rx);
         assert!(m.channel_events_rx.is_some());
     }
 
     #[test]
     fn agent_name_for_channel_uses_config_agent_field() {
-        let configs = vec![ChannelConfig {
-            name: "telegram".into(),
-            binary: "telegram-channel".into(),
-            args: vec![],
-            enabled: true,
-            agent: Some("opencode".to_string()),
-        }];
+        let configs = make_channel_map(vec![
+            ("telegram", test_channel_config("telegram-channel", true, "opencode")),
+        ]);
         let mut m = ChannelsManager::new(configs, "default-agent".to_string());
         m.slots.push(ChannelSlot {
-            config: ChannelConfig {
-                name: "telegram".into(),
-                binary: "telegram-channel".into(),
-                args: vec![],
-                enabled: true,
-                agent: Some("opencode".to_string()),
-            },
+            name: "telegram".into(),
+            config: test_channel_config("telegram-channel", true, "opencode"),
             connection: None,
             channel_id: ChannelId::from("telegram"),
             cancel_token: CancellationToken::new(),
@@ -802,22 +792,13 @@ mod tests {
 
     #[test]
     fn agent_name_for_channel_defaults_to_default_agent() {
-        let configs = vec![ChannelConfig {
-            name: "debug-http".into(),
-            binary: "debug-http".into(),
-            args: vec![],
-            enabled: true,
-            agent: None,
-        }];
+        let configs = make_channel_map(vec![
+            ("debug-http", test_channel_config("debug-http", true, "default")),
+        ]);
         let mut m = ChannelsManager::new(configs, "first-enabled".to_string());
         m.slots.push(ChannelSlot {
-            config: ChannelConfig {
-                name: "debug-http".into(),
-                binary: "debug-http".into(),
-                args: vec![],
-                enabled: true,
-                agent: None,
-            },
+            name: "debug-http".into(),
+            config: test_channel_config("debug-http", true, "default"),
             connection: None,
             channel_id: ChannelId::from("debug-http"),
             cancel_token: CancellationToken::new(),
@@ -825,18 +806,14 @@ mod tests {
             crash_tracker: CrashTracker::default(),
             disabled: false,
         });
-        assert_eq!(m.agent_name_for_channel(0), "first-enabled");
+        assert_eq!(m.agent_name_for_channel(0), "default");
     }
 
     #[tokio::test]
     async fn disabled_channel_not_spawned() {
-        let configs = vec![ChannelConfig {
-            name: "disabled-ch".into(),
-            binary: "nonexistent-binary-xyz-99999".into(),
-            args: vec![],
-            enabled: false,
-            agent: None,
-        }];
+        let configs = make_channel_map(vec![
+            ("disabled-ch", test_channel_config("nonexistent-binary-xyz-99999", false, "default")),
+        ]);
         let mut m = ChannelsManager::new(configs, "default".into());
         let result = m.start().await;
         assert!(result.is_ok());

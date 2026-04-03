@@ -11,6 +11,7 @@ use crate::PendingPermission;
 /// Per-agent state: connection, config, crash recovery, session routing.
 /// Mirrors ChannelSlot pattern from ChannelsManager.
 pub struct AgentSlot {
+    pub name: String,
     pub config: AgentConfig,
     pub connection: Option<AgentConnection>,
     pub cancel_token: CancellationToken,
@@ -26,9 +27,10 @@ pub struct AgentSlot {
 }
 
 impl AgentSlot {
-    pub fn new(config: AgentConfig, parent_cancel: &CancellationToken) -> Self {
+    pub fn new(name: String, config: AgentConfig, parent_cancel: &CancellationToken) -> Self {
         let disabled = !config.enabled;
         Self {
+            name,
             config,
             connection: None,
             cancel_token: parent_cancel.child_token(),
@@ -43,12 +45,12 @@ impl AgentSlot {
     }
 
     pub fn name(&self) -> &str {
-        &self.config.name
+        &self.name
     }
 }
 
 pub fn find_slot_by_name(slots: &[AgentSlot], name: &str) -> Option<usize> {
-    slots.iter().position(|s| s.config.name == name)
+    slots.iter().position(|s| s.name == name)
 }
 
 #[cfg(test)]
@@ -56,9 +58,8 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
 
-    fn test_agent_config(name: &str, enabled: bool) -> AgentConfig {
+    fn test_agent_config(enabled: bool) -> AgentConfig {
         AgentConfig {
-            name: name.to_string(),
             binary: "test-binary".to_string(),
             args: vec![],
             enabled,
@@ -71,7 +72,7 @@ mod tests {
     #[test]
     fn slot_new_creates_empty_state() {
         let cancel = CancellationToken::new();
-        let slot = AgentSlot::new(test_agent_config("test-agent", true), &cancel);
+        let slot = AgentSlot::new("test-agent".into(), test_agent_config(true), &cancel);
 
         assert_eq!(slot.name(), "test-agent");
         assert!(slot.connection.is_none());
@@ -85,7 +86,7 @@ mod tests {
     #[test]
     fn slot_disabled_agent_has_disabled_true() {
         let cancel = CancellationToken::new();
-        let slot = AgentSlot::new(test_agent_config("disabled-agent", false), &cancel);
+        let slot = AgentSlot::new("disabled-agent".into(), test_agent_config(false), &cancel);
 
         assert!(slot.disabled);
         assert_eq!(slot.name(), "disabled-agent");
@@ -95,9 +96,9 @@ mod tests {
     fn find_slot_by_name_returns_correct_index() {
         let cancel = CancellationToken::new();
         let slots = vec![
-            AgentSlot::new(test_agent_config("alpha", true), &cancel),
-            AgentSlot::new(test_agent_config("beta", true), &cancel),
-            AgentSlot::new(test_agent_config("gamma", true), &cancel),
+            AgentSlot::new("alpha".into(), test_agent_config(true), &cancel),
+            AgentSlot::new("beta".into(), test_agent_config(true), &cancel),
+            AgentSlot::new("gamma".into(), test_agent_config(true), &cancel),
         ];
 
         assert_eq!(find_slot_by_name(&slots, "alpha"), Some(0));
@@ -108,7 +109,11 @@ mod tests {
     #[test]
     fn find_slot_by_name_returns_none_for_unknown() {
         let cancel = CancellationToken::new();
-        let slots = vec![AgentSlot::new(test_agent_config("alpha", true), &cancel)];
+        let slots = vec![AgentSlot::new(
+            "alpha".into(),
+            test_agent_config(true),
+            &cancel,
+        )];
 
         assert_eq!(find_slot_by_name(&slots, "nonexistent"), None);
     }
@@ -122,7 +127,7 @@ mod tests {
     #[test]
     fn slot_session_map_insert_and_lookup() {
         let cancel = CancellationToken::new();
-        let mut slot = AgentSlot::new(test_agent_config("agent", true), &cancel);
+        let mut slot = AgentSlot::new("agent".into(), test_agent_config(true), &cancel);
 
         let key = SessionKey::new("telegram", "direct", "alice");
         slot.session_map
@@ -134,7 +139,7 @@ mod tests {
     #[test]
     fn slot_reverse_map_lookup_returns_correct_session_key() {
         let cancel = CancellationToken::new();
-        let mut slot = AgentSlot::new(test_agent_config("agent", true), &cancel);
+        let mut slot = AgentSlot::new("agent".into(), test_agent_config(true), &cancel);
 
         let key = SessionKey::new("debug-http", "local", "dev");
         let acp_id = "acp-sess-42".to_string();
@@ -148,7 +153,7 @@ mod tests {
     #[test]
     fn slot_cancel_token_is_child_of_parent() {
         let parent = CancellationToken::new();
-        let slot = AgentSlot::new(test_agent_config("agent", true), &parent);
+        let slot = AgentSlot::new("agent".into(), test_agent_config(true), &parent);
 
         assert!(!slot.cancel_token.is_cancelled());
         parent.cancel();

@@ -1,6 +1,7 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
-use protoclaw_config::{McpServerConfig, WasmToolConfig};
+use protoclaw_config::ToolConfig;
 use protoclaw_core::{Manager, ManagerError};
 use protoclaw_sdk_tool::Tool;
 use rmcp::handler::server::ServerHandler;
@@ -118,8 +119,7 @@ impl ServerHandler for AggregatedToolServer {
 }
 
 pub struct ToolsManager {
-    configs: Vec<McpServerConfig>,
-    wasm_configs: Vec<WasmToolConfig>,
+    tool_configs: HashMap<String, ToolConfig>,
     native_tools: Vec<Box<dyn Tool>>,
     server_urls: Vec<McpServerUrl>,
     server_handles: Vec<tokio::task::JoinHandle<()>>,
@@ -129,10 +129,9 @@ pub struct ToolsManager {
 }
 
 impl ToolsManager {
-    pub fn new(configs: Vec<McpServerConfig>) -> Self {
+    pub fn new(tool_configs: HashMap<String, ToolConfig>) -> Self {
         Self {
-            configs,
-            wasm_configs: Vec::new(),
+            tool_configs,
             native_tools: Vec::new(),
             server_urls: Vec::new(),
             server_handles: Vec::new(),
@@ -152,11 +151,6 @@ impl ToolsManager {
         self
     }
 
-    pub fn with_wasm_configs(mut self, wasm_configs: Vec<WasmToolConfig>) -> Self {
-        self.wasm_configs = wasm_configs;
-        self
-    }
-
     pub fn server_urls(&self) -> &[McpServerUrl] {
         &self.server_urls
     }
@@ -172,20 +166,25 @@ impl Manager for ToolsManager {
     async fn start(&mut self) -> Result<(), ManagerError> {
         let mut all_tools: Vec<Box<dyn Tool>> = std::mem::take(&mut self.native_tools);
 
-        if !self.wasm_configs.is_empty() {
+        let wasm_configs: Vec<(String, ToolConfig)> = self.tool_configs.iter()
+            .filter(|(_, c)| c.tool_type == "wasm" && c.enabled)
+            .map(|(n, c)| (n.clone(), c.clone()))
+            .collect();
+
+        if !wasm_configs.is_empty() {
             let wasm_runner = Arc::new(
                 WasmToolRunner::new()
                     .map_err(|e| ManagerError::Internal(format!("wasm runner: {e}")))?,
             );
 
-            for wasm_config in &self.wasm_configs {
-                match WasmTool::new(wasm_config.clone(), wasm_runner.clone()) {
+            for (name, wasm_config) in &wasm_configs {
+                match WasmTool::new(name.clone(), wasm_config.clone(), wasm_runner.clone()) {
                     Ok(tool) => {
                         tracing::info!(name = %tool.name(), "loaded WASM tool");
                         all_tools.push(Box::new(tool));
                     }
                     Err(e) => {
-                        tracing::warn!(name = %wasm_config.name, error = %e, "failed to load WASM tool, skipping");
+                        tracing::warn!(name = %name, error = %e, "failed to load WASM tool, skipping");
                     }
                 }
             }
@@ -195,18 +194,19 @@ impl Manager for ToolsManager {
         self.native_host = Some(native_host.clone());
 
         let mut external_servers = Vec::new();
-        for config in &self.configs {
-            if !config.enabled {
-                tracing::info!(name = %config.name, "MCP server disabled, skipping");
-                continue;
-            }
-            match ExternalMcpServer::spawn(config).await {
+        let mcp_configs: Vec<(String, ToolConfig)> = self.tool_configs.iter()
+            .filter(|(_, c)| c.tool_type == "mcp" && c.enabled)
+            .map(|(n, c)| (n.clone(), c.clone()))
+            .collect();
+
+        for (name, config) in &mcp_configs {
+            match ExternalMcpServer::spawn(name, config).await {
                 Ok(server) => {
-                    tracing::info!(name = %config.name, "spawned external MCP server");
+                    tracing::info!(name = %name, "spawned external MCP server");
                     external_servers.push(server);
                 }
                 Err(e) => {
-                    tracing::warn!(name = %config.name, error = %e, "failed to spawn external MCP server, skipping");
+                    tracing::warn!(name = %name, error = %e, "failed to spawn external MCP server, skipping");
                 }
             }
         }
@@ -288,7 +288,7 @@ impl Manager for ToolsManager {
     }
 
     async fn health_check(&self) -> bool {
-        !self.server_urls.is_empty() || self.configs.is_empty()
+        !self.server_urls.is_empty() || self.tool_configs.is_empty()
     }
 }
 
@@ -323,13 +323,13 @@ mod tests {
 
     #[test]
     fn tools_manager_name() {
-        let m = ToolsManager::new(vec![]);
+        let m = ToolsManager::new(HashMap::new());
         assert_eq!(m.name(), "tools");
     }
 
     #[tokio::test]
     async fn tools_manager_start_no_configs() {
-        let mut m = ToolsManager::new(vec![]);
+        let mut m = ToolsManager::new(HashMap::new());
         assert!(m.start().await.is_ok());
         assert_eq!(m.server_urls().len(), 1);
         assert_eq!(m.server_urls()[0].name, "protoclaw-tools");
@@ -337,13 +337,13 @@ mod tests {
 
     #[tokio::test]
     async fn tools_manager_health_check_no_configs() {
-        let m = ToolsManager::new(vec![]);
+        let m = ToolsManager::new(HashMap::new());
         assert!(m.health_check().await);
     }
 
     #[tokio::test]
     async fn tools_manager_health_check_after_start() {
-        let mut m = ToolsManager::new(vec![]);
+        let mut m = ToolsManager::new(HashMap::new());
         m.start().await.unwrap();
         assert!(m.health_check().await);
         for h in &m.server_handles {
@@ -353,7 +353,7 @@ mod tests {
 
     #[tokio::test]
     async fn tools_manager_run_stops_on_cancel() {
-        let mut m = ToolsManager::new(vec![]);
+        let mut m = ToolsManager::new(HashMap::new());
         m.start().await.unwrap();
 
         let cancel = CancellationToken::new();
@@ -412,7 +412,7 @@ mod tests {
         let tools: Vec<Box<dyn Tool>> = vec![
             Box::new(DummyTool { tool_name: "native-1".into() }),
         ];
-        let mut m = ToolsManager::new(vec![]).with_native_tools(tools);
+        let mut m = ToolsManager::new(HashMap::new()).with_native_tools(tools);
         m.start().await.unwrap();
 
         let host = m.native_host.as_ref().unwrap();
@@ -433,15 +433,18 @@ mod tests {
         let bytes = wat::parse_str(wat).unwrap();
         std::fs::write(&wasm_path, &bytes).unwrap();
 
-        let wasm_configs = vec![protoclaw_config::WasmToolConfig {
-            name: "wasm-tool-1".into(),
-            module: wasm_path,
+        let tool_configs = HashMap::from([("wasm-tool-1".to_string(), ToolConfig {
+            tool_type: "wasm".into(),
+            binary: None,
+            args: vec![],
+            enabled: true,
+            module: Some(wasm_path),
             description: "test wasm tool".into(),
             input_schema: None,
             sandbox: protoclaw_config::WasmSandboxConfig::default(),
-        }];
+        })]);
 
-        let mut m = ToolsManager::new(vec![]).with_wasm_configs(wasm_configs);
+        let mut m = ToolsManager::new(tool_configs);
         m.start().await.unwrap();
 
         let host = m.native_host.as_ref().unwrap();
@@ -456,15 +459,18 @@ mod tests {
 
     #[tokio::test]
     async fn tools_manager_with_invalid_wasm_path_skips_and_continues() {
-        let wasm_configs = vec![protoclaw_config::WasmToolConfig {
-            name: "bad-tool".into(),
-            module: std::path::PathBuf::from("/nonexistent/tool.wasm"),
+        let tool_configs = HashMap::from([("bad-tool".to_string(), ToolConfig {
+            tool_type: "wasm".into(),
+            binary: None,
+            args: vec![],
+            enabled: true,
+            module: Some(std::path::PathBuf::from("/nonexistent/tool.wasm")),
             description: "bad".into(),
             input_schema: None,
             sandbox: protoclaw_config::WasmSandboxConfig::default(),
-        }];
+        })]);
 
-        let mut m = ToolsManager::new(vec![]).with_wasm_configs(wasm_configs);
+        let mut m = ToolsManager::new(tool_configs);
         let result = m.start().await;
         assert!(result.is_ok());
 
@@ -488,17 +494,18 @@ mod tests {
         let native_tools: Vec<Box<dyn Tool>> = vec![
             Box::new(DummyTool { tool_name: "native-1".into() }),
         ];
-        let wasm_configs = vec![protoclaw_config::WasmToolConfig {
-            name: "wasm-1".into(),
-            module: wasm_path,
+        let tool_configs = HashMap::from([("wasm-1".to_string(), ToolConfig {
+            tool_type: "wasm".into(),
+            binary: None,
+            args: vec![],
+            enabled: true,
+            module: Some(wasm_path),
             description: "wasm".into(),
             input_schema: None,
             sandbox: protoclaw_config::WasmSandboxConfig::default(),
-        }];
+        })]);
 
-        let mut m = ToolsManager::new(vec![])
-            .with_native_tools(native_tools)
-            .with_wasm_configs(wasm_configs);
+        let mut m = ToolsManager::new(tool_configs).with_native_tools(native_tools);
         m.start().await.unwrap();
 
         let host = m.native_host.as_ref().unwrap();
@@ -515,7 +522,7 @@ mod tests {
 
     #[tokio::test]
     async fn get_mcp_urls_with_no_filter_returns_all() {
-        let mut m = ToolsManager::new(vec![]);
+        let mut m = ToolsManager::new(HashMap::new());
         m.start().await.unwrap();
 
         m.server_urls.push(McpServerUrl { name: "tool-a".into(), url: "http://a".into() });
@@ -533,7 +540,7 @@ mod tests {
 
     #[tokio::test]
     async fn get_mcp_urls_with_filter_returns_matching_only() {
-        let mut m = ToolsManager::new(vec![]);
+        let mut m = ToolsManager::new(HashMap::new());
         m.start().await.unwrap();
         m.server_urls.push(McpServerUrl { name: "system-info".into(), url: "http://si".into() });
         m.server_urls.push(McpServerUrl { name: "filesystem".into(), url: "http://fs".into() });
@@ -552,7 +559,7 @@ mod tests {
 
     #[tokio::test]
     async fn get_mcp_urls_with_nonexistent_filter_returns_empty() {
-        let mut m = ToolsManager::new(vec![]);
+        let mut m = ToolsManager::new(HashMap::new());
         m.start().await.unwrap();
 
         let urls = m.server_urls.clone();
@@ -568,13 +575,17 @@ mod tests {
 
     #[tokio::test]
     async fn disabled_mcp_server_not_spawned() {
-        let configs = vec![McpServerConfig {
-            name: "disabled-tool".into(),
-            binary: "nonexistent-binary-xyz-99999".into(),
+        let tool_configs = HashMap::from([("disabled-tool".to_string(), ToolConfig {
+            tool_type: "mcp".into(),
+            binary: Some("nonexistent-binary-xyz-99999".into()),
             args: vec![],
             enabled: false,
-        }];
-        let mut m = ToolsManager::new(configs);
+            module: None,
+            description: String::new(),
+            input_schema: None,
+            sandbox: Default::default(),
+        })]);
+        let mut m = ToolsManager::new(tool_configs);
         m.start().await.unwrap();
         let ext = m.external_servers.as_ref().unwrap();
         assert!(ext.is_empty(), "disabled MCP server should not be spawned");

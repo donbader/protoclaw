@@ -10,7 +10,7 @@ pub use types::*;
 pub use validate::*;
 
 use figment::{
-    providers::{Env, Serialized},
+    providers::{Env, Format},
     Figment,
 };
 
@@ -25,7 +25,7 @@ impl ProtoclawConfig {
             });
         }
 
-        let config: Self = Figment::from(Serialized::defaults(SupervisorConfig::default()))
+        let config: Self = Figment::from(figment::providers::Toml::string(DEFAULTS_TOML))
             .merge(subst_toml::SubstToml::file(path))
             .merge(Env::prefixed("PROTOCLAW_").split("__"))
             .extract()
@@ -204,6 +204,25 @@ mod tests {
             assert_eq!(config.agents_manager.agents["default"].binary, "opencode");
             assert!(config.channels_manager.channels.is_empty());
             assert!(config.tools_manager.tools.is_empty());
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn embedded_defaults_provide_debounce_config() {
+        Jail::expect_with(|jail| {
+            jail.create_file(
+                "protoclaw.toml",
+                r#"
+                [agents-manager.agents.default]
+                binary = "opencode"
+            "#,
+            )?;
+            let config = ProtoclawConfig::load(Some("protoclaw.toml")).unwrap();
+            assert!(config.channels_manager.debounce.enabled);
+            assert_eq!(config.channels_manager.debounce.window_ms, 1000);
+            assert_eq!(config.channels_manager.debounce.separator, "\n");
+            assert_eq!(config.channels_manager.debounce.mid_response, "queue");
             Ok(())
         });
     }

@@ -23,7 +23,7 @@ async fn main() -> Result<()> {
             tracing::info!(config_path = %cli.config, "protoclaw starting");
             let config = protoclaw_config::ProtoclawConfig::load(Some(&cli.config))
                 .map_err(|e| anyhow::anyhow!("failed to load config: {e}"))?;
-            tracing::info!(agents = config.agents.len(), channels = config.channels.len(), "config loaded");
+            tracing::info!(agents = config.agents_manager.agents.len(), channels = config.channels_manager.channels.len(), "config loaded");
             print!("{}", banner::format_banner(&config, &cli.config));
             protoclaw::supervisor::Supervisor::new(config).run().await?;
             tracing::info!("protoclaw shut down");

@@ -25,26 +25,32 @@ pub fn mock_agent_config() -> protoclaw_config::ProtoclawConfig {
 }
 
 pub fn mock_agent_config_with_env(env: HashMap<String, String>) -> protoclaw_config::ProtoclawConfig {
+    let mut agents = HashMap::new();
+    agents.insert("default".to_string(), protoclaw_config::AgentConfig {
+        binary: mock_agent_path(),
+        args: vec![],
+        enabled: true,
+        env,
+        working_dir: None,
+        tools: vec![],
+    });
+
+    let mut channels = HashMap::new();
+    channels.insert("debug-http".to_string(), protoclaw_config::ChannelConfig {
+        binary: debug_http_path(),
+        args: vec![],
+        enabled: true,
+        agent: "default".into(),
+        ack: Default::default(),
+    });
+
     protoclaw_config::ProtoclawConfig {
-        agent: None,
-        agents: vec![protoclaw_config::AgentConfig {
-            name: "default".into(),
-            binary: mock_agent_path(),
-            args: vec![],
-            enabled: true,
-            env,
-            working_dir: None,
-            tools: vec![],
-        }],
-        channels: vec![protoclaw_config::ChannelConfig {
-            name: "debug-http".into(),
-            binary: debug_http_path(),
-            args: vec![],
-            enabled: true,
-            agent: None,
-        }],
-        mcp_servers: vec![],
-        wasm_tools: vec![],
+        agents_manager: protoclaw_config::AgentsManagerConfig { agents },
+        channels_manager: protoclaw_config::ChannelsManagerConfig {
+            channels,
+            ..Default::default()
+        },
+        tools_manager: protoclaw_config::ToolsManagerConfig::default(),
         supervisor: protoclaw_config::SupervisorConfig {
             shutdown_timeout_secs: 5,
             health_check_interval_secs: 1,

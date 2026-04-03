@@ -1,22 +1,25 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use protoclaw_config::WasmToolConfig;
+use protoclaw_config::ToolConfig;
 use protoclaw_sdk_tool::{Tool, ToolSdkError};
 
 use crate::wasm_runner::WasmToolRunner;
 
 pub struct WasmTool {
-    config: WasmToolConfig,
+    name: String,
+    config: ToolConfig,
     module_bytes: Vec<u8>,
     runner: Arc<WasmToolRunner>,
 }
 
 impl WasmTool {
-    pub fn new(config: WasmToolConfig, runner: Arc<WasmToolRunner>) -> Result<Self, ToolSdkError> {
-        let module_bytes =
-            std::fs::read(&config.module).map_err(ToolSdkError::Io)?;
+    pub fn new(name: String, config: ToolConfig, runner: Arc<WasmToolRunner>) -> Result<Self, ToolSdkError> {
+        let module = config.module.as_ref()
+            .ok_or_else(|| ToolSdkError::ExecutionFailed("no module path specified".into()))?;
+        let module_bytes = std::fs::read(module).map_err(ToolSdkError::Io)?;
         Ok(Self {
+            name,
             config,
             module_bytes,
             runner,
@@ -27,7 +30,7 @@ impl WasmTool {
 #[async_trait]
 impl Tool for WasmTool {
     fn name(&self) -> &str {
-        &self.config.name
+        &self.name
     }
 
     fn description(&self) -> &str {
@@ -68,10 +71,13 @@ mod tests {
     use protoclaw_config::WasmSandboxConfig;
     use std::path::PathBuf;
 
-    fn make_config(path: PathBuf) -> WasmToolConfig {
-        WasmToolConfig {
-            name: "test-tool".into(),
-            module: path,
+    fn make_config(path: PathBuf) -> ToolConfig {
+        ToolConfig {
+            tool_type: "wasm".into(),
+            binary: None,
+            args: vec![],
+            enabled: true,
+            module: Some(path),
             description: "A test WASM tool".into(),
             input_schema: Some(r#"{"type":"object","properties":{"x":{"type":"number"}}}"#.into()),
             sandbox: WasmSandboxConfig::default(),
@@ -82,7 +88,7 @@ mod tests {
     async fn wasm_tool_new_nonexistent_file_returns_error() {
         let runner = Arc::new(WasmToolRunner::new().unwrap());
         let config = make_config(PathBuf::from("/nonexistent/tool.wasm"));
-        let result = WasmTool::new(config, runner);
+        let result = WasmTool::new("test-tool".into(), config, runner);
         assert!(result.is_err());
     }
 
@@ -95,7 +101,7 @@ mod tests {
         std::fs::write(&wasm_path, &bytes).unwrap();
 
         let runner = Arc::new(WasmToolRunner::new().unwrap());
-        let tool = WasmTool::new(make_config(wasm_path), runner).unwrap();
+        let tool = WasmTool::new("test-tool".into(), make_config(wasm_path), runner).unwrap();
         assert_eq!(tool.name(), "test-tool");
     }
 
@@ -108,7 +114,7 @@ mod tests {
         std::fs::write(&wasm_path, &bytes).unwrap();
 
         let runner = Arc::new(WasmToolRunner::new().unwrap());
-        let tool = WasmTool::new(make_config(wasm_path), runner).unwrap();
+        let tool = WasmTool::new("test-tool".into(), make_config(wasm_path), runner).unwrap();
         assert_eq!(tool.description(), "A test WASM tool");
     }
 
@@ -121,7 +127,7 @@ mod tests {
         std::fs::write(&wasm_path, &bytes).unwrap();
 
         let runner = Arc::new(WasmToolRunner::new().unwrap());
-        let tool = WasmTool::new(make_config(wasm_path), runner).unwrap();
+        let tool = WasmTool::new("test-tool".into(), make_config(wasm_path), runner).unwrap();
         let schema = tool.input_schema();
         assert!(schema.is_object());
         assert!(schema.get("properties").is_some());
@@ -138,7 +144,7 @@ mod tests {
         let runner = Arc::new(WasmToolRunner::new().unwrap());
         let mut config = make_config(wasm_path);
         config.input_schema = None;
-        let tool = WasmTool::new(config, runner).unwrap();
+        let tool = WasmTool::new("test-tool".into(), config, runner).unwrap();
         assert_eq!(tool.input_schema(), serde_json::json!({"type": "object"}));
     }
 
@@ -170,7 +176,7 @@ mod tests {
         std::fs::write(&wasm_path, &bytes).unwrap();
 
         let runner = Arc::new(WasmToolRunner::new().unwrap());
-        let tool = WasmTool::new(make_config(wasm_path), runner).unwrap();
+        let tool = WasmTool::new("test-tool".into(), make_config(wasm_path), runner).unwrap();
 
         let input = serde_json::json!({"x": 42});
         let result = tool.execute(input.clone()).await.unwrap();

@@ -2,10 +2,10 @@ use protoclaw_config::ProtoclawConfig;
 
 pub fn format_banner(config: &ProtoclawConfig, config_path: &str) -> String {
     let mut out = format!("protoclaw v{}\n", env!("CARGO_PKG_VERSION"));
-    for agent in &config.agents {
+    for (name, agent) in &config.agents_manager.agents {
         out.push_str(&format!(
             "  Agent:    {} [{}] (args: {})\n",
-            agent.name,
+            name,
             agent.binary,
             if agent.args.is_empty() {
                 "(none)".to_string()
@@ -14,17 +14,19 @@ pub fn format_banner(config: &ProtoclawConfig, config_path: &str) -> String {
             }
         ));
     }
-    if config.agents.is_empty() {
+    if config.agents_manager.agents.is_empty() {
         out.push_str("  Agent:    (none configured)\n");
     }
-    for ch in &config.channels {
-        out.push_str(&format!("  Channel:  {} ({})\n", ch.name, ch.binary));
+    for (name, ch) in &config.channels_manager.channels {
+        out.push_str(&format!("  Channel:  {} ({})\n", name, ch.binary));
     }
-    for mcp in &config.mcp_servers {
-        out.push_str(&format!("  MCP:      {} ({})\n", mcp.name, mcp.binary));
+    for (name, tool) in &config.tools_manager.tools {
+        if let Some(ref bin) = tool.binary {
+            out.push_str(&format!("  Tool:     {} ({})\n", name, bin));
+        }
     }
-    if config.mcp_servers.is_empty() {
-        out.push_str("  MCP:      (none configured)\n");
+    if config.tools_manager.tools.is_empty() {
+        out.push_str("  Tool:     (none configured)\n");
     }
     out.push_str(&format!("  Config:   {}\n", config_path));
     out
@@ -34,54 +36,75 @@ pub fn format_banner(config: &ProtoclawConfig, config_path: &str) -> String {
 mod tests {
     use super::*;
     use protoclaw_config::{
-        AgentConfig, ChannelConfig, McpServerConfig, ProtoclawConfig, SupervisorConfig,
+        AgentConfig, AgentsManagerConfig, ChannelConfig, ChannelsManagerConfig, ProtoclawConfig,
+        SupervisorConfig, ToolConfig, ToolsManagerConfig,
     };
     use std::collections::HashMap;
 
     fn make_config(
         agent_binary: &str,
         channels: Vec<(&str, &str)>,
-        mcp_servers: Vec<(&str, &str)>,
+        tools: Vec<(&str, &str)>,
     ) -> ProtoclawConfig {
-        ProtoclawConfig {
-            log_level: "info".into(),
-            extensions_dir: "/usr/local/bin".into(),
-            agent: None,
-            agents: vec![AgentConfig {
-                name: "default".to_string(),
+        let mut agents = HashMap::new();
+        agents.insert(
+            "default".to_string(),
+            AgentConfig {
                 binary: agent_binary.to_string(),
                 args: vec![],
                 enabled: true,
                 env: HashMap::new(),
                 working_dir: None,
                 tools: vec![],
-            }],
-            channels: channels
-                .into_iter()
-                .map(|(name, binary)| ChannelConfig {
-                    name: name.to_string(),
+            },
+        );
+
+        let mut channel_map = HashMap::new();
+        for (name, binary) in channels {
+            channel_map.insert(
+                name.to_string(),
+                ChannelConfig {
                     binary: binary.to_string(),
                     args: vec![],
                     enabled: true,
-                    agent: None,
-                })
-                .collect(),
-            mcp_servers: mcp_servers
-                .into_iter()
-                .map(|(name, binary)| McpServerConfig {
-                    name: name.to_string(),
-                    binary: binary.to_string(),
+                    agent: "default".into(),
+                    ack: Default::default(),
+                },
+            );
+        }
+
+        let mut tool_map = HashMap::new();
+        for (name, binary) in tools {
+            tool_map.insert(
+                name.to_string(),
+                ToolConfig {
+                    tool_type: "mcp".into(),
+                    binary: Some(binary.to_string()),
                     args: vec![],
                     enabled: true,
-                })
-                .collect(),
-            wasm_tools: vec![],
+                    module: None,
+                    description: String::new(),
+                    input_schema: None,
+                    sandbox: Default::default(),
+                },
+            );
+        }
+
+        ProtoclawConfig {
+            log_level: "info".into(),
+            extensions_dir: "/usr/local/bin".into(),
+            agents_manager: AgentsManagerConfig { agents },
+            channels_manager: ChannelsManagerConfig {
+                channels: channel_map,
+                ..Default::default()
+            },
+            tools_manager: ToolsManagerConfig { tools: tool_map },
             supervisor: SupervisorConfig::default(),
         }
     }
 
     #[test]
-    fn banner_contains_agent_channel_mcp_config() {
+    fn banner_contains_agent_channel_tool_config() {
         let config = make_config(
             "opencode",
             vec![("debug-http", "protoclaw-debug-http")],
@@ -90,7 +113,7 @@ mod tests {
         let output = format_banner(&config, "protoclaw.toml");
         assert!(output.contains("opencode"), "should contain agent binary");
         assert!(output.contains("debug-http"), "should contain channel name");
-        assert!(output.contains("filesystem"), "should contain MCP name");
+        assert!(output.contains("filesystem"), "should contain tool name");
         assert!(
             output.contains("protoclaw.toml"),
             "should contain config path"
@@ -98,12 +121,12 @@ mod tests {
     }
 
     #[test]
-    fn banner_with_no_mcp_shows_none_configured() {
+    fn banner_with_no_tools_shows_none_configured() {
         let config = make_config("opencode", vec![], vec![]);
         let output = format_banner(&config, "protoclaw.toml");
         assert!(
             output.contains("(none configured)"),
-            "should say (none configured) when no MCP"
+            "should say (none configured) when no tools"
         );
     }
 
