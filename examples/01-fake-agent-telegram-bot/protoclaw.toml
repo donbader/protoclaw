@@ -5,7 +5,8 @@
 log_level = "debug"
 extensions_dir = "/usr/local/bin"
 
-[agent]
+[[agents]]
+name = "mock-agent"
 binary = "@built-in/mock-agent"
 
 [[channels]]
