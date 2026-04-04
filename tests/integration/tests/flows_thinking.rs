@@ -1,9 +1,8 @@
 use std::time::Duration;
 
 use protoclaw_integration_tests::{
-    boot_supervisor_with_port, mock_agent_config, with_timeout,
+    boot_supervisor_with_port, mock_agent_config, with_timeout, SseCollector,
 };
-use tokio_stream::StreamExt;
 
 #[test_log::test(tokio::test)]
 async fn flow_thinking_chunks() {
@@ -19,14 +18,7 @@ async fn flow_thinking_chunks() {
     let (cancel, handle, port) = boot_supervisor_with_port(config).await;
 
     let client = reqwest::Client::new();
-
-    let sse_resp = client
-        .get(format!("http://127.0.0.1:{port}/events"))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(sse_resp.status(), 200);
-    let mut sse_stream = sse_resp.bytes_stream();
+    let mut sse = SseCollector::connect(port).await;
 
     let resp = client
         .post(format!("http://127.0.0.1:{port}/message"))
@@ -36,43 +28,34 @@ async fn flow_thinking_chunks() {
         .unwrap();
     assert_eq!(resp.status(), 200);
 
-    let mut saw_thought = false;
-    let mut saw_result = false;
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    let events = sse.collect_events(Duration::from_secs(10)).await;
 
-    while tokio::time::Instant::now() < deadline {
-        let chunk = tokio::time::timeout_at(deadline, sse_stream.next()).await;
-        match chunk {
-            Ok(Some(Ok(bytes))) => {
-                let text = String::from_utf8_lossy(&bytes);
-                for line in text.lines() {
-                    if line.starts_with("event:") && line.contains("thought") {
-                        saw_thought = true;
-                    }
-                    if let Some(data) = line.strip_prefix("data:") {
-                        let data = data.trim();
-                        if let Ok(v) = serde_json::from_str::<serde_json::Value>(data) {
-                            if v.get("type").and_then(|t| t.as_str()) == Some("result") {
-                                saw_result = true;
-                            }
-                        }
-                    }
-                }
-                if saw_result {
-                    break;
-                }
-            }
-            _ => break,
-        }
-    }
-
+    let thought_positions: Vec<usize> = events
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| e.event_type.as_deref() == Some("thought"))
+        .map(|(i, _)| i)
+        .collect();
     assert!(
-        saw_thought,
-        "should have received at least one thought chunk via SSE"
+        !thought_positions.is_empty(),
+        "expected thought SSE events, got: {:?}",
+        events.iter().map(|e| (&e.event_type, &e.data)).collect::<Vec<_>>()
     );
+
+    let result_position = events
+        .iter()
+        .position(|e| {
+            serde_json::from_str::<serde_json::Value>(&e.data)
+                .ok()
+                .and_then(|v| v.get("type")?.as_str().map(|s| s == "result"))
+                .unwrap_or(false)
+        })
+        .expect("should have received a result event via SSE");
+
+    let last_thought = *thought_positions.last().unwrap();
     assert!(
-        saw_result,
-        "thinking agent should complete and return result via SSE"
+        last_thought < result_position,
+        "thought events (last at {last_thought}) must arrive before result (at {result_position})"
     );
 
     cancel.cancel();
