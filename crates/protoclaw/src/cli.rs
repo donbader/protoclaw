@@ -10,7 +10,7 @@ pub struct Cli {
     #[arg(
         short,
         long,
-        default_value = "protoclaw.toml",
+        default_value = "protoclaw.yaml",
         env = "PROTOCLAW_CONFIG",
         global = true
     )]
@@ -52,16 +52,16 @@ mod tests {
 
     #[test]
     fn run_subcommand_with_config_flag() {
-        let cli = Cli::parse_from(["protoclaw", "run", "--config", "custom.toml"]);
+        let cli = Cli::parse_from(["protoclaw", "run", "--config", "custom.yaml"]);
         assert!(matches!(cli.command, Some(Commands::Run)));
-        assert_eq!(cli.config, "custom.toml");
+        assert_eq!(cli.config, "custom.yaml");
     }
 
     #[test]
     fn global_config_flag_with_no_subcommand() {
-        let cli = Cli::parse_from(["protoclaw", "--config", "x.toml"]);
+        let cli = Cli::parse_from(["protoclaw", "--config", "x.yaml"]);
         assert!(cli.command.is_none());
-        assert_eq!(cli.config, "x.toml");
+        assert_eq!(cli.config, "x.yaml");
     }
 
     #[test]

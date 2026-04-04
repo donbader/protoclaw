@@ -110,12 +110,12 @@ mod tests {
             vec![("debug-http", "protoclaw-debug-http")],
             vec![("filesystem", "mcp-filesystem")],
         );
-        let output = format_banner(&config, "protoclaw.toml");
+        let output = format_banner(&config, "protoclaw.yaml");
         assert!(output.contains("opencode"), "should contain agent binary");
         assert!(output.contains("debug-http"), "should contain channel name");
         assert!(output.contains("filesystem"), "should contain tool name");
         assert!(
-            output.contains("protoclaw.toml"),
+            output.contains("protoclaw.yaml"),
             "should contain config path"
         );
     }
@@ -123,7 +123,7 @@ mod tests {
     #[test]
     fn banner_with_no_tools_shows_none_configured() {
         let config = make_config("opencode", vec![], vec![]);
-        let output = format_banner(&config, "protoclaw.toml");
+        let output = format_banner(&config, "protoclaw.yaml");
         assert!(
             output.contains("(none configured)"),
             "should say (none configured) when no tools"
@@ -133,7 +133,7 @@ mod tests {
     #[test]
     fn banner_starts_with_protoclaw_v() {
         let config = make_config("opencode", vec![], vec![]);
-        let output = format_banner(&config, "protoclaw.toml");
+        let output = format_banner(&config, "protoclaw.yaml");
         assert!(
             output.starts_with("protoclaw v"),
             "should start with 'protoclaw v'"

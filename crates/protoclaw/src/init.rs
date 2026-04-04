@@ -16,31 +16,42 @@ pub fn detect_agent_binary() -> Option<String> {
     None
 }
 
-pub fn generate_config_toml(agent_binary: &str) -> String {
+pub fn generate_config_yaml(agent_binary: &str) -> String {
     format!(
         r#"# Protoclaw configuration
 # Docs: https://github.com/user/protoclaw
 
-[agents-manager.agents.default]
-binary = "{agent_binary}"
-args = ["acp"]
-# working_dir = "."
+agents-manager:
+  agents:
+    default:
+      binary: "{agent_binary}"
+      args:
+        - "acp"
+      # working_dir: "."
 
 # Channel subprocesses
-[channels-manager.channels.debug-http]
-binary = "protoclaw-debug-http"
-args = ["--port", "3000"]
+channels-manager:
+  channels:
+    debug-http:
+      binary: "protoclaw-debug-http"
+      args:
+        - "--port"
+        - "3000"
 
 # MCP tool servers (uncomment to add)
-# [tools-manager.tools.filesystem]
-# binary = "mcp-server-filesystem"
-# args = ["--root", "."]
+# tools-manager:
+#   tools:
+#     filesystem:
+#       binary: "mcp-server-filesystem"
+#       args:
+#         - "--root"
+#         - "."
 
-[supervisor]
-shutdown_timeout_secs = 30
-health_check_interval_secs = 5
-max_restarts = 5
-restart_window_secs = 60
+supervisor:
+  shutdown_timeout_secs: 30
+  health_check_interval_secs: 5
+  max_restarts: 5
+  restart_window_secs: 60
 "#
     )
 }
@@ -58,7 +69,7 @@ pub fn run_init(config_path: &str, force: bool) -> anyhow::Result<()> {
         "opencode".to_string()
     });
 
-    let content = generate_config_toml(&binary);
+    let content = generate_config_yaml(&binary);
     std::fs::write(config_path, &content)?;
 
     println!("Created {config_path}");
@@ -74,35 +85,35 @@ mod tests {
     use super::*;
 
     #[test]
-    fn generate_config_toml_contains_binary() {
-        let toml = generate_config_toml("opencode");
-        assert!(toml.contains(r#"binary = "opencode""#));
+    fn generate_config_yaml_contains_binary() {
+        let yaml = generate_config_yaml("opencode");
+        assert!(yaml.contains(r#"binary: "opencode""#));
     }
 
     #[test]
-    fn generate_config_toml_contains_comment_lines() {
-        let toml = generate_config_toml("opencode");
-        assert!(toml.lines().any(|l| l.trim_start().starts_with('#')));
+    fn generate_config_yaml_contains_comment_lines() {
+        let yaml = generate_config_yaml("opencode");
+        assert!(yaml.lines().any(|l| l.trim_start().starts_with('#')));
     }
 
     #[test]
-    fn generate_config_toml_contains_required_sections() {
-        let toml = generate_config_toml("opencode");
-        assert!(toml.contains("[agents-manager.agents.default]"));
-        assert!(toml.contains("[supervisor]"));
+    fn generate_config_yaml_contains_required_sections() {
+        let yaml = generate_config_yaml("opencode");
+        assert!(yaml.contains("agents-manager:"));
+        assert!(yaml.contains("supervisor:"));
     }
 
     #[test]
-    fn generate_config_toml_round_trips_through_protoclaw_config() {
-        let toml = generate_config_toml("opencode");
-        let result = toml::from_str::<protoclaw_config::ProtoclawConfig>(&toml);
-        assert!(result.is_ok(), "TOML failed to parse: {:?}", result.err());
+    fn generate_config_yaml_round_trips_through_protoclaw_config() {
+        let yaml = generate_config_yaml("opencode");
+        let result = serde_yaml::from_str::<protoclaw_config::ProtoclawConfig>(&yaml);
+        assert!(result.is_ok(), "YAML failed to parse: {:?}", result.err());
     }
 
     #[test]
     fn run_init_refuses_overwrite_without_force() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("protoclaw.toml");
+        let path = dir.path().join("protoclaw.yaml");
         std::fs::write(&path, "existing").unwrap();
         let path_str = path.to_str().unwrap();
         let result = run_init(path_str, false);
@@ -115,7 +126,7 @@ mod tests {
     #[test]
     fn run_init_force_overwrites_existing_file() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("protoclaw.toml");
+        let path = dir.path().join("protoclaw.yaml");
         std::fs::write(&path, "existing").unwrap();
         let path_str = path.to_str().unwrap();
         let result = run_init(path_str, true);
@@ -127,17 +138,17 @@ mod tests {
     }
 
     #[test]
-    fn run_init_creates_file_with_valid_toml() {
+    fn run_init_creates_file_with_valid_yaml() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("protoclaw.toml");
+        let path = dir.path().join("protoclaw.yaml");
         let path_str = path.to_str().unwrap();
         run_init(path_str, false).unwrap();
         assert!(path.exists(), "file should be created");
         let content = std::fs::read_to_string(&path).unwrap();
-        let result = toml::from_str::<protoclaw_config::ProtoclawConfig>(&content);
+        let result = serde_yaml::from_str::<protoclaw_config::ProtoclawConfig>(&content);
         assert!(
             result.is_ok(),
-            "created TOML should be valid: {:?}",
+            "created YAML should be valid: {:?}",
             result.err()
         );
     }
