@@ -442,6 +442,7 @@ mod tests {
             description: "test wasm tool".into(),
             input_schema: None,
             sandbox: protoclaw_config::WasmSandboxConfig::default(),
+            options: HashMap::new(),
         })]);
 
         let mut m = ToolsManager::new(tool_configs);
@@ -468,6 +469,7 @@ mod tests {
             description: "bad".into(),
             input_schema: None,
             sandbox: protoclaw_config::WasmSandboxConfig::default(),
+            options: HashMap::new(),
         })]);
 
         let mut m = ToolsManager::new(tool_configs);
@@ -503,6 +505,7 @@ mod tests {
             description: "wasm".into(),
             input_schema: None,
             sandbox: protoclaw_config::WasmSandboxConfig::default(),
+            options: HashMap::new(),
         })]);
 
         let mut m = ToolsManager::new(tool_configs).with_native_tools(native_tools);
@@ -584,6 +587,7 @@ mod tests {
             description: String::new(),
             input_schema: None,
             sandbox: Default::default(),
+            options: HashMap::new(),
         })]);
         let mut m = ToolsManager::new(tool_configs);
         m.start().await.unwrap();

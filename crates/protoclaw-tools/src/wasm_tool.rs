@@ -69,6 +69,7 @@ impl Tool for WasmTool {
 mod tests {
     use super::*;
     use protoclaw_config::WasmSandboxConfig;
+    use std::collections::HashMap;
     use std::path::PathBuf;
 
     fn make_config(path: PathBuf) -> ToolConfig {
@@ -81,6 +82,7 @@ mod tests {
             description: "A test WASM tool".into(),
             input_schema: Some(r#"{"type":"object","properties":{"x":{"type":"number"}}}"#.into()),
             sandbox: WasmSandboxConfig::default(),
+            options: HashMap::new(),
         }
     }
 

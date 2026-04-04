@@ -410,6 +410,7 @@ mod tests {
             acp_timeout_secs: None,
             backoff: None,
             crash_tracker: None,
+            options: std::collections::HashMap::new(),
         });
 
         ProtoclawConfig {

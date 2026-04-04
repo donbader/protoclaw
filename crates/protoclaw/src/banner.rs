@@ -59,6 +59,7 @@ mod tests {
                 acp_timeout_secs: None,
                 backoff: None,
                 crash_tracker: None,
+                options: HashMap::new(),
             },
         );
 
@@ -75,6 +76,7 @@ mod tests {
                     init_timeout_secs: None,
                     backoff: None,
                     crash_tracker: None,
+                    options: HashMap::new(),
                 },
             );
         }
@@ -92,6 +94,7 @@ mod tests {
                     description: String::new(),
                     input_schema: None,
                     sandbox: Default::default(),
+                    options: HashMap::new(),
                 },
             );
         }

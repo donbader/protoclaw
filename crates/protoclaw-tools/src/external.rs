@@ -72,6 +72,7 @@ impl ExternalMcpServer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
 
     #[tokio::test]
     async fn external_mcp_server_spawn_nonexistent_binary_returns_error() {
@@ -84,6 +85,7 @@ mod tests {
             description: String::new(),
             input_schema: None,
             sandbox: Default::default(),
+            options: HashMap::new(),
         };
         let result = ExternalMcpServer::spawn("bad-server", &config).await;
         assert!(result.is_err());

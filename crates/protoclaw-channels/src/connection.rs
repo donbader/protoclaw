@@ -259,6 +259,7 @@ mod tests {
             init_timeout_secs: None,
             backoff: None,
             crash_tracker: None,
+            options: HashMap::new(),
         }
     }
 
@@ -282,6 +283,7 @@ mod tests {
             init_timeout_secs: None,
             backoff: None,
             crash_tracker: None,
+            options: HashMap::new(),
         };
         let result = ChannelConnection::spawn(&config, ChannelId::from("bad"));
         assert!(result.is_err());
@@ -337,6 +339,7 @@ mod tests {
             init_timeout_secs: None,
             backoff: None,
             crash_tracker: None,
+            options: HashMap::new(),
         };
         let channel_id = ChannelId::from("exits");
         let mut conn = ChannelConnection::spawn(&config, channel_id).unwrap();
