@@ -216,6 +216,9 @@ mod tests {
             env: HashMap::new(),
             working_dir: None,
             tools: vec![],
+            acp_timeout_secs: None,
+            backoff: None,
+            crash_tracker: None,
         }
     }
 
@@ -236,6 +239,9 @@ mod tests {
             env: HashMap::new(),
             working_dir: None,
             tools: vec![],
+            acp_timeout_secs: None,
+            backoff: None,
+            crash_tracker: None,
         };
         let result = AgentConnection::spawn(&config);
         assert!(result.is_err());

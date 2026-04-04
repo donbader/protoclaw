@@ -19,6 +19,9 @@ pub fn mock_agent_config_with_env(
             env,
             working_dir: None,
             tools: vec![],
+            acp_timeout_secs: None,
+            backoff: None,
+            crash_tracker: None,
         },
     );
 
@@ -31,11 +34,17 @@ pub fn mock_agent_config_with_env(
             enabled: true,
             agent: "default".into(),
             ack: Default::default(),
+            init_timeout_secs: None,
+            backoff: None,
+            crash_tracker: None,
         },
     );
 
     protoclaw_config::ProtoclawConfig {
-        agents_manager: protoclaw_config::AgentsManagerConfig { agents },
+        agents_manager: protoclaw_config::AgentsManagerConfig {
+            agents,
+            ..Default::default()
+        },
         channels_manager: protoclaw_config::ChannelsManagerConfig {
             channels,
             ..Default::default()

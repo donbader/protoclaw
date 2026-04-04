@@ -327,7 +327,7 @@ fn create_manager(
         }
         "agents" => {
             let handle = protoclaw_core::ManagerHandle::new(tools_tx.clone());
-            let mut agents = AgentsManager::new(config.agents_manager.agents.clone(), handle);
+            let mut agents = AgentsManager::new(config.agents_manager.clone(), handle);
             if let Some(tx) = channel_events_tx {
                 agents = agents.with_channels_sender(tx);
             }
@@ -407,10 +407,16 @@ mod tests {
             env: std::collections::HashMap::new(),
             working_dir: None,
             tools: vec![],
+            acp_timeout_secs: None,
+            backoff: None,
+            crash_tracker: None,
         });
 
         ProtoclawConfig {
-            agents_manager: protoclaw_config::AgentsManagerConfig { agents },
+            agents_manager: protoclaw_config::AgentsManagerConfig {
+                agents,
+                ..Default::default()
+            },
             channels_manager: protoclaw_config::ChannelsManagerConfig::default(),
             tools_manager: protoclaw_config::ToolsManagerConfig::default(),
             supervisor: protoclaw_config::SupervisorConfig {

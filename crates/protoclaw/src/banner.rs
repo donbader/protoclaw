@@ -56,6 +56,9 @@ mod tests {
                 env: HashMap::new(),
                 working_dir: None,
                 tools: vec![],
+                acp_timeout_secs: None,
+                backoff: None,
+                crash_tracker: None,
             },
         );
 
@@ -69,6 +72,9 @@ mod tests {
                     enabled: true,
                     agent: "default".into(),
                     ack: Default::default(),
+                    init_timeout_secs: None,
+                    backoff: None,
+                    crash_tracker: None,
                 },
             );
         }
@@ -93,7 +99,10 @@ mod tests {
         ProtoclawConfig {
             log_level: "info".into(),
             extensions_dir: "/usr/local/bin".into(),
-            agents_manager: AgentsManagerConfig { agents },
+            agents_manager: AgentsManagerConfig {
+                agents,
+                ..Default::default()
+            },
             channels_manager: ChannelsManagerConfig {
                 channels: channel_map,
                 ..Default::default()

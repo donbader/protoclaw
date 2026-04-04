@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::time::Duration;
 
 use protoclaw_config::AgentConfig;
 use protoclaw_core::{CrashTracker, ExponentialBackoff, SessionKey};
@@ -29,13 +30,24 @@ pub struct AgentSlot {
 impl AgentSlot {
     pub fn new(name: String, config: AgentConfig, parent_cancel: &CancellationToken) -> Self {
         let disabled = !config.enabled;
+        let backoff = match &config.backoff {
+            Some(cfg) => ExponentialBackoff::new(
+                Duration::from_millis(cfg.base_delay_ms),
+                Duration::from_secs(cfg.max_delay_secs),
+            ),
+            None => ExponentialBackoff::default(),
+        };
+        let crash_tracker = match &config.crash_tracker {
+            Some(cfg) => CrashTracker::new(cfg.max_crashes, Duration::from_secs(cfg.window_secs)),
+            None => CrashTracker::default(),
+        };
         Self {
             name,
             config,
             connection: None,
             cancel_token: parent_cancel.child_token(),
-            backoff: ExponentialBackoff::default(),
-            crash_tracker: CrashTracker::default(),
+            backoff,
+            crash_tracker,
             disabled,
             agent_capabilities: None,
             session_map: HashMap::new(),
@@ -66,6 +78,9 @@ mod tests {
             env: HashMap::new(),
             working_dir: None,
             tools: vec![],
+            acp_timeout_secs: None,
+            backoff: None,
+            crash_tracker: None,
         }
     }
 

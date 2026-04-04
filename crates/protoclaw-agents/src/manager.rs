@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::time::Duration;
 
 use crate::acp_error::AcpError;
@@ -8,8 +7,8 @@ use crate::acp_types::{
     SessionUpdateEvent, SessionUpdateType,
 };
 use crate::slot::{find_slot_by_name, AgentSlot};
-use protoclaw_config::AgentConfig;
-use protoclaw_core::{ChannelEvent, Manager, ManagerError, ManagerHandle, SessionKey};
+use protoclaw_config::{AgentConfig, AgentsManagerConfig};
+use protoclaw_core::{constants, ChannelEvent, Manager, ManagerError, ManagerHandle, SessionKey};
 use protoclaw_sdk_agent::{AgentAdapter, GenericAcpAdapter};
 use protoclaw_sdk_types::PermissionOption;
 use protoclaw_tools::{McpServerUrl, ToolsCommand};
@@ -71,6 +70,7 @@ pub enum AgentsCommand {
 
 pub struct AgentsManager {
     agent_configs: Vec<(String, AgentConfig)>,
+    manager_config: AgentsManagerConfig,
     tools_handle: ManagerHandle<ToolsCommand>,
     slots: Vec<AgentSlot>,
     cmd_rx: Option<tokio::sync::mpsc::Receiver<AgentsCommand>>,
@@ -81,11 +81,12 @@ pub struct AgentsManager {
 }
 
 impl AgentsManager {
-    pub fn new(agent_configs: HashMap<String, AgentConfig>, tools_handle: ManagerHandle<ToolsCommand>) -> Self {
-        let configs: Vec<(String, AgentConfig)> = agent_configs.into_iter().collect();
-        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::channel(16);
+    pub fn new(agents_manager_config: AgentsManagerConfig, tools_handle: ManagerHandle<ToolsCommand>) -> Self {
+        let configs: Vec<(String, AgentConfig)> = agents_manager_config.agents.clone().into_iter().collect();
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::channel(constants::CMD_CHANNEL_CAPACITY);
         Self {
             agent_configs: configs,
+            manager_config: agents_manager_config,
             tools_handle,
             slots: Vec::new(),
             cmd_rx: Some(cmd_rx),
@@ -110,7 +111,13 @@ impl AgentsManager {
         self.cmd_tx.clone()
     }
 
-    async fn initialize_agent(slot: &mut AgentSlot) -> Result<(), AgentsError> {
+    /// Resolve ACP timeout for a specific agent, falling back to manager default.
+    fn acp_timeout_for(agent_config: &AgentConfig, manager_config: &AgentsManagerConfig) -> Duration {
+        let secs = agent_config.acp_timeout_secs.unwrap_or(manager_config.acp_timeout_secs);
+        Duration::from_secs(secs)
+    }
+
+    async fn initialize_agent(slot: &mut AgentSlot, acp_timeout: Duration) -> Result<(), AgentsError> {
         let conn = slot.connection.as_ref().ok_or(AgentsError::ConnectionClosed)?;
 
         let params = serde_json::to_value(InitializeParams {
@@ -119,9 +126,9 @@ impl AgentsManager {
         })?;
 
         let rx = conn.send_request("initialize", params).await?;
-        let resp = tokio::time::timeout(Duration::from_secs(30), rx)
+        let resp = tokio::time::timeout(acp_timeout, rx)
             .await
-            .map_err(|_| AgentsError::Timeout(Duration::from_secs(30)))?
+            .map_err(|_| AgentsError::Timeout(acp_timeout))?
             .map_err(|_| AgentsError::ConnectionClosed)?;
 
         let result: InitializeResult = serde_json::from_value(resp)?;
@@ -137,7 +144,7 @@ impl AgentsManager {
         Ok(())
     }
 
-    async fn start_session(slot: &mut AgentSlot, tools_handle: &ManagerHandle<ToolsCommand>) -> Result<String, AgentsError> {
+    async fn start_session(slot: &mut AgentSlot, tools_handle: &ManagerHandle<ToolsCommand>, acp_timeout: Duration) -> Result<String, AgentsError> {
         let (reply_tx, reply_rx) = oneshot::channel();
         let tool_names = if slot.config.tools.is_empty() {
             None
@@ -172,9 +179,9 @@ impl AgentsManager {
 
         let conn = slot.connection.as_ref().ok_or(AgentsError::ConnectionClosed)?;
         let rx = conn.send_request("session/new", params).await?;
-        let resp = tokio::time::timeout(Duration::from_secs(30), rx)
+        let resp = tokio::time::timeout(acp_timeout, rx)
             .await
-            .map_err(|_| AgentsError::Timeout(Duration::from_secs(30)))?
+            .map_err(|_| AgentsError::Timeout(acp_timeout))?
             .map_err(|_| AgentsError::ConnectionClosed)?;
 
         let result: crate::acp_types::SessionNewResult = serde_json::from_value(resp)?;
@@ -295,7 +302,8 @@ impl AgentsManager {
             return Ok(acp_id.clone());
         }
 
-        let acp_session_id = Self::start_session(&mut self.slots[slot_idx], &self.tools_handle).await?;
+        let acp_timeout = Self::acp_timeout_for(&self.slots[slot_idx].config, &self.manager_config);
+        let acp_session_id = Self::start_session(&mut self.slots[slot_idx], &self.tools_handle, acp_timeout).await?;
 
         let slot = &mut self.slots[slot_idx];
         slot.session_map.insert(session_key.clone(), acp_session_id.clone());
@@ -464,7 +472,7 @@ impl AgentsManager {
                     let params = serde_json::json!({ "sessionId": acp_id });
                     let _ = conn.send_notification("session/close", params).await;
                 }
-                tokio::time::sleep(Duration::from_millis(100)).await;
+                tokio::time::sleep(Duration::from_millis(self.manager_config.shutdown_grace_ms)).await;
             }
             if let Some(mut conn) = slot.connection.take() {
                 let _ = conn.kill().await;
@@ -492,7 +500,9 @@ impl AgentsManager {
             }
         }
 
-        if let Err(e) = Self::initialize_agent(slot).await {
+        let acp_timeout = Self::acp_timeout_for(&slot.config, &self.manager_config);
+
+        if let Err(e) = Self::initialize_agent(slot, acp_timeout).await {
             tracing::error!(agent = %agent_name, error = %e, "failed to re-initialize agent");
             slot.connection = None;
             return;
@@ -513,7 +523,7 @@ impl AgentsManager {
 
                 let conn = slot.connection.as_ref().expect("connection just spawned");
                 if let Ok(rx) = conn.send_request("session/load", params).await {
-                    match tokio::time::timeout(Duration::from_secs(30), rx).await {
+                    match tokio::time::timeout(acp_timeout, rx).await {
                         Ok(Ok(resp)) => {
                             if resp.get("sessionId").is_some() {
                                 tracing::info!(agent = %agent_name, "session restored via session/load");
@@ -529,7 +539,7 @@ impl AgentsManager {
             }
         }
 
-        match Self::start_session(slot, &self.tools_handle).await {
+        match Self::start_session(slot, &self.tools_handle, acp_timeout).await {
             Ok(_session_id) => {
                 slot.backoff.reset();
                 tracing::info!(agent = %agent_name, "agent recovered successfully");
@@ -562,11 +572,13 @@ impl Manager for AgentsManager {
                 .map_err(|e| ManagerError::Internal(format!("{name}: {e}")))?;
             slot.connection = Some(conn);
 
-            Self::initialize_agent(&mut slot)
+            let acp_timeout = Self::acp_timeout_for(config, &self.manager_config);
+
+            Self::initialize_agent(&mut slot, acp_timeout)
                 .await
                 .map_err(|e| ManagerError::Internal(format!("{name}: {e}")))?;
 
-            let session_id = Self::start_session(&mut slot, &self.tools_handle)
+            let session_id = Self::start_session(&mut slot, &self.tools_handle, acp_timeout)
                 .await
                 .map_err(|e| ManagerError::Internal(format!("{name}: {e}")))?;
 
@@ -598,13 +610,13 @@ impl Manager for AgentsManager {
                         continue;
                     }
                     if let Some(conn) = slot.connection.as_mut() {
-                        match tokio::time::timeout(Duration::from_millis(1), conn.recv_incoming()).await {
+                        match tokio::time::timeout(Duration::from_millis(constants::POLL_TIMEOUT_MS), conn.recv_incoming()).await {
                             Ok(msg) => return Some((i, msg)),
                             Err(_) => continue,
                         }
                     }
                 }
-                tokio::time::sleep(Duration::from_millis(50)).await;
+                tokio::time::sleep(Duration::from_millis(constants::POLL_INTERVAL_MS)).await;
                 None
             };
 
@@ -668,11 +680,24 @@ mod tests {
             env: HashMap::new(),
             working_dir: None,
             tools: vec![],
+            acp_timeout_secs: None,
+            backoff: None,
+            crash_tracker: None,
         }
     }
 
-    fn mock_agents_map() -> HashMap<String, AgentConfig> {
-        HashMap::from([("default".to_string(), mock_agent_config())])
+    fn mock_agents_manager_config() -> AgentsManagerConfig {
+        AgentsManagerConfig {
+            agents: HashMap::from([("default".to_string(), mock_agent_config())]),
+            ..Default::default()
+        }
+    }
+
+    fn mock_agents_manager_config_with(agents: HashMap<String, AgentConfig>) -> AgentsManagerConfig {
+        AgentsManagerConfig {
+            agents,
+            ..Default::default()
+        }
     }
 
     fn make_tools_handle() -> (ManagerHandle<ToolsCommand>, tokio::sync::mpsc::Receiver<ToolsCommand>) {
@@ -694,7 +719,7 @@ mod tests {
     #[test]
     fn agents_manager_name() {
         let (handle, _rx) = make_tools_handle();
-        let m = AgentsManager::new(mock_agents_map(), handle);
+        let m = AgentsManager::new(mock_agents_manager_config(), handle);
         assert_eq!(m.name(), "agents");
     }
 
@@ -703,7 +728,7 @@ mod tests {
         let (handle, rx) = make_tools_handle();
         let tools_task = tokio::spawn(serve_tools_urls(rx));
 
-        let mut m = AgentsManager::new(mock_agents_map(), handle);
+        let mut m = AgentsManager::new(mock_agents_manager_config(), handle);
         let result = m.start().await;
         assert!(result.is_ok(), "start failed: {result:?}");
         assert_eq!(m.slots.len(), 1);
@@ -720,7 +745,7 @@ mod tests {
         let (handle, rx) = make_tools_handle();
         let tools_task = tokio::spawn(serve_tools_urls(rx));
 
-        let mut m = AgentsManager::new(mock_agents_map(), handle);
+        let mut m = AgentsManager::new(mock_agents_manager_config(), handle);
         m.start().await.unwrap();
         assert!(m.health_check().await);
 
@@ -731,14 +756,14 @@ mod tests {
     #[tokio::test]
     async fn agents_manager_health_check_dead() {
         let (handle, _rx) = make_tools_handle();
-        let m = AgentsManager::new(mock_agents_map(), handle);
+        let m = AgentsManager::new(mock_agents_manager_config(), handle);
         assert!(!m.health_check().await);
     }
 
     #[tokio::test]
     async fn agents_manager_health_check_no_agents_configured() {
         let (handle, _rx) = make_tools_handle();
-        let m = AgentsManager::new(HashMap::new(), handle);
+        let m = AgentsManager::new(mock_agents_manager_config_with(HashMap::new()), handle);
         assert!(m.health_check().await);
     }
 
@@ -747,7 +772,7 @@ mod tests {
         let mut config = mock_agent_config();
         config.enabled = false;
         let (handle, _rx) = make_tools_handle();
-        let m = AgentsManager::new(HashMap::from([("default".into(), config)]), handle);
+        let m = AgentsManager::new(mock_agents_manager_config_with(HashMap::from([("default".into(), config)])), handle);
         assert!(m.health_check().await);
     }
 
@@ -756,7 +781,7 @@ mod tests {
         let (handle, rx) = make_tools_handle();
         let tools_task = tokio::spawn(serve_tools_urls(rx));
 
-        let mut m = AgentsManager::new(mock_agents_map(), handle);
+        let mut m = AgentsManager::new(mock_agents_manager_config(), handle);
         m.start().await.unwrap();
 
         let result = AgentsManager::send_prompt_to_slot(&m.slots[0], "hello").await;
@@ -776,7 +801,7 @@ mod tests {
         let (handle, rx) = make_tools_handle();
         let tools_task = tokio::spawn(serve_tools_urls(rx));
 
-        let mut m = AgentsManager::new(HashMap::from([("default".into(), config)]), handle);
+        let mut m = AgentsManager::new(mock_agents_manager_config_with(HashMap::from([("default".into(), config)])), handle);
         m.start().await.unwrap();
 
         let _ = AgentsManager::send_prompt_to_slot(&m.slots[0], "trigger-crash").await;
@@ -793,7 +818,7 @@ mod tests {
     #[tokio::test]
     async fn get_status_returns_vec_of_agent_info() {
         let (handle, _rx) = make_tools_handle();
-        let mut m = AgentsManager::new(mock_agents_map(), handle);
+        let mut m = AgentsManager::new(mock_agents_manager_config(), handle);
 
         let mut slot = AgentSlot::new("default".into(), mock_agent_config(), &m.parent_cancel);
         slot.session_map.insert(
@@ -816,7 +841,7 @@ mod tests {
     #[tokio::test]
     async fn create_session_with_unknown_agent_returns_error() {
         let (handle, _rx) = make_tools_handle();
-        let mut m = AgentsManager::new(HashMap::new(), handle);
+        let mut m = AgentsManager::new(mock_agents_manager_config_with(HashMap::new()), handle);
 
         let result = m.create_session("nonexistent", SessionKey::new("ch", "k", "p")).await;
         assert!(matches!(result, Err(AgentsError::AgentNotFound(_))));
@@ -828,7 +853,7 @@ mod tests {
         config.enabled = false;
 
         let (handle, _rx) = make_tools_handle();
-        let mut m = AgentsManager::new(HashMap::from([("default".into(), config)]), handle);
+        let mut m = AgentsManager::new(mock_agents_manager_config_with(HashMap::from([("default".into(), config)])), handle);
         let result = m.start().await;
         assert!(result.is_ok());
         assert!(m.slots.is_empty(), "disabled agent should not create a slot");
@@ -844,7 +869,7 @@ mod tests {
             ("agent-b".to_string(), mock_agent_config()),
         ]);
 
-        let mut m = AgentsManager::new(agents, handle);
+        let mut m = AgentsManager::new(mock_agents_manager_config_with(agents), handle);
         m.start().await.unwrap();
         assert_eq!(m.slots.len(), 2);
 
