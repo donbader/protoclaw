@@ -129,6 +129,8 @@ impl ChannelConnection {
         let channel_name = channel_id.as_ref().to_string();
         let (port_tx, port_rx) = tokio::sync::watch::channel(0u16);
         let stderr_handle = tokio::spawn(async move {
+            let span = tracing::info_span!("subprocess", source = %channel_name);
+            let _guard = span.enter();
             use tokio::io::{AsyncBufReadExt, BufReader};
             let mut lines = BufReader::new(stderr).lines();
             while let Ok(Some(line)) = lines.next_line().await {
@@ -137,7 +139,7 @@ impl ChannelConnection {
                         let _ = port_tx.send(port);
                     }
                 }
-                tracing::debug!(target: "channel_stderr", channel = %channel_name, "{}", line);
+                tracing::info!(target: "subprocess_stderr", "{}", line);
             }
         });
 

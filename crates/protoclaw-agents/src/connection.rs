@@ -45,7 +45,7 @@ pub struct AgentConnection {
 }
 
 impl AgentConnection {
-    pub fn spawn(config: &AgentConfig) -> Result<Self, AgentsError> {
+    pub fn spawn(config: &AgentConfig, name: &str) -> Result<Self, AgentsError> {
         let working_dir = config
             .working_dir
             .as_deref()
@@ -108,11 +108,14 @@ impl AgentConnection {
             }
         });
 
+        let agent_name = name.to_string();
         let stderr_handle = tokio::spawn(async move {
+            let span = tracing::info_span!("subprocess", source = %agent_name);
+            let _guard = span.enter();
             use tokio::io::{AsyncBufReadExt, BufReader};
             let mut lines = BufReader::new(stderr).lines();
             while let Ok(Some(line)) = lines.next_line().await {
-                tracing::debug!(target: "agent_stderr", "{}", line);
+                tracing::info!(target: "subprocess_stderr", "{}", line);
             }
         });
 
@@ -225,7 +228,7 @@ mod tests {
     #[tokio::test]
     async fn spawn_mock_agent() {
         let config = mock_agent_config();
-        let mut conn = AgentConnection::spawn(&config).unwrap();
+        let mut conn = AgentConnection::spawn(&config, "test-agent").unwrap();
         assert!(conn.is_alive());
         conn.kill().await.unwrap();
     }
@@ -243,7 +246,7 @@ mod tests {
             backoff: None,
             crash_tracker: None,
         };
-        let result = AgentConnection::spawn(&config);
+        let result = AgentConnection::spawn(&config, "test-agent");
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(matches!(err, AgentsError::SpawnFailed(_)));
@@ -252,7 +255,7 @@ mod tests {
     #[tokio::test]
     async fn send_request_and_receive_response() {
         let config = mock_agent_config();
-        let mut conn = AgentConnection::spawn(&config).unwrap();
+        let mut conn = AgentConnection::spawn(&config, "test-agent").unwrap();
 
         let params = serde_json::json!({
             "protocolVersion": 1,
@@ -271,7 +274,7 @@ mod tests {
     #[tokio::test]
     async fn send_notification_does_not_create_pending_request() {
         let config = mock_agent_config();
-        let mut conn = AgentConnection::spawn(&config).unwrap();
+        let mut conn = AgentConnection::spawn(&config, "test-agent").unwrap();
 
         let params = serde_json::json!({
             "protocolVersion": 1,
