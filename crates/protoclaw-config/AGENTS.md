@@ -1,6 +1,6 @@
 # protoclaw-config — Configuration Loading
 
-Figment-based layered configuration for protoclaw. Loads from embedded defaults → TOML file → environment variables. Provides typed config structs, binary path resolution, and semantic validation.
+Figment-based layered configuration for protoclaw. Loads from embedded defaults → YAML file → environment variables. Provides typed config structs, binary path resolution, and semantic validation.
 
 ## Files
 
@@ -11,8 +11,8 @@ Figment-based layered configuration for protoclaw. Loads from embedded defaults 
 | `resolve.rs` | `resolve_binary_path()` — `@built-in/` prefix → `extensions_dir` |
 | `validate.rs` | `validate_config()` — binary existence, working dir checks |
 | `error.rs` | `ConfigError` enum (thiserror) |
-| `subst_toml.rs` | TOML provider with environment variable substitution |
-| `defaults.toml` | Embedded defaults loaded as Figment base layer |
+| `subst_yaml.rs` | YAML provider with environment variable substitution |
+| `defaults.yaml` | Embedded defaults loaded as Figment base layer |
 
 ## Key Types
 
@@ -35,8 +35,8 @@ Manager configs use named `HashMap`s — entity names are map keys (no `name` fi
 ## Loading Order
 
 ```rust
-Figment::from(Toml::string(DEFAULTS_TOML))   // 1. Embedded defaults
-    .merge(SubstToml::file(path))              // 2. User TOML file (with env substitution)
+Figment::from(Yaml::string(DEFAULTS_YAML))    // 1. Embedded defaults
+    .merge(SubstYaml::file(path))               // 2. User YAML file (with env substitution)
     .merge(Env::prefixed("PROTOCLAW_").split("__"))  // 3. Environment variables
     .extract()
 ```
@@ -65,5 +65,5 @@ Returns `ValidationResult { errors, warnings }` — caller decides whether to ab
 
 - **Don't use `anyhow`** — use `ConfigError` for all error paths
 - **Don't skip validation** — `validate_config()` catches runtime failures at boot time
-- **Don't hardcode defaults outside serde** — all defaults live in `defaults.toml` or `#[serde(default = "...")]` functions in `types.rs`
+- **Don't hardcode defaults outside serde** — all defaults live in `defaults.yaml` or `#[serde(default = "...")]` functions in `types.rs`
 - **Don't add `name` fields to entity structs** — names come from HashMap keys (manager-hierarchy pattern)

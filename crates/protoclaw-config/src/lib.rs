@@ -1,6 +1,5 @@
 pub mod error;
 pub mod resolve;
-pub mod subst_toml;
 pub mod subst_yaml;
 pub mod types;
 pub mod validate;
@@ -17,7 +16,7 @@ use figment::{
 
 impl ProtoclawConfig {
     pub fn load(config_path: Option<&str>) -> Result<Self, ConfigError> {
-        let path = config_path.unwrap_or("protoclaw.toml");
+        let path = config_path.unwrap_or("protoclaw.yaml");
 
         if !std::path::Path::new(path).exists() {
             return Err(ConfigError::LoadFailed {
@@ -26,8 +25,8 @@ impl ProtoclawConfig {
             });
         }
 
-        let config: Self = Figment::from(figment::providers::Toml::string(DEFAULTS_TOML))
-            .merge(subst_toml::SubstToml::file(path))
+        let config: Self = Figment::from(figment::providers::Yaml::string(DEFAULTS_YAML))
+            .merge(subst_yaml::SubstYaml::file(path))
             .merge(Env::prefixed("PROTOCLAW_").split("__"))
             .extract()
             .map_err(|e| ConfigError::LoadFailed {
@@ -48,24 +47,33 @@ mod tests {
     fn load_valid_config() {
         Jail::expect_with(|jail| {
             jail.create_file(
-                "protoclaw.toml",
+                "protoclaw.yaml",
                 r#"
-                [agents-manager.agents.default]
-                binary = "opencode"
-                args = ["--headless"]
+agents-manager:
+  agents:
+    default:
+      binary: "opencode"
+      args:
+        - "--headless"
 
-                [channels-manager.channels.debug-http]
-                binary = "protoclaw-debug-http"
+channels-manager:
+  channels:
+    debug-http:
+      binary: "protoclaw-debug-http"
 
-                [tools-manager.tools.filesystem]
-                binary = "mcp-server-filesystem"
-                args = ["--root", "/workspace"]
+tools-manager:
+  tools:
+    filesystem:
+      binary: "mcp-server-filesystem"
+      args:
+        - "--root"
+        - "/workspace"
 
-                [supervisor]
-                shutdown_timeout_secs = 15
-            "#,
+supervisor:
+  shutdown_timeout_secs: 15
+"#,
             )?;
-            let config = ProtoclawConfig::load(Some("protoclaw.toml")).unwrap();
+            let config = ProtoclawConfig::load(Some("protoclaw.yaml")).unwrap();
             assert_eq!(config.agents_manager.agents.len(), 1);
             assert_eq!(config.agents_manager.agents["default"].binary, "opencode");
             assert_eq!(
@@ -84,12 +92,12 @@ mod tests {
     #[test]
     fn missing_config_file_returns_error() {
         Jail::expect_with(|_jail| {
-            let result = ProtoclawConfig::load(Some("nonexistent.toml"));
+            let result = ProtoclawConfig::load(Some("nonexistent.yaml"));
             assert!(result.is_err());
             let err = result.unwrap_err();
             let msg = err.to_string();
             assert!(
-                msg.contains("nonexistent.toml"),
+                msg.contains("nonexistent.yaml"),
                 "error should mention file path: {msg}"
             );
             Ok(())
@@ -100,13 +108,10 @@ mod tests {
     fn supervisor_defaults() {
         Jail::expect_with(|jail| {
             jail.create_file(
-                "protoclaw.toml",
-                r#"
-                [agents-manager.agents.default]
-                binary = "opencode"
-            "#,
+                "protoclaw.yaml",
+                "agents-manager:\n  agents:\n    default:\n      binary: \"opencode\"\n",
             )?;
-            let config = ProtoclawConfig::load(Some("protoclaw.toml")).unwrap();
+            let config = ProtoclawConfig::load(Some("protoclaw.yaml")).unwrap();
             assert_eq!(config.supervisor.shutdown_timeout_secs, 30);
             assert_eq!(config.supervisor.health_check_interval_secs, 5);
             assert_eq!(config.supervisor.max_restarts, 5);
@@ -119,13 +124,10 @@ mod tests {
     fn empty_channels_defaults_to_empty_map() {
         Jail::expect_with(|jail| {
             jail.create_file(
-                "protoclaw.toml",
-                r#"
-                [agents-manager.agents.default]
-                binary = "opencode"
-            "#,
+                "protoclaw.yaml",
+                "agents-manager:\n  agents:\n    default:\n      binary: \"opencode\"\n",
             )?;
-            let config = ProtoclawConfig::load(Some("protoclaw.toml")).unwrap();
+            let config = ProtoclawConfig::load(Some("protoclaw.yaml")).unwrap();
             assert!(config.channels_manager.channels.is_empty());
             Ok(())
         });
@@ -135,13 +137,10 @@ mod tests {
     fn empty_tools_defaults_to_empty_map() {
         Jail::expect_with(|jail| {
             jail.create_file(
-                "protoclaw.toml",
-                r#"
-                [agents-manager.agents.default]
-                binary = "opencode"
-            "#,
+                "protoclaw.yaml",
+                "agents-manager:\n  agents:\n    default:\n      binary: \"opencode\"\n",
             )?;
-            let config = ProtoclawConfig::load(Some("protoclaw.toml")).unwrap();
+            let config = ProtoclawConfig::load(Some("protoclaw.yaml")).unwrap();
             assert!(config.tools_manager.tools.is_empty());
             Ok(())
         });
@@ -151,17 +150,11 @@ mod tests {
     fn env_var_overrides_supervisor_shutdown_timeout() {
         Jail::expect_with(|jail| {
             jail.create_file(
-                "protoclaw.toml",
-                r#"
-                [agents-manager.agents.default]
-                binary = "opencode"
-
-                [supervisor]
-                shutdown_timeout_secs = 30
-            "#,
+                "protoclaw.yaml",
+                "agents-manager:\n  agents:\n    default:\n      binary: \"opencode\"\nsupervisor:\n  shutdown_timeout_secs: 30\n",
             )?;
             jail.set_env("PROTOCLAW_SUPERVISOR__SHUTDOWN_TIMEOUT_SECS", "60");
-            let config = ProtoclawConfig::load(Some("protoclaw.toml")).unwrap();
+            let config = ProtoclawConfig::load(Some("protoclaw.yaml")).unwrap();
             assert_eq!(config.supervisor.shutdown_timeout_secs, 60);
             Ok(())
         });
@@ -171,17 +164,10 @@ mod tests {
     fn unknown_keys_ignored() {
         Jail::expect_with(|jail| {
             jail.create_file(
-                "protoclaw.toml",
-                r#"
-                [agents-manager.agents.default]
-                binary = "opencode"
-                unknown_field = "should be ignored"
-
-                [some_future_section]
-                key = "value"
-            "#,
+                "protoclaw.yaml",
+                "agents-manager:\n  agents:\n    default:\n      binary: \"opencode\"\n      unknown_field: \"should be ignored\"\nsome_future_section:\n  key: \"value\"\n",
             )?;
-            let config = ProtoclawConfig::load(Some("protoclaw.toml"));
+            let config = ProtoclawConfig::load(Some("protoclaw.yaml"));
             assert!(
                 config.is_ok(),
                 "unknown keys should be ignored: {:?}",
@@ -195,13 +181,10 @@ mod tests {
     fn config_with_only_agents_section() {
         Jail::expect_with(|jail| {
             jail.create_file(
-                "protoclaw.toml",
-                r#"
-                [agents-manager.agents.default]
-                binary = "opencode"
-            "#,
+                "protoclaw.yaml",
+                "agents-manager:\n  agents:\n    default:\n      binary: \"opencode\"\n",
             )?;
-            let config = ProtoclawConfig::load(Some("protoclaw.toml")).unwrap();
+            let config = ProtoclawConfig::load(Some("protoclaw.yaml")).unwrap();
             assert_eq!(config.agents_manager.agents["default"].binary, "opencode");
             assert!(config.channels_manager.channels.is_empty());
             assert!(config.tools_manager.tools.is_empty());
@@ -213,13 +196,10 @@ mod tests {
     fn embedded_defaults_provide_debounce_config() {
         Jail::expect_with(|jail| {
             jail.create_file(
-                "protoclaw.toml",
-                r#"
-                [agents-manager.agents.default]
-                binary = "opencode"
-            "#,
+                "protoclaw.yaml",
+                "agents-manager:\n  agents:\n    default:\n      binary: \"opencode\"\n",
             )?;
-            let config = ProtoclawConfig::load(Some("protoclaw.toml")).unwrap();
+            let config = ProtoclawConfig::load(Some("protoclaw.yaml")).unwrap();
             assert!(config.channels_manager.debounce.enabled);
             assert_eq!(config.channels_manager.debounce.window_ms, 1000);
             assert_eq!(config.channels_manager.debounce.separator, "\n");
@@ -231,11 +211,11 @@ mod tests {
     #[test]
     fn config_error_displays_file_path() {
         Jail::expect_with(|_jail| {
-            let result = ProtoclawConfig::load(Some("missing/path/protoclaw.toml"));
+            let result = ProtoclawConfig::load(Some("missing/path/protoclaw.yaml"));
             assert!(result.is_err());
             let msg = result.unwrap_err().to_string();
             assert!(
-                msg.contains("missing/path/protoclaw.toml"),
+                msg.contains("missing/path/protoclaw.yaml"),
                 "error should include file path: {msg}"
             );
             Ok(())

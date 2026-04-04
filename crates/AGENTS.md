@@ -36,7 +36,7 @@ Files:
 - `validate.rs`: Config validation rules
 - `error.rs`: `ConfigError`
 
-Loading in `lib.rs`: `Figment::from(defaults).merge(Toml::file(path)).merge(Env::prefixed("PROTOCLAW_").split("__"))`.
+Loading in `lib.rs`: `Figment::from(defaults).merge(SubstYaml::file(path)).merge(Env::prefixed("PROTOCLAW_").split("__"))`.
 
 Env var override format: `PROTOCLAW_AGENT__BINARY=claude-code` (double underscore = nesting).
 

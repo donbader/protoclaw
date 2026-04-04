@@ -2,12 +2,12 @@ use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-/// Embedded defaults TOML — loaded as base layer in Figment.
-pub const DEFAULTS_TOML: &str = include_str!("defaults.toml");
+/// Embedded defaults YAML — loaded as base layer in Figment.
+pub const DEFAULTS_YAML: &str = include_str!("defaults.yaml");
 
 /// Top-level protoclaw configuration.
 ///
-/// Loaded from layered providers: defaults → TOML file → environment variables.
+/// Loaded from layered providers: defaults → YAML file → environment variables.
 /// Manager-hierarchy: each manager owns its children as named maps.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ProtoclawConfig {
@@ -186,15 +186,14 @@ fn deserialize_string_map<'de, D>(deserializer: D) -> Result<HashMap<String, Str
 where
     D: Deserializer<'de>,
 {
-    let map: HashMap<String, toml::Value> = HashMap::deserialize(deserializer)?;
+    let map: HashMap<String, serde_json::Value> = HashMap::deserialize(deserializer)?;
     Ok(map
         .into_iter()
         .map(|(k, v)| {
             let s = match v {
-                toml::Value::String(s) => s,
-                toml::Value::Integer(n) => n.to_string(),
-                toml::Value::Float(f) => f.to_string(),
-                toml::Value::Boolean(b) => b.to_string(),
+                serde_json::Value::String(s) => s,
+                serde_json::Value::Number(n) => n.to_string(),
+                serde_json::Value::Bool(b) => b.to_string(),
                 other => other.to_string(),
             };
             (k, s)
@@ -292,48 +291,51 @@ mod tests {
 
     #[test]
     fn log_level_defaults_to_info() {
-        let toml = r#""#;
-        let config: ProtoclawConfig = toml::from_str(toml).unwrap();
+        let yaml = "";
+        let config: ProtoclawConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(config.log_level, "info");
     }
 
     #[test]
-    fn log_level_from_toml() {
-        let toml = r#"log_level = "debug""#;
-        let config: ProtoclawConfig = toml::from_str(toml).unwrap();
+    fn log_level_from_yaml() {
+        let yaml = "log_level: \"debug\"";
+        let config: ProtoclawConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(config.log_level, "debug");
     }
 
     #[test]
     fn extensions_dir_defaults() {
-        let toml = r#""#;
-        let config: ProtoclawConfig = toml::from_str(toml).unwrap();
+        let yaml = "";
+        let config: ProtoclawConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(config.extensions_dir, "/usr/local/bin");
     }
 
     #[test]
-    fn extensions_dir_from_toml() {
-        let toml = r#"extensions_dir = "/custom/path""#;
-        let config: ProtoclawConfig = toml::from_str(toml).unwrap();
+    fn extensions_dir_from_yaml() {
+        let yaml = "extensions_dir: \"/custom/path\"";
+        let config: ProtoclawConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(config.extensions_dir, "/custom/path");
     }
 
     #[test]
     fn agents_manager_named_map() {
-        let toml = r#"
-            [agents-manager.agents.opencode]
-            binary = "opencode"
-            args = ["acp"]
-            tools = ["system-info", "filesystem"]
-
-            [agents-manager.agents.opencode.env]
-            ANTHROPIC_API_KEY = "sk-test"
-
-            [agents-manager.agents.claude-code]
-            binary = "claude"
-            enabled = false
-        "#;
-        let config: ProtoclawConfig = toml::from_str(toml).unwrap();
+        let yaml = r#"
+agents-manager:
+  agents:
+    opencode:
+      binary: "opencode"
+      args:
+        - "acp"
+      tools:
+        - "system-info"
+        - "filesystem"
+      env:
+        ANTHROPIC_API_KEY: "sk-test"
+    claude-code:
+      binary: "claude"
+      enabled: false
+"#;
+        let config: ProtoclawConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(config.agents_manager.agents.len(), 2);
         let oc = &config.agents_manager.agents["opencode"];
         assert_eq!(oc.binary, "opencode");
@@ -347,50 +349,42 @@ mod tests {
 
     #[test]
     fn channel_config_no_name_field() {
-        let toml = r#"
-            [channels-manager.channels.debug-http]
-            binary = "debug-http"
-        "#;
-        let config: ProtoclawConfig = toml::from_str(toml).unwrap();
+        let yaml = r#"
+channels-manager:
+  channels:
+    debug-http:
+      binary: "debug-http"
+"#;
+        let config: ProtoclawConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(config.channels_manager.channels.len(), 1);
         assert!(config.channels_manager.channels.contains_key("debug-http"));
     }
 
     #[test]
     fn channel_enabled_defaults_true() {
-        let toml = r#"
-            binary = "debug-http"
-        "#;
-        let config: ChannelConfig = toml::from_str(toml).unwrap();
+        let yaml = "binary: \"debug-http\"";
+        let config: ChannelConfig = serde_yaml::from_str(yaml).unwrap();
         assert!(config.enabled);
     }
 
     #[test]
     fn channel_enabled_false() {
-        let toml = r#"
-            binary = "telegram-channel"
-            enabled = false
-        "#;
-        let config: ChannelConfig = toml::from_str(toml).unwrap();
+        let yaml = "binary: \"telegram-channel\"\nenabled: false";
+        let config: ChannelConfig = serde_yaml::from_str(yaml).unwrap();
         assert!(!config.enabled);
     }
 
     #[test]
     fn channel_agent_defaults_to_default() {
-        let toml = r#"
-            binary = "debug-http"
-        "#;
-        let config: ChannelConfig = toml::from_str(toml).unwrap();
+        let yaml = "binary: \"debug-http\"";
+        let config: ChannelConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(config.agent, "default");
     }
 
     #[test]
-    fn channel_agent_from_toml() {
-        let toml = r#"
-            binary = "telegram-channel"
-            agent = "opencode"
-        "#;
-        let config: ChannelConfig = toml::from_str(toml).unwrap();
+    fn channel_agent_from_yaml() {
+        let yaml = "binary: \"telegram-channel\"\nagent: \"opencode\"";
+        let config: ChannelConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(config.agent, "opencode");
     }
 
@@ -404,14 +398,9 @@ mod tests {
     }
 
     #[test]
-    fn ack_config_from_toml() {
-        let toml = r#"
-            reaction = true
-            typing = true
-            reaction_emoji = "⏳"
-            reaction_lifecycle = "replace_done"
-        "#;
-        let config: AckConfig = toml::from_str(toml).unwrap();
+    fn ack_config_from_yaml() {
+        let yaml = "reaction: true\ntyping: true\nreaction_emoji: \"⏳\"\nreaction_lifecycle: \"replace_done\"";
+        let config: AckConfig = serde_yaml::from_str(yaml).unwrap();
         assert!(config.reaction);
         assert!(config.typing);
         assert_eq!(config.reaction_emoji, "⏳");
@@ -420,17 +409,19 @@ mod tests {
 
     #[test]
     fn channel_ack_nested() {
-        let toml = r#"
-            [channels-manager.channels.telegram]
-            binary = "telegram-channel"
-            agent = "opencode"
-            [channels-manager.channels.telegram.ack]
-            reaction = true
-            typing = true
-            reaction_emoji = "👀"
-            reaction_lifecycle = "remove"
-        "#;
-        let config: ProtoclawConfig = toml::from_str(toml).unwrap();
+        let yaml = r#"
+channels-manager:
+  channels:
+    telegram:
+      binary: "telegram-channel"
+      agent: "opencode"
+      ack:
+        reaction: true
+        typing: true
+        reaction_emoji: "👀"
+        reaction_lifecycle: "remove"
+"#;
+        let config: ProtoclawConfig = serde_yaml::from_str(yaml).unwrap();
         let tg = &config.channels_manager.channels["telegram"];
         assert!(tg.ack.reaction);
         assert!(tg.ack.typing);
@@ -447,14 +438,9 @@ mod tests {
     }
 
     #[test]
-    fn debounce_config_from_toml() {
-        let toml = r#"
-            enabled = false
-            window_ms = 2000
-            separator = " "
-            mid_response = "cancel"
-        "#;
-        let config: DebounceConfig = toml::from_str(toml).unwrap();
+    fn debounce_config_from_yaml() {
+        let yaml = "enabled: false\nwindow_ms: 2000\nseparator: \" \"\nmid_response: \"cancel\"";
+        let config: DebounceConfig = serde_yaml::from_str(yaml).unwrap();
         assert!(!config.enabled);
         assert_eq!(config.window_ms, 2000);
         assert_eq!(config.separator, " ");
@@ -463,12 +449,16 @@ mod tests {
 
     #[test]
     fn tool_config_mcp_type() {
-        let toml = r#"
-            [tools-manager.tools.filesystem]
-            binary = "mcp-server-filesystem"
-            args = ["--root", "/workspace"]
-        "#;
-        let config: ProtoclawConfig = toml::from_str(toml).unwrap();
+        let yaml = r#"
+tools-manager:
+  tools:
+    filesystem:
+      binary: "mcp-server-filesystem"
+      args:
+        - "--root"
+        - "/workspace"
+"#;
+        let config: ProtoclawConfig = serde_yaml::from_str(yaml).unwrap();
         let fs = &config.tools_manager.tools["filesystem"];
         assert_eq!(fs.tool_type, "mcp");
         assert_eq!(fs.binary, Some("mcp-server-filesystem".into()));
@@ -477,17 +467,19 @@ mod tests {
 
     #[test]
     fn tool_config_wasm_type() {
-        let toml = r#"
-            [tools-manager.tools.my-tool]
-            tool_type = "wasm"
-            module = "/path/to/tool.wasm"
-            description = "A test tool"
-            input_schema = '{"type": "object"}'
-            [tools-manager.tools.my-tool.sandbox]
-            fuel_limit = 500000
-            epoch_timeout_secs = 10
-        "#;
-        let config: ProtoclawConfig = toml::from_str(toml).unwrap();
+        let yaml = r#"
+tools-manager:
+  tools:
+    my-tool:
+      tool_type: "wasm"
+      module: "/path/to/tool.wasm"
+      description: "A test tool"
+      input_schema: '{"type": "object"}'
+      sandbox:
+        fuel_limit: 500000
+        epoch_timeout_secs: 10
+"#;
+        let config: ProtoclawConfig = serde_yaml::from_str(yaml).unwrap();
         let t = &config.tools_manager.tools["my-tool"];
         assert_eq!(t.tool_type, "wasm");
         assert_eq!(t.module, Some(PathBuf::from("/path/to/tool.wasm")));
@@ -498,16 +490,14 @@ mod tests {
 
     #[test]
     fn tool_config_name_not_in_struct() {
-        let toml = r#"
-            binary = "mcp-server-filesystem"
-        "#;
-        let config: ToolConfig = toml::from_str(toml).unwrap();
+        let yaml = "binary: \"mcp-server-filesystem\"";
+        let config: ToolConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(config.binary, Some("mcp-server-filesystem".into()));
     }
 
     #[test]
-    fn defaults_toml_parses() {
-        let config: ProtoclawConfig = toml::from_str(DEFAULTS_TOML).unwrap();
+    fn defaults_yaml_parses() {
+        let config: ProtoclawConfig = serde_yaml::from_str(DEFAULTS_YAML).unwrap();
         assert_eq!(config.log_level, "info");
         assert_eq!(config.extensions_dir, "/usr/local/bin");
         assert!(config.channels_manager.debounce.enabled);
@@ -526,10 +516,8 @@ mod tests {
 
     #[test]
     fn agent_config_defaults() {
-        let toml = r#"
-            binary = "test-agent"
-        "#;
-        let config: AgentConfig = toml::from_str(toml).unwrap();
+        let yaml = "binary: \"test-agent\"";
+        let config: AgentConfig = serde_yaml::from_str(yaml).unwrap();
         assert!(config.enabled);
         assert!(config.tools.is_empty());
         assert!(config.env.is_empty());
@@ -538,58 +526,64 @@ mod tests {
 
     #[test]
     fn default_agent_name_returns_first_enabled() {
-        let toml = r#"
-            [agents-manager.agents.disabled-one]
-            binary = "x"
-            enabled = false
-
-            [agents-manager.agents.enabled-one]
-            binary = "y"
-        "#;
-        let config: ProtoclawConfig = toml::from_str(toml).unwrap();
+        let yaml = r#"
+agents-manager:
+  agents:
+    disabled-one:
+      binary: "x"
+      enabled: false
+    enabled-one:
+      binary: "y"
+"#;
+        let config: ProtoclawConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(config.default_agent_name(), Some("enabled-one"));
     }
 
     #[test]
     fn default_agent_name_none_when_empty() {
-        let toml = r#""#;
-        let config: ProtoclawConfig = toml::from_str(toml).unwrap();
+        let yaml = "";
+        let config: ProtoclawConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(config.default_agent_name(), None);
     }
 
     #[test]
     fn full_config_shape() {
-        let toml = r#"
-            log_level = "info"
-            extensions_dir = "/usr/local/bin"
+        let yaml = r#"
+log_level: "info"
+extensions_dir: "/usr/local/bin"
 
-            [agents-manager.agents.opencode]
-            binary = "@built-in/opencode"
-            tools = ["system-info"]
-            [agents-manager.agents.opencode.env]
-            OPENCODE_API_KEY = "test"
+agents-manager:
+  agents:
+    opencode:
+      binary: "@built-in/opencode"
+      tools:
+        - "system-info"
+      env:
+        OPENCODE_API_KEY: "test"
 
-            [channels-manager.debounce]
-            enabled = true
-            window_ms = 1000
+channels-manager:
+  debounce:
+    enabled: true
+    window_ms: 1000
+  channels:
+    telegram:
+      binary: "@built-in/telegram-channel"
+      agent: "opencode"
+      ack:
+        reaction: true
+        typing: true
+    debug-http:
+      binary: "@built-in/debug-http"
 
-            [channels-manager.channels.telegram]
-            binary = "@built-in/telegram-channel"
-            agent = "opencode"
-            [channels-manager.channels.telegram.ack]
-            reaction = true
-            typing = true
+tools-manager:
+  tools:
+    system-info:
+      binary: "@built-in/system-info"
 
-            [channels-manager.channels.debug-http]
-            binary = "@built-in/debug-http"
-
-            [tools-manager.tools.system-info]
-            binary = "@built-in/system-info"
-
-            [supervisor]
-            shutdown_timeout_secs = 15
-        "#;
-        let config: ProtoclawConfig = toml::from_str(toml).unwrap();
+supervisor:
+  shutdown_timeout_secs: 15
+"#;
+        let config: ProtoclawConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(config.agents_manager.agents.len(), 1);
         assert_eq!(config.channels_manager.channels.len(), 2);
         assert_eq!(config.tools_manager.tools.len(), 1);
