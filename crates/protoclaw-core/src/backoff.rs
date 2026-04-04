@@ -1,5 +1,7 @@
 use std::time::{Duration, Instant};
 
+use crate::constants;
+
 pub struct ExponentialBackoff {
     current: Duration,
     max: Duration,
@@ -36,7 +38,10 @@ impl ExponentialBackoff {
 
 impl Default for ExponentialBackoff {
     fn default() -> Self {
-        Self::new(Duration::from_millis(100), Duration::from_secs(30))
+        Self::new(
+            Duration::from_millis(constants::DEFAULT_BACKOFF_BASE_MS),
+            Duration::from_secs(constants::DEFAULT_BACKOFF_MAX_SECS),
+        )
     }
 }
 
@@ -79,7 +84,10 @@ impl CrashTracker {
 
 impl Default for CrashTracker {
     fn default() -> Self {
-        Self::new(5, Duration::from_secs(60))
+        Self::new(
+            constants::DEFAULT_CRASH_MAX,
+            Duration::from_secs(constants::DEFAULT_CRASH_WINDOW_SECS),
+        )
     }
 }
 
