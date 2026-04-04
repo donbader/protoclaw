@@ -1008,4 +1008,34 @@ mod tests {
     fn is_result_content_rejects_empty_object() {
         assert!(!ChannelsManager::is_result_content(&serde_json::json!({})));
     }
+
+    #[tokio::test]
+    async fn send_ack_to_channel_no_routing_entry_is_noop() {
+        let m = ChannelsManager::new(HashMap::new(), DebounceConfig::default(), default_init_timeout(), "default".into());
+        let unknown_key = SessionKey::new("nonexistent", "x", "y");
+        m.send_ack_to_channel(&unknown_key).await;
+    }
+
+    #[tokio::test]
+    async fn send_ack_to_channel_no_connection_is_noop() {
+        let mut m = ChannelsManager::new(HashMap::new(), DebounceConfig::default(), default_init_timeout(), "default".into());
+        m.slots.push(ChannelSlot {
+            name: "telegram".into(),
+            config: test_channel_config("telegram-channel", true, "default"),
+            connection: None,
+            channel_id: ChannelId::from("telegram"),
+            cancel_token: CancellationToken::new(),
+            backoff: ExponentialBackoff::default(),
+            crash_tracker: CrashTracker::default(),
+            disabled: false,
+        });
+        let key = SessionKey::new("telegram", "direct", "alice");
+        m.routing_table.insert(key.clone(), RoutingEntry {
+            channel_id: ChannelId::from("telegram"),
+            acp_session_id: "sess-1".into(),
+            slot_index: 0,
+            agent_name: "default".into(),
+        });
+        m.send_ack_to_channel(&key).await;
+    }
 }

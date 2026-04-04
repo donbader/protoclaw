@@ -46,8 +46,20 @@ Channel subprocesses emit `PORT:{n}` to stderr when they bind a port. `ChannelCo
 
 The `poll_channels()` method uses 1ms timeout polling per connection — it's a workaround because `tokio::select!` can't dynamically branch over a variable number of futures. The 50ms sleep in the `else` branch prevents busy-looping when no messages are ready. Do not remove it.
 
+## Ack Flow
+
+Ack notification (`channel/ackMessage`) is sent at dispatch time, not on inbound message receipt. This ensures batched messages only ack the last message in the batch.
+
+Three dispatch sites call `send_ack_to_channel()`:
+- **Immediate branch** — debounce disabled, single message dispatched directly
+- **Debounce flush** — window expired, merged messages dispatched
+- **Queued drain** — agent finished responding, queued messages dispatched
+
+`messageId` is always `Null` — Telegram tracks the last message independently via `last_message_ids`.
+
 ## Anti-Patterns (this crate)
 
+- Do not send ack in `handle_channel_message` — ack must fire at dispatch time so batched messages only ack the last message
 - Do not remove the 50ms sleep in `poll_channels()` else branch
 - Bad channel binaries don't block startup — they log errors and continue with `connection: None`
 - `cmd_rx.take().expect("cmd_rx must exist")` — same consumed-once pattern as agents
