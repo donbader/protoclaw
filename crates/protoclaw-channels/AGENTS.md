@@ -58,15 +58,17 @@ Two dispatch sites call `send_ack_to_channel()`:
 
 ## Debounce Flow
 
-Post-response debounce: first message dispatches immediately, subsequent messages merge after the agent responds.
+Sliding window debounce with post-response re-debounce for queued messages.
 
-1. Message arrives, session idle, no buffer → `Immediate` (dispatch now)
-2. Message arrives, session idle, buffer exists (post-response window) → `Buffered` (accumulate, reset timer)
-3. Message arrives, agent mid-response → `Queued`
-4. Agent finishes (Result event) → `mark_session_idle()` moves queued messages into buffer with fresh timer
-5. Debounce window expires with no new messages → `drain()` merges and dispatches
+1. Message arrives, session idle → `Buffered` (start debounce timer)
+2. More messages during window → `Buffered` (reset timer, accumulate)
+3. Timer expires → `drain()` merges and dispatches to agent
+4. Message arrives, agent mid-response → `Queued`
+5. Agent finishes (Result event) → `mark_session_idle()` moves queued messages into buffer with fresh timer
+6. More messages during post-response window → `Buffered` (reset timer)
+7. Timer expires → `drain()` merges and dispatches
 
-The sliding window timer only starts after the agent finishes responding, not when messages arrive. This means the first message always gets instant dispatch while rapid follow-ups during and after the response get merged.
+The debounce window always applies — both on initial messages and after the agent responds. This ensures rapid typing always gets merged regardless of when it happens relative to agent processing.
 
 ## Anti-Patterns (this crate)
 
