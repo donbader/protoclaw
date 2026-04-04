@@ -1,3 +1,7 @@
 /target
 libnull.rlib
 .env
+
+# Coverage
+coverage/
+*.profraw

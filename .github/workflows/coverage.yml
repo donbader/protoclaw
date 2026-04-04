@@ -1,0 +1,47 @@
+name: Coverage
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        run: rustup update stable
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/
+          key: ${{ runner.os }}-coverage-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-coverage-
+      - name: Build required binaries
+        run: cargo build --bin mock-agent --bin debug-http
+      - name: Run tests with coverage
+        run: cargo llvm-cov --no-report --workspace --exclude protoclaw-test-helpers
+      - name: Generate LCOV report
+        run: |
+          mkdir -p coverage
+          cargo llvm-cov report --lcov --output-path coverage/lcov.info
+      - name: Enforce coverage baseline
+        run: |
+          BASELINE=$(cat .coverage-baseline)
+          echo "Enforcing coverage baseline: ${BASELINE}%"
+          cargo llvm-cov report --fail-under-lines "$BASELINE"
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/lcov.info
