@@ -285,6 +285,7 @@ impl ChannelsManager {
                 if is_result {
                     self.debounce.mark_session_idle(&session_key);
                     if let Some(queued_msg) = self.debounce.drain_queued(&session_key) {
+                        self.send_ack_to_channel(&session_key).await;
                         let agent_name = self.routing_table
                             .get(&session_key)
                             .map(|e| e.agent_name.clone())
@@ -356,6 +357,33 @@ impl ChannelsManager {
         }
     }
 
+    /// Send ack notification to the channel for a session (at dispatch time, not inbound time).
+    async fn send_ack_to_channel(&self, session_key: &SessionKey) {
+        let entry = match self.routing_table.get(session_key) {
+            Some(e) => e,
+            None => return,
+        };
+        let slot = &self.slots[entry.slot_index];
+        if let Some(conn) = &slot.connection {
+            // Parse peer_id from session key format "channel:kind:peer_id"
+            let sk_str = session_key.as_ref();
+            let peer_id = sk_str.splitn(3, ':').nth(2).unwrap_or("");
+            let ack_params = serde_json::json!({
+                "sessionId": entry.acp_session_id,
+                "channelName": slot.name,
+                "peerId": peer_id,
+                "messageId": serde_json::Value::Null,
+            });
+            if let Err(e) = conn.send_notification("channel/ackMessage", ack_params).await {
+                tracing::warn!(
+                    channel = %slot.name,
+                    error = %e,
+                    "failed to send ack notification"
+                );
+            }
+        }
+    }
+
     /// Dispatch a merged/immediate message to the agent as a PromptSession.
     async fn dispatch_to_agent(&mut self, session_key: &SessionKey, message: &str, agent_name: &str) {
         // Reset ack lifecycle tracking so next response triggers lifecycle again
@@ -413,25 +441,6 @@ impl ChannelsManager {
                         &send_msg.peer_info.kind,
                         &send_msg.peer_info.peer_id,
                     );
-
-                    // Send ack notification back to channel BEFORE debounce — instant feedback
-                    if let Some(conn) = &self.slots[slot_index].connection {
-                        let ack_params = serde_json::json!({
-                            "sessionId": self.routing_table.get(&session_key)
-                                .map(|e| e.acp_session_id.as_str())
-                                .unwrap_or(""),
-                            "channelName": send_msg.peer_info.channel_name,
-                            "peerId": send_msg.peer_info.peer_id,
-                            "messageId": serde_json::Value::Null,
-                        });
-                        if let Err(e) = conn.send_notification("channel/ackMessage", ack_params).await {
-                            tracing::warn!(
-                                channel = %channel_name,
-                                error = %e,
-                                "failed to send ack notification"
-                            );
-                        }
-                    }
 
                     let agents_handle = match &self.agents_handle {
                         Some(h) => h.clone(),
@@ -496,6 +505,7 @@ impl ChannelsManager {
 
                     match self.debounce.push(&session_key, send_msg.content.clone()) {
                         DebounceAction::Immediate(msg) => {
+                            self.send_ack_to_channel(&session_key).await;
                             self.debounce.mark_session_active(&session_key);
                             self.dispatch_to_agent(&session_key, &msg, &agent_name).await;
                         }
@@ -699,6 +709,7 @@ impl Manager for ChannelsManager {
                     let ready = self.debounce.ready_sessions();
                     for session_key in ready {
                         if let Some(merged) = self.debounce.drain(&session_key) {
+                            self.send_ack_to_channel(&session_key).await;
                             let agent_name = self.routing_table
                                 .get(&session_key)
                                 .map(|e| e.agent_name.clone())
