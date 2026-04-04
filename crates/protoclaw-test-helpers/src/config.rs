@@ -22,6 +22,7 @@ pub fn mock_agent_config_with_env(
             acp_timeout_secs: None,
             backoff: None,
             crash_tracker: None,
+            options: HashMap::new(),
         },
     );
 
@@ -37,6 +38,7 @@ pub fn mock_agent_config_with_env(
             init_timeout_secs: None,
             backoff: None,
             crash_tracker: None,
+            options: HashMap::new(),
         },
     );
 
