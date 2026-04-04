@@ -1,6 +1,6 @@
 # crates/ — Workspace Crates
 
-11 crates: 1 binary (`protoclaw`), 6 internal libraries, 4 SDK crates.
+12 crates: 1 binary (`protoclaw`), 6 internal libraries, 4 SDK crates, 1 test utility.
 
 ## Crate Map
 
@@ -17,6 +17,7 @@
 | `protoclaw-sdk-agent` | lib | 4 | AgentAdapter trait + GenericAcpAdapter |
 | `protoclaw-sdk-channel` | lib | 4 | Channel trait + ChannelHarness |
 | `protoclaw-sdk-tool` | lib | 4 | Tool trait + ToolServer |
+| `protoclaw-test-helpers` | lib | 1 | Shared test utilities (mock configs, port waiter, timeout helpers) |
 
 ## Internal vs SDK Crates
 

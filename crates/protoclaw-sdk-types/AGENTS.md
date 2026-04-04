@@ -1,0 +1,44 @@
+# protoclaw-sdk-types — Shared SDK Wire Types
+
+Shared serde types used by all three SDK crates (agent, channel, tool). Exists as a separate leaf crate to avoid circular dependencies between SDK implementation crates.
+
+## Files
+
+| File | Purpose |
+|------|---------|
+| `channel.rs` | Channel protocol types: capabilities, initialize, deliver, send, ack, thought, session |
+| `permission.rs` | Permission types: request, response, options |
+| `lib.rs` | Re-exports from both modules |
+
+## Key Types
+
+**Channel protocol:**
+- `ChannelCapabilities { streaming, rich_text }` — advertised during initialize
+- `ChannelInitializeParams` / `ChannelInitializeResult` — handshake types
+- `DeliverMessage { session_id, content }` — protoclaw → channel
+- `ChannelSendMessage { peer_info, content }` — channel → protoclaw
+- `PeerInfo { channel_name, peer_id, kind }` — inbound message identity
+- `ThoughtContent` — helper to extract `agent_thought_chunk` from `DeliverMessage.content`
+- `AckNotification` / `AckLifecycleNotification` — ack reaction lifecycle
+- `ChannelAckConfig` — ack settings passed via initialize
+- `SessionCreated` — session-to-peer mapping notification
+
+**Permission protocol:**
+- `PermissionOption { option_id, label }` — single choice in a permission prompt
+- `PermissionRequest { request_id, description, options }` — agent asks permission
+- `PermissionResponse { request_id, option_id }` — user's choice
+- `ChannelRequestPermission` — protoclaw → channel permission forwarding
+
+## Why Separate
+
+All three SDK crates (`sdk-agent`, `sdk-channel`, `sdk-tool`) need shared wire types. Putting them in any one SDK crate would force the others to depend on it, creating coupling. `sdk-types` is a dependency-free leaf — it depends only on `serde` and `serde_json`.
+
+## Serde Convention
+
+All types use `#[serde(rename_all = "camelCase")]` for JSON wire format. Rust fields use `snake_case`, JSON uses `camelCase`. Tests verify round-trip serialization for every type.
+
+## Anti-Patterns (this crate)
+
+- **Don't add dependencies on internal crates** — this is external-facing; it must stay a leaf
+- **Don't break serde compatibility** — downstream channels/tools depend on the wire format
+- **Don't add protocol logic** — this crate is pure data types; behavior belongs in SDK impl crates
