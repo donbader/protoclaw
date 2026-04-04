@@ -67,6 +67,8 @@ With `LOG_LEVEL=debug` (the default), Docker logs show:
 | `tools-manager.tools.*` | system-info tool — returns host/OS/arch info |
 | `supervisor` | Restart policy, health checks, shutdown timeout |
 
+**Tip:** Edit `protoclaw.yaml` and restart the container — no rebuild needed. The config file is volume-mounted, so changes take effect on next `docker compose restart`.
+
 ## Troubleshooting
 
 **Build fails with out of memory** — Ensure Docker has at least 4GB memory. Rust compilation is memory-intensive.

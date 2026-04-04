@@ -92,6 +92,8 @@ After verifying debug-http works:
 | `tools-manager.tools.*` | system-info tool — returns host/OS/arch info |
 | `supervisor` | Restart policy, health checks, shutdown timeout |
 
+**Tip:** Edit `protoclaw.yaml` and restart the container — no rebuild needed. The config file is volume-mounted, so changes take effect on next `docker compose restart`.
+
 ## Troubleshooting
 
 **"Invalid API key" or 401 errors** — Verify `ANTHROPIC_API_KEY` in `.env` is correct and has no trailing whitespace.
