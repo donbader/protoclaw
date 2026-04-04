@@ -147,10 +147,10 @@ async fn flow_message_echo_via_sse() {
 
 #[tokio::test]
 async fn flow_thinking_chunks() {
-    let mut env = HashMap::new();
-    env.insert("MOCK_AGENT_THINK".into(), "1".into());
-    let mut config = mock_agent_config_with_env(env);
+    let mut config = mock_agent_config();
     config.channels_manager.debounce.window_ms = 100;
+    config.agents_manager.agents.get_mut("default").unwrap()
+        .options.insert("thinking".into(), serde_json::json!(true));
     let (cancel, handle, port) = boot_supervisor_with_port(config).await;
 
     let client = reqwest::Client::new();

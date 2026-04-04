@@ -1,9 +1,10 @@
 use serde_json::{json, Value};
 use std::env;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use tokio::io::{AsyncBufReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 
 static PROMPT_COUNT: AtomicUsize = AtomicUsize::new(0);
+static THINK_ENABLED: AtomicBool = AtomicBool::new(true);
 
 #[tokio::main]
 async fn main() {
@@ -15,7 +16,6 @@ async fn main() {
         .and_then(|v| v.parse().ok());
     let request_permission = env::var("MOCK_AGENT_REQUEST_PERMISSION").ok().is_some_and(|v| v == "1");
     let reject_load = env::var("MOCK_AGENT_REJECT_LOAD").ok().is_some_and(|v| v == "1");
-    let think = env::var("MOCK_AGENT_THINK").ok().is_some_and(|v| v != "0");
 
     let stdin = tokio::io::stdin();
     let mut stdout = tokio::io::stdout();
@@ -43,7 +43,7 @@ async fn main() {
 
         match method {
             "initialize" => {
-                handle_initialize(&mut stdout, id).await;
+                handle_initialize(&mut stdout, id, &msg).await;
             }
             "session/new" => {
                 session_id = Some(handle_session_new(&mut stdout, id).await);
@@ -51,6 +51,7 @@ async fn main() {
             "session/prompt" => {
                 let sid = session_id.clone().unwrap_or_else(|| "unknown".to_string());
                 let user_msg = extract_prompt_message(&msg);
+                let think = THINK_ENABLED.load(Ordering::SeqCst);
                 handle_session_prompt(
                     &mut stdout,
                     id,
@@ -107,7 +108,10 @@ fn extract_prompt_message(msg: &Value) -> String {
         .to_string()
 }
 
-async fn handle_initialize(stdout: &mut tokio::io::Stdout, id: Option<Value>) {
+async fn handle_initialize(stdout: &mut tokio::io::Stdout, id: Option<Value>, msg: &Value) {
+    let think = msg["params"]["options"]["thinking"].as_bool().unwrap_or(true);
+    THINK_ENABLED.store(think, Ordering::SeqCst);
+
     let resp = json!({
         "jsonrpc": "2.0",
         "id": id,
