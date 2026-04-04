@@ -1,0 +1,47 @@
+# Protoclaw Fake Agent Example
+# Uses the mock agent — no AI API keys needed.
+# See README.md for setup instructions.
+
+log_level: "debug"
+extensions_dir: "/usr/local/bin"
+
+agents-manager:
+  agents:
+    mock:
+      binary: "@built-in/mock-agent"
+      tools:
+        - "system-info"
+      env:
+        MOCK_AGENT_THINK: "1"
+
+channels-manager:
+  debounce:
+    enabled: true
+    window_ms: 1000
+  channels:
+    debug-http:
+      binary: "@built-in/debug-http"
+      agent: "mock"
+      ack:
+        reaction: false
+        typing: false
+    telegram:
+      binary: "@built-in/telegram-channel"
+      enabled: "${TELEGRAM_ENABLED:false}"
+      agent: "mock"
+      ack:
+        reaction: true
+        reaction_emoji: "👀"
+        typing: true
+        reaction_lifecycle: "remove"
+
+tools-manager:
+  tools:
+    system-info:
+      binary: "@built-in/system-info"
+
+supervisor:
+  shutdown_timeout_secs: 30
+  health_check_interval_secs: 5
+  max_restarts: 5
+  restart_window_secs: 60

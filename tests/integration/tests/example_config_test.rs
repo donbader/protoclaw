@@ -8,10 +8,10 @@ fn workspace_root() -> PathBuf {
 }
 
 #[test]
-fn test_fake_agent_example_toml_parses() {
-    let toml_path = workspace_root().join("examples/01-fake-agent-telegram-bot/protoclaw.toml");
-    let config = protoclaw_config::ProtoclawConfig::load(Some(toml_path.to_str().unwrap()))
-        .unwrap_or_else(|e| panic!("failed to load protoclaw.toml: {e}"));
+fn test_fake_agent_example_yaml_parses() {
+    let yaml_path = workspace_root().join("examples/01-fake-agent-telegram-bot/protoclaw.yaml");
+    let config = protoclaw_config::ProtoclawConfig::load(Some(yaml_path.to_str().unwrap()))
+        .unwrap_or_else(|e| panic!("failed to load protoclaw.yaml: {e}"));
 
     assert_eq!(config.agents_manager.agents.len(), 1);
     let mock = config
@@ -24,9 +24,9 @@ fn test_fake_agent_example_toml_parses() {
 
 #[test]
 fn test_fake_agent_example_has_channels() {
-    let toml_path = workspace_root().join("examples/01-fake-agent-telegram-bot/protoclaw.toml");
+    let yaml_path = workspace_root().join("examples/01-fake-agent-telegram-bot/protoclaw.yaml");
     let config =
-        protoclaw_config::ProtoclawConfig::load(Some(toml_path.to_str().unwrap())).unwrap();
+        protoclaw_config::ProtoclawConfig::load(Some(yaml_path.to_str().unwrap())).unwrap();
 
     assert_eq!(
         config.channels_manager.channels.len(),
@@ -38,10 +38,10 @@ fn test_fake_agent_example_has_channels() {
 }
 
 #[test]
-fn test_real_agent_example_toml_parses() {
-    let toml_path = workspace_root().join("examples/02-real-agents-telegram-bot/protoclaw.toml");
-    let config = protoclaw_config::ProtoclawConfig::load(Some(toml_path.to_str().unwrap()))
-        .unwrap_or_else(|e| panic!("failed to load protoclaw.toml: {e}"));
+fn test_real_agent_example_yaml_parses() {
+    let yaml_path = workspace_root().join("examples/02-real-agents-telegram-bot/protoclaw.yaml");
+    let config = protoclaw_config::ProtoclawConfig::load(Some(yaml_path.to_str().unwrap()))
+        .unwrap_or_else(|e| panic!("failed to load protoclaw.yaml: {e}"));
 
     assert_eq!(config.agents_manager.agents.len(), 2);
     let opencode = config
@@ -63,9 +63,9 @@ fn test_real_agent_example_toml_parses() {
 
 #[test]
 fn test_real_agent_example_has_channels() {
-    let toml_path = workspace_root().join("examples/02-real-agents-telegram-bot/protoclaw.toml");
+    let yaml_path = workspace_root().join("examples/02-real-agents-telegram-bot/protoclaw.yaml");
     let config =
-        protoclaw_config::ProtoclawConfig::load(Some(toml_path.to_str().unwrap())).unwrap();
+        protoclaw_config::ProtoclawConfig::load(Some(yaml_path.to_str().unwrap())).unwrap();
 
     assert_eq!(
         config.channels_manager.channels.len(),

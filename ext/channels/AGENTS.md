@@ -54,5 +54,5 @@ Single `main.rs` — axum HTTP server with `SsePayload` typed broadcast for name
 1. Create `ext/channels/{name}/` with `Cargo.toml` + `src/main.rs`
 2. Add to workspace members in root `Cargo.toml`
 3. Implement `Channel` trait, use `ChannelHarness::run_stdio()`
-4. Add `ChannelConfig` entry in `protoclaw.toml`
+4. Add `ChannelConfig` entry in `protoclaw.yaml`
 5. Update `crates/protoclaw-channels/` if new routing logic needed

@@ -9,7 +9,7 @@ Main entry point for the protoclaw sidecar. CLI parsing, config loading, and the
 | `main.rs` | Tracing init, CLI dispatch |
 | `cli.rs` | Clap derive: `run`, `init`, `validate`, `status` subcommands. `--config` flag / `PROTOCLAW_CONFIG` env |
 | `supervisor.rs` | Three-manager boot/health/restart/shutdown loop |
-| `init.rs` | `protoclaw init` — scaffold `protoclaw.toml` |
+| `init.rs` | `protoclaw init` — scaffold `protoclaw.yaml` |
 | `status.rs` | `protoclaw status` — runtime health check |
 | `banner.rs` | ASCII banner for startup |
 | `lib.rs` | Re-exports supervisor for test access |

@@ -40,8 +40,8 @@ To switch to Claude Code:
 
 1. In `docker-compose.yml`: change `target: opencode` to `target: claude-code`
 2. In `docker-compose.yml`: comment out the opencode volume mount, uncomment the claude-code mount
-3. In `protoclaw.toml`: set opencode `enabled = false`, claude-code `enabled = true`
-4. In `protoclaw.toml`: update channel `agent` fields from `"opencode"` to `"claude-code"`
+3. In `protoclaw.yaml`: set opencode `enabled = false`, claude-code `enabled = true`
+4. In `protoclaw.yaml`: update channel `agent` fields from `"opencode"` to `"claude-code"`
 5. Rebuild: `docker compose up --build`
 
 ### Agent Comparison
@@ -66,7 +66,7 @@ Each agent stores its configuration in a different directory on the host:
 | OpenCode | `~/.config/opencode` | `/home/protoclaw/.config/opencode` | `XDG_CONFIG_HOME=/home/protoclaw/.config` |
 | Claude Code | `~/.claude` | `/home/protoclaw/.claude` | `CLAUDE_CONFIG_DIR=/home/protoclaw/.claude` |
 
-The volume mount in `docker-compose.yml` maps the host directory into the container read-only (`:ro`). The agent's env table in `protoclaw.toml` tells the agent process where to find its config inside the container.
+The volume mount in `docker-compose.yml` maps the host directory into the container read-only (`:ro`). The agent's env table in `protoclaw.yaml` tells the agent process where to find its config inside the container.
 
 If you haven't run the agent locally yet, the config directory may not exist. Run the agent once on your host machine to create it, or create the directory manually.
 
@@ -86,11 +86,11 @@ After verifying debug-http works:
 |---------|---------|
 | `log_level` | Logging verbosity (default: debug) |
 | `extensions_dir` | Where `@built-in/` binaries live (default: /usr/local/bin) |
-| `[agents-manager.agents.*]` | Agent definitions — opencode (enabled) and claude-code (disabled) |
-| `[channels-manager.channels.*]` | debug-http (enabled) and telegram (disabled by default) |
-| `[channels-manager.channels.*.ack]` | Per-channel ack reactions and typing indicators |
-| `[tools-manager.tools.*]` | system-info tool — returns host/OS/arch info |
-| `[supervisor]` | Restart policy, health checks, shutdown timeout |
+| `agents-manager.agents.*` | Agent definitions — opencode (enabled) and claude-code (disabled) |
+| `channels-manager.channels.*` | debug-http (enabled) and telegram (disabled by default) |
+| `channels-manager.channels.*.ack` | Per-channel ack reactions and typing indicators |
+| `tools-manager.tools.*` | system-info tool — returns host/OS/arch info |
+| `supervisor` | Restart policy, health checks, shutdown timeout |
 
 ## Troubleshooting
 
@@ -112,7 +112,7 @@ After verifying debug-http works:
 |------|---------|
 | `Dockerfile` | Multi-stage cargo-chef build with `--target opencode` and `--target claude-code` |
 | `docker-compose.yml` | Single service with agent config mount, port 8080 |
-| `protoclaw.toml` | Multi-agent config: opencode + claude-code with named agent maps |
+| `protoclaw.yaml` | Multi-agent config: opencode + claude-code with named agent maps |
 | `.env.example` | Environment template — copy to `.env`, set API key |
 | `.dockerignore` | Build context exclusions |
 | `README.md` | This file |

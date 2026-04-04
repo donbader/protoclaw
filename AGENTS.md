@@ -12,7 +12,7 @@ protoclaw-rust/
 │   ├── protoclaw-agents/           # ACP protocol layer, agent subprocess management
 │   ├── protoclaw-channels/         # Channel subprocess routing + lifecycle
 │   ├── protoclaw-tools/            # MCP host, WASM sandbox, tools manager
-│   ├── protoclaw-config/           # Figment-based config loading (protoclaw.toml)
+│   ├── protoclaw-config/           # Figment-based config loading (protoclaw.yaml)
 │   ├── protoclaw-jsonrpc/          # JSON-RPC 2.0 codec + types (LinesCodec-based)
 │   ├── protoclaw-sdk-types/        # Shared SDK types (capabilities, permissions)
 │   ├── protoclaw-sdk-agent/        # SDK: AgentAdapter trait + GenericAcpAdapter

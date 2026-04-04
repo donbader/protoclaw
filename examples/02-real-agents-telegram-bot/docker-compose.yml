@@ -7,7 +7,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./protoclaw.toml:/workspace/protoclaw.toml:ro
+      - ./protoclaw.yaml:/workspace/protoclaw.yaml:ro
       # OpenCode config mount (D-03):
       - ~/.config/opencode:/home/protoclaw/.config/opencode:ro
       # Claude Code config mount — uncomment when using claude-code target (D-03):

@@ -61,11 +61,11 @@ With `LOG_LEVEL=debug` (the default), Docker logs show:
 |---------|---------|
 | `log_level` | Logging verbosity (default: debug) |
 | `extensions_dir` | Where `@built-in/` binaries live (default: /usr/local/bin) |
-| `[agents-manager.agents.*]` | Mock agent binary — echoes messages with simulated thinking |
-| `[channels-manager.channels.*]` | debug-http (enabled) and telegram (disabled by default) |
-| `[channels-manager.debounce]` | Message debounce settings (window, enabled) |
-| `[tools-manager.tools.*]` | system-info tool — returns host/OS/arch info |
-| `[supervisor]` | Restart policy, health checks, shutdown timeout |
+| `agents-manager.agents.*` | Mock agent binary — echoes messages with simulated thinking |
+| `channels-manager.channels.*` | debug-http (enabled) and telegram (disabled by default) |
+| `channels-manager.debounce` | Message debounce settings (window, enabled) |
+| `tools-manager.tools.*` | system-info tool — returns host/OS/arch info |
+| `supervisor` | Restart policy, health checks, shutdown timeout |
 
 ## Troubleshooting
 
@@ -81,7 +81,7 @@ With `LOG_LEVEL=debug` (the default), Docker logs show:
 |------|---------|
 | `Dockerfile` | Multi-stage cargo-chef build, all binaries in one image |
 | `docker-compose.yml` | Single service with port 8080, debug logging |
-| `protoclaw.toml` | Config: mock-agent, debug-http, telegram, system-info |
+| `protoclaw.yaml` | Config: mock-agent, debug-http, telegram, system-info |
 | `.env.example` | Environment template — copy to `.env` |
 | `.dockerignore` | Build context exclusions |
 | `README.md` | This file |

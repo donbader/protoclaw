@@ -19,7 +19,7 @@ Manages tool availability: spawns external MCP servers, loads WASM-sandboxed too
 |------|--------|-------------|
 | Native | Rust `impl Tool` | `with_native_tools(vec![...])` |
 | WASM | `.wasm` module file | `with_wasm_configs(vec![...])` from config |
-| External MCP | Subprocess binary | `McpServerConfig` in `protoclaw.toml` |
+| External MCP | Subprocess binary | `McpServerConfig` in `protoclaw.yaml` |
 
 ## AggregatedToolServer
 

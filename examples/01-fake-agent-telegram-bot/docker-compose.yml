@@ -6,7 +6,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./protoclaw.toml:/workspace/protoclaw.toml:ro
+      - ./protoclaw.yaml:/workspace/protoclaw.yaml:ro
     environment:
       - LOG_LEVEL=debug
       - PORT=8080
