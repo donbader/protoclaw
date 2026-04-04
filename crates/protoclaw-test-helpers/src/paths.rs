@@ -17,6 +17,14 @@ pub fn debug_http_path() -> PathBuf {
     workspace_root().join("target/debug/debug-http")
 }
 
+pub fn sdk_test_channel_path() -> PathBuf {
+    workspace_root().join("target/debug/sdk-test-channel")
+}
+
+pub fn sdk_test_tool_path() -> PathBuf {
+    workspace_root().join("target/debug/sdk-test-tool")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -31,6 +39,18 @@ mod tests {
     fn debug_http_path_ends_correctly() {
         let p = debug_http_path();
         assert!(p.ends_with("target/debug/debug-http"), "got: {p:?}");
+    }
+
+    #[test]
+    fn sdk_test_channel_path_ends_correctly() {
+        let p = sdk_test_channel_path();
+        assert!(p.ends_with("target/debug/sdk-test-channel"), "got: {p:?}");
+    }
+
+    #[test]
+    fn sdk_test_tool_path_ends_correctly() {
+        let p = sdk_test_tool_path();
+        assert!(p.ends_with("target/debug/sdk-test-tool"), "got: {p:?}");
     }
 
     #[test]
