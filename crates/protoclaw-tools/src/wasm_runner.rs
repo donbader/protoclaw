@@ -26,7 +26,7 @@ impl WasmToolRunner {
 
         let engine_clone = engine.clone();
         let epoch_handle = tokio::spawn(async move {
-            let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(protoclaw_core::constants::EPOCH_TICK_INTERVAL_SECS));
             loop {
                 interval.tick().await;
                 engine_clone.increment_epoch();

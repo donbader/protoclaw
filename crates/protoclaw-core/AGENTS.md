@@ -12,6 +12,7 @@ Foundation crate used by all internal crates. Defines the Manager contract, resi
 | `types.rs` | ID newtypes (`SessionKey`, `AgentId`, `ChannelId`), `SessionKey::new(channel, kind, peer)` |
 | `message.rs` | Internal message envelope types |
 | `channel_event.rs` | `ChannelEvent` enum — agents→channels bridge |
+| `constants.rs` | Named constants: internal guards (`POLL_INTERVAL_MS`, `CMD_CHANNEL_CAPACITY`) and default values (`DEFAULT_BACKOFF_BASE_MS`, `DEFAULT_CRASH_MAX`) |
 
 ## Manager Trait
 

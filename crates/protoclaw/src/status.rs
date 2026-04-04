@@ -52,7 +52,7 @@ pub fn format_status_output(health: &serde_json::Value) -> String {
 pub async fn run_status(port: u16) -> anyhow::Result<()> {
     let url = format!("http://127.0.0.1:{}/health", port);
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
+        .timeout(std::time::Duration::from_secs(protoclaw_core::constants::STATUS_HTTP_TIMEOUT_SECS))
         .build()?;
 
     let resp = client

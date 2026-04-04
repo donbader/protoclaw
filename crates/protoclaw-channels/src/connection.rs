@@ -254,6 +254,9 @@ mod tests {
             enabled: true,
             agent: "default".into(),
             ack: Default::default(),
+            init_timeout_secs: None,
+            backoff: None,
+            crash_tracker: None,
         }
     }
 
@@ -274,6 +277,9 @@ mod tests {
             enabled: true,
             agent: "default".into(),
             ack: Default::default(),
+            init_timeout_secs: None,
+            backoff: None,
+            crash_tracker: None,
         };
         let result = ChannelConnection::spawn(&config, ChannelId::from("bad"));
         assert!(result.is_err());
@@ -326,6 +332,9 @@ mod tests {
             enabled: true,
             agent: "default".into(),
             ack: Default::default(),
+            init_timeout_secs: None,
+            backoff: None,
+            crash_tracker: None,
         };
         let channel_id = ChannelId::from("exits");
         let mut conn = ChannelConnection::spawn(&config, channel_id).unwrap();

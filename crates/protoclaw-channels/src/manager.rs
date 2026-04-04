@@ -5,7 +5,7 @@ use crate::types::PermissionOption;
 use protoclaw_agents::AgentsCommand;
 use protoclaw_config::{ChannelConfig, DebounceConfig};
 use protoclaw_core::types::ChannelId;
-use protoclaw_core::{ChannelEvent, CrashTracker, ExponentialBackoff, Manager, ManagerError, ManagerHandle, SessionKey};
+use protoclaw_core::{constants, ChannelEvent, CrashTracker, ExponentialBackoff, Manager, ManagerError, ManagerHandle, SessionKey};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
@@ -60,6 +60,7 @@ struct ChannelSlot {
 pub struct ChannelsManager {
     channel_configs: HashMap<String, ChannelConfig>,
     default_agent_name: String,
+    init_timeout_secs: u64,
     slots: Vec<ChannelSlot>,
     cmd_rx: Option<mpsc::Receiver<ChannelsCommand>>,
     cmd_tx: mpsc::Sender<ChannelsCommand>,
@@ -71,11 +72,12 @@ pub struct ChannelsManager {
 }
 
 impl ChannelsManager {
-    pub fn new(channel_configs: HashMap<String, ChannelConfig>, debounce_config: DebounceConfig, default_agent_name: String) -> Self {
-        let (cmd_tx, cmd_rx) = mpsc::channel(16);
+    pub fn new(channel_configs: HashMap<String, ChannelConfig>, debounce_config: DebounceConfig, init_timeout_secs: u64, default_agent_name: String) -> Self {
+        let (cmd_tx, cmd_rx) = mpsc::channel(constants::CMD_CHANNEL_CAPACITY);
         Self {
             channel_configs,
             default_agent_name,
+            init_timeout_secs,
             slots: Vec::new(),
             cmd_rx: Some(cmd_rx),
             cmd_tx,
@@ -118,9 +120,15 @@ impl ChannelsManager {
     }
 
     /// Spawn and initialize a single channel subprocess.
+    fn resolve_init_timeout(&self, channel_config: &ChannelConfig) -> Duration {
+        let secs = channel_config.init_timeout_secs.unwrap_or(self.init_timeout_secs);
+        Duration::from_secs(secs)
+    }
+
     async fn spawn_and_initialize(
         config: &ChannelConfig,
         channel_id: &ChannelId,
+        init_timeout: Duration,
     ) -> Result<(ChannelConnection, ChannelCapabilities), ChannelsError> {
         let mut conn = ChannelConnection::spawn(config, channel_id.clone())?;
 
@@ -137,9 +145,9 @@ impl ChannelsManager {
         });
 
         let rx = conn.send_request("initialize", params).await?;
-        let resp = tokio::time::timeout(Duration::from_secs(10), rx)
+        let resp = tokio::time::timeout(init_timeout, rx)
             .await
-            .map_err(|_| ChannelsError::Timeout(Duration::from_secs(10)))?
+            .map_err(|_| ChannelsError::Timeout(init_timeout))?
             .map_err(|_| ChannelsError::ConnectionClosed)?;
 
         let result: ChannelInitializeResult = serde_json::from_value(resp)?;
@@ -174,7 +182,7 @@ impl ChannelsManager {
         );
         tokio::time::sleep(delay).await;
 
-        match Self::spawn_and_initialize(&slot.config, &slot.channel_id).await {
+        match Self::spawn_and_initialize(&slot.config, &slot.channel_id, Duration::from_secs(self.init_timeout_secs)).await {
             Ok((conn, caps)) => {
                 tracing::info!(
                     channel = %channel_name,
@@ -561,7 +569,7 @@ impl ChannelsManager {
             }
             if let Some(conn) = &mut slot.connection {
                 // Try a non-blocking poll using tokio::time::timeout with zero duration
-                match tokio::time::timeout(Duration::from_millis(1), conn.recv_incoming()).await {
+                match tokio::time::timeout(Duration::from_millis(constants::POLL_TIMEOUT_MS), conn.recv_incoming()).await {
                     Ok(msg) => return Some((i, msg)),
                     Err(_) => continue, // timeout = no message ready
                 }
@@ -589,7 +597,20 @@ impl Manager for ChannelsManager {
             let channel_id = ChannelId::from(name.as_str());
             let cancel_token = parent_cancel.child_token();
 
-            match Self::spawn_and_initialize(config, &channel_id).await {
+            let init_timeout = self.resolve_init_timeout(config);
+            let backoff = match &config.backoff {
+                Some(cfg) => ExponentialBackoff::new(
+                    Duration::from_millis(cfg.base_delay_ms),
+                    Duration::from_secs(cfg.max_delay_secs),
+                ),
+                None => ExponentialBackoff::default(),
+            };
+            let crash_tracker = match &config.crash_tracker {
+                Some(cfg) => CrashTracker::new(cfg.max_crashes, Duration::from_secs(cfg.window_secs)),
+                None => CrashTracker::default(),
+            };
+
+            match Self::spawn_and_initialize(config, &channel_id, init_timeout).await {
                 Ok((conn, caps)) => {
                     tracing::info!(
                         channel = %name,
@@ -603,8 +624,8 @@ impl Manager for ChannelsManager {
                         connection: Some(conn),
                         channel_id,
                         cancel_token,
-                        backoff: ExponentialBackoff::default(),
-                        crash_tracker: CrashTracker::default(),
+                        backoff,
+                        crash_tracker,
                         disabled: false,
                     });
                 }
@@ -620,8 +641,8 @@ impl Manager for ChannelsManager {
                         connection: None,
                         channel_id,
                         cancel_token,
-                        backoff: ExponentialBackoff::default(),
-                        crash_tracker: CrashTracker::default(),
+                        backoff,
+                        crash_tracker,
                         disabled: false,
                     });
                 }
@@ -643,7 +664,7 @@ impl Manager for ChannelsManager {
 
         tracing::info!(manager = self.name(), "manager running");
 
-        let mut poll_interval = tokio::time::interval(Duration::from_millis(50));
+        let mut poll_interval = tokio::time::interval(Duration::from_millis(constants::POLL_INTERVAL_MS));
 
         loop {
             let channel_event_fut = async {
@@ -728,18 +749,25 @@ mod tests {
             enabled,
             agent: agent.into(),
             ack: Default::default(),
+            init_timeout_secs: None,
+            backoff: None,
+            crash_tracker: None,
         }
+    }
+
+    fn default_init_timeout() -> u64 {
+        10
     }
 
     #[test]
     fn channels_manager_name() {
-        let m = ChannelsManager::new(HashMap::new(), DebounceConfig::default(), "default".into());
+        let m = ChannelsManager::new(HashMap::new(), DebounceConfig::default(), default_init_timeout(), "default".into());
         assert_eq!(m.name(), "channels");
     }
 
     #[tokio::test]
     async fn channels_manager_start_with_no_channels() {
-        let mut m = ChannelsManager::new(HashMap::new(), DebounceConfig::default(), "default".into());
+        let mut m = ChannelsManager::new(HashMap::new(), DebounceConfig::default(), default_init_timeout(), "default".into());
         let result = m.start().await;
         assert!(result.is_ok());
         assert!(m.slots.is_empty());
@@ -747,7 +775,7 @@ mod tests {
 
     #[tokio::test]
     async fn channels_manager_health_check_no_channels() {
-        let m = ChannelsManager::new(HashMap::new(), DebounceConfig::default(), "default".into());
+        let m = ChannelsManager::new(HashMap::new(), DebounceConfig::default(), default_init_timeout(), "default".into());
         assert!(!m.health_check().await);
     }
 
@@ -756,7 +784,7 @@ mod tests {
         let configs = make_channel_map(vec![
             ("bad-channel", test_channel_config("nonexistent-binary-xyz-99999", true, "default")),
         ]);
-        let mut m = ChannelsManager::new(configs, DebounceConfig::default(), "default".into());
+        let mut m = ChannelsManager::new(configs, DebounceConfig::default(), default_init_timeout(), "default".into());
         let result = m.start().await;
         assert!(result.is_ok());
         assert_eq!(m.slots.len(), 1);
@@ -765,7 +793,7 @@ mod tests {
 
     #[tokio::test]
     async fn channels_manager_shutdown_command() {
-        let m = ChannelsManager::new(HashMap::new(), DebounceConfig::default(), "default".into());
+        let m = ChannelsManager::new(HashMap::new(), DebounceConfig::default(), default_init_timeout(), "default".into());
         let tx = m.command_sender();
         tx.send(ChannelsCommand::Shutdown).await.unwrap();
     }
@@ -794,7 +822,7 @@ mod tests {
         let configs = make_channel_map(vec![
             ("crasher", test_channel_config("nonexistent-binary-xyz-99999", true, "default")),
         ]);
-        let mut m = ChannelsManager::new(configs, DebounceConfig::default(), "default".into());
+        let mut m = ChannelsManager::new(configs, DebounceConfig::default(), default_init_timeout(), "default".into());
         m.start().await.unwrap();
         let slot = &mut m.slots[0];
         for _ in 0..5 {
@@ -849,7 +877,7 @@ mod tests {
 
     #[tokio::test]
     async fn handle_channel_event_deliver_routes_to_correct_slot() {
-        let mut m = ChannelsManager::new(HashMap::new(), DebounceConfig::default(), "default".into());
+        let mut m = ChannelsManager::new(HashMap::new(), DebounceConfig::default(), default_init_timeout(), "default".into());
         let key = SessionKey::new("test", "local", "dev");
         m.routing_table.insert(key.clone(), RoutingEntry {
             channel_id: ChannelId::from("test"),
@@ -875,14 +903,14 @@ mod tests {
     async fn with_agents_handle_sets_handle() {
         let (tx, _rx) = mpsc::channel::<AgentsCommand>(16);
         let handle = ManagerHandle::new(tx);
-        let m = ChannelsManager::new(HashMap::new(), DebounceConfig::default(), "default".into()).with_agents_handle(handle);
+        let m = ChannelsManager::new(HashMap::new(), DebounceConfig::default(), default_init_timeout(), "default".into()).with_agents_handle(handle);
         assert!(m.agents_handle.is_some());
     }
 
     #[tokio::test]
     async fn with_channel_events_rx_sets_receiver() {
         let (_tx, rx) = mpsc::channel::<ChannelEvent>(16);
-        let m = ChannelsManager::new(HashMap::new(), DebounceConfig::default(), "default".into()).with_channel_events_rx(rx);
+        let m = ChannelsManager::new(HashMap::new(), DebounceConfig::default(), default_init_timeout(), "default".into()).with_channel_events_rx(rx);
         assert!(m.channel_events_rx.is_some());
     }
 
@@ -891,7 +919,7 @@ mod tests {
         let configs = make_channel_map(vec![
             ("telegram", test_channel_config("telegram-channel", true, "opencode")),
         ]);
-        let mut m = ChannelsManager::new(configs, DebounceConfig::default(), "default-agent".to_string());
+        let mut m = ChannelsManager::new(configs, DebounceConfig::default(), default_init_timeout(), "default-agent".to_string());
         m.slots.push(ChannelSlot {
             name: "telegram".into(),
             config: test_channel_config("telegram-channel", true, "opencode"),
@@ -910,7 +938,7 @@ mod tests {
         let configs = make_channel_map(vec![
             ("debug-http", test_channel_config("debug-http", true, "default")),
         ]);
-        let mut m = ChannelsManager::new(configs, DebounceConfig::default(), "first-enabled".to_string());
+        let mut m = ChannelsManager::new(configs, DebounceConfig::default(), default_init_timeout(), "first-enabled".to_string());
         m.slots.push(ChannelSlot {
             name: "debug-http".into(),
             config: test_channel_config("debug-http", true, "default"),
@@ -929,7 +957,7 @@ mod tests {
         let configs = make_channel_map(vec![
             ("disabled-ch", test_channel_config("nonexistent-binary-xyz-99999", false, "default")),
         ]);
-        let mut m = ChannelsManager::new(configs, DebounceConfig::default(), "default".into());
+        let mut m = ChannelsManager::new(configs, DebounceConfig::default(), default_init_timeout(), "default".into());
         let result = m.start().await;
         assert!(result.is_ok());
         assert!(m.slots.is_empty(), "disabled channel should not create a slot");

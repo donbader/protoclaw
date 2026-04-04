@@ -61,7 +61,7 @@ impl Supervisor {
             }
         }
 
-        let (channel_events_tx, channel_events_rx) = tokio::sync::mpsc::channel(64);
+        let (channel_events_tx, channel_events_rx) = tokio::sync::mpsc::channel(protoclaw_core::constants::EVENT_CHANNEL_CAPACITY);
         let (debug_http_port_tx, debug_http_port_rx) = tokio::sync::watch::channel(0u16);
         Self {
             config,
@@ -155,7 +155,7 @@ impl Supervisor {
     }
 
     async fn boot_managers(&mut self, slots: &mut [ManagerSlot]) -> anyhow::Result<()> {
-        let (tools_tx, tools_rx) = tokio::sync::mpsc::channel::<ToolsCommand>(16);
+        let (tools_tx, tools_rx) = tokio::sync::mpsc::channel::<ToolsCommand>(protoclaw_core::constants::CMD_CHANNEL_CAPACITY);
         self.tools_tx = Some(tools_tx.clone());
         let mut tools_rx = Some(tools_rx);
         let mut channel_events_tx = self.channel_events_tx.take();
@@ -284,11 +284,11 @@ impl Supervisor {
             tokio::time::sleep(delay).await;
 
             let tools_tx = self.tools_tx.clone().unwrap_or_else(|| {
-                let (tx, _) = tokio::sync::mpsc::channel::<ToolsCommand>(16);
+                let (tx, _) = tokio::sync::mpsc::channel::<ToolsCommand>(protoclaw_core::constants::CMD_CHANNEL_CAPACITY);
                 tx
             });
             let tools_rx = if slot.name == "tools" {
-                let (new_tx, rx) = tokio::sync::mpsc::channel::<ToolsCommand>(16);
+                let (new_tx, rx) = tokio::sync::mpsc::channel::<ToolsCommand>(protoclaw_core::constants::CMD_CHANNEL_CAPACITY);
                 self.tools_tx = Some(new_tx);
                 Some(rx)
             } else {
@@ -339,7 +339,7 @@ fn create_manager(
             let default_agent = config.default_agent_name()
                 .unwrap_or("default")
                 .to_string();
-            let mut cm = ChannelsManager::new(config.channels_manager.channels.clone(), config.channels_manager.debounce.clone(), default_agent)
+            let mut cm = ChannelsManager::new(config.channels_manager.channels.clone(), config.channels_manager.debounce.clone(), config.channels_manager.init_timeout_secs, default_agent)
                 .with_agents_handle(agents_handle);
             if let Some(rx) = channel_events_rx {
                 cm = cm.with_channel_events_rx(rx);
