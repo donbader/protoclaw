@@ -50,12 +50,23 @@ The `poll_channels()` method uses 1ms timeout polling per connection — it's a 
 
 Ack notification (`channel/ackMessage`) is sent at dispatch time, not on inbound message receipt. This ensures batched messages only ack the last message in the batch.
 
-Three dispatch sites call `send_ack_to_channel()`:
-- **Immediate branch** — debounce disabled, single message dispatched directly
-- **Debounce flush** — window expired, merged messages dispatched
-- **Queued drain** — agent finished responding, queued messages dispatched
+Two dispatch sites call `send_ack_to_channel()`:
+- **Immediate branch** — first message on idle session dispatched directly
+- **Debounce flush** — post-response window expired, merged messages dispatched
 
 `messageId` is always `Null` — Telegram tracks the last message independently via `last_message_ids`.
+
+## Debounce Flow
+
+Post-response debounce: first message dispatches immediately, subsequent messages merge after the agent responds.
+
+1. Message arrives, session idle, no buffer → `Immediate` (dispatch now)
+2. Message arrives, session idle, buffer exists (post-response window) → `Buffered` (accumulate, reset timer)
+3. Message arrives, agent mid-response → `Queued`
+4. Agent finishes (Result event) → `mark_session_idle()` moves queued messages into buffer with fresh timer
+5. Debounce window expires with no new messages → `drain()` merges and dispatches
+
+The sliding window timer only starts after the agent finishes responding, not when messages arrive. This means the first message always gets instant dispatch while rapid follow-ups during and after the response get merged.
 
 ## Anti-Patterns (this crate)
 
