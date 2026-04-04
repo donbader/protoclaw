@@ -54,12 +54,11 @@ impl DebounceBuffer {
             return DebounceAction::Queued;
         }
 
-        let entry = self.buffers.entry(session_key.clone()).or_insert_with(|| {
-            SessionBuffer {
-                messages: Vec::new(),
-                last_push: Instant::now(),
-            }
-        });
+        if !self.buffers.contains_key(session_key) {
+            return DebounceAction::Immediate(message);
+        }
+
+        let entry = self.buffers.get_mut(session_key).expect("checked above");
         entry.messages.push(message);
         entry.last_push = Instant::now();
         DebounceAction::Buffered
@@ -86,6 +85,14 @@ impl DebounceBuffer {
 
     pub fn mark_session_idle(&mut self, session_key: &SessionKey) {
         self.active_sessions.remove(session_key);
+        if let Some(msgs) = self.queued.remove(session_key) {
+            if !msgs.is_empty() {
+                self.buffers.insert(session_key.clone(), SessionBuffer {
+                    messages: msgs,
+                    last_push: Instant::now(),
+                });
+            }
+        }
     }
 
     pub fn drain_queued(&mut self, session_key: &SessionKey) -> Option<String> {
@@ -141,16 +148,18 @@ mod tests {
     }
 
     #[test]
-    fn push_returns_buffered_when_enabled() {
+    fn push_returns_immediate_when_idle() {
         let mut buf = DebounceBuffer::new(default_config());
         let action = buf.push(&key("alice"), "hello".into());
-        assert_eq!(action, DebounceAction::Buffered);
+        assert_eq!(action, DebounceAction::Immediate("hello".into()));
     }
 
     #[test]
-    fn push_second_message_resets_timer_returns_buffered() {
+    fn push_returns_buffered_when_post_response_window_active() {
         let mut buf = DebounceBuffer::new(default_config());
+        buf.mark_session_active(&key("alice"));
         buf.push(&key("alice"), "msg1".into());
+        buf.mark_session_idle(&key("alice"));
         let action = buf.push(&key("alice"), "msg2".into());
         assert_eq!(action, DebounceAction::Buffered);
     }
@@ -158,8 +167,10 @@ mod tests {
     #[test]
     fn drain_returns_merged_messages() {
         let mut buf = DebounceBuffer::new(default_config());
+        buf.mark_session_active(&key("alice"));
         buf.push(&key("alice"), "msg1".into());
         buf.push(&key("alice"), "msg2".into());
+        buf.mark_session_idle(&key("alice"));
         let merged = buf.drain(&key("alice"));
         assert_eq!(merged, Some("msg1\nmsg2".into()));
     }
@@ -173,7 +184,9 @@ mod tests {
     #[test]
     fn drain_removes_entry() {
         let mut buf = DebounceBuffer::new(default_config());
+        buf.mark_session_active(&key("alice"));
         buf.push(&key("alice"), "msg1".into());
+        buf.mark_session_idle(&key("alice"));
         buf.drain(&key("alice"));
         assert_eq!(buf.drain(&key("alice")), None);
     }
@@ -185,7 +198,9 @@ mod tests {
             ..default_config()
         };
         let mut buf = DebounceBuffer::new(config);
+        buf.mark_session_active(&key("alice"));
         buf.push(&key("alice"), "msg1".into());
+        buf.mark_session_idle(&key("alice"));
         tokio::time::sleep(Duration::from_millis(20)).await;
         let ready = buf.ready_sessions();
         assert_eq!(ready.len(), 1);
@@ -195,7 +210,9 @@ mod tests {
     #[test]
     fn ready_sessions_excludes_recent_pushes() {
         let mut buf = DebounceBuffer::new(default_config());
+        buf.mark_session_active(&key("alice"));
         buf.push(&key("alice"), "msg1".into());
+        buf.mark_session_idle(&key("alice"));
         let ready = buf.ready_sessions();
         assert!(ready.is_empty());
     }
@@ -228,7 +245,6 @@ mod tests {
         buf.mark_session_active(&key("alice"));
         buf.push(&key("alice"), "msg1".into());
         buf.push(&key("alice"), "msg2".into());
-        buf.mark_session_idle(&key("alice"));
         let merged = buf.drain_queued(&key("alice"));
         assert_eq!(merged, Some("msg1\nmsg2".into()));
     }
@@ -245,13 +261,15 @@ mod tests {
         buf.mark_session_active(&key("alice"));
         buf.mark_session_idle(&key("alice"));
         let action = buf.push(&key("alice"), "msg1".into());
-        assert_eq!(action, DebounceAction::Buffered);
+        assert_eq!(action, DebounceAction::Immediate("msg1".into()));
     }
 
     #[test]
     fn has_pending_true_when_buffered() {
         let mut buf = DebounceBuffer::new(default_config());
+        buf.mark_session_active(&key("alice"));
         buf.push(&key("alice"), "msg1".into());
+        buf.mark_session_idle(&key("alice"));
         assert!(buf.has_pending());
     }
 
@@ -266,7 +284,9 @@ mod tests {
     #[test]
     fn next_deadline_returns_earliest() {
         let mut buf = DebounceBuffer::new(default_config());
+        buf.mark_session_active(&key("alice"));
         buf.push(&key("alice"), "msg1".into());
+        buf.mark_session_idle(&key("alice"));
         let deadline = buf.next_deadline();
         assert!(deadline.is_some());
         let remaining = deadline.unwrap().duration_since(Instant::now());
@@ -282,9 +302,13 @@ mod tests {
     #[test]
     fn separate_sessions_independent() {
         let mut buf = DebounceBuffer::new(default_config());
+        buf.mark_session_active(&key("alice"));
         buf.push(&key("alice"), "a1".into());
-        buf.push(&key("bob"), "b1".into());
         buf.push(&key("alice"), "a2".into());
+        buf.mark_session_active(&key("bob"));
+        buf.push(&key("bob"), "b1".into());
+        buf.mark_session_idle(&key("alice"));
+        buf.mark_session_idle(&key("bob"));
 
         let alice = buf.drain(&key("alice"));
         assert_eq!(alice, Some("a1\na2".into()));
@@ -300,9 +324,37 @@ mod tests {
             ..default_config()
         };
         let mut buf = DebounceBuffer::new(config);
+        buf.mark_session_active(&key("alice"));
         buf.push(&key("alice"), "msg1".into());
         buf.push(&key("alice"), "msg2".into());
+        buf.mark_session_idle(&key("alice"));
         let merged = buf.drain(&key("alice"));
         assert_eq!(merged, Some("msg1 | msg2".into()));
+    }
+
+    #[test]
+    fn mark_session_idle_moves_queued_to_buffer() {
+        let mut buf = DebounceBuffer::new(default_config());
+        buf.mark_session_active(&key("alice"));
+        buf.push(&key("alice"), "q1".into());
+        buf.push(&key("alice"), "q2".into());
+        assert!(!buf.buffers.contains_key(&key("alice")));
+        buf.mark_session_idle(&key("alice"));
+        assert!(buf.buffers.contains_key(&key("alice")));
+        assert!(!buf.queued.contains_key(&key("alice")));
+        let merged = buf.drain(&key("alice"));
+        assert_eq!(merged, Some("q1\nq2".into()));
+    }
+
+    #[test]
+    fn post_response_window_accumulates_then_flushes() {
+        let mut buf = DebounceBuffer::new(default_config());
+        buf.mark_session_active(&key("alice"));
+        buf.push(&key("alice"), "q1".into());
+        buf.mark_session_idle(&key("alice"));
+        let action = buf.push(&key("alice"), "extra".into());
+        assert_eq!(action, DebounceAction::Buffered);
+        let merged = buf.drain(&key("alice"));
+        assert_eq!(merged, Some("q1\nextra".into()));
     }
 }

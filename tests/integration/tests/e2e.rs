@@ -209,7 +209,10 @@ async fn flow_thinking_chunks() {
 
 #[tokio::test]
 async fn flow_debounce_merges_messages() {
-    let config = mock_agent_config_with_debounce(300);
+    let mut env = HashMap::new();
+    env.insert("MOCK_AGENT_THINK".into(), "1".into());
+    let mut config = mock_agent_config_with_env(env);
+    config.channels_manager.debounce.window_ms = 300;
     let (cancel, handle, port) = boot_supervisor_with_port(config).await;
 
     let client = reqwest::Client::new();
@@ -232,6 +235,7 @@ async fn flow_debounce_merges_messages() {
     }
 
     let mut result_content = String::new();
+    let mut result_count = 0;
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
 
     use tokio_stream::StreamExt;
@@ -245,23 +249,30 @@ async fn flow_debounce_merges_messages() {
                         let data = data.trim();
                         if let Ok(v) = serde_json::from_str::<serde_json::Value>(data) {
                             if v.get("type").and_then(|t| t.as_str()) == Some("result") {
-                                result_content = v.get("content")
+                                result_count += 1;
+                                let content = v.get("content")
                                     .and_then(|c| c.as_str())
                                     .unwrap_or("")
                                     .to_string();
+                                result_content.push_str(&content);
+                                result_content.push('\n');
                             }
                         }
                     }
                 }
-                if !result_content.is_empty() { break; }
+                if result_count >= 2 { break; }
             }
             _ => break,
         }
     }
 
     assert!(
-        result_content.contains("line1") && result_content.contains("line2") && result_content.contains("line3"),
-        "debounce should merge all 3 messages into one prompt, got: {result_content}"
+        result_content.contains("line1"),
+        "first message should dispatch immediately, got: {result_content}"
+    );
+    assert!(
+        result_content.contains("line2") && result_content.contains("line3"),
+        "queued messages should merge after agent responds, got: {result_content}"
     );
 
     cancel.cancel();

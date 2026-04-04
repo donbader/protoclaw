@@ -284,15 +284,6 @@ impl ChannelsManager {
 
                 if is_result {
                     self.debounce.mark_session_idle(&session_key);
-                    if let Some(queued_msg) = self.debounce.drain_queued(&session_key) {
-                        self.send_ack_to_channel(&session_key).await;
-                        let agent_name = self.routing_table
-                            .get(&session_key)
-                            .map(|e| e.agent_name.clone())
-                            .unwrap_or_default();
-                        self.debounce.mark_session_active(&session_key);
-                        self.dispatch_to_agent(&session_key, &queued_msg, &agent_name).await;
-                    }
                 }
 
                 if let Some(entry) = self.routing_table.get(&session_key) {
