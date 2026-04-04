@@ -13,3 +13,4 @@ pub use handles::*;
 pub use timeout::*;
 pub use sse::*;
 pub use supervisor::*;
+pub use test_log;
