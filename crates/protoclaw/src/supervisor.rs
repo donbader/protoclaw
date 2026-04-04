@@ -426,6 +426,7 @@ mod tests {
                 restart_window_secs: 60,
             },
             log_level: "info".into(),
+            log_format: "pretty".into(),
             extensions_dir: "/usr/local/bin".into(),
         }
     }
