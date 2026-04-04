@@ -120,9 +120,15 @@ impl AgentsManager {
     async fn initialize_agent(slot: &mut AgentSlot, acp_timeout: Duration) -> Result<(), AgentsError> {
         let conn = slot.connection.as_ref().ok_or(AgentsError::ConnectionClosed)?;
 
+        let options = if slot.config.options.is_empty() {
+            None
+        } else {
+            Some(slot.config.options.clone())
+        };
         let params = serde_json::to_value(InitializeParams {
             protocol_version: 1,
             capabilities: ClientCapabilities { experimental: None },
+            options,
         })?;
 
         let rx = conn.send_request("initialize", params).await?;
@@ -683,6 +689,7 @@ mod tests {
             acp_timeout_secs: None,
             backoff: None,
             crash_tracker: None,
+            options: HashMap::new(),
         }
     }
 

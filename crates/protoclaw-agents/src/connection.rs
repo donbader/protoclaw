@@ -222,6 +222,7 @@ mod tests {
             acp_timeout_secs: None,
             backoff: None,
             crash_tracker: None,
+            options: HashMap::new(),
         }
     }
 
@@ -245,6 +246,7 @@ mod tests {
             acp_timeout_secs: None,
             backoff: None,
             crash_tracker: None,
+            options: HashMap::new(),
         };
         let result = AgentConnection::spawn(&config, "test-agent");
         assert!(result.is_err());

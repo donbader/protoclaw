@@ -12,6 +12,8 @@ pub struct InitializeParams {
     #[serde(rename = "protocolVersion")]
     pub protocol_version: u32,
     pub capabilities: ClientCapabilities,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub options: Option<HashMap<String, serde_json::Value>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

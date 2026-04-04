@@ -128,6 +128,7 @@ mod tests {
                 acp_timeout_secs: None,
                 backoff: None,
                 crash_tracker: None,
+                options: HashMap::new(),
             },
         );
         ProtoclawConfig {
@@ -216,6 +217,7 @@ mod tests {
                 init_timeout_secs: None,
                 backoff: None,
                 crash_tracker: None,
+                options: HashMap::new(),
             },
         );
         let result = validate_config(&config);
@@ -243,6 +245,7 @@ mod tests {
                 description: String::new(),
                 input_schema: None,
                 sandbox: Default::default(),
+                options: HashMap::new(),
             },
         );
         let result = validate_config(&config);

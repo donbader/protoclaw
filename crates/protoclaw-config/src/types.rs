@@ -126,6 +126,8 @@ pub struct AgentConfig {
     pub backoff: Option<BackoffConfig>,
     #[serde(default)]
     pub crash_tracker: Option<CrashTrackerConfig>,
+    #[serde(default)]
+    pub options: HashMap<String, serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -145,6 +147,8 @@ pub struct ChannelConfig {
     pub backoff: Option<BackoffConfig>,
     #[serde(default)]
     pub crash_tracker: Option<CrashTrackerConfig>,
+    #[serde(default)]
+    pub options: HashMap<String, serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -211,6 +215,8 @@ pub struct ToolConfig {
     pub input_schema: Option<String>,
     #[serde(default)]
     pub sandbox: WasmSandboxConfig,
+    #[serde(default)]
+    pub options: HashMap<String, serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -632,6 +638,20 @@ tools-manager:
         assert!(config.acp_timeout_secs.is_none());
         assert!(config.backoff.is_none());
         assert!(config.crash_tracker.is_none());
+        assert!(config.options.is_empty());
+    }
+
+    #[test]
+    fn agent_config_options_from_yaml() {
+        let yaml = r#"
+binary: "test-agent"
+options:
+  thinking: true
+  verbose: false
+"#;
+        let config: AgentConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(config.options["thinking"], serde_json::json!(true));
+        assert_eq!(config.options["verbose"], serde_json::json!(false));
     }
 
     #[test]
