@@ -3,11 +3,11 @@ use std::collections::HashMap;
 use crate::paths::{debug_http_path, mock_agent_path};
 
 pub fn mock_agent_config() -> protoclaw_config::ProtoclawConfig {
-    mock_agent_config_with_env(HashMap::new())
+    mock_agent_config_with_options(HashMap::new())
 }
 
-pub fn mock_agent_config_with_env(
-    env: HashMap<String, String>,
+pub fn mock_agent_config_with_options(
+    options: HashMap<String, serde_json::Value>,
 ) -> protoclaw_config::ProtoclawConfig {
     let mut agents = HashMap::new();
     agents.insert(
@@ -16,13 +16,13 @@ pub fn mock_agent_config_with_env(
             binary: mock_agent_path().to_string_lossy().to_string(),
             args: vec![],
             enabled: true,
-            env,
+            env: HashMap::new(),
             working_dir: None,
             tools: vec![],
             acp_timeout_secs: None,
             backoff: None,
             crash_tracker: None,
-            options: HashMap::new(),
+            options,
         },
     );
 
@@ -95,15 +95,15 @@ mod tests {
     }
 
     #[test]
-    fn mock_agent_config_with_env_inserts_vars() {
-        let mut env = HashMap::new();
-        env.insert("FOO".into(), "bar".into());
-        let cfg = mock_agent_config_with_env(env);
+    fn mock_agent_config_with_options_inserts_values() {
+        let mut opts = HashMap::new();
+        opts.insert("exit_after".into(), serde_json::json!(1));
+        let cfg = mock_agent_config_with_options(opts);
         let agent = cfg
             .agents_manager
             .agents
             .get("default")
             .expect("default agent");
-        assert_eq!(agent.env.get("FOO").unwrap(), "bar");
+        assert_eq!(agent.options["exit_after"], serde_json::json!(1));
     }
 }

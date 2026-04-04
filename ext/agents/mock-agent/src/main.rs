@@ -1,22 +1,55 @@
 use serde_json::{json, Value};
-use std::env;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::OnceLock;
 use tokio::io::{AsyncBufReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 
 static PROMPT_COUNT: AtomicUsize = AtomicUsize::new(0);
 static THINK_ENABLED: AtomicBool = AtomicBool::new(true);
+static AGENT_OPTIONS: OnceLock<AgentOptions> = OnceLock::new();
+
+#[derive(Debug)]
+struct AgentOptions {
+    exit_after: Option<usize>,
+    delay_ms: Option<u64>,
+    request_permission: bool,
+    reject_load: bool,
+    echo_prefix: String,
+}
+
+impl Default for AgentOptions {
+    fn default() -> Self {
+        Self {
+            exit_after: None,
+            delay_ms: None,
+            request_permission: false,
+            reject_load: false,
+            echo_prefix: "Echo".to_string(),
+        }
+    }
+}
+
+impl AgentOptions {
+    fn from_initialize_params(params: &Value) -> Self {
+        let options = &params["options"];
+        Self {
+            exit_after: options["exit_after"].as_u64().map(|v| v as usize),
+            delay_ms: options["delay_ms"].as_u64(),
+            request_permission: options["request_permission"].as_bool().unwrap_or(false),
+            reject_load: options["reject_load"].as_bool().unwrap_or(false),
+            echo_prefix: options["echo_prefix"]
+                .as_str()
+                .unwrap_or("Echo")
+                .to_string(),
+        }
+    }
+}
+
+fn opts() -> &'static AgentOptions {
+    AGENT_OPTIONS.get().expect("initialize must be called first")
+}
 
 #[tokio::main]
 async fn main() {
-    let exit_after: Option<usize> = env::var("MOCK_AGENT_EXIT_AFTER")
-        .ok()
-        .and_then(|v| v.parse().ok());
-    let delay_ms: Option<u64> = env::var("MOCK_AGENT_DELAY_MS")
-        .ok()
-        .and_then(|v| v.parse().ok());
-    let request_permission = env::var("MOCK_AGENT_REQUEST_PERMISSION").ok().is_some_and(|v| v == "1");
-    let reject_load = env::var("MOCK_AGENT_REJECT_LOAD").ok().is_some_and(|v| v == "1");
-
     let stdin = tokio::io::stdin();
     let mut stdout = tokio::io::stdout();
     let reader = BufReader::new(stdin);
@@ -37,8 +70,10 @@ async fn main() {
         let method = msg["method"].as_str().unwrap_or("");
         let id = msg.get("id").cloned();
 
-        if let Some(ms) = delay_ms {
-            tokio::time::sleep(tokio::time::Duration::from_millis(ms)).await;
+        if AGENT_OPTIONS.get().is_some() {
+            if let Some(ms) = opts().delay_ms {
+                tokio::time::sleep(tokio::time::Duration::from_millis(ms)).await;
+            }
         }
 
         match method {
@@ -57,14 +92,14 @@ async fn main() {
                     id,
                     &sid,
                     &user_msg,
-                    request_permission,
+                    opts().request_permission,
                     think,
                     &mut lines,
                 )
                 .await;
 
                 let count = PROMPT_COUNT.fetch_add(1, Ordering::SeqCst) + 1;
-                if let Some(limit) = exit_after {
+                if let Some(limit) = opts().exit_after {
                     if count >= limit {
                         std::process::exit(1);
                     }
@@ -74,7 +109,7 @@ async fn main() {
                 handle_session_cancel(&mut stdout, id).await;
             }
             "session/load" => {
-                handle_session_load(&mut stdout, id, reject_load, &mut session_id).await;
+                handle_session_load(&mut stdout, id, opts().reject_load, &mut session_id).await;
             }
             "session/close" => {
                 handle_session_close(&mut stdout, id).await;
@@ -109,8 +144,11 @@ fn extract_prompt_message(msg: &Value) -> String {
 }
 
 async fn handle_initialize(stdout: &mut tokio::io::Stdout, id: Option<Value>, msg: &Value) {
-    let think = msg["params"]["options"]["thinking"].as_bool().unwrap_or(true);
+    let params = &msg["params"];
+    let think = params["options"]["thinking"].as_bool().unwrap_or(true);
     THINK_ENABLED.store(think, Ordering::SeqCst);
+
+    let _ = AGENT_OPTIONS.set(AgentOptions::from_initialize_params(params));
 
     let resp = json!({
         "jsonrpc": "2.0",
@@ -186,10 +224,15 @@ async fn handle_session_prompt<W: AsyncWrite + Unpin>(
         }
     }
 
+    let prefix = AGENT_OPTIONS
+        .get()
+        .map(|o| o.echo_prefix.as_str())
+        .unwrap_or("Echo");
+
     let chunk1 = json!({
         "jsonrpc": "2.0",
         "method": "session/update",
-        "params": { "sessionId": session_id, "type": "agent_message_chunk", "content": "Echo: " }
+        "params": { "sessionId": session_id, "type": "agent_message_chunk", "content": format!("{prefix}: ") }
     });
     write_message(stdout, &chunk1).await;
 
@@ -206,7 +249,7 @@ async fn handle_session_prompt<W: AsyncWrite + Unpin>(
         "params": {
             "sessionId": session_id,
             "type": "result",
-            "content": format!("Echo: {user_msg}")
+            "content": format!("{prefix}: {user_msg}")
         }
     });
     write_message(stdout, &result_notif).await;

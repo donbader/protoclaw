@@ -1,18 +1,17 @@
 use std::collections::HashMap;
 
 use protoclaw_integration_tests::{
-    boot_supervisor_with_port, mock_agent_config_with_env, with_timeout,
+    boot_supervisor_with_port, mock_agent_config_with_options, with_timeout,
 };
 
 #[test_log::test(tokio::test)]
 async fn flow_crash_recovery() {
-    let mut env = HashMap::new();
-    env.insert("MOCK_AGENT_EXIT_AFTER".into(), "1".into());
-    let config = mock_agent_config_with_env(env);
+    let mut opts = HashMap::new();
+    opts.insert("exit_after".into(), serde_json::json!(1));
+    let config = mock_agent_config_with_options(opts);
     let (cancel, handle, port) = boot_supervisor_with_port(config).await;
     let client = reqwest::Client::new();
 
-    // First message — agent handles it then exits
     let resp = client
         .post(format!("http://127.0.0.1:{port}/message"))
         .json(&serde_json::json!({"message": "first"}))
@@ -21,10 +20,8 @@ async fn flow_crash_recovery() {
         .unwrap();
     assert_eq!(resp.status(), 200);
 
-    // Wait for crash detection + backoff + restart + re-initialize
     tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
 
-    // Second message — should work after crash recovery
     let resp = client
         .post(format!("http://127.0.0.1:{port}/message"))
         .json(&serde_json::json!({"message": "after crash"}))

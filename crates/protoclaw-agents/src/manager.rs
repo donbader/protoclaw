@@ -803,7 +803,7 @@ mod tests {
     #[tokio::test]
     async fn agents_manager_crash_recovery() {
         let mut config = mock_agent_config();
-        config.env.insert("MOCK_AGENT_EXIT_AFTER".into(), "1".into());
+        config.options.insert("exit_after".into(), serde_json::json!(1));
 
         let (handle, rx) = make_tools_handle();
         let tools_task = tokio::spawn(serve_tools_urls(rx));

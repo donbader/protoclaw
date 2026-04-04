@@ -2299,6 +2299,7 @@ dependencies = [
  "protoclaw-config",
  "protoclaw-core",
  "reqwest",
+ "serde_json",
  "test-log",
  "tokio",
  "tokio-stream",
