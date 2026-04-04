@@ -6,7 +6,7 @@ Infrastructure sidecar connecting AI agents to channels (Telegram, Slack) and to
 
 ```
 protoclaw-rust/
-├── crates/                         # Core workspace crates (11 total)
+├── crates/                         # Core workspace crates (12 total)
 │   ├── protoclaw/                  # Binary: CLI + Supervisor (entry point)
 │   ├── protoclaw-core/             # Shared: Manager trait, backoff, crash tracker, message types
 │   ├── protoclaw-agents/           # ACP protocol layer, agent subprocess management
@@ -17,7 +17,8 @@ protoclaw-rust/
 │   ├── protoclaw-sdk-types/        # Shared SDK types (capabilities, permissions)
 │   ├── protoclaw-sdk-agent/        # SDK: AgentAdapter trait + GenericAcpAdapter
 │   ├── protoclaw-sdk-channel/      # SDK: Channel trait + ChannelHarness
-│   └── protoclaw-sdk-tool/         # SDK: Tool trait + ToolServer
+│   ├── protoclaw-sdk-tool/         # SDK: Tool trait + ToolServer
+│   └── protoclaw-test-helpers/     # Shared test utilities (dev-dependency)
 ├── ext/                            # External binaries (spawned as subprocesses)
 │   ├── agents/
 │   │   └── mock-agent/             # Mock ACP agent binary (echo + thinking simulation)
@@ -48,6 +49,7 @@ protoclaw-rust/
 | Build channel SDK | `crates/protoclaw-sdk-channel/` | Channel trait + ChannelHarness |
 | Build tool SDK | `crates/protoclaw-sdk-tool/` | Tool trait + ToolServer |
 | Mock agent binary | `ext/agents/mock-agent/` | Mock ACP agent for testing (echo + thinking simulation) |
+| Add test helper | `crates/protoclaw-test-helpers/` | Shared across all crate tests |
 | Integration tests | `tests/integration/tests/e2e.rs` | Requires `cargo build` first (needs mock-agent binary) |
 
 ## Crate Dependency Flow
@@ -94,6 +96,16 @@ Example binaries:
 - **Do not call `run()` twice**: `cmd_rx` is consumed via `.take()` on first `run()`. Second call panics.
 - **Do not move `ChannelEvent` out of `protoclaw-core`**: It lives there to break the circular dependency between agents and channels crates.
 - **Do not remove the 50ms sleep in `poll_channels()`**: It prevents busy-looping in the channel polling select.
+
+## Design Documentation
+
+For deeper context on design decisions, architecture rationale, and failure modes:
+- `docs/design-principles.md` — Core invariants, why three managers, failure mode catalog, anti-pattern reasoning
+
+Load `docs/design-principles.md` when:
+- Making architectural changes (adding managers, changing boot order)
+- Debugging crash recovery or lifecycle issues
+- Questioning why a pattern exists (the "why" behind anti-patterns)
 
 ## Commands
 
