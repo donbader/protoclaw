@@ -13,6 +13,8 @@ pub const DEFAULTS_YAML: &str = include_str!("defaults.yaml");
 pub struct ProtoclawConfig {
     #[serde(default = "default_log_level")]
     pub log_level: String,
+    #[serde(default = "default_log_format")]
+    pub log_format: String,
     #[serde(default = "default_extensions_dir")]
     pub extensions_dir: String,
     #[serde(rename = "agents-manager", default)]
@@ -266,6 +268,9 @@ where
 
 fn default_log_level() -> String {
     "info".into()
+}
+fn default_log_format() -> String {
+    "pretty".into()
 }
 fn default_extensions_dir() -> String {
     "/usr/local/bin".into()
@@ -580,9 +585,24 @@ tools-manager:
     }
 
     #[test]
+    fn log_format_defaults_to_pretty() {
+        let yaml = "";
+        let config: ProtoclawConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(config.log_format, "pretty");
+    }
+
+    #[test]
+    fn log_format_from_yaml() {
+        let yaml = "log_format: \"json\"";
+        let config: ProtoclawConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(config.log_format, "json");
+    }
+
+    #[test]
     fn defaults_yaml_parses() {
         let config: ProtoclawConfig = serde_yaml::from_str(DEFAULTS_YAML).unwrap();
         assert_eq!(config.log_level, "info");
+        assert_eq!(config.log_format, "pretty");
         assert_eq!(config.extensions_dir, "/usr/local/bin");
         assert!(config.channels_manager.debounce.enabled);
         assert_eq!(config.channels_manager.debounce.window_ms, 1000);

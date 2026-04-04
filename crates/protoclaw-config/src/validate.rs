@@ -132,6 +132,7 @@ mod tests {
         );
         ProtoclawConfig {
             log_level: "info".into(),
+            log_format: "pretty".into(),
             extensions_dir: "/usr/local/bin".into(),
             agents_manager: AgentsManagerConfig {
                 acp_timeout_secs: 30,

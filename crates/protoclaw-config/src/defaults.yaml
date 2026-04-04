@@ -1,4 +1,5 @@
 log_level: "info"
+log_format: "pretty"
 extensions_dir: "/usr/local/bin"
 
 agents-manager:
