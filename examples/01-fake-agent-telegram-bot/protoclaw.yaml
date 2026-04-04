@@ -17,7 +17,7 @@ agents-manager:
 channels-manager:
   debounce:
     enabled: true
-    window_ms: 1000
+    window_ms: 2000
   channels:
     debug-http:
       binary: "@built-in/debug-http"
