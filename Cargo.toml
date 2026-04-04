@@ -21,7 +21,7 @@ thiserror = "2"
 anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-figment = { version = "0.10", features = ["toml", "env"] }
+figment = { version = "0.10", features = ["toml", "yaml", "env"] }
 bytes = "1"
 uuid = { version = "1", features = ["v4"] }
 clap = { version = "4", features = ["derive", "env"] }
@@ -38,4 +38,5 @@ protoclaw-sdk-agent = { path = "crates/protoclaw-sdk-agent" }
 protoclaw-test-helpers = { path = "crates/protoclaw-test-helpers" }
 wasmtime = "42"
 wasmtime-wasi = "42"
-subst = { version = "0.3", features = ["toml"] }
+serde_yaml = "0.9"
+subst = { version = "0.3", features = ["toml", "yaml"] }

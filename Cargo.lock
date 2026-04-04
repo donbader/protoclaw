@@ -899,6 +899,7 @@ dependencies = [
  "parking_lot",
  "pear",
  "serde",
+ "serde_yaml",
  "tempfile",
  "toml 0.8.23",
  "uncased",
@@ -2169,6 +2170,7 @@ dependencies = [
  "figment",
  "serde",
  "serde_json",
+ "serde_yaml",
  "subst",
  "tempfile",
  "thiserror 2.0.18",
@@ -2196,6 +2198,7 @@ dependencies = [
  "anyhow",
  "protoclaw",
  "protoclaw-config",
+ "protoclaw-test-helpers",
  "reqwest",
  "serde_json",
  "tokio",
@@ -2261,6 +2264,15 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "protoclaw-test-helpers"
+version = "0.1.0"
+dependencies = [
+ "protoclaw-config",
+ "protoclaw-core",
+ "tokio",
 ]
 
 [[package]]
@@ -3094,6 +3106,7 @@ checksum = "0a9a86e5144f63c2d18334698269a8bfae6eece345c70b64821ea5b35054ec99"
 dependencies = [
  "memchr",
  "serde",
+ "serde_yaml",
  "toml 0.8.23",
  "unicode-width 0.1.14",
 ]

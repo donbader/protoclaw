@@ -1,6 +1,7 @@
 pub mod error;
 pub mod resolve;
 pub mod subst_toml;
+pub mod subst_yaml;
 pub mod types;
 pub mod validate;
 

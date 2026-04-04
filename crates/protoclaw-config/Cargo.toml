@@ -11,9 +11,10 @@ figment.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 toml.workspace = true
+serde_yaml.workspace = true
 subst.workspace = true
 
 [dev-dependencies]
 figment = { workspace = true, features = ["test"] }
 tempfile.workspace = true
-toml.workspace = true
+serde_yaml.workspace = true
