@@ -1,9 +1,12 @@
 log_level: "info"
 extensions_dir: "/usr/local/bin"
 
-agents-manager: {}
+agents-manager:
+  acp_timeout_secs: 30
+  shutdown_grace_ms: 100
 
 channels-manager:
+  init_timeout_secs: 10
   debounce:
     enabled: true
     window_ms: 1000

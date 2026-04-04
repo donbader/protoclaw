@@ -25,14 +25,64 @@ pub struct ProtoclawConfig {
     pub supervisor: SupervisorConfig,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct BackoffConfig {
+    #[serde(default = "default_backoff_base_ms")]
+    pub base_delay_ms: u64,
+    #[serde(default = "default_backoff_max_secs")]
+    pub max_delay_secs: u64,
+}
+
+impl Default for BackoffConfig {
+    fn default() -> Self {
+        Self {
+            base_delay_ms: default_backoff_base_ms(),
+            max_delay_secs: default_backoff_max_secs(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct CrashTrackerConfig {
+    #[serde(default = "default_crash_max")]
+    pub max_crashes: u32,
+    #[serde(default = "default_crash_window_secs")]
+    pub window_secs: u64,
+}
+
+impl Default for CrashTrackerConfig {
+    fn default() -> Self {
+        Self {
+            max_crashes: default_crash_max(),
+            window_secs: default_crash_window_secs(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AgentsManagerConfig {
+    #[serde(default = "default_acp_timeout_secs")]
+    pub acp_timeout_secs: u64,
+    #[serde(default = "default_shutdown_grace_ms")]
+    pub shutdown_grace_ms: u64,
     #[serde(default)]
     pub agents: HashMap<String, AgentConfig>,
 }
 
+impl Default for AgentsManagerConfig {
+    fn default() -> Self {
+        Self {
+            acp_timeout_secs: default_acp_timeout_secs(),
+            shutdown_grace_ms: default_shutdown_grace_ms(),
+            agents: HashMap::new(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ChannelsManagerConfig {
+    #[serde(default = "default_init_timeout_secs")]
+    pub init_timeout_secs: u64,
     #[serde(default)]
     pub debounce: DebounceConfig,
     #[serde(default)]
@@ -42,6 +92,7 @@ pub struct ChannelsManagerConfig {
 impl Default for ChannelsManagerConfig {
     fn default() -> Self {
         Self {
+            init_timeout_secs: default_init_timeout_secs(),
             debounce: DebounceConfig::default(),
             channels: HashMap::new(),
         }
@@ -67,6 +118,12 @@ pub struct AgentConfig {
     pub working_dir: Option<PathBuf>,
     #[serde(default)]
     pub tools: Vec<String>,
+    #[serde(default)]
+    pub acp_timeout_secs: Option<u64>,
+    #[serde(default)]
+    pub backoff: Option<BackoffConfig>,
+    #[serde(default)]
+    pub crash_tracker: Option<CrashTrackerConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -80,6 +137,12 @@ pub struct ChannelConfig {
     pub agent: String,
     #[serde(default)]
     pub ack: AckConfig,
+    #[serde(default)]
+    pub init_timeout_secs: Option<u64>,
+    #[serde(default)]
+    pub backoff: Option<BackoffConfig>,
+    #[serde(default)]
+    pub crash_tracker: Option<CrashTrackerConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -250,6 +313,27 @@ fn default_max_restarts() -> u32 {
     5
 }
 fn default_restart_window() -> u64 {
+    60
+}
+fn default_acp_timeout_secs() -> u64 {
+    30
+}
+fn default_init_timeout_secs() -> u64 {
+    10
+}
+fn default_shutdown_grace_ms() -> u64 {
+    100
+}
+fn default_backoff_base_ms() -> u64 {
+    100
+}
+fn default_backoff_max_secs() -> u64 {
+    30
+}
+fn default_crash_max() -> u32 {
+    5
+}
+fn default_crash_window_secs() -> u64 {
     60
 }
 
@@ -503,6 +587,9 @@ tools-manager:
         assert!(config.channels_manager.debounce.enabled);
         assert_eq!(config.channels_manager.debounce.window_ms, 1000);
         assert_eq!(config.supervisor.shutdown_timeout_secs, 30);
+        assert_eq!(config.agents_manager.acp_timeout_secs, 30);
+        assert_eq!(config.agents_manager.shutdown_grace_ms, 100);
+        assert_eq!(config.channels_manager.init_timeout_secs, 10);
     }
 
     #[test]
@@ -522,6 +609,9 @@ tools-manager:
         assert!(config.tools.is_empty());
         assert!(config.env.is_empty());
         assert!(config.args.is_empty());
+        assert!(config.acp_timeout_secs.is_none());
+        assert!(config.backoff.is_none());
+        assert!(config.crash_tracker.is_none());
     }
 
     #[test]
@@ -591,5 +681,117 @@ supervisor:
         let tg = &config.channels_manager.channels["telegram"];
         assert!(tg.ack.reaction);
         assert_eq!(tg.agent, "opencode");
+    }
+
+    #[test]
+    fn backoff_config_defaults() {
+        let config = BackoffConfig::default();
+        assert_eq!(config.base_delay_ms, 100);
+        assert_eq!(config.max_delay_secs, 30);
+    }
+
+    #[test]
+    fn backoff_config_from_yaml() {
+        let yaml = "base_delay_ms: 200\nmax_delay_secs: 60";
+        let config: BackoffConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(config.base_delay_ms, 200);
+        assert_eq!(config.max_delay_secs, 60);
+    }
+
+    #[test]
+    fn backoff_config_partial_yaml_uses_defaults() {
+        let yaml = "base_delay_ms: 500";
+        let config: BackoffConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(config.base_delay_ms, 500);
+        assert_eq!(config.max_delay_secs, 30);
+    }
+
+    #[test]
+    fn crash_tracker_config_defaults() {
+        let config = CrashTrackerConfig::default();
+        assert_eq!(config.max_crashes, 5);
+        assert_eq!(config.window_secs, 60);
+    }
+
+    #[test]
+    fn crash_tracker_config_from_yaml() {
+        let yaml = "max_crashes: 10\nwindow_secs: 120";
+        let config: CrashTrackerConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(config.max_crashes, 10);
+        assert_eq!(config.window_secs, 120);
+    }
+
+    #[test]
+    fn agents_manager_config_defaults() {
+        let config = AgentsManagerConfig::default();
+        assert_eq!(config.acp_timeout_secs, 30);
+        assert_eq!(config.shutdown_grace_ms, 100);
+        assert!(config.agents.is_empty());
+    }
+
+    #[test]
+    fn channels_manager_config_defaults() {
+        let config = ChannelsManagerConfig::default();
+        assert_eq!(config.init_timeout_secs, 10);
+        assert!(config.channels.is_empty());
+    }
+
+    #[test]
+    fn per_agent_override_parses() {
+        let yaml = r#"
+agents-manager:
+  agents:
+    slow-agent:
+      binary: "slow"
+      acp_timeout_secs: 60
+      backoff:
+        base_delay_ms: 500
+        max_delay_secs: 120
+      crash_tracker:
+        max_crashes: 10
+        window_secs: 300
+"#;
+        let config: ProtoclawConfig = serde_yaml::from_str(yaml).unwrap();
+        let agent = &config.agents_manager.agents["slow-agent"];
+        assert_eq!(agent.acp_timeout_secs, Some(60));
+        let backoff = agent.backoff.as_ref().unwrap();
+        assert_eq!(backoff.base_delay_ms, 500);
+        assert_eq!(backoff.max_delay_secs, 120);
+        let ct = agent.crash_tracker.as_ref().unwrap();
+        assert_eq!(ct.max_crashes, 10);
+        assert_eq!(ct.window_secs, 300);
+    }
+
+    #[test]
+    fn per_channel_override_parses() {
+        let yaml = r#"
+channels-manager:
+  channels:
+    flaky-channel:
+      binary: "flaky"
+      init_timeout_secs: 30
+      backoff:
+        base_delay_ms: 200
+      crash_tracker:
+        max_crashes: 3
+"#;
+        let config: ProtoclawConfig = serde_yaml::from_str(yaml).unwrap();
+        let ch = &config.channels_manager.channels["flaky-channel"];
+        assert_eq!(ch.init_timeout_secs, Some(30));
+        let backoff = ch.backoff.as_ref().unwrap();
+        assert_eq!(backoff.base_delay_ms, 200);
+        assert_eq!(backoff.max_delay_secs, 30);
+        let ct = ch.crash_tracker.as_ref().unwrap();
+        assert_eq!(ct.max_crashes, 3);
+        assert_eq!(ct.window_secs, 60);
+    }
+
+    #[test]
+    fn channel_config_option_fields_default_none() {
+        let yaml = "binary: \"debug-http\"";
+        let config: ChannelConfig = serde_yaml::from_str(yaml).unwrap();
+        assert!(config.init_timeout_secs.is_none());
+        assert!(config.backoff.is_none());
+        assert!(config.crash_tracker.is_none());
     }
 }
