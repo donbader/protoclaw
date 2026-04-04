@@ -35,6 +35,7 @@ protoclaw-sdk-types = { path = "crates/protoclaw-sdk-types" }
 protoclaw-sdk-channel = { path = "crates/protoclaw-sdk-channel" }
 protoclaw-sdk-tool = { path = "crates/protoclaw-sdk-tool" }
 protoclaw-sdk-agent = { path = "crates/protoclaw-sdk-agent" }
+protoclaw-test-helpers = { path = "crates/protoclaw-test-helpers" }
 wasmtime = "42"
 wasmtime-wasi = "42"
 subst = { version = "0.3", features = ["toml"] }
