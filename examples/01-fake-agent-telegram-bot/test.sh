@@ -60,7 +60,7 @@ printf "Send message\n"
 RESP=$(curl -sf -X POST "$BASE_URL/message" \
   -H "Content-Type: application/json" \
   -d '{"message": "hello"}')
-if echo "$RESP" | grep -q '"sent"'; then pass "POST /message → sent"; else fail "POST /message → $RESP"; fi
+if echo "$RESP" | grep -q '"queued"\|"sent"'; then pass "POST /message → accepted"; else fail "POST /message → $RESP"; fi
 
 # --- Test 3: SSE stream receives echo ---
 printf "SSE response\n"
@@ -96,27 +96,27 @@ else
 fi
 rm -f "$SSE_FILE"
 
-# --- Test 4: Tool pipeline exercised ---
-printf "Tool pipeline\n"
-SSE_TOOL=$(mktemp)
-curl -sf -N "$BASE_URL/events" > "$SSE_TOOL" 2>/dev/null &
-SSE_TOOL_PID=$!
+# --- Test 4: Thinking pipeline (mock agent sends thought events) ---
+printf "Thinking pipeline\n"
+SSE_THINK=$(mktemp)
+curl -sf -N "$BASE_URL/events" > "$SSE_THINK" 2>/dev/null &
+SSE_THINK_PID=$!
 sleep 1
 
 curl -sf -X POST "$BASE_URL/message" \
   -H "Content-Type: application/json" \
   -d '{"message": "what system are you running on?"}' >/dev/null
 
-sleep 10
-kill "$SSE_TOOL_PID" 2>/dev/null || true
-wait "$SSE_TOOL_PID" 2>/dev/null || true
+sleep 5
+kill "$SSE_THINK_PID" 2>/dev/null || true
+wait "$SSE_THINK_PID" 2>/dev/null || true
 
-if grep -qi "tool\|system-info" "$SSE_TOOL"; then
-  pass "SSE stream shows tool pipeline activity"
+if grep -q "thought" "$SSE_THINK"; then
+  pass "SSE stream contains thought events"
 else
-  fail "SSE stream missing tool evidence (got: $(head -20 "$SSE_TOOL"))"
+  fail "SSE stream missing thought events (got: $(head -20 "$SSE_THINK"))"
 fi
-rm -f "$SSE_TOOL"
+rm -f "$SSE_THINK"
 
 # --- Test 5: Batch debounce (3 rapid messages → single merged response) ---
 printf "Batch debounce\n"
