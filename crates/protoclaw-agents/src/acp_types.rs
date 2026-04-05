@@ -126,26 +126,42 @@ pub enum ToolCallStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(tag = "sessionUpdate", rename_all = "snake_case")]
 pub enum SessionUpdateType {
     AgentMessageChunk {
-        content: String,
+        #[serde(default)]
+        content: serde_json::Value,
+        #[serde(rename = "messageId", default)]
+        message_id: Option<String>,
     },
     AgentThoughtChunk {
-        content: String,
+        #[serde(default)]
+        content: serde_json::Value,
+        #[serde(rename = "messageId", default)]
+        message_id: Option<String>,
+    },
+    ToolCall {
+        #[serde(rename = "toolCallId", default)]
+        tool_call_id: Option<String>,
+        #[serde(default)]
+        name: Option<String>,
+        #[serde(default)]
+        input: Option<serde_json::Value>,
     },
     ToolCallUpdate {
         #[serde(rename = "toolCallId")]
         tool_call_id: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         name: Option<String>,
-        status: ToolCallStatus,
+        #[serde(default)]
+        status: Option<ToolCallStatus>,
         #[serde(skip_serializing_if = "Option::is_none")]
         input: Option<serde_json::Value>,
         #[serde(skip_serializing_if = "Option::is_none")]
         output: Option<String>,
     },
     Plan {
+        #[serde(default)]
         content: serde_json::Value,
     },
     UsageUpdate {
@@ -162,13 +178,34 @@ pub enum SessionUpdateType {
         #[serde(skip_serializing_if = "Option::is_none")]
         content: Option<String>,
     },
+    UserMessageChunk {
+        #[serde(default)]
+        content: serde_json::Value,
+        #[serde(rename = "messageId", default)]
+        message_id: Option<String>,
+    },
+    AvailableCommandsUpdate {
+        #[serde(default)]
+        commands: serde_json::Value,
+    },
+    CurrentModeUpdate {
+        #[serde(default)]
+        mode: Option<String>,
+    },
+    ConfigOptionUpdate {
+        #[serde(default, flatten)]
+        extra: serde_json::Map<String, serde_json::Value>,
+    },
+    SessionInfoUpdate {
+        #[serde(default, flatten)]
+        extra: serde_json::Map<String, serde_json::Value>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SessionUpdateEvent {
     #[serde(rename = "sessionId")]
     pub session_id: String,
-    #[serde(flatten)]
     pub update: SessionUpdateType,
 }
 

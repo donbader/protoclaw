@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use crate::acp_error::AcpError;
@@ -68,6 +69,11 @@ pub enum AgentsCommand {
     },
 }
 
+struct SlotIncoming {
+    slot_idx: usize,
+    msg: Option<IncomingMessage>,
+}
+
 pub struct AgentsManager {
     agent_configs: Vec<(String, AgentConfig)>,
     manager_config: AgentsManagerConfig,
@@ -78,12 +84,16 @@ pub struct AgentsManager {
     channels_sender: Option<mpsc::Sender<ChannelEvent>>,
     adapter: Box<dyn AgentAdapter>,
     parent_cancel: CancellationToken,
+    incoming_tx: mpsc::Sender<SlotIncoming>,
+    incoming_rx: Option<mpsc::Receiver<SlotIncoming>>,
+    update_seq: AtomicU64,
 }
 
 impl AgentsManager {
     pub fn new(agents_manager_config: AgentsManagerConfig, tools_handle: ManagerHandle<ToolsCommand>) -> Self {
         let configs: Vec<(String, AgentConfig)> = agents_manager_config.agents.clone().into_iter().collect();
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::channel(constants::CMD_CHANNEL_CAPACITY);
+        let (incoming_tx, incoming_rx) = mpsc::channel::<SlotIncoming>(constants::EVENT_CHANNEL_CAPACITY);
         Self {
             agent_configs: configs,
             manager_config: agents_manager_config,
@@ -94,6 +104,9 @@ impl AgentsManager {
             channels_sender: None,
             adapter: Box::new(GenericAcpAdapter),
             parent_cancel: CancellationToken::new(),
+            incoming_tx,
+            incoming_rx: Some(incoming_rx),
+            update_seq: AtomicU64::new(0),
         }
     }
 
@@ -109,6 +122,19 @@ impl AgentsManager {
 
     pub fn command_sender(&self) -> tokio::sync::mpsc::Sender<AgentsCommand> {
         self.cmd_tx.clone()
+    }
+
+    fn spawn_incoming_bridge(&self, slot_idx: usize, conn: &mut AgentConnection) {
+        let mut rx = conn.take_incoming_rx();
+        let tx = self.incoming_tx.clone();
+        tokio::spawn(async move {
+            while let Some(msg) = rx.recv().await {
+                if tx.send(SlotIncoming { slot_idx, msg: Some(msg) }).await.is_err() {
+                    break;
+                }
+            }
+            let _ = tx.send(SlotIncoming { slot_idx, msg: None }).await;
+        });
     }
 
     /// Resolve ACP timeout for a specific agent, falling back to manager default.
@@ -345,12 +371,21 @@ impl AgentsManager {
 
         match method {
             "session/update" => {
-                if let Ok(event) = serde_json::from_value::<SessionUpdateEvent>(params.clone()) {
-                    tracing::debug!(agent = %self.slots[slot_idx].name(), session_id = %event.session_id, update = ?event.update, "session update");
-
-                    if matches!(&event.update, SessionUpdateType::AgentThoughtChunk { .. }) {
-                        tracing::debug!(session_id = %event.session_id, "agent thought chunk received, routing to channel");
-                    }
+                let seq = self.update_seq.fetch_add(1, Ordering::Relaxed);
+                tracing::debug!(raw_params = %params, seq, "session/update received — attempting deser");
+                match serde_json::from_value::<SessionUpdateEvent>(params.clone()) {
+                    Ok(event) => {
+                    let update_type = match &event.update {
+                        SessionUpdateType::AgentThoughtChunk { .. } => "agent_thought_chunk",
+                        SessionUpdateType::AgentMessageChunk { .. } => "agent_message_chunk",
+                        SessionUpdateType::Result { .. } => "result",
+                        SessionUpdateType::ToolCall { .. } => "tool_call",
+                        SessionUpdateType::ToolCallUpdate { .. } => "tool_call_update",
+                        SessionUpdateType::Plan { .. } => "plan",
+                        SessionUpdateType::UsageUpdate { .. } => "usage_update",
+                        _ => "other",
+                    };
+                    tracing::debug!(agent = %self.slots[slot_idx].name(), session_id = %event.session_id, update_type, seq, "session update routed");
 
                     if let Some(session_key) = self.slots[slot_idx].reverse_map.get(&event.session_id).cloned() {
                         if let Some(sender) = &self.channels_sender {
@@ -359,6 +394,10 @@ impl AgentsManager {
                                 content: params,
                             }).await;
                         }
+                    }
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, raw_params = %params, seq, "session/update deserialization FAILED — update dropped");
                     }
                 }
             }
@@ -491,7 +530,17 @@ impl AgentsManager {
         tokio::time::sleep(delay).await;
 
         match AgentConnection::spawn(&slot.config, &agent_name) {
-            Ok(conn) => {
+            Ok(mut conn) => {
+                let mut rx = conn.take_incoming_rx();
+                let tx = self.incoming_tx.clone();
+                tokio::spawn(async move {
+                    while let Some(msg) = rx.recv().await {
+                        if tx.send(SlotIncoming { slot_idx, msg: Some(msg) }).await.is_err() {
+                            break;
+                        }
+                    }
+                    let _ = tx.send(SlotIncoming { slot_idx, msg: None }).await;
+                });
                 slot.connection = Some(conn);
             }
             Err(e) => {
@@ -560,7 +609,7 @@ impl Manager for AgentsManager {
     }
 
     async fn start(&mut self) -> Result<(), ManagerError> {
-        for (name, config) in &self.agent_configs {
+        for (idx, (name, config)) in self.agent_configs.iter().enumerate() {
             if !config.enabled {
                 tracing::info!(agent = %name, "agent disabled, skipping");
                 continue;
@@ -568,8 +617,10 @@ impl Manager for AgentsManager {
 
             let mut slot = AgentSlot::new(name.clone(), config.clone(), &self.parent_cancel);
 
-            let conn = AgentConnection::spawn(config, name)
+            let mut conn = AgentConnection::spawn(config, name)
                 .map_err(|e| ManagerError::Internal(format!("{name}: {e}")))?;
+
+            self.spawn_incoming_bridge(idx, &mut conn);
             slot.connection = Some(conn);
 
             let acp_timeout = Self::acp_timeout_for(config, &self.manager_config);
@@ -600,26 +651,11 @@ impl Manager for AgentsManager {
 
     async fn run(mut self, cancel: CancellationToken) -> Result<(), ManagerError> {
         let mut cmd_rx = self.cmd_rx.take().expect("cmd_rx must exist");
+        let mut incoming_rx = self.incoming_rx.take().expect("incoming_rx must exist");
 
         tracing::info!(manager = self.name(), "manager running");
 
         loop {
-            let incoming = async {
-                for (i, slot) in self.slots.iter_mut().enumerate() {
-                    if slot.disabled {
-                        continue;
-                    }
-                    if let Some(conn) = slot.connection.as_mut() {
-                        match tokio::time::timeout(Duration::from_millis(constants::POLL_TIMEOUT_MS), conn.recv_incoming()).await {
-                            Ok(msg) => return Some((i, msg)),
-                            Err(_) => continue,
-                        }
-                    }
-                }
-                tokio::time::sleep(Duration::from_millis(constants::POLL_INTERVAL_MS)).await;
-                None
-            };
-
             tokio::select! {
                 _ = cancel.cancelled() => {
                     tracing::info!(manager = "agents", "shutting down");
@@ -631,13 +667,11 @@ impl Manager for AgentsManager {
                         break;
                     }
                 }
-                result = incoming => {
-                    if let Some((idx, msg)) = result {
-                        match msg {
-                            Some(incoming_msg) => self.handle_incoming(idx, incoming_msg).await,
-                            None => {
-                                self.handle_crash(idx).await;
-                            }
+                Some(slot_msg) = incoming_rx.recv() => {
+                    match slot_msg.msg {
+                        Some(incoming_msg) => self.handle_incoming(slot_msg.slot_idx, incoming_msg).await,
+                        None => {
+                            self.handle_crash(slot_msg.slot_idx).await;
                         }
                     }
                 }

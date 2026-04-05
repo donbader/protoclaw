@@ -36,7 +36,7 @@ impl std::fmt::Debug for AgentConnection {
 pub struct AgentConnection {
     child: Child,
     stdin_tx: mpsc::Sender<serde_json::Value>,
-    incoming_rx: mpsc::Receiver<IncomingMessage>,
+    incoming_rx: Option<mpsc::Receiver<IncomingMessage>>,
     pending_requests: Arc<Mutex<HashMap<u64, oneshot::Sender<serde_json::Value>>>>,
     next_id: Arc<AtomicU64>,
     reader_handle: tokio::task::JoinHandle<()>,
@@ -95,6 +95,8 @@ impl AgentConnection {
                     }
                 };
 
+                tracing::debug!(raw = %value, "agent stdout line");
+
                 let has_id = value.get("id").is_some_and(|v| !v.is_null());
                 let has_method = value.get("method").is_some();
 
@@ -130,7 +132,7 @@ impl AgentConnection {
         Ok(Self {
             child,
             stdin_tx,
-            incoming_rx,
+            incoming_rx: Some(incoming_rx),
             pending_requests,
             next_id,
             reader_handle,
@@ -183,8 +185,11 @@ impl AgentConnection {
         Ok(())
     }
 
-    pub async fn recv_incoming(&mut self) -> Option<IncomingMessage> {
-        self.incoming_rx.recv().await
+    /// Take ownership of the incoming message receiver.
+    /// Used by AgentsManager to merge all agent streams into a single channel.
+    /// Panics if called more than once (receiver already taken).
+    pub fn take_incoming_rx(&mut self) -> mpsc::Receiver<IncomingMessage> {
+        self.incoming_rx.take().expect("incoming_rx already taken")
     }
 
     pub fn is_alive(&mut self) -> bool {
