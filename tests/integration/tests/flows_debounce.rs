@@ -28,8 +28,9 @@ async fn flow_debounce_merges_messages() {
         .iter()
         .find_map(|e| {
             let v: serde_json::Value = serde_json::from_str(&e.data).ok()?;
-            if v.get("type")?.as_str()? == "result" {
-                v.get("content")?.as_str().map(|s| s.to_string())
+            let update = v.get("update")?;
+            if update.get("sessionUpdate")?.as_str()? == "result" {
+                update.get("content")?.as_str().map(|s| s.to_string())
             } else {
                 None
             }

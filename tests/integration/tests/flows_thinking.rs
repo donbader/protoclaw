@@ -47,7 +47,7 @@ async fn flow_thinking_chunks() {
         .position(|e| {
             serde_json::from_str::<serde_json::Value>(&e.data)
                 .ok()
-                .and_then(|v| v.get("type")?.as_str().map(|s| s == "result"))
+                .and_then(|v| v.get("update")?.get("sessionUpdate")?.as_str().map(|s| s == "result"))
                 .unwrap_or(false)
         })
         .expect("should have received a result event via SSE");
