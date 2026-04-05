@@ -107,6 +107,70 @@ pub struct ToolsManagerConfig {
     pub tools: HashMap<String, ToolConfig>,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Default)]
+pub enum PullPolicy {
+    Always,
+    #[default]
+    IfNotPresent,
+    Never,
+}
+
+impl<'de> serde::Deserialize<'de> for PullPolicy {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let opt: Option<String> = Option::deserialize(deserializer)?;
+        match opt.as_deref() {
+            None | Some("") => Ok(PullPolicy::IfNotPresent),
+            Some("always") => Ok(PullPolicy::Always),
+            Some("never") => Ok(PullPolicy::Never),
+            Some("if_not_present") => Ok(PullPolicy::IfNotPresent),
+            Some(other) => Err(serde::de::Error::unknown_variant(
+                other,
+                &["always", "never", "if_not_present"],
+            )),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+pub struct LocalWorkspaceConfig {
+    pub binary: String,
+    #[serde(default)]
+    pub working_dir: Option<PathBuf>,
+    #[serde(default, deserialize_with = "deserialize_string_map")]
+    pub env: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+pub struct DockerWorkspaceConfig {
+    pub image: String,
+    #[serde(default)]
+    pub entrypoint: Option<String>,
+    #[serde(default)]
+    pub volumes: Vec<String>,
+    #[serde(default, deserialize_with = "deserialize_string_map")]
+    pub env: HashMap<String, String>,
+    #[serde(default)]
+    pub memory_limit: Option<String>,
+    #[serde(default)]
+    pub cpu_limit: Option<String>,
+    #[serde(default)]
+    pub docker_host: Option<String>,
+    #[serde(default)]
+    pub network: Option<String>,
+    #[serde(default)]
+    pub pull_policy: PullPolicy,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum WorkspaceConfig {
+    Local(LocalWorkspaceConfig),
+    Docker(DockerWorkspaceConfig),
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AgentConfig {
     pub binary: String,
@@ -677,6 +741,56 @@ agents-manager:
     }
 
     #[test]
+    fn pull_policy_defaults_to_if_not_present() {
+        let policy: PullPolicy = serde_yaml::from_str("").unwrap();
+        assert_eq!(policy, PullPolicy::IfNotPresent);
+    }
+
+    #[test]
+    fn pull_policy_from_yaml() {
+        let always: PullPolicy = serde_yaml::from_str("always").unwrap();
+        assert_eq!(always, PullPolicy::Always);
+        let never: PullPolicy = serde_yaml::from_str("never").unwrap();
+        assert_eq!(never, PullPolicy::Never);
+        let ifnp: PullPolicy = serde_yaml::from_str("if_not_present").unwrap();
+        assert_eq!(ifnp, PullPolicy::IfNotPresent);
+    }
+
+    #[test]
+    fn workspace_config_local_from_yaml() {
+        let yaml = r#"
+type: local
+binary: "opencode"
+working_dir: "/tmp"
+env:
+  MY_KEY: "val"
+"#;
+        let ws: WorkspaceConfig = serde_yaml::from_str(yaml).unwrap();
+        match ws {
+            WorkspaceConfig::Local(local) => {
+                assert_eq!(local.binary, "opencode");
+                assert_eq!(local.working_dir, Some(PathBuf::from("/tmp")));
+                assert_eq!(local.env["MY_KEY"], "val");
+            }
+            _ => panic!("expected Local variant"),
+        }
+    }
+
+    #[test]
+    fn workspace_config_local_minimal() {
+        let yaml = "type: local\nbinary: \"agent\"";
+        let ws: WorkspaceConfig = serde_yaml::from_str(yaml).unwrap();
+        match ws {
+            WorkspaceConfig::Local(local) => {
+                assert_eq!(local.binary, "agent");
+                assert!(local.working_dir.is_none());
+                assert!(local.env.is_empty());
+            }
+            _ => panic!("expected Local variant"),
+        }
+    }
+
+    #[test]
     fn full_config_shape() {
         let yaml = r#"
 log_level: "info"
@@ -833,5 +947,59 @@ channels-manager:
         assert!(config.init_timeout_secs.is_none());
         assert!(config.backoff.is_none());
         assert!(config.crash_tracker.is_none());
+    }
+
+    #[test]
+    fn workspace_config_docker_full() {
+        let yaml = r#"
+type: docker
+image: "protoclaw/opencode:latest"
+entrypoint: "/usr/bin/opencode"
+volumes:
+  - "/workspace:/workspace"
+  - "/tmp:/tmp:ro"
+env:
+  MODEL: "claude"
+memory_limit: "512m"
+cpu_limit: "1.5"
+docker_host: "unix:///var/run/docker.sock"
+network: "my-net"
+pull_policy: always
+"#;
+        let ws: WorkspaceConfig = serde_yaml::from_str(yaml).unwrap();
+        match ws {
+            WorkspaceConfig::Docker(d) => {
+                assert_eq!(d.image, "protoclaw/opencode:latest");
+                assert_eq!(d.entrypoint, Some("/usr/bin/opencode".into()));
+                assert_eq!(d.volumes, vec!["/workspace:/workspace", "/tmp:/tmp:ro"]);
+                assert_eq!(d.env["MODEL"], "claude");
+                assert_eq!(d.memory_limit, Some("512m".into()));
+                assert_eq!(d.cpu_limit, Some("1.5".into()));
+                assert_eq!(d.docker_host, Some("unix:///var/run/docker.sock".into()));
+                assert_eq!(d.network, Some("my-net".into()));
+                assert_eq!(d.pull_policy, PullPolicy::Always);
+            }
+            _ => panic!("expected Docker variant"),
+        }
+    }
+
+    #[test]
+    fn workspace_config_docker_minimal() {
+        let yaml = "type: docker\nimage: \"my-agent:latest\"";
+        let ws: WorkspaceConfig = serde_yaml::from_str(yaml).unwrap();
+        match ws {
+            WorkspaceConfig::Docker(d) => {
+                assert_eq!(d.image, "my-agent:latest");
+                assert!(d.entrypoint.is_none());
+                assert!(d.volumes.is_empty());
+                assert!(d.env.is_empty());
+                assert!(d.memory_limit.is_none());
+                assert!(d.cpu_limit.is_none());
+                assert!(d.docker_host.is_none());
+                assert!(d.network.is_none());
+                assert_eq!(d.pull_policy, PullPolicy::IfNotPresent);
+            }
+            _ => panic!("expected Docker variant"),
+        }
     }
 }
