@@ -620,7 +620,7 @@ impl Manager for AgentsManager {
             let mut conn = AgentConnection::spawn(config, name)
                 .map_err(|e| ManagerError::Internal(format!("{name}: {e}")))?;
 
-            self.spawn_incoming_bridge(idx, &mut conn);
+            self.spawn_incoming_bridge(self.slots.len(), &mut conn);
             slot.connection = Some(conn);
 
             let acp_timeout = Self::acp_timeout_for(config, &self.manager_config);
