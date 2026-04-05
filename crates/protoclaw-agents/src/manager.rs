@@ -373,8 +373,7 @@ impl AgentsManager {
                             "sessionId": sid,
                             "update": {
                                 "sessionUpdate": "result",
-                                "stopReason": response.get("result")
-                                    .and_then(|r| r.get("stopReason"))
+                                "stopReason": response.get("stopReason")
                                     .and_then(|s| s.as_str())
                                     .unwrap_or("end_turn"),
                             }
