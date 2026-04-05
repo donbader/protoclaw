@@ -69,15 +69,23 @@ impl SessionQueue {
     }
 
     /// Number of messages queued for a specific session (not counting the active one).
-    #[cfg(test)]
     pub fn queued_count(&self, session_key: &SessionKey) -> usize {
         self.queues.get(session_key).map_or(0, |q| q.len())
     }
 
     /// Whether a session is currently active (processing a message).
-    #[cfg(test)]
     pub fn is_active(&self, session_key: &SessionKey) -> bool {
         self.active.contains(session_key)
+    }
+
+    /// Drain all queued messages for a session without marking it idle.
+    /// Returns the messages in FIFO order. The session remains active.
+    pub fn drain_queued(&mut self, session_key: &SessionKey) -> Vec<String> {
+        if let Some(queue) = self.queues.remove(session_key) {
+            queue.into_iter().collect()
+        } else {
+            Vec::new()
+        }
     }
 }
 
@@ -194,5 +202,33 @@ mod tests {
     fn mark_idle_unknown_session_is_noop() {
         let mut q = SessionQueue::new();
         assert_eq!(q.mark_idle(&key("unknown")), None);
+    }
+
+    #[test]
+    fn drain_queued_returns_all_queued_messages() {
+        let mut q = SessionQueue::new();
+        q.push(&key("alice"), "msg1".into());
+        q.push(&key("alice"), "msg2".into());
+        q.push(&key("alice"), "msg3".into());
+
+        let drained = q.drain_queued(&key("alice"));
+        assert_eq!(drained, vec!["msg2".to_string(), "msg3".to_string()]);
+        assert_eq!(q.queued_count(&key("alice")), 0);
+        assert!(q.is_active(&key("alice")));
+    }
+
+    #[test]
+    fn drain_queued_empty_queue_returns_empty() {
+        let mut q = SessionQueue::new();
+        q.push(&key("alice"), "msg1".into());
+        let drained = q.drain_queued(&key("alice"));
+        assert!(drained.is_empty());
+    }
+
+    #[test]
+    fn drain_queued_unknown_session_returns_empty() {
+        let mut q = SessionQueue::new();
+        let drained = q.drain_queued(&key("unknown"));
+        assert!(drained.is_empty());
     }
 }
