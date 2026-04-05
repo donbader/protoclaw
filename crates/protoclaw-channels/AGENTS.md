@@ -68,9 +68,23 @@ Per-session FIFO queue (`SessionQueue`) replaces the old debounce-merge model. E
 
 Key type: `SessionKey` (`"{channel}:{kind}:{peer_id}"`) is the queue key.
 
+## Message Merge Window
+
+Configurable merge window (`merge_window_ms`, default 1200ms) in `ChannelsManagerConfig` batches rapid user messages before dispatching to the agent.
+
+Flow:
+1. Message arrives, session idle → buffer message, start merge timer
+2. More messages within window → append to buffer, reset timer
+3. Timer expires → join buffered messages with `\n`, dispatch as single prompt
+4. Agent finishes (result), queued messages exist → drain queue into merge buffer, start new merge window
+5. `merge_window_ms: 0` disables batching (immediate dispatch, legacy behavior)
+
+State lives in `ChannelsManager`: `merge_buffers`, `merge_timers`, `merge_tx`/`merge_rx`. Timer communicates back to `run()` select loop via mpsc channel.
+
 ## Anti-Patterns (this crate)
 
 - Do not remove the 50ms sleep in `poll_channels()` else branch
 - Bad channel binaries don't block startup — they log errors and continue with `connection: None`
 - `cmd_rx.take().expect("cmd_rx must exist")` — same consumed-once pattern as agents
 - `start()` skips channels with `enabled = false` — no slot is created for disabled channels
+- Do not dispatch immediately when `merge_window_ms > 0` — always go through the merge buffer for idle sessions

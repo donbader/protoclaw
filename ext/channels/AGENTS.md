@@ -29,7 +29,7 @@ Both channels inspect `content["type"]` in `DeliverMessage` to render thoughts d
 
 **debug-http:** Emits thoughts as named SSE event `"thought"` via `SsePayload` struct. Regular messages use default SSE data events. SSE clients filter by event type.
 
-**telegram:** Sends thoughts as separate 🧠-prefixed messages. On `"result"`, collapses the thinking message to "🧠 Thought for X.Xs". Emoji prefix configurable via `TELEGRAM_THOUGHT_EMOJI` env var (default: 🧠). Thinking state tracked in `SharedState.thinking_messages`.
+**telegram:** Streams thoughts as 🧠-prefixed messages with debounced edits (400ms internal timer). On `"result"`, collapses to "🧠 Thought for Xs" (timing only, no content). Emoji prefix configurable via `TELEGRAM_THOUGHT_EMOJI` env var (default: 🧠). Thinking state tracked in `SharedState.thinking_messages` and `SharedState.thought_debounce_handles`.
 
 ## telegram/ (7 files)
 
