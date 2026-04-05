@@ -53,6 +53,7 @@ pub fn mock_agent_config_with_options(
         },
         channels_manager: protoclaw_config::ChannelsManagerConfig {
             channels,
+            merge_window_ms: 0,
             ..Default::default()
         },
         tools_manager: protoclaw_config::ToolsManagerConfig::default(),
@@ -128,6 +129,7 @@ pub fn sdk_channel_config() -> protoclaw_config::ProtoclawConfig {
         },
         channels_manager: protoclaw_config::ChannelsManagerConfig {
             channels,
+            merge_window_ms: 0,
             ..Default::default()
         },
         tools_manager: protoclaw_config::ToolsManagerConfig::default(),
@@ -205,6 +207,7 @@ pub fn sdk_tool_config() -> protoclaw_config::ProtoclawConfig {
         },
         channels_manager: protoclaw_config::ChannelsManagerConfig {
             channels,
+            merge_window_ms: 0,
             ..Default::default()
         },
         tools_manager: protoclaw_config::ToolsManagerConfig { tools },
