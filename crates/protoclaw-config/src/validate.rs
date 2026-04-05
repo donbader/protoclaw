@@ -136,7 +136,7 @@ pub fn validate_config(config: &ProtoclawConfig) -> ValidationResult {
     }
 
     for (name, ch) in &config.channels_manager.channels {
-        if let Some(ref bin) = Some(&ch.binary) {
+        if let Some(bin) = Some(&ch.binary) {
             if !binary_exists(bin) {
                 errors.push(ValidationError::BinaryNotFound {
                     field: format!("channels-manager.channels.{name}.binary"),
