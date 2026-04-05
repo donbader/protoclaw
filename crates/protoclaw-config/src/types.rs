@@ -85,6 +85,8 @@ impl Default for AgentsManagerConfig {
 pub struct ChannelsManagerConfig {
     #[serde(default = "default_init_timeout_secs")]
     pub init_timeout_secs: u64,
+    #[serde(default = "default_merge_window_ms")]
+    pub merge_window_ms: u64,
     #[serde(default)]
     pub channels: HashMap<String, ChannelConfig>,
 }
@@ -93,6 +95,7 @@ impl Default for ChannelsManagerConfig {
     fn default() -> Self {
         Self {
             init_timeout_secs: default_init_timeout_secs(),
+            merge_window_ms: default_merge_window_ms(),
             channels: HashMap::new(),
         }
     }
@@ -356,6 +359,9 @@ fn default_acp_timeout_secs() -> u64 {
 }
 fn default_init_timeout_secs() -> u64 {
     10
+}
+fn default_merge_window_ms() -> u64 {
+    1200
 }
 fn default_shutdown_grace_ms() -> u64 {
     100
@@ -847,6 +853,33 @@ supervisor:
         let config = ChannelsManagerConfig::default();
         assert_eq!(config.init_timeout_secs, 10);
         assert!(config.channels.is_empty());
+    }
+
+    #[test]
+    fn channels_manager_merge_window_ms_defaults_to_1200() {
+        let yaml = r#"
+channels-manager:
+  channels:
+    telegram:
+      binary: telegram
+      agent: default
+"#;
+        let config: ProtoclawConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(config.channels_manager.merge_window_ms, 1200);
+    }
+
+    #[test]
+    fn channels_manager_merge_window_ms_override() {
+        let yaml = r#"
+channels-manager:
+  merge_window_ms: 2000
+  channels:
+    telegram:
+      binary: telegram
+      agent: default
+"#;
+        let config: ProtoclawConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(config.channels_manager.merge_window_ms, 2000);
     }
 
     #[test]
