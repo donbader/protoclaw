@@ -72,11 +72,15 @@ mod tests {
 
     fn test_agent_config(enabled: bool) -> AgentConfig {
         AgentConfig {
-            binary: "test-binary".to_string(),
+            workspace: protoclaw_config::WorkspaceConfig::Local(
+                protoclaw_config::LocalWorkspaceConfig {
+                    binary: "test-binary".to_string(),
+                    working_dir: None,
+                    env: HashMap::new(),
+                },
+            ),
             args: vec![],
             enabled,
-            env: HashMap::new(),
-            working_dir: None,
             tools: vec![],
             acp_timeout_secs: None,
             backoff: None,

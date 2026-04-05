@@ -1,12 +1,16 @@
-use protoclaw_config::ProtoclawConfig;
+use protoclaw_config::{ProtoclawConfig, WorkspaceConfig};
 
 pub fn format_banner(config: &ProtoclawConfig, config_path: &str) -> String {
     let mut out = format!("protoclaw v{}\n", env!("CARGO_PKG_VERSION"));
     for (name, agent) in &config.agents_manager.agents {
+        let binary_display = match &agent.workspace {
+            WorkspaceConfig::Local(local) => local.binary.clone(),
+            WorkspaceConfig::Docker(docker) => format!("docker:{}", docker.image),
+        };
         out.push_str(&format!(
             "  Agent:    {} [{}] (args: {})\n",
             name,
-            agent.binary,
+            binary_display,
             if agent.args.is_empty() {
                 "(none)".to_string()
             } else {
@@ -36,8 +40,9 @@ pub fn format_banner(config: &ProtoclawConfig, config_path: &str) -> String {
 mod tests {
     use super::*;
     use protoclaw_config::{
-        AgentConfig, AgentsManagerConfig, ChannelConfig, ChannelsManagerConfig, ProtoclawConfig,
-        SupervisorConfig, ToolConfig, ToolsManagerConfig,
+        AgentConfig, AgentsManagerConfig, ChannelConfig, ChannelsManagerConfig,
+        LocalWorkspaceConfig, ProtoclawConfig, SupervisorConfig, ToolConfig, ToolsManagerConfig,
+        WorkspaceConfig,
     };
     use std::collections::HashMap;
 
@@ -50,11 +55,13 @@ mod tests {
         agents.insert(
             "default".to_string(),
             AgentConfig {
-                binary: agent_binary.to_string(),
+                workspace: WorkspaceConfig::Local(LocalWorkspaceConfig {
+                    binary: agent_binary.to_string(),
+                    working_dir: None,
+                    env: HashMap::new(),
+                }),
                 args: vec![],
                 enabled: true,
-                env: HashMap::new(),
-                working_dir: None,
                 tools: vec![],
                 acp_timeout_secs: None,
                 backoff: None,

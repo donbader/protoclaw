@@ -24,10 +24,11 @@ pub fn generate_config_yaml(agent_binary: &str) -> String {
 agents-manager:
   agents:
     default:
-      binary: "{agent_binary}"
+      workspace:
+        type: local
+        binary: "{agent_binary}"
       args:
         - "acp"
-      # working_dir: "."
 
 # Channel subprocesses
 channels-manager:

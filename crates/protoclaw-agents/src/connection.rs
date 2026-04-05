@@ -8,7 +8,7 @@ use tokio::process::{Child, Command};
 use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio_util::codec::{FramedRead, FramedWrite};
 
-use protoclaw_config::AgentConfig;
+use protoclaw_config::{AgentConfig, WorkspaceConfig};
 use protoclaw_jsonrpc::NdJsonCodec;
 
 use crate::error::AgentsError;
@@ -46,21 +46,33 @@ pub struct AgentConnection {
 
 impl AgentConnection {
     pub fn spawn(config: &AgentConfig, name: &str) -> Result<Self, AgentsError> {
-        let working_dir = config
-            .working_dir
+        let (binary, env, working_dir) = match &config.workspace {
+            WorkspaceConfig::Local(local) => (
+                local.binary.clone(),
+                local.env.clone(),
+                local.working_dir.clone(),
+            ),
+            WorkspaceConfig::Docker(_) => {
+                return Err(AgentsError::SpawnFailed(
+                    format!("{name}: Docker workspace not yet supported"),
+                ));
+            }
+        };
+
+        let work_dir = working_dir
             .as_deref()
             .unwrap_or(Path::new("."));
 
-        let mut child = Command::new(&config.binary)
+        let mut child = Command::new(&binary)
             .args(&config.args)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .kill_on_drop(true)
-            .envs(&config.env)
-            .current_dir(working_dir)
+            .envs(&env)
+            .current_dir(work_dir)
             .spawn()
-            .map_err(|e| AgentsError::SpawnFailed(format!("{}: {e}", config.binary)))?;
+            .map_err(|e| AgentsError::SpawnFailed(format!("{binary}: {e}")))?;
 
         let stdin = child.stdin.take().expect("stdin was piped");
         let stdout = child.stdout.take().expect("stdout was piped");
@@ -213,6 +225,7 @@ impl AgentConnection {
 mod tests {
     use super::*;
     use std::collections::HashMap;
+    use protoclaw_config::{LocalWorkspaceConfig, WorkspaceConfig};
 
     fn mock_agent_config() -> AgentConfig {
         let manifest_dir = env!("CARGO_MANIFEST_DIR");
@@ -226,11 +239,13 @@ mod tests {
             .join("mock-agent");
 
         AgentConfig {
-            binary: target_dir.to_string_lossy().to_string(),
+            workspace: WorkspaceConfig::Local(LocalWorkspaceConfig {
+                binary: target_dir.to_string_lossy().to_string(),
+                working_dir: None,
+                env: HashMap::new(),
+            }),
             args: vec![],
             enabled: true,
-            env: HashMap::new(),
-            working_dir: None,
             tools: vec![],
             acp_timeout_secs: None,
             backoff: None,
@@ -250,11 +265,13 @@ mod tests {
     #[tokio::test]
     async fn spawn_nonexistent_binary_returns_error() {
         let config = AgentConfig {
-            binary: "nonexistent-binary-xyz-12345".to_string(),
+            workspace: WorkspaceConfig::Local(LocalWorkspaceConfig {
+                binary: "nonexistent-binary-xyz-12345".to_string(),
+                working_dir: None,
+                env: HashMap::new(),
+            }),
             args: vec![],
             enabled: true,
-            env: HashMap::new(),
-            working_dir: None,
             tools: vec![],
             acp_timeout_secs: None,
             backoff: None,

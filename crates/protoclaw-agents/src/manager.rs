@@ -708,11 +708,13 @@ mod tests {
             .join("mock-agent");
 
         AgentConfig {
-            binary: target_dir.to_string_lossy().to_string(),
+            workspace: protoclaw_config::WorkspaceConfig::Local(protoclaw_config::LocalWorkspaceConfig {
+                binary: target_dir.to_string_lossy().to_string(),
+                working_dir: None,
+                env: HashMap::new(),
+            }),
             args: vec![],
             enabled: true,
-            env: HashMap::new(),
-            working_dir: None,
             tools: vec![],
             acp_timeout_secs: None,
             backoff: None,
