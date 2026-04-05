@@ -10,26 +10,30 @@ agents-manager:
   acp_timeout_secs: 120
   agents:
     opencode:
-      binary: "opencode"
+      workspace:
+        type: local
+        binary: "opencode"
+        env:
+          XDG_CONFIG_HOME: "/home/protoclaw/.config"
+          XDG_DATA_HOME: "/home/protoclaw/.local/share"
       args:
         - "acp"
       enabled: true
       tools:
         - "system-info"
-      env:
-        XDG_CONFIG_HOME: "/home/protoclaw/.config"
-        XDG_DATA_HOME: "/home/protoclaw/.local/share"
     # Claude Code agent (disabled by default — see README to switch)
     claude-code:
-      binary: "claude"
+      workspace:
+        type: local
+        binary: "claude"
+        env:
+          ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:}"
+          CLAUDE_CONFIG_DIR: "/home/protoclaw/.claude"
       args:
         - "--acp"
       enabled: false
       tools:
         - "system-info"
-      env:
-        ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:}"
-        CLAUDE_CONFIG_DIR: "/home/protoclaw/.claude"
 
 channels-manager:
   channels:

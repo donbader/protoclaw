@@ -8,11 +8,13 @@ extensions_dir: "/usr/local/bin"
 agents-manager:
   agents:
     mock:
-      binary: "@built-in/mock-agent"
+      workspace:
+        type: local
+        binary: "@built-in/mock-agent"
+        env:
+          MOCK_AGENT_THINK: "1"
       tools:
         - "system-info"
-      env:
-        MOCK_AGENT_THINK: "1"
 
 channels-manager:
   debounce:
