@@ -1,10 +1,12 @@
 pub mod error;
+pub mod parse;
 pub mod resolve;
 pub mod subst_yaml;
 pub mod types;
 pub mod validate;
 
 pub use error::*;
+pub use parse::*;
 pub use resolve::*;
 pub use types::*;
 pub use validate::*;

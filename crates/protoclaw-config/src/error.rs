@@ -9,4 +9,10 @@ pub enum ConfigError {
 
     #[error("config parse error: {0}")]
     Parse(#[from] Box<figment::Error>),
+
+    #[error("invalid memory limit '{value}': {reason}")]
+    InvalidMemoryLimit { value: String, reason: String },
+
+    #[error("invalid cpu limit '{value}': {reason}")]
+    InvalidCpuLimit { value: String, reason: String },
 }
