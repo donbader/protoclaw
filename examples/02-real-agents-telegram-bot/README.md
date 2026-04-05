@@ -1,20 +1,19 @@
 # Protoclaw Real Agent Bot
 
-Run a working protoclaw bot with real AI agents — opencode or claude-code. Mount your agent's config directory and API key, then `docker compose up`.
+Run a working protoclaw bot with real AI agents — opencode or claude-code. Mount your agent's config directories, then `docker compose up`.
 
 This example demonstrates protoclaw's multi-agent architecture: two agent definitions in config with an `enabled` toggle to switch between them. Each channel routes to a specific agent via the `agent` field.
 
 ## Prerequisites
 
 - Docker and Docker Compose v2
-- Anthropic API key ([console.anthropic.com](https://console.anthropic.com))
+- Anthropic API key (only for Claude Code — OpenCode uses its own auth)
 - Agent config directory (created automatically when you first run the agent locally)
 
 ## Quick Start (OpenCode)
 
 ```sh
 cp .env.example .env
-# Edit .env — set ANTHROPIC_API_KEY
 docker compose up --build
 ```
 
@@ -39,7 +38,7 @@ This example ships with two agent definitions. OpenCode is enabled by default.
 To switch to Claude Code:
 
 1. In `docker-compose.yml`: change `target: opencode` to `target: claude-code`
-2. In `docker-compose.yml`: comment out the opencode volume mount, uncomment the claude-code mount
+2. In `docker-compose.yml`: comment out the opencode volume mounts, uncomment the claude-code mount
 3. In `protoclaw.yaml`: set opencode `enabled = false`, claude-code `enabled = true`
 4. In `protoclaw.yaml`: update channel `agent` fields from `"opencode"` to `"claude-code"`
 5. Rebuild: `docker compose up --build`
@@ -51,19 +50,21 @@ To switch to Claude Code:
 | Binary | `opencode` | `claude` |
 | ACP flag | `acp` | `--acp` |
 | Config dir | `~/.config/opencode` | `~/.claude` |
+| Auth dir | `~/.local/share/opencode` | N/A (uses env var) |
 | Docker target | `opencode` | `claude-code` |
-| Env vars | `XDG_CONFIG_HOME` | `CLAUDE_CONFIG_DIR` |
-| npm package | `@anthropic-ai/opencode` | `@anthropic-ai/claude-code` |
+| Env vars | `XDG_CONFIG_HOME`, `XDG_DATA_HOME` | `CLAUDE_CONFIG_DIR`, `ANTHROPIC_API_KEY` |
+| npm package | `opencode-ai` | `@anthropic-ai/claude-code` |
 
-Both agents require `ANTHROPIC_API_KEY` set in `.env`.
+OpenCode resolves credentials from its mounted auth directory (`~/.local/share/opencode/auth.json`). Claude Code requires `ANTHROPIC_API_KEY` set in `.env`.
 
 ## Config Mount Details
 
-Each agent stores its configuration in a different directory on the host:
+Each agent stores its configuration in different directories on the host:
 
 | Agent | Host path | Container path | Env var |
 |-------|-----------|----------------|---------|
-| OpenCode | `~/.config/opencode` | `/home/protoclaw/.config/opencode` | `XDG_CONFIG_HOME=/home/protoclaw/.config` |
+| OpenCode (config) | `~/.config/opencode` | `/home/protoclaw/.config/opencode` | `XDG_CONFIG_HOME=/home/protoclaw/.config` |
+| OpenCode (auth) | `~/.local/share/opencode/auth.json` | `/home/protoclaw/.local/share/opencode/auth.json` | `XDG_DATA_HOME=/home/protoclaw/.local/share` |
 | Claude Code | `~/.claude` | `/home/protoclaw/.claude` | `CLAUDE_CONFIG_DIR=/home/protoclaw/.claude` |
 
 The volume mount in `docker-compose.yml` maps the host directory into the container read-only (`:ro`). The agent's env table in `protoclaw.yaml` tells the agent process where to find its config inside the container.
@@ -96,7 +97,7 @@ After verifying debug-http works:
 
 ## Troubleshooting
 
-**"Invalid API key" or 401 errors** — Verify `ANTHROPIC_API_KEY` in `.env` is correct and has no trailing whitespace.
+**"Invalid API key" or 401 errors** — For OpenCode: ensure you've run `/connect` locally at least once (credentials are stored in `~/.local/share/opencode/auth.json`). For Claude Code: verify `ANTHROPIC_API_KEY` in `.env` is correct and has no trailing whitespace.
 
 **Agent doesn't start / "command not found"** — The agent binary is installed via npm during Docker build. Rebuild with `docker compose build --no-cache` to retry the install.
 
@@ -115,6 +116,6 @@ After verifying debug-http works:
 | `Dockerfile` | Multi-stage cargo-chef build with `--target opencode` and `--target claude-code` |
 | `docker-compose.yml` | Single service with agent config mount, port 8080 |
 | `protoclaw.yaml` | Multi-agent config: opencode + claude-code with named agent maps |
-| `.env.example` | Environment template — copy to `.env`, set API key |
+| `.env.example` | Environment template — copy to `.env`, set tokens as needed |
 | `.dockerignore` | Build context exclusions |
 | `README.md` | This file |

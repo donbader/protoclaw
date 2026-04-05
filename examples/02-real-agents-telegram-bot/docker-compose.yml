@@ -8,8 +8,9 @@ services:
       - "8080:8080"
     volumes:
       - ./protoclaw.yaml:/workspace/protoclaw.yaml:ro
-      # OpenCode config mount (D-03):
+      # OpenCode mounts (D-03):
       - ~/.config/opencode:/home/protoclaw/.config/opencode:ro
+      - ~/.local/share/opencode/auth.json:/home/protoclaw/.local/share/opencode/auth.json:ro
       # Claude Code config mount — uncomment when using claude-code target (D-03):
       # - ~/.claude:/home/protoclaw/.claude:ro
     environment:

@@ -52,6 +52,16 @@ fn opts() -> &'static AgentOptions {
 async fn main() {
     let stdin = tokio::io::stdin();
     let mut stdout = tokio::io::stdout();
+
+    // Simulate real-world agents (e.g. Node.js) that emit non-JSON startup noise to stdout.
+    // The host's reader loop must skip these lines instead of terminating.
+    if std::env::args().any(|a| a == "--noisy-startup") {
+        use tokio::io::AsyncWriteExt;
+        stdout.write_all(b"[npm warn] some startup noise\n").await.ok();
+        stdout.write_all(b"Loading agent v1.2.3...\n").await.ok();
+        stdout.flush().await.ok();
+    }
+
     let reader = BufReader::new(stdin);
     let mut lines = reader.lines();
 
@@ -81,11 +91,22 @@ async fn main() {
                 handle_initialize(&mut stdout, id, &msg).await;
             }
             "session/new" => {
-                session_id = Some(handle_session_new(&mut stdout, id).await);
+                session_id = Some(handle_session_new(&mut stdout, id, &msg).await);
             }
             "session/prompt" => {
                 let sid = session_id.clone().unwrap_or_else(|| "unknown".to_string());
-                let user_msg = extract_prompt_message(&msg);
+                let user_msg = match extract_prompt_message(&msg) {
+                    Some(m) => m,
+                    None => {
+                        let resp = json!({
+                            "jsonrpc": "2.0",
+                            "id": id,
+                            "error": { "code": -32602, "message": "session/prompt requires 'prompt' (array of content parts)" }
+                        });
+                        write_message(&mut stdout, &resp).await;
+                        continue;
+                    }
+                };
                 let think = THINK_ENABLED.load(Ordering::SeqCst);
                 handle_session_prompt(
                     &mut stdout,
@@ -134,13 +155,15 @@ async fn write_message<W: AsyncWrite + Unpin>(writer: &mut W, msg: &Value) {
     writer.flush().await.expect("failed to flush");
 }
 
-fn extract_prompt_message(msg: &Value) -> String {
-    msg["params"]["prompt"]
-        .as_str()
-        .or_else(|| msg["params"]["message"].as_str())
-        .or_else(|| msg["params"]["message"]["content"].as_str())
-        .unwrap_or("")
-        .to_string()
+fn extract_prompt_message(msg: &Value) -> Option<String> {
+    // ACP wire format: prompt is a flat array of content parts
+    // e.g. {"prompt": [{"type": "text", "text": "hello"}]}
+    let prompt = msg["params"]["prompt"].as_array()?;
+    let first = prompt.first()?;
+    if first["type"].as_str()? != "text" {
+        return None;
+    }
+    first["text"].as_str().map(|s| s.to_string())
 }
 
 async fn handle_initialize(stdout: &mut tokio::io::Stdout, id: Option<Value>, msg: &Value) {
@@ -164,7 +187,29 @@ async fn handle_initialize(stdout: &mut tokio::io::Stdout, id: Option<Value>, ms
     write_message(stdout, &resp).await;
 }
 
-async fn handle_session_new(stdout: &mut tokio::io::Stdout, id: Option<Value>) -> String {
+async fn handle_session_new<W: AsyncWrite + Unpin>(stdout: &mut W, id: Option<Value>, msg: &Value) -> String {
+    let params = &msg["params"];
+
+    if !params.get("cwd").is_some_and(|v| v.is_string()) {
+        let resp = json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": { "code": -32602, "message": "session/new requires 'cwd' (string)" }
+        });
+        write_message(stdout, &resp).await;
+        return String::new();
+    }
+
+    if !params.get("mcpServers").is_some_and(|v| v.is_array()) {
+        let resp = json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": { "code": -32602, "message": "session/new requires 'mcpServers' (array)" }
+        });
+        write_message(stdout, &resp).await;
+        return String::new();
+    }
+
     let sid = uuid::Uuid::new_v4().to_string();
     let resp = json!({
         "jsonrpc": "2.0",
@@ -378,5 +423,124 @@ mod tests {
         let result = &msgs[4]["params"];
         assert_eq!(result["type"], "result");
         assert_eq!(result["content"], "Echo: test msg");
+    }
+
+    #[test]
+    fn extract_prompt_message_valid_array() {
+        let msg = json!({
+            "params": {
+                "prompt": [{"type": "text", "text": "hello world"}]
+            }
+        });
+        assert_eq!(extract_prompt_message(&msg), Some("hello world".to_string()));
+    }
+
+    #[test]
+    fn extract_prompt_message_missing_prompt() {
+        let msg = json!({ "params": {} });
+        assert_eq!(extract_prompt_message(&msg), None);
+    }
+
+    #[test]
+    fn extract_prompt_message_old_message_format_rejected() {
+        let msg = json!({
+            "params": {
+                "message": {"role": "user", "content": [{"type": "text", "text": "hello"}]}
+            }
+        });
+        assert_eq!(extract_prompt_message(&msg), None);
+    }
+
+    #[test]
+    fn extract_prompt_message_prompt_not_array() {
+        let msg = json!({
+            "params": {
+                "prompt": "hello"
+            }
+        });
+        assert_eq!(extract_prompt_message(&msg), None);
+    }
+
+    #[test]
+    fn extract_prompt_message_wrapped_message_format_rejected() {
+        let msg = json!({
+            "params": {
+                "prompt": [{"role": "user", "content": [{"type": "text", "text": "hello"}]}]
+            }
+        });
+        assert_eq!(extract_prompt_message(&msg), None);
+    }
+
+    #[test]
+    fn extract_prompt_message_non_text_type_rejected() {
+        let msg = json!({
+            "params": {
+                "prompt": [{"type": "image", "data": "base64data", "mimeType": "image/png"}]
+            }
+        });
+        assert_eq!(extract_prompt_message(&msg), None);
+    }
+
+    async fn collect_session_new_output(params: Value) -> Vec<Value> {
+        use tokio::io::AsyncBufReadExt;
+
+        let (reader, mut writer) = tokio::io::duplex(8192);
+        let msg = json!({ "jsonrpc": "2.0", "id": 1, "method": "session/new", "params": params });
+
+        let write_handle = tokio::spawn(async move {
+            handle_session_new(&mut writer, Some(json!(1)), &msg).await;
+            drop(writer);
+        });
+
+        let buf_reader = tokio::io::BufReader::new(reader);
+        let mut read_lines = buf_reader.lines();
+        let mut messages = Vec::new();
+        while let Ok(Some(line)) = read_lines.next_line().await {
+            if let Ok(v) = serde_json::from_str::<Value>(&line) {
+                messages.push(v);
+            }
+        }
+        write_handle.await.unwrap();
+        messages
+    }
+
+    #[tokio::test]
+    async fn session_new_valid_params() {
+        let msgs = collect_session_new_output(json!({
+            "cwd": "/workspace",
+            "mcpServers": []
+        })).await;
+        assert_eq!(msgs.len(), 1);
+        assert!(msgs[0]["result"]["sessionId"].is_string());
+    }
+
+    #[tokio::test]
+    async fn session_new_missing_cwd_returns_error() {
+        let msgs = collect_session_new_output(json!({
+            "mcpServers": []
+        })).await;
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(msgs[0]["error"]["code"], -32602);
+        assert!(msgs[0]["error"]["message"].as_str().unwrap().contains("cwd"));
+    }
+
+    #[tokio::test]
+    async fn session_new_missing_mcp_servers_returns_error() {
+        let msgs = collect_session_new_output(json!({
+            "cwd": "/workspace"
+        })).await;
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(msgs[0]["error"]["code"], -32602);
+        assert!(msgs[0]["error"]["message"].as_str().unwrap().contains("mcpServers"));
+    }
+
+    #[tokio::test]
+    async fn session_new_cwd_not_string_returns_error() {
+        let msgs = collect_session_new_output(json!({
+            "cwd": 123,
+            "mcpServers": []
+        })).await;
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(msgs[0]["error"]["code"], -32602);
     }
 }

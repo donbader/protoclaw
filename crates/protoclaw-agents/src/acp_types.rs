@@ -73,8 +73,9 @@ pub struct McpServerInfo {
 pub struct SessionNewParams {
     #[serde(rename = "sessionId", skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
-    #[serde(rename = "mcpServers", skip_serializing_if = "Option::is_none")]
-    pub mcp_servers: Option<Vec<McpServerInfo>>,
+    pub cwd: String,
+    #[serde(rename = "mcpServers", default)]
+    pub mcp_servers: Vec<McpServerInfo>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -84,16 +85,23 @@ pub struct SessionNewResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct PromptMessage {
-    pub role: String,
-    pub content: String,
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum ContentPart {
+    Text { text: String },
+    Image { url: String },
+}
+
+impl ContentPart {
+    pub fn text(s: impl Into<String>) -> Self {
+        ContentPart::Text { text: s.into() }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SessionPromptParams {
     #[serde(rename = "sessionId")]
     pub session_id: String,
-    pub message: PromptMessage,
+    pub prompt: Vec<ContentPart>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -162,4 +170,51 @@ pub struct SessionUpdateEvent {
     pub session_id: String,
     #[serde(flatten)]
     pub update: SessionUpdateType,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn content_part_text_serializes_with_type_tag() {
+        let part = ContentPart::text("hello");
+        let json = serde_json::to_value(&part).unwrap();
+        assert_eq!(json, serde_json::json!({"type": "text", "text": "hello"}));
+    }
+
+    #[test]
+    fn session_prompt_params_wire_format() {
+        let params = SessionPromptParams {
+            session_id: "ses-1".into(),
+            prompt: vec![ContentPart::text("hi")],
+        };
+        let json = serde_json::to_value(&params).unwrap();
+        assert_eq!(json["sessionId"], "ses-1");
+        let prompt = &json["prompt"];
+        assert!(prompt.is_array());
+        assert_eq!(prompt[0]["type"], "text");
+        assert_eq!(prompt[0]["text"], "hi");
+    }
+
+    #[test]
+    fn session_prompt_params_no_role_wrapper() {
+        let params = SessionPromptParams {
+            session_id: "ses-1".into(),
+            prompt: vec![ContentPart::text("hi")],
+        };
+        let json = serde_json::to_value(&params).unwrap();
+        assert!(json["prompt"][0].get("role").is_none());
+        assert!(json["prompt"][0].get("content").is_none());
+    }
+
+    #[test]
+    fn content_part_image_serializes() {
+        let part = ContentPart::Image {
+            url: "http://example.com/img.png".into(),
+        };
+        let json = serde_json::to_value(&part).unwrap();
+        assert_eq!(json["type"], "image");
+        assert_eq!(json["url"], "http://example.com/img.png");
+    }
 }

@@ -1,0 +1,94 @@
+use std::time::Duration;
+
+use protoclaw_integration_tests::{
+    boot_supervisor_with_port, mock_agent_config, with_timeout, SseCollector,
+};
+
+#[test_log::test(tokio::test)]
+async fn acp_wire_session_new_includes_cwd_and_mcp_servers() {
+    let config = mock_agent_config();
+    let (cancel, handle, port) = boot_supervisor_with_port(config).await;
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(format!("http://127.0.0.1:{port}/health"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+
+    cancel.cancel();
+    let result = with_timeout(5, handle)
+        .await
+        .expect("supervisor task panicked");
+    assert!(result.is_ok());
+}
+
+#[test_log::test(tokio::test)]
+async fn acp_wire_session_prompt_uses_prompt_array() {
+    let mut config = mock_agent_config();
+    config.channels_manager.debounce.window_ms = 100;
+    let (cancel, handle, port) = boot_supervisor_with_port(config).await;
+
+    let client = reqwest::Client::new();
+    let mut sse = SseCollector::connect(port).await;
+
+    let resp = client
+        .post(format!("http://127.0.0.1:{port}/message"))
+        .json(&serde_json::json!({"message": "wire-format-test"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+
+    let events = sse.collect_events(Duration::from_secs(10)).await;
+
+    let saw_echo = events
+        .iter()
+        .any(|e| e.data.contains("Echo: ") && e.data.contains("wire-format-test"));
+    assert!(
+        saw_echo,
+        "mock-agent echoed back, proving session/prompt used correct prompt[] array format"
+    );
+
+    cancel.cancel();
+    let _ = with_timeout(5, handle).await;
+}
+
+#[test_log::test(tokio::test)]
+async fn acp_reader_survives_non_json_stdout_noise() {
+    let mut config = mock_agent_config();
+    config.channels_manager.debounce.window_ms = 100;
+    config
+        .agents_manager
+        .agents
+        .get_mut("default")
+        .unwrap()
+        .args = vec!["--noisy-startup".into()];
+
+    let (cancel, handle, port) = boot_supervisor_with_port(config).await;
+
+    let client = reqwest::Client::new();
+    let mut sse = SseCollector::connect(port).await;
+
+    let resp = client
+        .post(format!("http://127.0.0.1:{port}/message"))
+        .json(&serde_json::json!({"message": "noise-test"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+
+    let events = sse.collect_events(Duration::from_secs(10)).await;
+
+    let saw_echo = events
+        .iter()
+        .any(|e| e.data.contains("Echo: ") && e.data.contains("noise-test"));
+    assert!(
+        saw_echo,
+        "agent must respond despite emitting non-JSON startup output to stdout"
+    );
+
+    cancel.cancel();
+    let _ = with_timeout(5, handle).await;
+}

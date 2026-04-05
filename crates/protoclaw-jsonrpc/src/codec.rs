@@ -47,9 +47,10 @@ impl Decoder for NdJsonCodec {
                             ),
                         ));
                     }
-                    let value = serde_json::from_slice(trimmed)
-                        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-                    return Ok(Some(value));
+                    match serde_json::from_slice::<serde_json::Value>(trimmed) {
+                        Ok(value) => return Ok(Some(value)),
+                        Err(_) => continue,
+                    }
                 }
                 None => {
                     if src.len() > MAX_LINE_SIZE {
@@ -148,11 +149,27 @@ mod tests {
     }
 
     #[test]
-    fn decode_invalid_json_returns_error() {
+    fn decode_invalid_json_skipped() {
+        let mut codec = codec();
+        let mut buf = BytesMut::from("not-json\n{\"method\":\"test\"}\n");
+        let result = codec.decode(&mut buf).unwrap();
+        assert!(
+            result.is_some(),
+            "must skip invalid JSON line and return next valid JSON"
+        );
+        assert_eq!(result.unwrap()["method"], "test");
+    }
+
+    #[test]
+    fn decode_invalid_json_only_returns_none() {
         let mut codec = codec();
         let mut buf = BytesMut::from("not-json\n");
-        let result = codec.decode(&mut buf);
-        assert!(result.is_err(), "invalid JSON must return error");
+        let result = codec.decode(&mut buf).unwrap();
+        assert!(
+            result.is_none(),
+            "invalid JSON with no valid follow-up returns None"
+        );
+        assert!(buf.is_empty(), "invalid line must be consumed from buffer");
     }
 
     #[test]

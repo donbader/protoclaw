@@ -86,7 +86,15 @@ impl AgentConnection {
         let pending_for_reader = pending_requests.clone();
         let reader_handle = tokio::spawn(async move {
             let mut framed = FramedRead::new(stdout, NdJsonCodec);
-            while let Some(Ok(value)) = framed.next().await {
+            while let Some(frame) = framed.next().await {
+                let value = match frame {
+                    Ok(v) => v,
+                    Err(e) => {
+                        tracing::warn!(error = %e, "skipping malformed line from agent stdout");
+                        continue;
+                    }
+                };
+
                 let has_id = value.get("id").is_some_and(|v| !v.is_null());
                 let has_method = value.get("method").is_some();
 

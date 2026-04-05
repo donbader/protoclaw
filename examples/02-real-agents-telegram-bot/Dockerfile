@@ -22,7 +22,7 @@ RUN cargo build --release \
 FROM node:20-slim AS opencode
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates && rm -rf /var/lib/apt/lists/*
-RUN npm install -g @anthropic-ai/opencode
+RUN npm install -g opencode-ai@latest
 COPY --from=builder /build/target/release/protoclaw /usr/local/bin/protoclaw
 COPY --from=builder /build/target/release/debug-http /usr/local/bin/debug-http
 COPY --from=builder /build/target/release/telegram-channel /usr/local/bin/telegram-channel

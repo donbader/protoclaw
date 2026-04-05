@@ -5,3 +5,9 @@ target/
 .claude/
 *.md
 !README.md
+*.yaml
+*.yml
+.env*
+docker-compose*
+Dockerfile
+docs/

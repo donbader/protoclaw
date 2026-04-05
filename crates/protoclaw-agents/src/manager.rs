@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use crate::acp_error::AcpError;
 use crate::acp_types::{
-    ClientCapabilities, InitializeParams, InitializeResult, McpServerInfo, PromptMessage,
+    ClientCapabilities, ContentPart, InitializeParams, InitializeResult, McpServerInfo,
     SessionCancelParams, SessionLoadParams, SessionNewParams, SessionPromptParams,
     SessionUpdateEvent, SessionUpdateType,
 };
@@ -176,11 +176,11 @@ impl AgentsManager {
 
         let params = serde_json::to_value(SessionNewParams {
             session_id: None,
-            mcp_servers: if mcp_servers.is_empty() {
-                None
-            } else {
-                Some(mcp_servers)
-            },
+            cwd: std::env::current_dir()
+                .unwrap_or_else(|_| std::path::PathBuf::from("/"))
+                .to_string_lossy()
+                .into_owned(),
+            mcp_servers,
         })?;
 
         let conn = slot.connection.as_ref().ok_or(AgentsError::ConnectionClosed)?;
@@ -289,10 +289,7 @@ impl AgentsManager {
 
         let params = serde_json::to_value(SessionPromptParams {
             session_id: acp_id.clone(),
-            message: PromptMessage {
-                role: "user".into(),
-                content: message.into(),
-            },
+            prompt: vec![ContentPart::text(message)],
         })?;
 
         let _response_rx = conn.send_request("session/prompt", params).await?;
@@ -331,10 +328,7 @@ impl AgentsManager {
 
         let params = serde_json::to_value(SessionPromptParams {
             session_id: acp_session_id.clone(),
-            message: PromptMessage {
-                role: "user".into(),
-                content: message.into(),
-            },
+            prompt: vec![ContentPart::text(message)],
         })?;
 
         let _response_rx = conn.send_request("session/prompt", params).await?;
