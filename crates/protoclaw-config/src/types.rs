@@ -173,15 +173,11 @@ pub enum WorkspaceConfig {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AgentConfig {
-    pub binary: String,
+    pub workspace: WorkspaceConfig,
     #[serde(default)]
     pub args: Vec<String>,
     #[serde(default = "default_true")]
     pub enabled: bool,
-    #[serde(default, deserialize_with = "deserialize_string_map")]
-    pub env: HashMap<String, String>,
-    #[serde(default)]
-    pub working_dir: Option<PathBuf>,
     #[serde(default)]
     pub tools: Vec<String>,
     #[serde(default)]
@@ -1001,5 +997,56 @@ pull_policy: always
             }
             _ => panic!("expected Docker variant"),
         }
+    }
+
+    #[test]
+    fn agent_config_with_local_workspace() {
+        let yaml = r#"
+workspace:
+  type: local
+  binary: "opencode"
+  working_dir: "/tmp"
+  env:
+    MY_KEY: "val"
+args:
+  - "acp"
+tools:
+  - "system-info"
+"#;
+        let config: AgentConfig = serde_yaml::from_str(yaml).unwrap();
+        match &config.workspace {
+            WorkspaceConfig::Local(local) => {
+                assert_eq!(local.binary, "opencode");
+                assert_eq!(local.working_dir, Some(PathBuf::from("/tmp")));
+                assert_eq!(local.env["MY_KEY"], "val");
+            }
+            _ => panic!("expected Local variant"),
+        }
+        assert_eq!(config.args, vec!["acp"]);
+        assert_eq!(config.tools, vec!["system-info"]);
+        assert!(config.enabled);
+    }
+
+    #[test]
+    fn agent_config_with_docker_workspace() {
+        let yaml = r#"
+workspace:
+  type: docker
+  image: "protoclaw/opencode:latest"
+  memory_limit: "512m"
+  cpu_limit: "1.5"
+args:
+  - "acp"
+"#;
+        let config: AgentConfig = serde_yaml::from_str(yaml).unwrap();
+        match &config.workspace {
+            WorkspaceConfig::Docker(d) => {
+                assert_eq!(d.image, "protoclaw/opencode:latest");
+                assert_eq!(d.memory_limit, Some("512m".into()));
+                assert_eq!(d.cpu_limit, Some("1.5".into()));
+            }
+            _ => panic!("expected Docker variant"),
+        }
+        assert_eq!(config.args, vec!["acp"]);
     }
 }
