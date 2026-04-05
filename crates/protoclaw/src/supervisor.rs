@@ -50,7 +50,9 @@ impl Supervisor {
     pub fn new(mut config: ProtoclawConfig) -> Self {
         let extensions_dir = config.extensions_dir.clone();
         for (_, agent) in &mut config.agents_manager.agents {
-            agent.binary = resolve_binary_path(&agent.binary, &extensions_dir);
+            if let protoclaw_config::WorkspaceConfig::Local(ref mut local) = agent.workspace {
+                local.binary = resolve_binary_path(&local.binary, &extensions_dir);
+            }
         }
         for (_, ch) in &mut config.channels_manager.channels {
             ch.binary = resolve_binary_path(&ch.binary, &extensions_dir);
@@ -401,11 +403,13 @@ mod tests {
 
         let mut agents = std::collections::HashMap::new();
         agents.insert("default".to_string(), protoclaw_config::AgentConfig {
-            binary: mock_agent.to_string_lossy().to_string(),
+            workspace: protoclaw_config::WorkspaceConfig::Local(protoclaw_config::LocalWorkspaceConfig {
+                binary: mock_agent.to_string_lossy().to_string(),
+                working_dir: None,
+                env: std::collections::HashMap::new(),
+            }),
             args: vec![],
             enabled: true,
-            env: std::collections::HashMap::new(),
-            working_dir: None,
             tools: vec![],
             acp_timeout_secs: None,
             backoff: None,
