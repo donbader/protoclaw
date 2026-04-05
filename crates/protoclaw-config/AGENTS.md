@@ -11,6 +11,7 @@ Figment-based layered configuration for protoclaw. Loads from embedded defaults 
 | `resolve.rs` | `resolve_binary_path()` — `@built-in/` prefix → `extensions_dir` |
 | `validate.rs` | `validate_config()` — binary existence, working dir checks |
 | `error.rs` | `ConfigError` enum (thiserror) |
+| `parse.rs` | `parse_memory_limit()`, `parse_cpu_limit()` — K8s-style string to Docker-native units |
 | `subst_yaml.rs` | YAML provider with environment variable substitution |
 | `defaults.yaml` | Embedded defaults loaded as Figment base layer |
 
@@ -36,7 +37,14 @@ Per-entity override types:
 - `BackoffConfig { base_delay_ms: u64, max_delay_secs: u64 }` — optional on `AgentConfig` and `ChannelConfig`
 - `CrashTrackerConfig { max_crashes: u32, window_secs: u64 }` — optional on `AgentConfig` and `ChannelConfig`
 - `AgentConfig.acp_timeout_secs: Option<u64>` — overrides manager-level default when set
+- `AgentConfig.workspace: WorkspaceConfig` — tagged enum, see below
 - `ChannelConfig.init_timeout_secs: Option<u64>` — overrides manager-level default when set
+
+`WorkspaceConfig` — tagged enum (`#[serde(tag = "type")]`):
+- `WorkspaceConfig::Local(LocalWorkspaceConfig)` — `binary` (required), `working_dir` (optional), `env` (optional)
+- `WorkspaceConfig::Docker(DockerWorkspaceConfig)` — `image` (required), `entrypoint`, `volumes`, `env`, `memory_limit`, `cpu_limit`, `docker_host`, `network`, `pull_policy`
+
+`PullPolicy` — enum: `Always`, `IfNotPresent` (default), `Never`. Config-only; pull logic deferred to Docker runtime phase.
 
 ## Loading Order
 
@@ -60,8 +68,8 @@ Called by Supervisor before manager construction — managers receive resolved p
 ## Validation
 
 `validate_config()` checks:
-- Agent binaries exist (absolute path check or PATH lookup)
-- Agent `working_dir` directories exist
+- Local agents: binary exists (absolute path check or PATH lookup), `working_dir` exists
+- Docker agents: `memory_limit` parses, `cpu_limit` parses, `docker_host` URI format, `volumes` syntax
 - Channel binaries exist
 - Tool binaries exist (if specified)
 

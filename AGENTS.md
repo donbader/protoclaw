@@ -44,7 +44,7 @@ protoclaw-rust/
 | Add MCP tool | `crates/protoclaw-tools/src/mcp_host.rs` | McpHost manages external MCP server connections |
 | Add WASM tool | `crates/protoclaw-tools/src/wasm_runner.rs` | WasmToolRunner + WasmTool for sandboxed execution |
 | Build demo tool | `examples/01-fake-agent-telegram-bot/tools/system-info/` | Workspace member, uses protoclaw-sdk-tool |
-| Change config schema | `crates/protoclaw-config/src/types.rs` | Serde structs, update tests in `lib.rs` |
+| Change config schema | `crates/protoclaw-config/src/types.rs` | Serde structs (`WorkspaceConfig` enum, `AgentConfig`), update tests in `lib.rs` |
 | Modify JSON-RPC framing | `crates/protoclaw-jsonrpc/src/codec.rs` | LinesCodec-based, line-delimited JSON |
 | Build channel SDK | `crates/protoclaw-sdk-channel/` | Channel trait + ChannelHarness |
 | Build tool SDK | `crates/protoclaw-sdk-tool/` | Tool trait + ToolServer |
@@ -96,6 +96,7 @@ Example binaries:
 - **Do not call `run()` twice**: `cmd_rx` is consumed via `.take()` on first `run()`. Second call panics.
 - **Do not move `ChannelEvent` out of `protoclaw-core`**: It lives there to break the circular dependency between agents and channels crates.
 - **Do not remove the 50ms sleep in `poll_channels()`**: It prevents busy-looping in the channel polling select.
+- **Do not access `binary`/`env`/`working_dir` on `AgentConfig` directly**: These fields moved into `WorkspaceConfig::Local`. Match on `agent.workspace` to extract them.
 
 ## Design Documentation
 
