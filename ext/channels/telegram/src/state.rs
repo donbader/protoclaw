@@ -15,6 +15,7 @@ pub struct SharedState {
     pub last_edit_time: RwLock<HashMap<i64, Instant>>,
     pub thinking_messages: RwLock<HashMap<i64, (i32, Instant)>>,
     pub thought_buffers: RwLock<HashMap<i64, String>>,
+    pub thought_debounce_handles: RwLock<HashMap<i64, tokio::task::JoinHandle<()>>>,
     pub last_message_ids: RwLock<HashMap<i64, i32>>,
     pub ack_config: RwLock<Option<ChannelAckConfig>>,
 }
@@ -31,6 +32,7 @@ impl SharedState {
             last_edit_time: RwLock::new(HashMap::new()),
             thinking_messages: RwLock::new(HashMap::new()),
             thought_buffers: RwLock::new(HashMap::new()),
+            thought_debounce_handles: RwLock::new(HashMap::new()),
             last_message_ids: RwLock::new(HashMap::new()),
             ack_config: RwLock::new(None),
         }
@@ -56,5 +58,11 @@ mod tests {
         assert!(state.session_chat_map.read().await.is_empty());
         assert!(state.last_message_ids.read().await.is_empty());
         assert!(state.ack_config.read().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn thought_debounce_handles_initialized_empty() {
+        let state = SharedState::new();
+        assert!(state.thought_debounce_handles.read().await.is_empty());
     }
 }

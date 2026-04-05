@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use protoclaw_sdk_channel::ChannelSdkError;
@@ -65,7 +66,7 @@ fn thought_emoji() -> String {
 
 pub async fn deliver_to_chat(
     bot: &Bot,
-    state: &SharedState,
+    state: &Arc<SharedState>,
     session_id: &str,
     content: &serde_json::Value,
 ) -> Result<(), ChannelSdkError> {
@@ -102,13 +103,7 @@ pub async fn deliver_to_chat(
             let thought_text = format!("{emoji} {accumulated}");
 
             let existing = state.thinking_messages.read().await.get(&chat_id).map(|(mid, _)| *mid);
-            if let Some(msg_id) = existing {
-                if can_edit(state, chat_id).await {
-                    let _ = bot
-                        .edit_message_text(ChatId(chat_id), MessageId(msg_id), &thought_text)
-                        .await;
-                }
-            } else {
+            if existing.is_none() {
                 match bot.send_message(ChatId(chat_id), &thought_text).await {
                     Ok(sent) => {
                         state.thinking_messages.write().await
@@ -118,6 +113,27 @@ pub async fn deliver_to_chat(
                         tracing::warn!(%e, "failed to send thinking message");
                     }
                 }
+            } else {
+                if let Some(handle) = state.thought_debounce_handles.write().await.remove(&chat_id) {
+                    handle.abort();
+                }
+
+                let bot_clone = bot.clone();
+                let state_clone = Arc::clone(state);
+                let handle = tokio::spawn(async move {
+                    tokio::time::sleep(Duration::from_millis(400)).await;
+                    let accumulated = state_clone.thought_buffers.read().await
+                        .get(&chat_id).cloned().unwrap_or_default();
+                    let emoji = thought_emoji();
+                    let text = format!("{emoji} {accumulated}");
+                    if let Some((msg_id, _)) = state_clone.thinking_messages.read().await.get(&chat_id).copied() {
+                        let _ = bot_clone
+                            .edit_message_text(ChatId(chat_id), MessageId(msg_id), &text)
+                            .await;
+                    }
+                    state_clone.thought_debounce_handles.write().await.remove(&chat_id);
+                });
+                state.thought_debounce_handles.write().await.insert(chat_id, handle);
             }
             return Ok(());
         }
@@ -164,24 +180,15 @@ pub async fn deliver_to_chat(
             return Ok(());
         }
         "result" => {
-            let final_thought = state.thought_buffers.write().await.remove(&chat_id);
+            if let Some(handle) = state.thought_debounce_handles.write().await.remove(&chat_id) {
+                handle.abort();
+            }
+
+            let _final_thought = state.thought_buffers.write().await.remove(&chat_id);
             if let Some((msg_id, start_time)) = state.thinking_messages.write().await.remove(&chat_id) {
                 let elapsed = start_time.elapsed().as_secs_f32();
                 let emoji = thought_emoji();
-                let collapse_text = if let Some(thought) = final_thought {
-                    let truncated = if thought.len() > 100 {
-                        let mut end = 100;
-                        while end > 0 && !thought.is_char_boundary(end) {
-                            end -= 1;
-                        }
-                        format!("{emoji} Thought for {elapsed:.1}s: {}…", &thought[..end])
-                    } else {
-                        format!("{emoji} Thought for {elapsed:.1}s: {thought}")
-                    };
-                    truncated
-                } else {
-                    format!("{emoji} Thought for {elapsed:.1}s")
-                };
+                let collapse_text = format!("{emoji} Thought for {elapsed:.1}s");
                 let _ = bot
                     .edit_message_text(ChatId(chat_id), MessageId(msg_id), &collapse_text)
                     .await;
@@ -315,7 +322,7 @@ mod tests {
 
     #[tokio::test]
     async fn extract_chat_id_returns_error_for_unknown_session() {
-        let state = SharedState::new();
+        let state = Arc::new(SharedState::new());
         let bot = Bot::new("test-token");
         let content = serde_json::json!("hello");
         let result = deliver_to_chat(&bot, &state, "unknown-session", &content).await;
@@ -326,7 +333,7 @@ mod tests {
 
     #[tokio::test]
     async fn empty_content_clears_active_message() {
-        let state = SharedState::new();
+        let state = Arc::new(SharedState::new());
         state
             .session_chat_map
             .write()
@@ -345,6 +352,12 @@ mod tests {
     async fn thinking_messages_state_initialized_empty() {
         let state = SharedState::new();
         assert!(state.thinking_messages.read().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn thought_debounce_handles_initialized_empty() {
+        let state = SharedState::new();
+        assert!(state.thought_debounce_handles.read().await.is_empty());
     }
 
     #[tokio::test]
