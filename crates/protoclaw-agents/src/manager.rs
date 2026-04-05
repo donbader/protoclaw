@@ -357,7 +357,40 @@ impl AgentsManager {
             prompt: vec![ContentPart::text(message)],
         })?;
 
-        let _response_rx = conn.send_request("session/prompt", params).await?;
+        let response_rx = conn.send_request("session/prompt", params).await?;
+
+        // Spawn a task to await the JSON-RPC response and synthesize a result event.
+        // The agent signals completion via the JSON-RPC response (stopReason: "end_turn"),
+        // NOT via a session/update notification. Without this, mark_idle() never fires.
+        if let Some(sender) = &self.channels_sender {
+            let sender = sender.clone();
+            let sk = session_key.clone();
+            let sid = acp_session_id.clone();
+            tokio::spawn(async move {
+                match response_rx.await {
+                    Ok(response) => {
+                        let result_content = serde_json::json!({
+                            "sessionId": sid,
+                            "update": {
+                                "sessionUpdate": "result",
+                                "stopReason": response.get("result")
+                                    .and_then(|r| r.get("stopReason"))
+                                    .and_then(|s| s.as_str())
+                                    .unwrap_or("end_turn"),
+                            }
+                        });
+                        let _ = sender.send(ChannelEvent::DeliverMessage {
+                            session_key: sk,
+                            content: result_content,
+                        }).await;
+                    }
+                    Err(_) => {
+                        tracing::warn!(session_key = %sk, "prompt response channel dropped");
+                    }
+                }
+            });
+        }
+
         Ok(())
     }
 
