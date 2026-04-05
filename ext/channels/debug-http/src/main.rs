@@ -95,11 +95,20 @@ impl Channel for DebugHttpChannel {
     }
 
     async fn deliver_message(&mut self, msg: DeliverMessage) -> Result<(), ChannelSdkError> {
-        let update_type = msg.content.get("type").and_then(|t| t.as_str());
+        let update = msg.content.get("update");
+        let update_type = update
+            .and_then(|u| u.get("sessionUpdate"))
+            .and_then(|t| t.as_str());
         let payload = match update_type {
             Some("agent_thought_chunk") => {
-                let thought = msg.content.get("content")
-                    .and_then(|c| c.as_str())
+                let thought = update
+                    .and_then(|u| u.get("content"))
+                    .map(|c| {
+                        // OpenCode sends content as {"type": "text", "text": "actual text"}
+                        c.get("text").and_then(|t| t.as_str())
+                            .or_else(|| c.as_str())
+                            .unwrap_or("")
+                    })
                     .unwrap_or("");
                 SsePayload {
                     event_type: Some("thought".into()),
@@ -107,10 +116,21 @@ impl Channel for DebugHttpChannel {
                 }
             }
             _ => {
-                let content_str = match msg.content {
-                    serde_json::Value::String(s) => s,
-                    other => serde_json::to_string(&other).unwrap_or_default(),
-                };
+                let content_str = update
+                    .and_then(|u| u.get("content"))
+                    .map(|c| {
+                        // Unwrap {"type": "text", "text": "..."} content objects
+                        c.get("text").and_then(|t| t.as_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or_else(|| match c {
+                                serde_json::Value::String(s) => s.clone(),
+                                other => serde_json::to_string(other).unwrap_or_default(),
+                            })
+                    })
+                    .unwrap_or_else(|| match msg.content {
+                        serde_json::Value::String(s) => s,
+                        other => serde_json::to_string(&other).unwrap_or_default(),
+                    });
                 SsePayload { event_type: None, data: content_str }
             }
         };
@@ -196,7 +216,10 @@ async fn handle_events(
             }
             Some(Ok(event))
         }
-        Err(_) => None,
+        Err(e) => {
+            tracing::warn!(error = %e, "SSE broadcast lagged, event dropped");
+            None
+        }
     });
     Sse::new(stream).keep_alive(KeepAlive::default())
 }
@@ -351,7 +374,7 @@ mod tests {
         let mut ch = DebugHttpChannel { state: state.clone(), host: "127.0.0.1".to_string(), port: 0 };
         let msg = DeliverMessage {
             session_id: "s1".into(),
-            content: serde_json::json!({"type": "agent_thought_chunk", "content": "thinking..."}),
+            content: serde_json::json!({"update": {"sessionUpdate": "agent_thought_chunk", "content": "thinking..."}}),
         };
         ch.deliver_message(msg).await.unwrap();
         let received = rx.try_recv().expect("should have received broadcast");
@@ -366,7 +389,7 @@ mod tests {
         let mut ch = DebugHttpChannel { state: state.clone(), host: "127.0.0.1".to_string(), port: 0 };
         let msg = DeliverMessage {
             session_id: "s1".into(),
-            content: serde_json::json!({"type": "agent_message_chunk", "content": "hello"}),
+            content: serde_json::json!({"update": {"sessionUpdate": "agent_message_chunk", "content": "hello"}}),
         };
         ch.deliver_message(msg).await.unwrap();
         let received = rx.try_recv().expect("should have received broadcast");
@@ -380,7 +403,7 @@ mod tests {
         let mut ch = DebugHttpChannel { state: state.clone(), host: "127.0.0.1".to_string(), port: 0 };
         let msg = DeliverMessage {
             session_id: "s1".into(),
-            content: serde_json::json!({"type": "result", "content": "done"}),
+            content: serde_json::json!({"update": {"sessionUpdate": "result", "content": "done"}}),
         };
         ch.deliver_message(msg).await.unwrap();
         let received = rx.try_recv().expect("should have received broadcast");

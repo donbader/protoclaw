@@ -8,6 +8,10 @@ use tokio::time::Instant;
 use crate::state::SharedState;
 
 pub fn content_to_string(content: &serde_json::Value) -> String {
+    // OpenCode sends content as {"type": "text", "text": "actual text"}
+    if let Some(text) = content.get("text").and_then(|t| t.as_str()) {
+        return text.to_string();
+    }
     match content {
         serde_json::Value::String(s) => s.clone(),
         other => serde_json::to_string(other).unwrap_or_default(),
@@ -40,12 +44,11 @@ pub fn split_message(text: &str, max_len: usize) -> Vec<String> {
     chunks
 }
 
-async fn throttle_edit(state: &SharedState, chat_id: i64) {
+async fn can_edit(state: &SharedState, chat_id: i64) -> bool {
     let last = state.last_edit_time.read().await.get(&chat_id).copied();
     if let Some(last) = last {
-        let elapsed = last.elapsed();
-        if elapsed < Duration::from_secs(1) {
-            tokio::time::sleep(Duration::from_secs(1) - elapsed).await;
+        if last.elapsed() < Duration::from_secs(1) {
+            return false;
         }
     }
     state
@@ -53,6 +56,7 @@ async fn throttle_edit(state: &SharedState, chat_id: i64) {
         .write()
         .await
         .insert(chat_id, Instant::now());
+    true
 }
 
 fn thought_emoji() -> String {
@@ -74,20 +78,36 @@ pub async fn deliver_to_chat(
             ChannelSdkError::Protocol(format!("unknown session: {session_id}"))
         })?;
 
-    let update_type = content.get("type").and_then(|t| t.as_str()).unwrap_or("");
+    let update_obj = content.get("update");
+    let update_type = update_obj
+        .and_then(|u| u.get("sessionUpdate"))
+        .and_then(|t| t.as_str())
+        .unwrap_or("");
 
     match update_type {
         "agent_thought_chunk" => {
-            let thought_content = content.get("content").and_then(|c| c.as_str()).unwrap_or("");
+            let thought_content = update_obj
+                .and_then(|u| u.get("content"))
+                .map(content_to_string)
+                .unwrap_or_default();
+
+            let accumulated = {
+                let mut buffers = state.thought_buffers.write().await;
+                let buf = buffers.entry(chat_id).or_default();
+                buf.push_str(&thought_content);
+                buf.clone()
+            };
+
             let emoji = thought_emoji();
-            let thought_text = format!("{emoji} {thought_content}");
+            let thought_text = format!("{emoji} {accumulated}");
 
             let existing = state.thinking_messages.read().await.get(&chat_id).map(|(mid, _)| *mid);
             if let Some(msg_id) = existing {
-                throttle_edit(state, chat_id).await;
-                let _ = bot
-                    .edit_message_text(ChatId(chat_id), MessageId(msg_id), &thought_text)
-                    .await;
+                if can_edit(state, chat_id).await {
+                    let _ = bot
+                        .edit_message_text(ChatId(chat_id), MessageId(msg_id), &thought_text)
+                        .await;
+                }
             } else {
                 match bot.send_message(ChatId(chat_id), &thought_text).await {
                     Ok(sent) => {
@@ -102,8 +122,8 @@ pub async fn deliver_to_chat(
             return Ok(());
         }
         "agent_message_chunk" => {
-            let chunk_content = content
-                .get("content")
+            let chunk_content = update_obj
+                .and_then(|u| u.get("content"))
                 .map(content_to_string)
                 .unwrap_or_default();
 
@@ -118,23 +138,17 @@ pub async fn deliver_to_chat(
                 return Ok(());
             }
 
-            let chunks = split_message(&accumulated, 4096);
-            let display_text = &chunks[0];
-
             let existing_msg_id = state.active_messages.read().await.get(&chat_id).copied();
             if let Some(msg_id) = existing_msg_id {
-                throttle_edit(state, chat_id).await;
-                let edit_result = bot
-                    .edit_message_text(ChatId(chat_id), MessageId(msg_id), display_text)
-                    .await;
-                match edit_result {
-                    Ok(_) => {}
-                    Err(e) => {
-                        tracing::warn!(%e, "failed to edit message chunk");
-                    }
+                if can_edit(state, chat_id).await {
+                    let chunks = split_message(&accumulated, 4096);
+                    let _ = bot
+                        .edit_message_text(ChatId(chat_id), MessageId(msg_id), &chunks[0])
+                        .await;
                 }
             } else {
-                match bot.send_message(ChatId(chat_id), display_text).await {
+                let chunks = split_message(&accumulated, 4096);
+                match bot.send_message(ChatId(chat_id), &chunks[0]).await {
                     Ok(sent) => {
                         state
                             .active_messages
@@ -150,24 +164,48 @@ pub async fn deliver_to_chat(
             return Ok(());
         }
         "result" => {
+            let final_thought = state.thought_buffers.write().await.remove(&chat_id);
             if let Some((msg_id, start_time)) = state.thinking_messages.write().await.remove(&chat_id) {
                 let elapsed = start_time.elapsed().as_secs_f32();
                 let emoji = thought_emoji();
-                let collapse_text = format!("{emoji} Thought for {elapsed:.1}s");
-                throttle_edit(state, chat_id).await;
+                let collapse_text = if let Some(thought) = final_thought {
+                    let truncated = if thought.len() > 100 {
+                        let mut end = 100;
+                        while end > 0 && !thought.is_char_boundary(end) {
+                            end -= 1;
+                        }
+                        format!("{emoji} Thought for {elapsed:.1}s: {}…", &thought[..end])
+                    } else {
+                        format!("{emoji} Thought for {elapsed:.1}s: {thought}")
+                    };
+                    truncated
+                } else {
+                    format!("{emoji} Thought for {elapsed:.1}s")
+                };
                 let _ = bot
                     .edit_message_text(ChatId(chat_id), MessageId(msg_id), &collapse_text)
                     .await;
             }
+
+            let final_message = state.message_buffers.write().await.remove(&chat_id);
+            if let Some(text) = final_message {
+                if let Some(msg_id) = state.active_messages.read().await.get(&chat_id).copied() {
+                    let chunks = split_message(&text, 4096);
+                    let _ = bot
+                        .edit_message_text(ChatId(chat_id), MessageId(msg_id), &chunks[0])
+                        .await;
+                }
+            }
+
             state.active_messages.write().await.remove(&chat_id);
-            state.message_buffers.write().await.remove(&chat_id);
+            state.last_edit_time.write().await.remove(&chat_id);
             return Ok(());
         }
         _ => {}
     }
 
-    let text = content
-        .get("content")
+    let text = update_obj
+        .and_then(|u| u.get("content"))
         .map(content_to_string)
         .unwrap_or_default();
 
@@ -186,15 +224,18 @@ pub async fn deliver_to_chat(
         };
 
         if let Some(msg_id) = existing_msg_id {
-            throttle_edit(state, chat_id).await;
-            let edit_result = bot
-                .edit_message_text(ChatId(chat_id), MessageId(msg_id), chunk)
-                .await;
-            match edit_result {
-                Ok(_) => continue,
-                Err(e) => {
-                    tracing::warn!(%e, "failed to edit message text");
+            if can_edit(state, chat_id).await {
+                let edit_result = bot
+                    .edit_message_text(ChatId(chat_id), MessageId(msg_id), chunk)
+                    .await;
+                match edit_result {
+                    Ok(_) => continue,
+                    Err(e) => {
+                        tracing::warn!(%e, "failed to edit message text");
+                    }
                 }
+            } else {
+                continue;
             }
         }
 

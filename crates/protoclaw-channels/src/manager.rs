@@ -268,9 +268,10 @@ impl ChannelsManager {
     }
 
     /// Check if a DeliverMessage content payload is a "result" update.
-    /// Content is the raw session/update params: `{"sessionId": "...", "type": "result", ...}`.
+    /// Content is the raw session/update params: `{"sessionId": "...", "update": {"sessionUpdate": "result", ...}}`.
     fn is_result_content(content: &serde_json::Value) -> bool {
-        content.get("type")
+        content.get("update")
+            .and_then(|u| u.get("sessionUpdate"))
             .and_then(|t| t.as_str())
             .map(|t| t == "result")
             .unwrap_or(false)
@@ -970,8 +971,10 @@ mod tests {
     fn is_result_content_detects_result_type() {
         let result_content = serde_json::json!({
             "sessionId": "abc-123",
-            "type": "result",
-            "content": "Echo: hello"
+            "update": {
+                "sessionUpdate": "result",
+                "content": "Echo: hello"
+            }
         });
         assert!(ChannelsManager::is_result_content(&result_content));
     }
@@ -980,8 +983,10 @@ mod tests {
     fn is_result_content_rejects_thought_chunk() {
         let thought = serde_json::json!({
             "sessionId": "abc-123",
-            "type": "agent_thought_chunk",
-            "content": "thinking..."
+            "update": {
+                "sessionUpdate": "agent_thought_chunk",
+                "content": "thinking..."
+            }
         });
         assert!(!ChannelsManager::is_result_content(&thought));
     }
@@ -990,8 +995,10 @@ mod tests {
     fn is_result_content_rejects_message_chunk() {
         let chunk = serde_json::json!({
             "sessionId": "abc-123",
-            "type": "agent_message_chunk",
-            "content": "Echo: "
+            "update": {
+                "sessionUpdate": "agent_message_chunk",
+                "content": "Echo: "
+            }
         });
         assert!(!ChannelsManager::is_result_content(&chunk));
     }
