@@ -20,6 +20,22 @@ pub enum ValidationError {
     BinaryNotFound { field: String, binary: String },
     #[error("agent.working_dir: directory '{}' does not exist", path.display())]
     WorkingDirNotFound { path: std::path::PathBuf },
+    #[error("{field}: invalid memory limit '{value}': {reason}")]
+    InvalidMemoryLimit {
+        field: String,
+        value: String,
+        reason: String,
+    },
+    #[error("{field}: invalid cpu limit '{value}': {reason}")]
+    InvalidCpuLimit {
+        field: String,
+        value: String,
+        reason: String,
+    },
+    #[error("{field}: invalid docker_host URI '{value}' (expected unix:// or tcp://)")]
+    InvalidDockerHost { field: String, value: String },
+    #[error("{field}: volume entry '{value}' missing ':' separator")]
+    InvalidVolumeMount { field: String, value: String },
 }
 
 #[derive(Debug, Clone)]
@@ -66,15 +82,55 @@ pub fn validate_config(config: &ProtoclawConfig) -> ValidationResult {
     let warnings = Vec::new();
 
     for (name, agent) in &config.agents_manager.agents {
-        if !binary_exists(&agent.binary) {
-            errors.push(ValidationError::BinaryNotFound {
-                field: format!("agents-manager.agents.{name}.binary"),
-                binary: agent.binary.clone(),
-            });
-        }
-        if let Some(path) = &agent.working_dir {
-            if !path.exists() {
-                errors.push(ValidationError::WorkingDirNotFound { path: path.clone() });
+        match &agent.workspace {
+            crate::WorkspaceConfig::Local(local) => {
+                if !binary_exists(&local.binary) {
+                    errors.push(ValidationError::BinaryNotFound {
+                        field: format!("agents-manager.agents.{name}.workspace.binary"),
+                        binary: local.binary.clone(),
+                    });
+                }
+                if let Some(path) = &local.working_dir {
+                    if !path.exists() {
+                        errors.push(ValidationError::WorkingDirNotFound { path: path.clone() });
+                    }
+                }
+            }
+            crate::WorkspaceConfig::Docker(docker) => {
+                if let Some(ref mem) = docker.memory_limit {
+                    if let Err(e) = crate::parse_memory_limit(mem) {
+                        errors.push(ValidationError::InvalidMemoryLimit {
+                            field: format!("agents-manager.agents.{name}.workspace.memory_limit"),
+                            value: mem.clone(),
+                            reason: e.to_string(),
+                        });
+                    }
+                }
+                if let Some(ref cpu) = docker.cpu_limit {
+                    if let Err(e) = crate::parse_cpu_limit(cpu) {
+                        errors.push(ValidationError::InvalidCpuLimit {
+                            field: format!("agents-manager.agents.{name}.workspace.cpu_limit"),
+                            value: cpu.clone(),
+                            reason: e.to_string(),
+                        });
+                    }
+                }
+                if let Some(ref host) = docker.docker_host {
+                    if !host.starts_with("unix://") && !host.starts_with("tcp://") {
+                        errors.push(ValidationError::InvalidDockerHost {
+                            field: format!("agents-manager.agents.{name}.workspace.docker_host"),
+                            value: host.clone(),
+                        });
+                    }
+                }
+                for vol in &docker.volumes {
+                    if !vol.contains(':') {
+                        errors.push(ValidationError::InvalidVolumeMount {
+                            field: format!("agents-manager.agents.{name}.workspace.volumes"),
+                            value: vol.clone(),
+                        });
+                    }
+                }
             }
         }
     }
@@ -108,8 +164,9 @@ pub fn validate_config(config: &ProtoclawConfig) -> ValidationResult {
 mod tests {
     use super::*;
     use crate::{
-        AgentConfig, AgentsManagerConfig, ChannelConfig, ChannelsManagerConfig, SupervisorConfig,
-        ToolsManagerConfig,
+        AgentConfig, AgentsManagerConfig, ChannelConfig, ChannelsManagerConfig,
+        DockerWorkspaceConfig, LocalWorkspaceConfig, PullPolicy, SupervisorConfig,
+        ToolsManagerConfig, WorkspaceConfig,
     };
     use std::collections::HashMap;
     use std::path::PathBuf;
@@ -119,11 +176,13 @@ mod tests {
         agents.insert(
             "default".to_string(),
             AgentConfig {
-                binary: "echo".to_string(),
+                workspace: WorkspaceConfig::Local(LocalWorkspaceConfig {
+                    binary: "echo".to_string(),
+                    working_dir: None,
+                    env: HashMap::new(),
+                }),
                 args: vec![],
                 enabled: true,
-                env: HashMap::new(),
-                working_dir: None,
                 tools: vec![],
                 acp_timeout_secs: None,
                 backoff: None,
@@ -161,12 +220,15 @@ mod tests {
     #[test]
     fn missing_agent_binary_is_error() {
         let mut config = valid_config();
-        config
+        if let WorkspaceConfig::Local(ref mut local) = config
             .agents_manager
             .agents
             .get_mut("default")
             .unwrap()
-            .binary = "nonexistent-xyz-99999".to_string();
+            .workspace
+        {
+            local.binary = "nonexistent-xyz-99999".to_string();
+        }
         let result = validate_config(&config);
         let has_error = result.errors.iter().any(|e| {
             matches!(
@@ -185,12 +247,15 @@ mod tests {
     #[test]
     fn nonexistent_working_dir_is_error() {
         let mut config = valid_config();
-        config
+        if let WorkspaceConfig::Local(ref mut local) = config
             .agents_manager
             .agents
             .get_mut("default")
             .unwrap()
-            .working_dir = Some(PathBuf::from("/nonexistent/path/xyz-99999"));
+            .workspace
+        {
+            local.working_dir = Some(PathBuf::from("/nonexistent/path/xyz-99999"));
+        }
         let result = validate_config(&config);
         let has_error = result
             .errors
@@ -278,5 +343,170 @@ mod tests {
             warnings: vec![],
         };
         assert!(!result.is_ok());
+    }
+
+    #[test]
+    fn docker_agent_skips_binary_check() {
+        let mut config = valid_config();
+        config.agents_manager.agents.insert(
+            "docker-agent".to_string(),
+            AgentConfig {
+                workspace: WorkspaceConfig::Docker(DockerWorkspaceConfig {
+                    image: "some-nonexistent-image:latest".to_string(),
+                    entrypoint: None,
+                    volumes: vec!["/host:/container".to_string()],
+                    env: HashMap::new(),
+                    memory_limit: Some("512m".to_string()),
+                    cpu_limit: Some("1.5".to_string()),
+                    docker_host: Some("unix:///var/run/docker.sock".to_string()),
+                    network: None,
+                    pull_policy: PullPolicy::IfNotPresent,
+                }),
+                args: vec![],
+                enabled: true,
+                tools: vec![],
+                acp_timeout_secs: None,
+                backoff: None,
+                crash_tracker: None,
+                options: HashMap::new(),
+            },
+        );
+        let result = validate_config(&config);
+        let has_binary_error = result.errors.iter().any(|e| {
+            matches!(e, ValidationError::BinaryNotFound { field, .. } if field.contains("docker-agent"))
+        });
+        assert!(
+            !has_binary_error,
+            "docker agent should not produce BinaryNotFound, got: {:?}",
+            result.errors
+        );
+        assert!(
+            result.is_ok(),
+            "expected no errors, got: {:?}",
+            result.errors
+        );
+    }
+
+    #[test]
+    fn docker_invalid_memory_limit_is_error() {
+        let mut config = valid_config();
+        config.agents_manager.agents.insert(
+            "docker-agent".to_string(),
+            AgentConfig {
+                workspace: WorkspaceConfig::Docker(DockerWorkspaceConfig {
+                    image: "my-agent:latest".to_string(),
+                    entrypoint: None,
+                    volumes: vec![],
+                    env: HashMap::new(),
+                    memory_limit: Some("notvalid".to_string()),
+                    cpu_limit: None,
+                    docker_host: None,
+                    network: None,
+                    pull_policy: PullPolicy::IfNotPresent,
+                }),
+                args: vec![],
+                enabled: true,
+                tools: vec![],
+                acp_timeout_secs: None,
+                backoff: None,
+                crash_tracker: None,
+                options: HashMap::new(),
+            },
+        );
+        let result = validate_config(&config);
+        let has_error = result.errors.iter().any(|e| {
+            matches!(
+                e,
+                ValidationError::InvalidMemoryLimit { field, value, .. }
+                if field.contains("docker-agent") && value == "notvalid"
+            )
+        });
+        assert!(
+            has_error,
+            "expected InvalidMemoryLimit, got: {:?}",
+            result.errors
+        );
+    }
+
+    #[test]
+    fn docker_invalid_cpu_limit_is_error() {
+        let mut config = valid_config();
+        config.agents_manager.agents.insert(
+            "docker-agent".to_string(),
+            AgentConfig {
+                workspace: WorkspaceConfig::Docker(DockerWorkspaceConfig {
+                    image: "my-agent:latest".to_string(),
+                    entrypoint: None,
+                    volumes: vec![],
+                    env: HashMap::new(),
+                    memory_limit: None,
+                    cpu_limit: Some("badcpu".to_string()),
+                    docker_host: None,
+                    network: None,
+                    pull_policy: PullPolicy::IfNotPresent,
+                }),
+                args: vec![],
+                enabled: true,
+                tools: vec![],
+                acp_timeout_secs: None,
+                backoff: None,
+                crash_tracker: None,
+                options: HashMap::new(),
+            },
+        );
+        let result = validate_config(&config);
+        let has_error = result.errors.iter().any(|e| {
+            matches!(
+                e,
+                ValidationError::InvalidCpuLimit { field, value, .. }
+                if field.contains("docker-agent") && value == "badcpu"
+            )
+        });
+        assert!(
+            has_error,
+            "expected InvalidCpuLimit, got: {:?}",
+            result.errors
+        );
+    }
+
+    #[test]
+    fn docker_volume_missing_colon_is_error() {
+        let mut config = valid_config();
+        config.agents_manager.agents.insert(
+            "docker-agent".to_string(),
+            AgentConfig {
+                workspace: WorkspaceConfig::Docker(DockerWorkspaceConfig {
+                    image: "my-agent:latest".to_string(),
+                    entrypoint: None,
+                    volumes: vec!["nocolon".to_string()],
+                    env: HashMap::new(),
+                    memory_limit: None,
+                    cpu_limit: None,
+                    docker_host: None,
+                    network: None,
+                    pull_policy: PullPolicy::IfNotPresent,
+                }),
+                args: vec![],
+                enabled: true,
+                tools: vec![],
+                acp_timeout_secs: None,
+                backoff: None,
+                crash_tracker: None,
+                options: HashMap::new(),
+            },
+        );
+        let result = validate_config(&config);
+        let has_error = result.errors.iter().any(|e| {
+            matches!(
+                e,
+                ValidationError::InvalidVolumeMount { field, value }
+                if field.contains("docker-agent") && value == "nocolon"
+            )
+        });
+        assert!(
+            has_error,
+            "expected InvalidVolumeMount, got: {:?}",
+            result.errors
+        );
     }
 }
