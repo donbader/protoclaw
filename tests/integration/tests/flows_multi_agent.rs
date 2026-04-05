@@ -86,11 +86,13 @@ fn build_two_agent_config(channel_routes_to: &str) -> protoclaw_config::Protocla
     agents.insert(
         "agent-a".to_string(),
         protoclaw_config::AgentConfig {
-            binary: mock_agent_path().to_string_lossy().to_string(),
+            workspace: protoclaw_config::WorkspaceConfig::Local(protoclaw_config::LocalWorkspaceConfig {
+                binary: mock_agent_path().to_string_lossy().to_string(),
+                working_dir: None,
+                env: HashMap::new(),
+            }),
             args: vec![],
             enabled: true,
-            env: HashMap::new(),
-            working_dir: None,
             tools: vec![],
             acp_timeout_secs: None,
             backoff: None,
@@ -101,11 +103,13 @@ fn build_two_agent_config(channel_routes_to: &str) -> protoclaw_config::Protocla
     agents.insert(
         "agent-b".to_string(),
         protoclaw_config::AgentConfig {
-            binary: mock_agent_path().to_string_lossy().to_string(),
+            workspace: protoclaw_config::WorkspaceConfig::Local(protoclaw_config::LocalWorkspaceConfig {
+                binary: mock_agent_path().to_string_lossy().to_string(),
+                working_dir: None,
+                env: HashMap::new(),
+            }),
             args: vec![],
             enabled: true,
-            env: HashMap::new(),
-            working_dir: None,
             tools: vec![],
             acp_timeout_secs: None,
             backoff: None,

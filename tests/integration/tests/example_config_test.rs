@@ -19,7 +19,12 @@ fn test_fake_agent_example_yaml_parses() {
         .agents
         .get("mock")
         .expect("missing 'mock' agent");
-    assert_eq!(mock.binary, "@built-in/mock-agent");
+    match &mock.workspace {
+        protoclaw_config::WorkspaceConfig::Local(local) => {
+            assert_eq!(local.binary, "@built-in/mock-agent");
+        }
+        other => panic!("expected Local workspace, got {other:?}"),
+    }
 }
 
 #[test]
@@ -49,7 +54,12 @@ fn test_real_agent_example_yaml_parses() {
         .agents
         .get("opencode")
         .expect("missing 'opencode' agent");
-    assert_eq!(opencode.binary, "opencode");
+    match &opencode.workspace {
+        protoclaw_config::WorkspaceConfig::Local(local) => {
+            assert_eq!(local.binary, "opencode");
+        }
+        other => panic!("expected Local workspace, got {other:?}"),
+    }
     assert!(opencode.enabled);
 
     let claude = config
@@ -57,7 +67,12 @@ fn test_real_agent_example_yaml_parses() {
         .agents
         .get("claude-code")
         .expect("missing 'claude-code' agent");
-    assert_eq!(claude.binary, "claude");
+    match &claude.workspace {
+        protoclaw_config::WorkspaceConfig::Local(local) => {
+            assert_eq!(local.binary, "claude");
+        }
+        other => panic!("expected Local workspace, got {other:?}"),
+    }
     assert!(!claude.enabled);
 }
 
