@@ -260,8 +260,10 @@ async fn handle_session_prompt<W: AsyncWrite + Unpin>(
                 "method": "session/update",
                 "params": {
                     "sessionId": session_id,
-                    "type": "agent_thought_chunk",
-                    "content": thought
+                    "update": {
+                        "sessionUpdate": "agent_thought_chunk",
+                        "content": thought
+                    }
                 }
             });
             write_message(stdout, &chunk).await;
@@ -277,14 +279,14 @@ async fn handle_session_prompt<W: AsyncWrite + Unpin>(
     let chunk1 = json!({
         "jsonrpc": "2.0",
         "method": "session/update",
-        "params": { "sessionId": session_id, "type": "agent_message_chunk", "content": format!("{prefix}: ") }
+        "params": { "sessionId": session_id, "update": { "sessionUpdate": "agent_message_chunk", "content": format!("{prefix}: ") } }
     });
     write_message(stdout, &chunk1).await;
 
     let chunk2 = json!({
         "jsonrpc": "2.0",
         "method": "session/update",
-        "params": { "sessionId": session_id, "type": "agent_message_chunk", "content": user_msg }
+        "params": { "sessionId": session_id, "update": { "sessionUpdate": "agent_message_chunk", "content": user_msg } }
     });
     write_message(stdout, &chunk2).await;
 
@@ -293,8 +295,10 @@ async fn handle_session_prompt<W: AsyncWrite + Unpin>(
         "method": "session/update",
         "params": {
             "sessionId": session_id,
-            "type": "result",
-            "content": format!("{prefix}: {user_msg}")
+            "update": {
+                "sessionUpdate": "result",
+                "content": format!("{prefix}: {user_msg}")
+            }
         }
     });
     write_message(stdout, &result_notif).await;
@@ -386,8 +390,11 @@ mod tests {
         assert_eq!(msgs.len(), 4);
         for msg in &msgs {
             if let Some(params) = msg.get("params") {
+                let update_type = params.get("update")
+                    .and_then(|u| u.get("sessionUpdate"))
+                    .and_then(|t| t.as_str());
                 assert_ne!(
-                    params.get("type").and_then(|t| t.as_str()),
+                    update_type,
                     Some("agent_thought_chunk"),
                 );
             }
@@ -399,12 +406,12 @@ mod tests {
         let msgs = collect_prompt_output("hello", true).await;
         assert_eq!(msgs.len(), 6);
 
-        let t1 = &msgs[0]["params"];
-        assert_eq!(t1["type"], "agent_thought_chunk");
+        let t1 = &msgs[0]["params"]["update"];
+        assert_eq!(t1["sessionUpdate"], "agent_thought_chunk");
         assert_eq!(t1["content"], "Analyzing your message...");
 
-        let t2 = &msgs[1]["params"];
-        assert_eq!(t2["type"], "agent_thought_chunk");
+        let t2 = &msgs[1]["params"]["update"];
+        assert_eq!(t2["sessionUpdate"], "agent_thought_chunk");
         assert_eq!(t2["content"], "Formulating response...");
     }
 
@@ -412,16 +419,16 @@ mod tests {
     async fn echo_still_works_after_thoughts() {
         let msgs = collect_prompt_output("test msg", true).await;
 
-        let echo_chunk = &msgs[2]["params"];
-        assert_eq!(echo_chunk["type"], "agent_message_chunk");
+        let echo_chunk = &msgs[2]["params"]["update"];
+        assert_eq!(echo_chunk["sessionUpdate"], "agent_message_chunk");
         assert_eq!(echo_chunk["content"], "Echo: ");
 
-        let echo_content = &msgs[3]["params"];
-        assert_eq!(echo_content["type"], "agent_message_chunk");
+        let echo_content = &msgs[3]["params"]["update"];
+        assert_eq!(echo_content["sessionUpdate"], "agent_message_chunk");
         assert_eq!(echo_content["content"], "test msg");
 
-        let result = &msgs[4]["params"];
-        assert_eq!(result["type"], "result");
+        let result = &msgs[4]["params"]["update"];
+        assert_eq!(result["sessionUpdate"], "result");
         assert_eq!(result["content"], "Echo: test msg");
     }
 
