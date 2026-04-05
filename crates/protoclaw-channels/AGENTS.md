@@ -8,6 +8,7 @@ Manages channel subprocesses with per-channel crash isolation and session-keyed 
 |------|---------|
 | `manager.rs` | `ChannelsManager` — routing table, crash isolation, poll loop |
 | `connection.rs` | `ChannelConnection` — subprocess spawn, JSON-RPC framing, port discovery |
+| `session_queue.rs` | `SessionQueue` — per-session FIFO message queue |
 | `types.rs` | Wire types: `ChannelSendMessage`, `ChannelRespondPermission`, `ChannelCapabilities`, `PeerInfo` |
 | `debug_http.rs` | `DebugHttpChannel` — in-process debug channel (not subprocess) |
 | `error.rs` | `ChannelsError` |
@@ -48,31 +49,27 @@ The `poll_channels()` method uses 1ms timeout polling per connection — it's a 
 
 ## Ack Flow
 
-Ack notification (`channel/ackMessage`) is sent at dispatch time, not on inbound message receipt. This ensures batched messages only ack the last message in the batch.
-
-Two dispatch sites call `send_ack_to_channel()`:
-- **Immediate branch** — first message on idle session dispatched directly
-- **Debounce flush** — post-response window expired, merged messages dispatched
+Ack notification (`channel/ackMessage`) fires on every `push()` — both `Dispatch` (immediate) and `Enqueued` (queued). This gives users instant feedback that their message was received.
 
 `messageId` is always `Null` — Telegram tracks the last message independently via `last_message_ids`.
 
-## Debounce Flow
+## Typing Indicator
 
-Sliding window debounce with post-response re-debounce for queued messages.
+`channel/typingIndicator` fires at dispatch time inside `dispatch_to_agent()`. This signals the channel that the agent is actively processing a message. Queued messages do not trigger typing — only the message being dispatched.
 
-1. Message arrives, session idle → `Buffered` (start debounce timer)
-2. More messages during window → `Buffered` (reset timer, accumulate)
-3. Timer expires → `drain()` merges and dispatches to agent
-4. Message arrives, agent mid-response → `Queued`
-5. Agent finishes (Result event) → `mark_session_idle()` moves queued messages into buffer with fresh timer
-6. More messages during post-response window → `Buffered` (reset timer)
-7. Timer expires → `drain()` merges and dispatches
+## Session Queue (FIFO)
 
-The debounce window always applies — both on initial messages and after the agent responds. This ensures rapid typing always gets merged regardless of when it happens relative to agent processing.
+Per-session FIFO queue (`SessionQueue`) replaces the old debounce-merge model. Each message is processed individually in order, never merged.
+
+1. Message arrives, session idle → `Dispatch(msg)` — dispatched immediately
+2. Message arrives, session busy → `Enqueued` — queued behind active message
+3. Agent finishes (Result event) → `mark_idle()` pops next queued message → `Dispatch`
+4. No queued messages on result → session returns to idle
+
+Key type: `SessionKey` (`"{channel}:{kind}:{peer_id}"`) is the queue key.
 
 ## Anti-Patterns (this crate)
 
-- Do not send ack in `handle_channel_message` — ack must fire at dispatch time so batched messages only ack the last message
 - Do not remove the 50ms sleep in `poll_channels()` else branch
 - Bad channel binaries don't block startup — they log errors and continue with `connection: None`
 - `cmd_rx.take().expect("cmd_rx must exist")` — same consumed-once pattern as agents

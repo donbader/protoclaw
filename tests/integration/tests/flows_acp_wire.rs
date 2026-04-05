@@ -26,8 +26,7 @@ async fn acp_wire_session_new_includes_cwd_and_mcp_servers() {
 
 #[test_log::test(tokio::test)]
 async fn acp_wire_session_prompt_uses_prompt_array() {
-    let mut config = mock_agent_config();
-    config.channels_manager.debounce.window_ms = 100;
+    let config = mock_agent_config();
     let (cancel, handle, port) = boot_supervisor_with_port(config).await;
 
     let client = reqwest::Client::new();
@@ -58,7 +57,6 @@ async fn acp_wire_session_prompt_uses_prompt_array() {
 #[test_log::test(tokio::test)]
 async fn acp_reader_survives_non_json_stdout_noise() {
     let mut config = mock_agent_config();
-    config.channels_manager.debounce.window_ms = 100;
     config
         .agents_manager
         .agents

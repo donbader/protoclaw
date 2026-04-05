@@ -43,6 +43,7 @@ impl ProtoclawConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::WorkspaceConfig;
     use figment::Jail;
 
     #[test]
@@ -54,7 +55,9 @@ mod tests {
 agents-manager:
   agents:
     default:
-      binary: "opencode"
+      workspace:
+        type: local
+        binary: "opencode"
       args:
         - "--headless"
 
@@ -77,7 +80,10 @@ supervisor:
             )?;
             let config = ProtoclawConfig::load(Some("protoclaw.yaml")).unwrap();
             assert_eq!(config.agents_manager.agents.len(), 1);
-            assert_eq!(config.agents_manager.agents["default"].binary, "opencode");
+            match &config.agents_manager.agents["default"].workspace {
+                WorkspaceConfig::Local(local) => assert_eq!(local.binary, "opencode"),
+                _ => panic!("expected Local variant"),
+            }
             assert_eq!(
                 config.agents_manager.agents["default"].args,
                 vec!["--headless"]
@@ -111,7 +117,7 @@ supervisor:
         Jail::expect_with(|jail| {
             jail.create_file(
                 "protoclaw.yaml",
-                "agents-manager:\n  agents:\n    default:\n      binary: \"opencode\"\n",
+                "agents-manager:\n  agents:\n    default:\n      workspace:\n        type: local\n        binary: \"opencode\"\n",
             )?;
             let config = ProtoclawConfig::load(Some("protoclaw.yaml")).unwrap();
             assert_eq!(config.supervisor.shutdown_timeout_secs, 30);
@@ -127,7 +133,7 @@ supervisor:
         Jail::expect_with(|jail| {
             jail.create_file(
                 "protoclaw.yaml",
-                "agents-manager:\n  agents:\n    default:\n      binary: \"opencode\"\n",
+                "agents-manager:\n  agents:\n    default:\n      workspace:\n        type: local\n        binary: \"opencode\"\n",
             )?;
             let config = ProtoclawConfig::load(Some("protoclaw.yaml")).unwrap();
             assert!(config.channels_manager.channels.is_empty());
@@ -140,7 +146,7 @@ supervisor:
         Jail::expect_with(|jail| {
             jail.create_file(
                 "protoclaw.yaml",
-                "agents-manager:\n  agents:\n    default:\n      binary: \"opencode\"\n",
+                "agents-manager:\n  agents:\n    default:\n      workspace:\n        type: local\n        binary: \"opencode\"\n",
             )?;
             let config = ProtoclawConfig::load(Some("protoclaw.yaml")).unwrap();
             assert!(config.tools_manager.tools.is_empty());
@@ -153,7 +159,7 @@ supervisor:
         Jail::expect_with(|jail| {
             jail.create_file(
                 "protoclaw.yaml",
-                "agents-manager:\n  agents:\n    default:\n      binary: \"opencode\"\nsupervisor:\n  shutdown_timeout_secs: 30\n",
+                "agents-manager:\n  agents:\n    default:\n      workspace:\n        type: local\n        binary: \"opencode\"\nsupervisor:\n  shutdown_timeout_secs: 30\n",
             )?;
             jail.set_env("PROTOCLAW_SUPERVISOR__SHUTDOWN_TIMEOUT_SECS", "60");
             let config = ProtoclawConfig::load(Some("protoclaw.yaml")).unwrap();
@@ -167,7 +173,7 @@ supervisor:
         Jail::expect_with(|jail| {
             jail.create_file(
                 "protoclaw.yaml",
-                "agents-manager:\n  agents:\n    default:\n      binary: \"opencode\"\n      unknown_field: \"should be ignored\"\nsome_future_section:\n  key: \"value\"\n",
+                "agents-manager:\n  agents:\n    default:\n      workspace:\n        type: local\n        binary: \"opencode\"\n      unknown_field: \"should be ignored\"\nsome_future_section:\n  key: \"value\"\n",
             )?;
             let config = ProtoclawConfig::load(Some("protoclaw.yaml"));
             assert!(
@@ -184,28 +190,15 @@ supervisor:
         Jail::expect_with(|jail| {
             jail.create_file(
                 "protoclaw.yaml",
-                "agents-manager:\n  agents:\n    default:\n      binary: \"opencode\"\n",
+                "agents-manager:\n  agents:\n    default:\n      workspace:\n        type: local\n        binary: \"opencode\"\n",
             )?;
             let config = ProtoclawConfig::load(Some("protoclaw.yaml")).unwrap();
-            assert_eq!(config.agents_manager.agents["default"].binary, "opencode");
+            match &config.agents_manager.agents["default"].workspace {
+                WorkspaceConfig::Local(local) => assert_eq!(local.binary, "opencode"),
+                _ => panic!("expected Local variant"),
+            }
             assert!(config.channels_manager.channels.is_empty());
             assert!(config.tools_manager.tools.is_empty());
-            Ok(())
-        });
-    }
-
-    #[test]
-    fn embedded_defaults_provide_debounce_config() {
-        Jail::expect_with(|jail| {
-            jail.create_file(
-                "protoclaw.yaml",
-                "agents-manager:\n  agents:\n    default:\n      binary: \"opencode\"\n",
-            )?;
-            let config = ProtoclawConfig::load(Some("protoclaw.yaml")).unwrap();
-            assert!(config.channels_manager.debounce.enabled);
-            assert_eq!(config.channels_manager.debounce.window_ms, 1000);
-            assert_eq!(config.channels_manager.debounce.separator, "\n");
-            assert_eq!(config.channels_manager.debounce.mid_response, "queue");
             Ok(())
         });
     }

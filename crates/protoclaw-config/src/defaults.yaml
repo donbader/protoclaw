@@ -8,11 +8,6 @@ agents-manager:
 
 channels-manager:
   init_timeout_secs: 10
-  debounce:
-    enabled: true
-    window_ms: 1000
-    separator: "\n"
-    mid_response: "queue"
 
 tools-manager: {}
 

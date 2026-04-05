@@ -7,7 +7,6 @@ use protoclaw_integration_tests::{
 #[test_log::test(tokio::test)]
 async fn flow_thinking_chunks() {
     let mut config = mock_agent_config();
-    config.channels_manager.debounce.window_ms = 100;
     config
         .agents_manager
         .agents

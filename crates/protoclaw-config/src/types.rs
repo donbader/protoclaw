@@ -86,8 +86,6 @@ pub struct ChannelsManagerConfig {
     #[serde(default = "default_init_timeout_secs")]
     pub init_timeout_secs: u64,
     #[serde(default)]
-    pub debounce: DebounceConfig,
-    #[serde(default)]
     pub channels: HashMap<String, ChannelConfig>,
 }
 
@@ -95,7 +93,6 @@ impl Default for ChannelsManagerConfig {
     fn default() -> Self {
         Self {
             init_timeout_secs: default_init_timeout_secs(),
-            debounce: DebounceConfig::default(),
             channels: HashMap::new(),
         }
     }
@@ -235,29 +232,6 @@ impl Default for AckConfig {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct DebounceConfig {
-    #[serde(default = "default_true")]
-    pub enabled: bool,
-    #[serde(default = "default_window_ms")]
-    pub window_ms: u64,
-    #[serde(default = "default_separator")]
-    pub separator: String,
-    #[serde(default = "default_mid_response")]
-    pub mid_response: String,
-}
-
-impl Default for DebounceConfig {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            window_ms: default_window_ms(),
-            separator: default_separator(),
-            mid_response: default_mid_response(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ToolConfig {
     #[serde(default = "default_tool_type")]
     pub tool_type: String,
@@ -352,15 +326,6 @@ fn default_reaction_emoji() -> String {
 }
 fn default_reaction_lifecycle() -> String {
     "remove".into()
-}
-fn default_window_ms() -> u64 {
-    1000
-}
-fn default_separator() -> String {
-    "\n".into()
-}
-fn default_mid_response() -> String {
-    "queue".into()
 }
 fn default_tool_type() -> String {
     "mcp".into()
@@ -478,26 +443,34 @@ mod tests {
 agents-manager:
   agents:
     opencode:
-      binary: "opencode"
+      workspace:
+        type: local
+        binary: "opencode"
+        env:
+          ANTHROPIC_API_KEY: "sk-test"
       args:
         - "acp"
       tools:
         - "system-info"
         - "filesystem"
-      env:
-        ANTHROPIC_API_KEY: "sk-test"
     claude-code:
-      binary: "claude"
+      workspace:
+        type: local
+        binary: "claude"
       enabled: false
 "#;
         let config: ProtoclawConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(config.agents_manager.agents.len(), 2);
         let oc = &config.agents_manager.agents["opencode"];
-        assert_eq!(oc.binary, "opencode");
+        if let WorkspaceConfig::Local(ref local) = oc.workspace {
+            assert_eq!(local.binary, "opencode");
+            assert_eq!(local.env["ANTHROPIC_API_KEY"], "sk-test");
+        } else {
+            panic!("expected Local workspace");
+        }
         assert_eq!(oc.args, vec!["acp"]);
         assert!(oc.enabled);
         assert_eq!(oc.tools, vec!["system-info", "filesystem"]);
-        assert_eq!(oc.env["ANTHROPIC_API_KEY"], "sk-test");
         let cc = &config.agents_manager.agents["claude-code"];
         assert!(!cc.enabled);
     }
@@ -584,25 +557,6 @@ channels-manager:
     }
 
     #[test]
-    fn debounce_config_defaults() {
-        let debounce = DebounceConfig::default();
-        assert!(debounce.enabled);
-        assert_eq!(debounce.window_ms, 1000);
-        assert_eq!(debounce.separator, "\n");
-        assert_eq!(debounce.mid_response, "queue");
-    }
-
-    #[test]
-    fn debounce_config_from_yaml() {
-        let yaml = "enabled: false\nwindow_ms: 2000\nseparator: \" \"\nmid_response: \"cancel\"";
-        let config: DebounceConfig = serde_yaml::from_str(yaml).unwrap();
-        assert!(!config.enabled);
-        assert_eq!(config.window_ms, 2000);
-        assert_eq!(config.separator, " ");
-        assert_eq!(config.mid_response, "cancel");
-    }
-
-    #[test]
     fn tool_config_mcp_type() {
         let yaml = r#"
 tools-manager:
@@ -670,8 +624,6 @@ tools-manager:
         assert_eq!(config.log_level, "info");
         assert_eq!(config.log_format, "pretty");
         assert_eq!(config.extensions_dir, "/usr/local/bin");
-        assert!(config.channels_manager.debounce.enabled);
-        assert_eq!(config.channels_manager.debounce.window_ms, 1000);
         assert_eq!(config.supervisor.shutdown_timeout_secs, 30);
         assert_eq!(config.agents_manager.acp_timeout_secs, 30);
         assert_eq!(config.agents_manager.shutdown_grace_ms, 100);
@@ -689,11 +641,14 @@ tools-manager:
 
     #[test]
     fn agent_config_defaults() {
-        let yaml = "binary: \"test-agent\"";
+        let yaml = r#"
+workspace:
+  type: local
+  binary: "test-agent"
+"#;
         let config: AgentConfig = serde_yaml::from_str(yaml).unwrap();
         assert!(config.enabled);
         assert!(config.tools.is_empty());
-        assert!(config.env.is_empty());
         assert!(config.args.is_empty());
         assert!(config.acp_timeout_secs.is_none());
         assert!(config.backoff.is_none());
@@ -704,7 +659,9 @@ tools-manager:
     #[test]
     fn agent_config_options_from_yaml() {
         let yaml = r#"
-binary: "test-agent"
+workspace:
+  type: local
+  binary: "test-agent"
 options:
   thinking: true
   verbose: false
@@ -720,10 +677,14 @@ options:
 agents-manager:
   agents:
     disabled-one:
-      binary: "x"
+      workspace:
+        type: local
+        binary: "x"
       enabled: false
     enabled-one:
-      binary: "y"
+      workspace:
+        type: local
+        binary: "y"
 "#;
         let config: ProtoclawConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(config.default_agent_name(), Some("enabled-one"));
@@ -795,11 +756,13 @@ extensions_dir: "/usr/local/bin"
 agents-manager:
   agents:
     opencode:
-      binary: "@built-in/opencode"
+      workspace:
+        type: local
+        binary: "@built-in/opencode"
+        env:
+          OPENCODE_API_KEY: "test"
       tools:
         - "system-info"
-      env:
-        OPENCODE_API_KEY: "test"
 
 channels-manager:
   debounce:
@@ -892,7 +855,9 @@ supervisor:
 agents-manager:
   agents:
     slow-agent:
-      binary: "slow"
+      workspace:
+        type: local
+        binary: "slow"
       acp_timeout_secs: 60
       backoff:
         base_delay_ms: 500

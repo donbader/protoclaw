@@ -65,7 +65,6 @@ pub fn mock_agent_config_with_options(
 }
 
 /// Config with a mock-agent, debug-http channel, and sdk-test-channel.
-/// Debounce window is set to 100ms for faster tests.
 pub fn sdk_channel_config() -> protoclaw_config::ProtoclawConfig {
     let mut agents = HashMap::new();
     agents.insert(
@@ -121,11 +120,6 @@ pub fn sdk_channel_config() -> protoclaw_config::ProtoclawConfig {
         },
         channels_manager: protoclaw_config::ChannelsManagerConfig {
             channels,
-            debounce: protoclaw_config::DebounceConfig {
-                enabled: true,
-                window_ms: 100,
-                ..Default::default()
-            },
             ..Default::default()
         },
         tools_manager: protoclaw_config::ToolsManagerConfig::default(),
@@ -272,12 +266,6 @@ mod tests {
         );
         assert!(ch.enabled);
         assert_eq!(ch.agent, "default");
-    }
-
-    #[test]
-    fn sdk_channel_config_debounce_window_100ms() {
-        let cfg = sdk_channel_config();
-        assert_eq!(cfg.channels_manager.debounce.window_ms, 100);
     }
 
     #[test]

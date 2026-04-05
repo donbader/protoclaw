@@ -32,8 +32,7 @@ async fn flow_message_queued() {
 
 #[test_log::test(tokio::test)]
 async fn flow_message_echo_via_sse() {
-    let mut config = mock_agent_config();
-    config.channels_manager.debounce.window_ms = 100;
+    let config = mock_agent_config();
     let (cancel, handle, port) = boot_supervisor_with_port(config).await;
 
     let client = reqwest::Client::new();

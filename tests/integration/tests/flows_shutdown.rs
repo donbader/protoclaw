@@ -7,8 +7,7 @@ use protoclaw_integration_tests::{
 /// Send message, cancel after first SSE event arrives, assert full response + clean exit.
 #[test_log::test(tokio::test)]
 async fn flow_graceful_shutdown_waits_for_inflight() {
-    let mut config = mock_agent_config();
-    config.channels_manager.debounce.window_ms = 100;
+    let config = mock_agent_config();
 
     let (cancel, handle, port) = boot_supervisor_with_port(config).await;
 
