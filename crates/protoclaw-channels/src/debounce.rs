@@ -338,4 +338,59 @@ mod tests {
         let merged = buf.drain(&key("alice"));
         assert_eq!(merged, Some("q1\nextra".into()));
     }
+
+    #[tokio::test]
+    async fn event_loop_pattern_protects_against_stale_deadline() {
+        let config = DebounceConfig {
+            window_ms: 500,
+            ..default_config()
+        };
+        let mut buf = DebounceBuffer::new(config);
+
+        buf.push(&key("alice"), "msg1".into());
+        let deadline_std = buf.next_deadline().expect("should have deadline");
+        let deadline_tokio = tokio::time::Instant::from_std(deadline_std);
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        buf.push(&key("alice"), "msg2".into());
+
+        tokio::time::sleep_until(deadline_tokio).await;
+
+        let ready = buf.ready_sessions();
+        assert!(
+            ready.is_empty(),
+            "ready_sessions() should NOT return session after last_push reset, got {:?}",
+            ready
+        );
+
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        let ready = buf.ready_sessions();
+        assert_eq!(ready.len(), 1, "session should be ready now");
+
+        let merged = buf.drain(&key("alice"));
+        assert_eq!(merged, Some("msg1\nmsg2".into()));
+    }
+
+    #[tokio::test]
+    async fn from_std_conversion_does_not_fire_early() {
+        let config = DebounceConfig {
+            window_ms: 300,
+            ..default_config()
+        };
+        let mut buf = DebounceBuffer::new(config);
+        buf.push(&key("alice"), "msg1".into());
+
+        let deadline_std = buf.next_deadline().unwrap();
+        let deadline_tokio = tokio::time::Instant::from_std(deadline_std);
+
+        let before = std::time::Instant::now();
+        tokio::time::sleep_until(deadline_tokio).await;
+        let elapsed = before.elapsed();
+
+        assert!(
+            elapsed >= Duration::from_millis(250),
+            "sleep_until fired too early: {:?} (expected ~300ms)",
+            elapsed
+        );
+    }
 }

@@ -18,7 +18,17 @@ async fn main() {
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
         .with_ansi(false)
-        .with_env_filter(tracing_subscriber::EnvFilter::new("info"))
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .or_else(|_| {
+                    std::env::var("LOG_LEVEL").map(|level| {
+                        // Scope noisy third-party crates to warn when using LOG_LEVEL
+                        let filter = format!("hyper=warn,h2=warn,reqwest=warn,tower=warn,{level}");
+                        tracing_subscriber::EnvFilter::new(filter)
+                    })
+                })
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
         .init();
 
     let token = std::env::var("TELEGRAM_BOT_TOKEN")

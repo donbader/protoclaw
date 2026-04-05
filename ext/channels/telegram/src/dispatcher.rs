@@ -48,6 +48,12 @@ async fn handle_text_message(
     state: Arc<SharedState>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     if let Some(text) = msg.text() {
+        tracing::debug!(
+            chat_id = msg.chat.id.0,
+            msg_id = msg.id.0,
+            telegram_date = msg.date.timestamp(),
+            "inbound message"
+        );
         state.last_message_ids.write().await
             .insert(msg.chat.id.0, msg.id.0);
         let chat_type = chat_type_str(&msg.chat);
