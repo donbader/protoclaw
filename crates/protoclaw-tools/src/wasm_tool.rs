@@ -59,7 +59,7 @@ impl Tool for WasmTool {
             .map_err(|e| ToolSdkError::ExecutionFailed(e.to_string()))?;
 
         let value: serde_json::Value = serde_json::from_str(&output)
-            .unwrap_or_else(|_| serde_json::Value::String(output));
+            .unwrap_or(serde_json::Value::String(output));
 
         Ok(value)
     }

@@ -95,26 +95,22 @@ impl ServerHandler for AggregatedToolServer {
         self.server_info.clone()
     }
 
-    fn list_tools(
+    async fn list_tools(
         &self,
         _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
-    ) -> impl std::future::Future<Output = Result<ListToolsResult, McpError>> + Send + '_ {
-        async move {
-            let tools = self.aggregate_tool_list().await;
-            Ok(ListToolsResult::with_all_items(tools))
-        }
+    ) -> Result<ListToolsResult, McpError> {
+        let tools = self.aggregate_tool_list().await;
+        Ok(ListToolsResult::with_all_items(tools))
     }
 
-    fn call_tool(
+    async fn call_tool(
         &self,
         request: CallToolRequestParams,
         _context: RequestContext<RoleServer>,
-    ) -> impl std::future::Future<Output = Result<CallToolResult, McpError>> + Send + '_ {
-        async move {
-            self.route_call(request.name.as_ref(), request.arguments)
-                .await
-        }
+    ) -> Result<CallToolResult, McpError> {
+        self.route_call(request.name.as_ref(), request.arguments)
+            .await
     }
 }
 

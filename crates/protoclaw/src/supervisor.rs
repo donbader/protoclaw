@@ -49,15 +49,15 @@ async fn shutdown_signal() {
 impl Supervisor {
     pub fn new(mut config: ProtoclawConfig) -> Self {
         let extensions_dir = config.extensions_dir.clone();
-        for (_, agent) in &mut config.agents_manager.agents {
+        for agent in config.agents_manager.agents.values_mut() {
             if let protoclaw_config::WorkspaceConfig::Local(ref mut local) = agent.workspace {
                 local.binary = resolve_binary_path(&local.binary, &extensions_dir);
             }
         }
-        for (_, ch) in &mut config.channels_manager.channels {
+        for ch in config.channels_manager.channels.values_mut() {
             ch.binary = resolve_binary_path(&ch.binary, &extensions_dir);
         }
-        for (_, tool) in &mut config.tools_manager.tools {
+        for tool in config.tools_manager.tools.values_mut() {
             if let Some(ref mut bin) = tool.binary {
                 *bin = resolve_binary_path(bin, &extensions_dir);
             }

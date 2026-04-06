@@ -81,7 +81,7 @@ impl Channel for DebugHttpChannel {
         let addr = format!("{}:{}", self.host, self.port);
         let listener = tokio::net::TcpListener::bind(&addr)
             .await
-            .map_err(|e| ChannelSdkError::Io(e))?;
+            .map_err(ChannelSdkError::Io)?;
         let bound_port = listener.local_addr().unwrap().port();
 
         eprintln!("PORT:{bound_port}");

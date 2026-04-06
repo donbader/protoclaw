@@ -14,9 +14,9 @@ use tokio_util::codec::{FramedRead, FramedWrite};
 use crate::error::ChannelsError;
 use crate::types::ChannelCapabilities;
 
-/// Port discovery: channel subprocesses can print `PORT:{port}` to stderr
-/// to advertise their listening port (e.g., debug-http's HTTP server).
-/// This watch channel gets updated when the pattern is detected.
+// Port discovery: channel subprocesses can print `PORT:{port}` to stderr
+// to advertise their listening port (e.g., debug-http's HTTP server).
+// This watch channel gets updated when the pattern is detected.
 
 /// Messages received from a channel subprocess.
 #[derive(Debug)]

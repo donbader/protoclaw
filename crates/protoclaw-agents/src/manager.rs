@@ -671,7 +671,7 @@ impl Manager for AgentsManager {
     }
 
     async fn start(&mut self) -> Result<(), ManagerError> {
-        for (_idx, (name, config)) in self.agent_configs.iter().enumerate() {
+        for (name, config) in self.agent_configs.iter() {
             if !config.enabled {
                 tracing::info!(agent = %name, "agent disabled, skipping");
                 continue;

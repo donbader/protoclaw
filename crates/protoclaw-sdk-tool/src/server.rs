@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::future::Future;
 use std::sync::Arc;
 
 use rmcp::handler::server::ServerHandler;
@@ -89,22 +88,20 @@ impl ServerHandler for ToolServer {
         self.server_info.clone()
     }
 
-    fn list_tools(
+    async fn list_tools(
         &self,
         _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
-    ) -> impl Future<Output = Result<ListToolsResult, McpError>> + Send + '_ {
-        async move { Ok(ListToolsResult::with_all_items(self.build_tool_list())) }
+    ) -> Result<ListToolsResult, McpError> {
+        Ok(ListToolsResult::with_all_items(self.build_tool_list()))
     }
 
-    fn call_tool(
+    async fn call_tool(
         &self,
         request: CallToolRequestParams,
         _context: RequestContext<RoleServer>,
-    ) -> impl Future<Output = Result<CallToolResult, McpError>> + Send + '_ {
-        async move {
-            self.dispatch_tool(request.name.as_ref(), request.arguments).await
-        }
+    ) -> Result<CallToolResult, McpError> {
+        self.dispatch_tool(request.name.as_ref(), request.arguments).await
     }
 }
 
