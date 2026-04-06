@@ -11,9 +11,10 @@ pub enum ChannelSdkError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     #[test]
-    fn io_error_wraps_std_io() {
+    fn when_std_io_error_converted_then_wrapped_as_channel_sdk_io_error() {
         let io_err = std::io::Error::new(std::io::ErrorKind::BrokenPipe, "pipe broke");
         let err: ChannelSdkError = io_err.into();
         assert!(matches!(err, ChannelSdkError::Io(_)));
@@ -21,20 +22,20 @@ mod tests {
     }
 
     #[test]
-    fn protocol_error_wraps_string() {
+    fn when_protocol_error_created_then_wraps_string_message() {
         let err = ChannelSdkError::Protocol("bad handshake".into());
         assert!(err.to_string().contains("bad handshake"));
     }
 
     #[test]
-    fn serde_error_wraps_json() {
+    fn when_json_parse_error_converted_then_wrapped_as_channel_sdk_serde_error() {
         let json_err = serde_json::from_str::<serde_json::Value>("not json").unwrap_err();
         let err: ChannelSdkError = json_err.into();
         assert!(matches!(err, ChannelSdkError::Serde(_)));
     }
 
     #[test]
-    fn implements_std_error() {
+    fn when_channel_sdk_error_checked_then_implements_std_error() {
         let err = ChannelSdkError::Protocol("test".into());
         let _: &dyn std::error::Error = &err;
     }

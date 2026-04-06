@@ -52,6 +52,7 @@ pub trait Channel: Send + 'static {
 mod tests {
     use super::*;
     use protoclaw_sdk_types::{PermissionOption, PermissionResponse};
+    use rstest::rstest;
 
     struct MockChannel;
 
@@ -87,12 +88,12 @@ mod tests {
     }
 
     #[test]
-    fn mock_channel_compiles_and_instantiates() {
+    fn when_channel_impl_created_then_compiles_and_instantiates() {
         let _ch = MockChannel;
     }
 
     #[test]
-    fn mock_channel_capabilities() {
+    fn when_channel_capabilities_queried_then_returns_configured_values() {
         let ch = MockChannel;
         let caps = ch.capabilities();
         assert!(caps.streaming);
@@ -100,14 +101,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mock_channel_on_ready() {
+    async fn when_on_ready_called_with_sender_then_returns_ok() {
         let mut ch = MockChannel;
         let (tx, _rx) = mpsc::channel(1);
         assert!(ch.on_ready(tx).await.is_ok());
     }
 
     #[tokio::test]
-    async fn mock_channel_deliver_message() {
+    async fn when_deliver_message_called_then_returns_ok() {
         let mut ch = MockChannel;
         let msg = DeliverMessage {
             session_id: "s1".into(),
@@ -117,7 +118,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mock_channel_request_permission() {
+    async fn when_request_permission_called_then_returns_allow_response() {
         let mut ch = MockChannel;
         let req = ChannelRequestPermission {
             request_id: "r1".into(),
@@ -134,7 +135,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mock_channel_handle_unknown_returns_error() {
+    async fn when_handle_unknown_called_with_unknown_method_then_returns_error() {
         let mut ch = MockChannel;
         let result = ch
             .handle_unknown("foo/bar", serde_json::Value::Null)

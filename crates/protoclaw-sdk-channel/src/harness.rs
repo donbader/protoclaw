@@ -154,6 +154,7 @@ mod tests {
     use protoclaw_sdk_types::{
         ChannelCapabilities, PermissionResponse,
     };
+    use rstest::rstest;
     use std::sync::{Arc, Mutex};
 
     #[derive(Clone)]
@@ -237,13 +238,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn harness_new_constructs() {
+    async fn when_channel_harness_created_then_constructs_successfully() {
         let ch = TestChannel::new();
         let _harness = ChannelHarness::new(ch);
     }
 
     #[tokio::test]
-    async fn harness_initialize_responds_with_capabilities_and_calls_on_ready() {
+    async fn when_initialize_request_received_then_harness_responds_with_capabilities_and_calls_on_ready() {
         let ch = TestChannel::new();
         let on_ready_called = ch.on_ready_called.clone();
 
@@ -265,7 +266,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn harness_deliver_message_calls_channel() {
+    async fn when_deliver_message_notification_received_then_harness_calls_channel_deliver_message() {
         let ch = TestChannel::new();
         let delivered = ch.delivered.clone();
 
@@ -288,7 +289,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn harness_request_permission_calls_channel_and_responds() {
+    async fn when_request_permission_received_then_harness_calls_channel_and_sends_response() {
         let ch = TestChannel::new();
 
         let mut input = make_jsonrpc_request(1, "initialize", serde_json::json!({"protocolVersion": 1}));
@@ -317,7 +318,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn harness_unknown_method_calls_handle_unknown() {
+    async fn when_unknown_method_received_then_harness_calls_handle_unknown_and_returns_error() {
         let ch = TestChannel::new();
 
         let mut input = make_jsonrpc_request(1, "initialize", serde_json::json!({"protocolVersion": 1}));
@@ -343,7 +344,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn harness_exits_cleanly_on_eof() {
+    async fn when_reader_reaches_eof_then_harness_exits_cleanly() {
         let ch = TestChannel::new();
         let reader = std::io::Cursor::new(Vec::<u8>::new());
         let mut output = Vec::new();
