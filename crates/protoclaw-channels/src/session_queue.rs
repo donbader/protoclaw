@@ -238,4 +238,26 @@ mod tests {
         let drained = q.drain_queued(&key("unknown"));
         assert!(drained.is_empty());
     }
+
+    #[rstest]
+    fn when_messages_queued_then_queued_count_returns_correct_number() {
+        let mut q = SessionQueue::new();
+        q.push(&key("alice"), "msg1".into());
+        q.push(&key("alice"), "msg2".into());
+        q.push(&key("alice"), "msg3".into());
+        assert_eq!(q.queued_count(&key("alice")), 2);
+    }
+
+    #[rstest]
+    fn when_session_active_then_is_active_returns_true() {
+        let mut q = SessionQueue::new();
+        q.push(&key("bob"), "hello".into());
+        assert!(q.is_active(&key("bob")));
+    }
+
+    #[rstest]
+    fn when_session_idle_then_is_active_returns_false() {
+        let q = SessionQueue::new();
+        assert!(!q.is_active(&key("nobody")));
+    }
 }
