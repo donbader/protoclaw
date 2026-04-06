@@ -720,6 +720,7 @@ impl Manager for ChannelsManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     fn make_channel_map(entries: Vec<(&str, ChannelConfig)>) -> HashMap<String, ChannelConfig> {
         entries.into_iter().map(|(k, v)| (k.to_string(), v)).collect()
@@ -744,13 +745,13 @@ mod tests {
     }
 
     #[test]
-    fn channels_manager_name() {
+    fn when_channels_manager_name_queried_then_returns_expected_name() {
         let m = ChannelsManager::new(HashMap::new(), default_init_timeout(), "default".into());
         assert_eq!(m.name(), "channels");
     }
 
     #[tokio::test]
-    async fn channels_manager_start_with_no_channels() {
+    async fn when_channels_manager_started_with_no_channels_then_starts_successfully() {
         let mut m = ChannelsManager::new(HashMap::new(), default_init_timeout(), "default".into());
         let result = m.start().await;
         assert!(result.is_ok());
@@ -758,13 +759,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn channels_manager_health_check_no_channels() {
+    async fn when_no_channels_configured_then_health_check_returns_healthy() {
         let m = ChannelsManager::new(HashMap::new(), default_init_timeout(), "default".into());
         assert!(!m.health_check().await);
     }
 
     #[tokio::test]
-    async fn channels_manager_start_with_bad_binary_continues() {
+    async fn when_channel_binary_invalid_then_manager_continues_without_it() {
         let configs = make_channel_map(vec![
             ("bad-channel", test_channel_config("nonexistent-binary-xyz-99999", true, "default")),
         ]);
@@ -776,14 +777,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn channels_manager_shutdown_command() {
+    async fn when_shutdown_command_sent_then_channels_manager_shuts_down() {
         let m = ChannelsManager::new(HashMap::new(), default_init_timeout(), "default".into());
         let tx = m.command_sender();
         tx.send(ChannelsCommand::Shutdown).await.unwrap();
     }
 
     #[tokio::test]
-    async fn channels_manager_crash_isolation() {
+    async fn when_one_channel_crashes_then_other_channels_unaffected() {
         let mut slot = ChannelSlot {
             name: "test".into(),
             config: test_channel_config("true", true, "default"),
@@ -802,7 +803,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn channels_manager_crash_loop_disables_channel() {
+    async fn when_channel_crashes_repeatedly_then_channel_disabled_after_threshold() {
         let configs = make_channel_map(vec![
             ("crasher", test_channel_config("nonexistent-binary-xyz-99999", true, "default")),
         ]);
@@ -819,7 +820,7 @@ mod tests {
     }
 
     #[test]
-    fn routing_table_insert_and_lookup() {
+    fn when_routing_entry_inserted_then_lookup_returns_it() {
         let mut table: HashMap<SessionKey, RoutingEntry> = HashMap::new();
         let key = SessionKey::new("debug-http", "local", "dev");
         table.insert(key.clone(), RoutingEntry {
@@ -836,7 +837,7 @@ mod tests {
     }
 
     #[test]
-    fn routing_table_different_peers_different_sessions() {
+    fn when_different_peers_route_then_different_sessions_created() {
         let mut table: HashMap<SessionKey, RoutingEntry> = HashMap::new();
         let key_alice = SessionKey::new("telegram", "direct", "alice");
         let key_bob = SessionKey::new("telegram", "direct", "bob");
@@ -860,7 +861,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn handle_channel_event_deliver_routes_to_correct_slot() {
+    async fn when_deliver_event_received_then_routed_to_correct_agent_slot() {
         let mut m = ChannelsManager::new(HashMap::new(), default_init_timeout(), "default".into());
         let key = SessionKey::new("test", "local", "dev");
         m.routing_table.insert(key.clone(), RoutingEntry {
@@ -884,7 +885,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn with_agents_handle_sets_handle() {
+    async fn when_agents_handle_set_then_handle_stored_correctly() {
         let (tx, _rx) = mpsc::channel::<AgentsCommand>(16);
         let handle = ManagerHandle::new(tx);
         let m = ChannelsManager::new(HashMap::new(), default_init_timeout(), "default".into()).with_agents_handle(handle);
@@ -892,14 +893,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn with_channel_events_rx_sets_receiver() {
+    async fn when_channel_events_receiver_set_then_stored_correctly() {
         let (_tx, rx) = mpsc::channel::<ChannelEvent>(16);
         let m = ChannelsManager::new(HashMap::new(), default_init_timeout(), "default".into()).with_channel_events_rx(rx);
         assert!(m.channel_events_rx.is_some());
     }
 
     #[test]
-    fn agent_name_for_channel_uses_config_agent_field() {
+    fn when_channel_config_has_agent_field_then_that_agent_name_used() {
         let configs = make_channel_map(vec![
             ("telegram", test_channel_config("telegram-channel", true, "opencode")),
         ]);
@@ -918,7 +919,7 @@ mod tests {
     }
 
     #[test]
-    fn agent_name_for_channel_defaults_to_default_agent() {
+    fn when_channel_config_has_no_agent_field_then_default_agent_used() {
         let configs = make_channel_map(vec![
             ("debug-http", test_channel_config("debug-http", true, "default")),
         ]);
@@ -937,7 +938,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn disabled_channel_not_spawned() {
+    async fn when_channel_is_disabled_then_not_spawned_on_start() {
         let configs = make_channel_map(vec![
             ("disabled-ch", test_channel_config("nonexistent-binary-xyz-99999", false, "default")),
         ]);
@@ -948,14 +949,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn send_ack_to_channel_no_routing_entry_is_noop() {
+    async fn when_ack_sent_for_session_with_no_routing_entry_then_is_noop() {
         let m = ChannelsManager::new(HashMap::new(), default_init_timeout(), "default".into());
         let unknown_key = SessionKey::new("nonexistent", "x", "y");
         m.send_ack_to_channel(&unknown_key).await;
     }
 
     #[tokio::test]
-    async fn send_ack_to_channel_no_connection_is_noop() {
+    async fn when_ack_sent_for_session_with_no_connection_then_is_noop() {
         let mut m = ChannelsManager::new(HashMap::new(), default_init_timeout(), "default".into());
         m.slots.push(ChannelSlot {
             name: "telegram".into(),

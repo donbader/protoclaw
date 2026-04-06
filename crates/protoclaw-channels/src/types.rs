@@ -10,9 +10,10 @@ pub use protoclaw_sdk_types::permission::{
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     #[test]
-    fn channel_capabilities_serde_round_trip() {
+    fn when_channel_capabilities_serialized_then_round_trips_correctly() {
         let caps = ChannelCapabilities {
             streaming: true,
             rich_text: false,
@@ -25,7 +26,7 @@ mod tests {
     }
 
     #[test]
-    fn deliver_message_serde_camel_case() {
+    fn when_deliver_message_serialized_then_uses_camel_case_keys() {
         let msg = DeliverMessage {
             session_id: "sess-1".into(),
             content: serde_json::json!({"text": "hello"}),
@@ -38,7 +39,7 @@ mod tests {
     }
 
     #[test]
-    fn request_permission_serde() {
+    fn when_request_permission_serialized_then_round_trips_correctly() {
         let req = ChannelRequestPermission {
             request_id: "req-1".into(),
             session_id: "sess-1".into(),
@@ -63,7 +64,7 @@ mod tests {
     }
 
     #[test]
-    fn send_message_serde() {
+    fn when_send_message_serialized_then_round_trips_correctly() {
         let msg = ChannelSendMessage {
             peer_info: PeerInfo {
                 channel_name: "debug-http".into(),
@@ -81,7 +82,7 @@ mod tests {
     }
 
     #[test]
-    fn respond_permission_serde() {
+    fn when_respond_permission_serialized_then_round_trips_correctly() {
         let resp = ChannelRespondPermission {
             request_id: "req-1".into(),
             option_id: "allow".into(),

@@ -248,6 +248,7 @@ impl ChannelConnection {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     fn cat_channel_config() -> ChannelConfig {
         ChannelConfig {
@@ -264,7 +265,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn spawn_creates_alive_subprocess() {
+    async fn when_channel_subprocess_spawned_then_reports_alive() {
         let config = cat_channel_config();
         let channel_id = ChannelId::from("test");
         let mut conn = ChannelConnection::spawn(&config, channel_id).unwrap();
@@ -273,7 +274,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn spawn_nonexistent_binary_returns_error() {
+    async fn when_nonexistent_channel_binary_spawned_then_returns_error() {
         let config = ChannelConfig {
             binary: "nonexistent-binary-xyz-99999".into(),
             args: vec![],
@@ -291,7 +292,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn send_request_and_correlate_response() {
+    async fn when_request_sent_to_channel_then_response_correlated_correctly() {
         // `cat` echoes stdin to stdout — we send a JSON-RPC response-shaped message
         // that the reader will route to pending_requests.
         // But cat echoes the request itself, which has method+id, so it goes to ChannelRequest.
@@ -328,7 +329,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn recv_incoming_returns_none_on_exit() {
+    async fn when_channel_process_exits_then_recv_incoming_returns_none() {
         // Use `true` which exits immediately
         let config = ChannelConfig {
             binary: "true".into(),
@@ -356,7 +357,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn recv_incoming_receives_channel_notification() {
+    async fn when_channel_sends_notification_then_recv_incoming_returns_it() {
         // cat echoes what we send. Send a notification-shaped JSON (method, no id).
         let config = cat_channel_config();
         let channel_id = ChannelId::from("test");

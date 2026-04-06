@@ -98,19 +98,20 @@ impl Default for SessionQueue {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     fn key(name: &str) -> SessionKey {
         SessionKey::new("test", "local", name)
     }
 
     #[test]
-    fn new_queue_has_no_pending() {
+    fn when_new_session_queue_created_then_no_pending_messages() {
         let q = SessionQueue::new();
         assert!(!q.has_pending());
     }
 
     #[test]
-    fn first_message_dispatches_immediately() {
+    fn when_first_message_enqueued_then_dispatches_immediately() {
         let mut q = SessionQueue::new();
         let action = q.push(&key("alice"), "hello".into());
         assert_eq!(action, QueueAction::Dispatch("hello".into()));
@@ -118,7 +119,7 @@ mod tests {
     }
 
     #[test]
-    fn second_message_enqueues_while_active() {
+    fn when_second_message_enqueued_while_session_active_then_queued() {
         let mut q = SessionQueue::new();
         q.push(&key("alice"), "msg1".into());
         let action = q.push(&key("alice"), "msg2".into());
@@ -127,7 +128,7 @@ mod tests {
     }
 
     #[test]
-    fn mark_idle_returns_next_queued_message() {
+    fn when_mark_idle_called_with_queued_messages_then_returns_next() {
         let mut q = SessionQueue::new();
         q.push(&key("alice"), "msg1".into());
         q.push(&key("alice"), "msg2".into());
@@ -146,7 +147,7 @@ mod tests {
     }
 
     #[test]
-    fn mark_idle_empty_queue_goes_fully_idle() {
+    fn when_mark_idle_called_with_empty_queue_then_session_goes_idle() {
         let mut q = SessionQueue::new();
         q.push(&key("alice"), "msg1".into());
         let next = q.mark_idle(&key("alice"));
@@ -155,7 +156,7 @@ mod tests {
     }
 
     #[test]
-    fn separate_sessions_are_independent() {
+    fn when_two_sessions_used_then_queues_are_independent() {
         let mut q = SessionQueue::new();
         let a1 = q.push(&key("alice"), "a1".into());
         let b1 = q.push(&key("bob"), "b1".into());
@@ -168,7 +169,7 @@ mod tests {
     }
 
     #[test]
-    fn fifo_order_preserved() {
+    fn when_multiple_messages_queued_then_dequeued_in_fifo_order() {
         let mut q = SessionQueue::new();
         q.push(&key("alice"), "first".into());
         q.push(&key("alice"), "second".into());
@@ -180,7 +181,7 @@ mod tests {
     }
 
     #[test]
-    fn idle_session_accepts_new_dispatch_after_drain() {
+    fn given_idle_session_when_new_message_enqueued_then_dispatches_immediately() {
         let mut q = SessionQueue::new();
         q.push(&key("alice"), "msg1".into());
         q.mark_idle(&key("alice"));
@@ -190,7 +191,7 @@ mod tests {
     }
 
     #[test]
-    fn has_pending_reflects_queued_state() {
+    fn when_messages_queued_then_has_pending_returns_true() {
         let mut q = SessionQueue::new();
         assert!(!q.has_pending());
 
@@ -205,13 +206,13 @@ mod tests {
     }
 
     #[test]
-    fn mark_idle_unknown_session_is_noop() {
+    fn when_mark_idle_called_for_unknown_session_then_is_noop() {
         let mut q = SessionQueue::new();
         assert_eq!(q.mark_idle(&key("unknown")), None);
     }
 
     #[test]
-    fn drain_queued_returns_all_queued_messages() {
+    fn when_drain_queued_called_then_returns_all_queued_messages() {
         let mut q = SessionQueue::new();
         q.push(&key("alice"), "msg1".into());
         q.push(&key("alice"), "msg2".into());
@@ -224,7 +225,7 @@ mod tests {
     }
 
     #[test]
-    fn drain_queued_empty_queue_returns_empty() {
+    fn when_drain_queued_called_on_empty_queue_then_returns_empty_vec() {
         let mut q = SessionQueue::new();
         q.push(&key("alice"), "msg1".into());
         let drained = q.drain_queued(&key("alice"));
@@ -232,7 +233,7 @@ mod tests {
     }
 
     #[test]
-    fn drain_queued_unknown_session_returns_empty() {
+    fn when_drain_queued_called_for_unknown_session_then_returns_empty_vec() {
         let mut q = SessionQueue::new();
         let drained = q.drain_queued(&key("unknown"));
         assert!(drained.is_empty());

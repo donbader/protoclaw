@@ -113,11 +113,12 @@ async fn handle_health(State(state): State<AppState>) -> Json<serde_json::Value>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
     use protoclaw_agents::{AgentStatusInfo, AgentsCommand};
     use protoclaw_core::ManagerHandle;
 
     #[test]
-    fn debug_http_channel_new_creates_instance() {
+    fn when_debug_http_channel_created_then_instance_initialized() {
         let (tx, _rx) = tokio::sync::mpsc::channel::<AgentsCommand>(16);
         let handle = ManagerHandle::new(tx);
         let ch = DebugHttpChannel::new(0, handle);
@@ -165,7 +166,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn debug_http_health_endpoint_has_required_keys() {
+    async fn when_debug_http_health_endpoint_called_then_response_has_required_keys() {
         let (port, cancel, mut agents_rx) = spawn_test_server().await;
 
         tokio::spawn(async move {
@@ -197,7 +198,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn debug_http_health_agent_has_connected_field() {
+    async fn when_debug_http_health_endpoint_called_then_agent_has_connected_field() {
         let (port, cancel, mut agents_rx) = spawn_test_server().await;
 
         tokio::spawn(async move {
@@ -227,7 +228,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn debug_http_health_channels_is_array() {
+    async fn when_debug_http_health_endpoint_called_then_channels_field_is_array() {
         let (port, cancel, mut agents_rx) = spawn_test_server().await;
 
         tokio::spawn(async move {
