@@ -601,7 +601,7 @@ impl AgentsManager {
         tracing::info!(agent = %agent_name, delay_ms = delay.as_millis(), "waiting before restart");
         tokio::time::sleep(delay).await;
 
-        match AgentConnection::spawn_with_bridge(&slot.config, &agent_name, slot_idx, self.incoming_tx.clone()) {
+        match AgentConnection::spawn_with_bridge(&slot.config, &agent_name, slot_idx, self.incoming_tx.clone()).await {
             Ok(conn) => {
                 slot.connection = Some(conn);
             }
@@ -680,6 +680,7 @@ impl Manager for AgentsManager {
             let mut slot = AgentSlot::new(name.clone(), config.clone(), &self.parent_cancel);
 
             let conn = AgentConnection::spawn_with_bridge(config, name, self.slots.len(), self.incoming_tx.clone())
+                .await
                 .map_err(|e| ManagerError::Internal(format!("{name}: {e}")))?;
 
             slot.connection = Some(conn);

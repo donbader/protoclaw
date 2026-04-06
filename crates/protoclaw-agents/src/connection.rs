@@ -13,6 +13,7 @@ use protoclaw_config::{AgentConfig, WorkspaceConfig};
 use protoclaw_jsonrpc::NdJsonCodec;
 
 use crate::backend::ProcessBackend;
+use crate::docker_backend::DockerBackend;
 use crate::error::AgentsError;
 use crate::local_backend::LocalBackend;
 use crate::manager::SlotIncoming;
@@ -38,7 +39,7 @@ impl std::fmt::Debug for AgentConnection {
 }
 
 pub struct AgentConnection {
-    backend: Box<dyn ProcessBackend + Sync>,
+    backend: Box<dyn ProcessBackend>,
     stdin_tx: mpsc::Sender<serde_json::Value>,
     incoming_rx: Option<mpsc::Receiver<IncomingMessage>>,
     pending_requests: Arc<Mutex<HashMap<u64, oneshot::Sender<serde_json::Value>>>>,
@@ -49,60 +50,64 @@ pub struct AgentConnection {
 }
 
 impl AgentConnection {
-    pub fn spawn(config: &AgentConfig, name: &str) -> Result<Self, AgentsError> {
-        Self::spawn_inner(config, name, None)
+    pub async fn spawn(config: &AgentConfig, name: &str) -> Result<Self, AgentsError> {
+        Self::spawn_inner(config, name, None).await
     }
 
-    pub(crate) fn spawn_with_bridge(
+    pub(crate) async fn spawn_with_bridge(
         config: &AgentConfig,
         name: &str,
         slot_idx: usize,
         bridge_tx: mpsc::Sender<SlotIncoming>,
     ) -> Result<Self, AgentsError> {
-        Self::spawn_inner(config, name, Some((slot_idx, bridge_tx)))
+        Self::spawn_inner(config, name, Some((slot_idx, bridge_tx))).await
     }
 
-    fn spawn_inner(
+    async fn spawn_inner(
         config: &AgentConfig,
         name: &str,
         bridge: Option<(usize, mpsc::Sender<SlotIncoming>)>,
     ) -> Result<Self, AgentsError> {
-        let (binary, env, working_dir) = match &config.workspace {
-            WorkspaceConfig::Local(local) => (
-                local.binary.clone(),
-                local.env.clone(),
-                local.working_dir.clone(),
-            ),
-            WorkspaceConfig::Docker(_) => {
-                return Err(AgentsError::SpawnFailed(
-                    format!("{name}: Docker workspace not yet supported"),
-                ));
+        let (backend, stdin, stdout, stderr) = match &config.workspace {
+            WorkspaceConfig::Local(local) => {
+                let work_dir = local
+                    .working_dir
+                    .as_deref()
+                    .unwrap_or(Path::new("."));
+
+                let child = Command::new(&local.binary)
+                    .args(&config.args)
+                    .stdin(std::process::Stdio::piped())
+                    .stdout(std::process::Stdio::piped())
+                    .stderr(std::process::Stdio::piped())
+                    .kill_on_drop(true)
+                    .envs(&local.env)
+                    .current_dir(work_dir)
+                    .spawn()
+                    .map_err(|e| AgentsError::SpawnFailed(format!("{}: {e}", local.binary)))?;
+
+                let mut backend: Box<dyn ProcessBackend> = Box::new(LocalBackend::new(child));
+                let stdin: Box<dyn AsyncWrite + Unpin + Send> =
+                    backend.take_stdin().expect("stdin was piped");
+                let stdout: Box<dyn AsyncRead + Unpin + Send> =
+                    backend.take_stdout().expect("stdout was piped");
+                let stderr: Box<dyn AsyncRead + Unpin + Send> =
+                    backend.take_stderr().expect("stderr was piped");
+                (backend, stdin, stdout, stderr)
+            }
+            WorkspaceConfig::Docker(docker_config) => {
+                let mut backend: Box<dyn ProcessBackend> = Box::new(
+                    DockerBackend::spawn(docker_config, name, &config.args).await?,
+                );
+                let stdin: Box<dyn AsyncWrite + Unpin + Send> =
+                    backend.take_stdin().expect("stdin was attached");
+                let stdout: Box<dyn AsyncRead + Unpin + Send> =
+                    backend.take_stdout().expect("stdout was attached");
+                let stderr: Box<dyn AsyncRead + Unpin + Send> =
+                    backend.take_stderr().expect("stderr was attached");
+                (backend, stdin, stdout, stderr)
             }
         };
-
-        let work_dir = working_dir
-            .as_deref()
-            .unwrap_or(Path::new("."));
-
-        let child = Command::new(&binary)
-            .args(&config.args)
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .kill_on_drop(true)
-            .envs(&env)
-            .current_dir(work_dir)
-            .spawn()
-            .map_err(|e| AgentsError::SpawnFailed(format!("{binary}: {e}")))?;
-
-        let mut backend: Box<dyn ProcessBackend + Sync> = Box::new(LocalBackend::new(child));
-
-        let stdin: Box<dyn AsyncWrite + Unpin + Send> =
-            backend.take_stdin().expect("stdin was piped");
-        let stdout: Box<dyn AsyncRead + Unpin + Send> =
-            backend.take_stdout().expect("stdout was piped");
-        let stderr: Box<dyn AsyncRead + Unpin + Send> =
-            backend.take_stderr().expect("stderr was piped");
 
         let pending_requests: Arc<Mutex<HashMap<u64, oneshot::Sender<serde_json::Value>>>> =
             Arc::new(Mutex::new(HashMap::new()));
@@ -304,7 +309,7 @@ mod tests {
     #[tokio::test]
     async fn when_mock_agent_spawned_then_process_starts_successfully() {
         let config = mock_agent_config();
-        let mut conn = AgentConnection::spawn(&config, "test-agent").unwrap();
+        let mut conn = AgentConnection::spawn(&config, "test-agent").await.unwrap();
         assert!(conn.is_alive());
         conn.kill().await.unwrap();
     }
@@ -325,7 +330,7 @@ mod tests {
             crash_tracker: None,
             options: HashMap::new(),
         };
-        let result = AgentConnection::spawn(&config, "test-agent");
+        let result = AgentConnection::spawn(&config, "test-agent").await;
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(matches!(err, AgentsError::SpawnFailed(_)));
@@ -334,7 +339,7 @@ mod tests {
     #[tokio::test]
     async fn when_request_sent_to_agent_then_response_received() {
         let config = mock_agent_config();
-        let mut conn = AgentConnection::spawn(&config, "test-agent").unwrap();
+        let mut conn = AgentConnection::spawn(&config, "test-agent").await.unwrap();
 
         let params = serde_json::json!({
             "protocolVersion": 1,
@@ -353,7 +358,7 @@ mod tests {
     #[tokio::test]
     async fn when_notification_sent_then_no_pending_request_created() {
         let config = mock_agent_config();
-        let mut conn = AgentConnection::spawn(&config, "test-agent").unwrap();
+        let mut conn = AgentConnection::spawn(&config, "test-agent").await.unwrap();
 
         let params = serde_json::json!({
             "protocolVersion": 1,

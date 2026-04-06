@@ -11,7 +11,7 @@ use crate::error::AgentsError;
 ///
 /// All async methods use `Pin<Box<dyn Future>>` for object safety — the trait
 /// can be used as `dyn ProcessBackend` without `async_trait`.
-pub trait ProcessBackend: Send {
+pub trait ProcessBackend: Send + Sync {
     /// Returns `true` if the underlying process is still running.
     fn is_alive(&mut self) -> bool;
 

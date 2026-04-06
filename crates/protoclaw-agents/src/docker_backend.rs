@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use bollard::container::{
     AttachContainerOptions, Config, CreateContainerOptions, NetworkingConfig,
@@ -26,9 +26,9 @@ pub struct DockerBackend {
     #[allow(dead_code)] // used by Plan 02 for container cleanup/lookup
     container_name: String,
     alive: Arc<AtomicBool>,
-    stdin: Option<Box<dyn AsyncWrite + Unpin + Send>>,
-    stdout: Option<Box<dyn AsyncRead + Unpin + Send>>,
-    stderr: Option<Box<dyn AsyncRead + Unpin + Send>>,
+    stdin: Mutex<Option<Box<dyn AsyncWrite + Unpin + Send>>>,
+    stdout: Mutex<Option<Box<dyn AsyncRead + Unpin + Send>>>,
+    stderr: Mutex<Option<Box<dyn AsyncRead + Unpin + Send>>>,
 }
 
 impl DockerBackend {
@@ -192,9 +192,9 @@ impl DockerBackend {
             container_id: Some(container_id),
             container_name: cname,
             alive: alive_flag,
-            stdin: Some(Box::new(stdin_tx) as Box<dyn AsyncWrite + Unpin + Send>),
-            stdout: Some(Box::new(stdout_read) as Box<dyn AsyncRead + Unpin + Send>),
-            stderr: Some(Box::new(stderr_read) as Box<dyn AsyncRead + Unpin + Send>),
+            stdin: Mutex::new(Some(Box::new(stdin_tx) as Box<dyn AsyncWrite + Unpin + Send>)),
+            stdout: Mutex::new(Some(Box::new(stdout_read) as Box<dyn AsyncRead + Unpin + Send>)),
+            stderr: Mutex::new(Some(Box::new(stderr_read) as Box<dyn AsyncRead + Unpin + Send>)),
         })
     }
 }
@@ -263,15 +263,15 @@ impl ProcessBackend for DockerBackend {
     }
 
     fn take_stdin(&mut self) -> Option<Box<dyn AsyncWrite + Unpin + Send>> {
-        self.stdin.take()
+        self.stdin.lock().expect("stdin mutex poisoned").take()
     }
 
     fn take_stdout(&mut self) -> Option<Box<dyn AsyncRead + Unpin + Send>> {
-        self.stdout.take()
+        self.stdout.lock().expect("stdout mutex poisoned").take()
     }
 
     fn take_stderr(&mut self) -> Option<Box<dyn AsyncRead + Unpin + Send>> {
-        self.stderr.take()
+        self.stderr.lock().expect("stderr mutex poisoned").take()
     }
 
     fn kill(&mut self) -> Pin<Box<dyn Future<Output = Result<(), AgentsError>> + Send + '_>> {
