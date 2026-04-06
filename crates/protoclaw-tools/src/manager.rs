@@ -325,7 +325,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tools_manager_start_no_configs() {
+    async fn when_tools_manager_started_with_no_configs_then_server_url_registered() {
         let mut m = ToolsManager::new(HashMap::new());
         assert!(m.start().await.is_ok());
         assert_eq!(m.server_urls().len(), 1);
@@ -333,13 +333,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tools_manager_health_check_no_configs() {
+    async fn when_no_tool_configs_then_health_check_returns_healthy() {
         let m = ToolsManager::new(HashMap::new());
         assert!(m.health_check().await);
     }
 
     #[tokio::test]
-    async fn tools_manager_health_check_after_start() {
+    async fn when_tools_manager_started_then_health_check_returns_healthy() {
         let mut m = ToolsManager::new(HashMap::new());
         m.start().await.unwrap();
         assert!(m.health_check().await);
@@ -349,7 +349,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tools_manager_run_stops_on_cancel() {
+    async fn when_cancel_token_fired_then_tools_manager_run_stops() {
         let mut m = ToolsManager::new(HashMap::new());
         m.start().await.unwrap();
 
@@ -365,7 +365,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn aggregated_tool_server_lists_native_tools() {
+    async fn when_native_tools_registered_then_aggregate_list_contains_them() {
         let tools: Vec<Box<dyn Tool>> = vec![
             Box::new(DummyTool { tool_name: "tool-a".into() }),
             Box::new(DummyTool { tool_name: "tool-b".into() }),
@@ -382,7 +382,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn aggregated_tool_server_routes_native_call() {
+    async fn when_known_tool_called_via_aggregated_server_then_returns_result() {
         let tools: Vec<Box<dyn Tool>> = vec![
             Box::new(DummyTool { tool_name: "my-tool".into() }),
         ];
@@ -395,7 +395,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn aggregated_tool_server_unknown_tool_returns_error() {
+    async fn when_unknown_tool_called_via_aggregated_server_then_returns_error() {
         let host = Arc::new(McpHost::new(vec![]));
         let ext = Arc::new(vec![]);
         let agg = AggregatedToolServer::new(host, ext);
@@ -405,7 +405,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tools_manager_with_native_tools_registers_them() {
+    async fn when_manager_given_native_tools_then_they_appear_in_host_tool_list() {
         let tools: Vec<Box<dyn Tool>> = vec![
             Box::new(DummyTool { tool_name: "native-1".into() }),
         ];
@@ -423,7 +423,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tools_manager_with_wasm_configs_loads_valid_tools() {
+    async fn when_valid_wasm_config_provided_then_wasm_tool_loaded_into_host() {
         let dir = tempfile::tempdir().unwrap();
         let wasm_path = dir.path().join("tool.wasm");
         let wat = r#"(module (memory (export "memory") 1) (func (export "_start")))"#;
@@ -456,7 +456,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tools_manager_with_invalid_wasm_path_skips_and_continues() {
+    async fn when_invalid_wasm_path_provided_then_skipped_and_start_succeeds() {
         let tool_configs = HashMap::from([("bad-tool".to_string(), ToolConfig {
             tool_type: "wasm".into(),
             binary: None,
@@ -483,7 +483,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tools_manager_wasm_tools_appear_in_aggregated_list() {
+    async fn when_wasm_and_native_tools_configured_then_both_appear_in_aggregate_list() {
         let dir = tempfile::tempdir().unwrap();
         let wasm_path = dir.path().join("tool.wasm");
         let wat = r#"(module (memory (export "memory") 1) (func (export "_start")))"#;
@@ -521,7 +521,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn get_mcp_urls_with_no_filter_returns_all() {
+    async fn when_get_mcp_urls_called_without_filter_then_returns_all_urls() {
         let mut m = ToolsManager::new(HashMap::new());
         m.start().await.unwrap();
 
@@ -539,7 +539,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn get_mcp_urls_with_filter_returns_matching_only() {
+    async fn when_get_mcp_urls_called_with_filter_then_returns_matching_urls_only() {
         let mut m = ToolsManager::new(HashMap::new());
         m.start().await.unwrap();
         m.server_urls.push(McpServerUrl { name: "system-info".into(), url: "http://si".into() });
@@ -558,7 +558,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn get_mcp_urls_with_nonexistent_filter_returns_empty() {
+    async fn when_get_mcp_urls_filter_matches_nothing_then_returns_empty() {
         let mut m = ToolsManager::new(HashMap::new());
         m.start().await.unwrap();
 
@@ -574,7 +574,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn disabled_mcp_server_not_spawned() {
+    async fn when_mcp_server_is_disabled_then_not_spawned_on_start() {
         let tool_configs = HashMap::from([("disabled-tool".to_string(), ToolConfig {
             tool_type: "mcp".into(),
             binary: Some("nonexistent-binary-xyz-99999".into()),

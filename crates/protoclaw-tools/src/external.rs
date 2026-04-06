@@ -72,10 +72,11 @@ impl ExternalMcpServer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
     use std::collections::HashMap;
 
     #[tokio::test]
-    async fn external_mcp_server_spawn_nonexistent_binary_returns_error() {
+    async fn when_external_mcp_server_spawned_with_nonexistent_binary_then_returns_error() {
         let config = ToolConfig {
             tool_type: "mcp".into(),
             binary: Some("/nonexistent/binary/path".into()),

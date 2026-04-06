@@ -128,6 +128,7 @@ impl Drop for WasmToolRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     fn default_sandbox() -> WasmSandboxConfig {
         WasmSandboxConfig::default()
@@ -149,13 +150,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn runner_creates_engine_with_fuel_and_epoch() {
+    async fn when_wasm_runner_created_then_engine_initialized_with_fuel_and_epoch() {
         let runner = WasmToolRunner::new().unwrap();
         assert!(Arc::strong_count(runner.engine()) >= 1);
     }
 
     #[tokio::test]
-    async fn runner_execute_simple_echo_module() {
+    async fn when_echo_wasm_module_executed_then_output_matches_input() {
         let runner = WasmToolRunner::new().unwrap();
 
         let wat = r#"
@@ -202,7 +203,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn runner_execute_fuel_exhaustion() {
+    async fn when_wasm_module_exceeds_fuel_limit_then_execution_returns_fuel_error() {
         let runner = WasmToolRunner::new().unwrap();
 
         let wat = r#"
@@ -231,7 +232,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn runner_execute_epoch_timeout() {
+    async fn when_wasm_module_runs_infinite_loop_then_execution_returns_epoch_error() {
         let runner = WasmToolRunner::new().unwrap();
 
         let wat = r#"
@@ -256,7 +257,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn runner_fresh_store_per_invocation() {
+    async fn when_wasm_module_executed_twice_then_each_invocation_uses_fresh_store() {
         let runner = WasmToolRunner::new().unwrap();
 
         let wat = r#"

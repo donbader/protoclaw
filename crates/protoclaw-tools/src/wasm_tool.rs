@@ -69,6 +69,7 @@ impl Tool for WasmTool {
 mod tests {
     use super::*;
     use protoclaw_config::WasmSandboxConfig;
+    use rstest::rstest;
     use std::collections::HashMap;
     use std::path::PathBuf;
 
@@ -87,7 +88,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn wasm_tool_new_nonexistent_file_returns_error() {
+    async fn when_wasm_tool_created_with_nonexistent_file_then_returns_error() {
         let runner = Arc::new(WasmToolRunner::new().unwrap());
         let config = make_config(PathBuf::from("/nonexistent/tool.wasm"));
         let result = WasmTool::new("test-tool".into(), config, runner);
@@ -95,7 +96,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn wasm_tool_name_returns_config_name() {
+    async fn when_wasm_tool_name_queried_then_returns_configured_name() {
         let dir = tempfile::tempdir().unwrap();
         let wasm_path = dir.path().join("tool.wasm");
         let wat = r#"(module (memory (export "memory") 1) (func (export "_start")))"#;
@@ -108,7 +109,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn wasm_tool_description_returns_config_description() {
+    async fn when_wasm_tool_description_queried_then_returns_configured_description() {
         let dir = tempfile::tempdir().unwrap();
         let wasm_path = dir.path().join("tool.wasm");
         let wat = r#"(module (memory (export "memory") 1) (func (export "_start")))"#;
@@ -121,7 +122,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn wasm_tool_input_schema_parses_from_config() {
+    async fn when_wasm_tool_has_schema_config_then_input_schema_parsed_correctly() {
         let dir = tempfile::tempdir().unwrap();
         let wasm_path = dir.path().join("tool.wasm");
         let wat = r#"(module (memory (export "memory") 1) (func (export "_start")))"#;
@@ -136,7 +137,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn wasm_tool_input_schema_defaults_when_none() {
+    async fn when_wasm_tool_has_no_schema_config_then_input_schema_defaults_to_empty_object() {
         let dir = tempfile::tempdir().unwrap();
         let wasm_path = dir.path().join("tool.wasm");
         let wat = r#"(module (memory (export "memory") 1) (func (export "_start")))"#;
@@ -151,7 +152,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn wasm_tool_execute_returns_json_output() {
+    async fn when_wasm_tool_executes_echo_module_then_returns_json_output() {
         let dir = tempfile::tempdir().unwrap();
         let wasm_path = dir.path().join("echo.wasm");
 

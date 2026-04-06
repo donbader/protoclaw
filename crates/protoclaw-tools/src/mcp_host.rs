@@ -35,6 +35,7 @@ mod tests {
     use super::*;
     use async_trait::async_trait;
     use protoclaw_sdk_tool::ToolSdkError;
+    use rstest::rstest;
 
     struct EchoTool;
 
@@ -51,13 +52,13 @@ mod tests {
     }
 
     #[test]
-    fn mcp_host_empty_tool_list() {
+    fn when_mcp_host_created_with_no_tools_then_tool_list_is_empty() {
         let host = McpHost::new(vec![]);
         assert!(host.tool_list().is_empty());
     }
 
     #[test]
-    fn mcp_host_tool_list_returns_correct_tools() {
+    fn when_mcp_host_created_with_tools_then_tool_list_contains_them() {
         let tools: Vec<Box<dyn Tool>> = vec![Box::new(EchoTool)];
         let host = McpHost::new(tools);
         let list = host.tool_list();
@@ -66,7 +67,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mcp_host_dispatch_known_tool() {
+    async fn when_known_tool_dispatched_via_mcp_host_then_returns_result() {
         let tools: Vec<Box<dyn Tool>> = vec![Box::new(EchoTool)];
         let host = McpHost::new(tools);
 
@@ -78,7 +79,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mcp_host_dispatch_unknown_tool_returns_error() {
+    async fn when_unknown_tool_dispatched_via_mcp_host_then_returns_error() {
         let host = McpHost::new(vec![]);
         let result = host.dispatch_tool("nonexistent", None).await;
         assert!(result.is_err());
