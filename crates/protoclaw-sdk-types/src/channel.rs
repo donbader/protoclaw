@@ -141,9 +141,10 @@ pub struct SessionCreated {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     #[test]
-    fn channel_capabilities_round_trip() {
+    fn when_serializing_channel_capabilities_then_uses_camel_case() {
         let caps = ChannelCapabilities {
             streaming: true,
             rich_text: false,
@@ -157,7 +158,7 @@ mod tests {
     }
 
     #[test]
-    fn peer_info_round_trip() {
+    fn when_serializing_peer_info_then_uses_camel_case() {
         let info = PeerInfo {
             channel_name: "debug-http".into(),
             peer_id: "local:dev".into(),
@@ -172,7 +173,7 @@ mod tests {
     }
 
     #[test]
-    fn deliver_message_round_trip() {
+    fn when_serializing_deliver_message_then_uses_camel_case() {
         let msg = DeliverMessage {
             session_id: "sess-1".into(),
             content: serde_json::json!({"text": "hello"}),
@@ -185,7 +186,7 @@ mod tests {
     }
 
     #[test]
-    fn channel_send_message_round_trip() {
+    fn when_serializing_channel_send_message_then_uses_camel_case() {
         let msg = ChannelSendMessage {
             peer_info: PeerInfo {
                 channel_name: "debug-http".into(),
@@ -202,7 +203,7 @@ mod tests {
     }
 
     #[test]
-    fn channel_respond_permission_round_trip() {
+    fn when_serializing_channel_respond_permission_then_uses_camel_case() {
         let resp = ChannelRespondPermission {
             request_id: "req-1".into(),
             option_id: "allow".into(),
@@ -216,7 +217,7 @@ mod tests {
     }
 
     #[test]
-    fn channel_initialize_params_round_trip() {
+    fn when_serializing_channel_initialize_params_then_uses_camel_case() {
         let params = ChannelInitializeParams {
             protocol_version: 1,
             channel_id: "ch-1".into(),
@@ -230,7 +231,7 @@ mod tests {
     }
 
     #[test]
-    fn thought_content_from_valid_thought() {
+    fn when_content_type_is_agent_thought_chunk_then_extracts_thought() {
         let content = serde_json::json!({
             "sessionId": "s1",
             "type": "agent_thought_chunk",
@@ -243,7 +244,7 @@ mod tests {
     }
 
     #[test]
-    fn thought_content_from_non_thought_returns_none() {
+    fn when_content_type_is_not_agent_thought_chunk_then_returns_none() {
         let content = serde_json::json!({
             "sessionId": "s1",
             "type": "agent_message_chunk",
@@ -253,7 +254,7 @@ mod tests {
     }
 
     #[test]
-    fn thought_content_round_trip() {
+    fn when_serializing_thought_content_then_uses_camel_case() {
         let thought = ThoughtContent {
             session_id: "s1".into(),
             update_type: "agent_thought_chunk".into(),
@@ -267,7 +268,7 @@ mod tests {
     }
 
     #[test]
-    fn thought_content_from_deliver_message_content() {
+    fn when_deliver_message_content_is_thought_then_extracts_thought() {
         let msg = DeliverMessage {
             session_id: "sess-1".into(),
             content: serde_json::json!({
@@ -281,7 +282,7 @@ mod tests {
     }
 
     #[test]
-    fn channel_initialize_result_round_trip() {
+    fn when_serializing_channel_initialize_result_then_uses_camel_case() {
         let result = ChannelInitializeResult {
             protocol_version: 1,
             capabilities: ChannelCapabilities {
@@ -297,7 +298,7 @@ mod tests {
     }
 
     #[test]
-    fn ack_notification_round_trip() {
+    fn when_serializing_ack_notification_then_uses_camel_case() {
         let ack = AckNotification {
             session_id: "sess-1".into(),
             channel_name: "telegram".into(),
@@ -315,7 +316,7 @@ mod tests {
     }
 
     #[test]
-    fn ack_notification_none_message_id() {
+    fn when_ack_notification_has_no_message_id_then_field_is_null() {
         let ack = AckNotification {
             session_id: "sess-1".into(),
             channel_name: "debug-http".into(),
@@ -329,7 +330,7 @@ mod tests {
     }
 
     #[test]
-    fn ack_lifecycle_notification_round_trip() {
+    fn when_serializing_ack_lifecycle_notification_then_uses_camel_case() {
         let lifecycle = AckLifecycleNotification {
             session_id: "sess-1".into(),
             action: "response_started".into(),
@@ -342,7 +343,7 @@ mod tests {
     }
 
     #[test]
-    fn channel_ack_config_round_trip() {
+    fn when_serializing_channel_ack_config_then_uses_camel_case() {
         let cfg = ChannelAckConfig {
             reaction: true,
             typing: true,
@@ -360,7 +361,7 @@ mod tests {
     }
 
     #[test]
-    fn channel_initialize_params_with_ack() {
+    fn when_channel_initialize_params_has_ack_then_ack_serialized_nested() {
         let params = ChannelInitializeParams {
             protocol_version: 1,
             channel_id: "telegram".into(),
@@ -379,7 +380,7 @@ mod tests {
     }
 
     #[test]
-    fn channel_initialize_params_without_ack() {
+    fn when_channel_initialize_params_has_no_ack_field_then_ack_is_none() {
         let json = serde_json::json!({
             "protocolVersion": 1,
             "channelId": "debug-http"

@@ -38,9 +38,10 @@ pub struct ChannelRequestPermission {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     #[test]
-    fn permission_option_round_trip() {
+    fn when_serializing_permission_option_then_uses_camel_case() {
         let opt = PermissionOption {
             option_id: "allow_once".into(),
             label: "Allow once".into(),
@@ -54,7 +55,7 @@ mod tests {
     }
 
     #[test]
-    fn permission_request_round_trip() {
+    fn when_serializing_permission_request_then_uses_camel_case() {
         let req = PermissionRequest {
             request_id: "perm-1".into(),
             description: "Allow file write?".into(),
@@ -79,7 +80,7 @@ mod tests {
     }
 
     #[test]
-    fn permission_response_round_trip() {
+    fn when_serializing_permission_response_then_uses_camel_case() {
         let resp = PermissionResponse {
             request_id: "perm-1".into(),
             option_id: "allow_once".into(),
@@ -93,7 +94,7 @@ mod tests {
     }
 
     #[test]
-    fn channel_request_permission_round_trip() {
+    fn when_serializing_channel_request_permission_then_uses_camel_case() {
         let req = ChannelRequestPermission {
             request_id: "req-1".into(),
             session_id: "sess-1".into(),
