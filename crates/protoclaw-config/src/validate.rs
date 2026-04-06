@@ -168,6 +168,7 @@ mod tests {
         DockerWorkspaceConfig, LocalWorkspaceConfig, PullPolicy, SupervisorConfig,
         ToolsManagerConfig, WorkspaceConfig,
     };
+    use rstest::rstest;
     use std::collections::HashMap;
     use std::path::PathBuf;
 
@@ -206,7 +207,7 @@ mod tests {
     }
 
     #[test]
-    fn valid_config_has_no_errors() {
+    fn when_all_binaries_exist_then_validation_has_no_errors() {
         let config = valid_config();
         let result = validate_config(&config);
         assert!(
@@ -218,7 +219,7 @@ mod tests {
     }
 
     #[test]
-    fn missing_agent_binary_is_error() {
+    fn when_agent_binary_not_on_path_then_binary_not_found_error() {
         let mut config = valid_config();
         if let WorkspaceConfig::Local(ref mut local) = config
             .agents_manager
@@ -245,7 +246,7 @@ mod tests {
     }
 
     #[test]
-    fn nonexistent_working_dir_is_error() {
+    fn when_agent_working_dir_does_not_exist_then_working_dir_error() {
         let mut config = valid_config();
         if let WorkspaceConfig::Local(ref mut local) = config
             .agents_manager
@@ -269,7 +270,7 @@ mod tests {
     }
 
     #[test]
-    fn missing_channel_binary_is_error() {
+    fn when_channel_binary_not_on_path_then_binary_not_found_error() {
         let mut config = valid_config();
         config.channels_manager.channels.insert(
             "ch".to_string(),
@@ -297,7 +298,7 @@ mod tests {
     }
 
     #[test]
-    fn missing_tool_binary_is_error() {
+    fn when_tool_binary_not_on_path_then_binary_not_found_error() {
         let mut config = valid_config();
         config.tools_manager.tools.insert(
             "fs".to_string(),
@@ -325,7 +326,7 @@ mod tests {
     }
 
     #[test]
-    fn is_ok_true_when_no_errors() {
+    fn when_validation_result_has_no_errors_then_is_ok_returns_true() {
         let result = ValidationResult {
             errors: vec![],
             warnings: vec![],
@@ -334,7 +335,7 @@ mod tests {
     }
 
     #[test]
-    fn is_ok_false_when_has_errors() {
+    fn when_validation_result_has_errors_then_is_ok_returns_false() {
         let result = ValidationResult {
             errors: vec![ValidationError::BinaryNotFound {
                 field: "agent.binary".to_string(),
@@ -346,7 +347,7 @@ mod tests {
     }
 
     #[test]
-    fn docker_agent_skips_binary_check() {
+    fn when_agent_workspace_is_docker_then_no_binary_check_performed() {
         let mut config = valid_config();
         config.agents_manager.agents.insert(
             "docker-agent".to_string(),
@@ -388,7 +389,7 @@ mod tests {
     }
 
     #[test]
-    fn docker_invalid_memory_limit_is_error() {
+    fn when_docker_memory_limit_unparseable_then_invalid_memory_error() {
         let mut config = valid_config();
         config.agents_manager.agents.insert(
             "docker-agent".to_string(),
@@ -429,7 +430,7 @@ mod tests {
     }
 
     #[test]
-    fn docker_invalid_cpu_limit_is_error() {
+    fn when_docker_cpu_limit_unparseable_then_invalid_cpu_error() {
         let mut config = valid_config();
         config.agents_manager.agents.insert(
             "docker-agent".to_string(),
@@ -470,7 +471,7 @@ mod tests {
     }
 
     #[test]
-    fn docker_volume_missing_colon_is_error() {
+    fn when_docker_volume_has_no_colon_separator_then_invalid_volume_error() {
         let mut config = valid_config();
         config.agents_manager.agents.insert(
             "docker-agent".to_string(),

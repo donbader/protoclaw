@@ -90,77 +90,78 @@ pub fn parse_cpu_limit(s: &str) -> Result<i64, ConfigError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     #[test]
-    fn memory_limit_kilobytes() {
+    fn when_memory_limit_has_k_suffix_then_converts_to_bytes() {
         assert_eq!(parse_memory_limit("256k").unwrap(), 262_144);
         assert_eq!(parse_memory_limit("256K").unwrap(), 262_144);
     }
 
     #[test]
-    fn memory_limit_megabytes() {
+    fn when_memory_limit_has_m_suffix_then_converts_to_bytes() {
         assert_eq!(parse_memory_limit("512m").unwrap(), 536_870_912);
         assert_eq!(parse_memory_limit("512M").unwrap(), 536_870_912);
     }
 
     #[test]
-    fn memory_limit_gigabytes() {
+    fn when_memory_limit_has_g_suffix_then_converts_to_bytes() {
         assert_eq!(parse_memory_limit("1g").unwrap(), 1_073_741_824);
         assert_eq!(parse_memory_limit("2G").unwrap(), 2_147_483_648);
     }
 
     #[test]
-    fn memory_limit_no_unit_is_error() {
+    fn when_memory_limit_has_no_unit_suffix_then_returns_error() {
         assert!(parse_memory_limit("1024").is_err());
     }
 
     #[test]
-    fn memory_limit_empty_is_error() {
+    fn when_memory_limit_is_empty_string_then_returns_error() {
         assert!(parse_memory_limit("").is_err());
     }
 
     #[test]
-    fn memory_limit_no_number_is_error() {
+    fn when_memory_limit_is_only_unit_suffix_then_returns_error() {
         assert!(parse_memory_limit("m").is_err());
         assert!(parse_memory_limit("g").is_err());
     }
 
     #[test]
-    fn memory_limit_invalid_unit_is_error() {
+    fn when_memory_limit_has_unknown_unit_suffix_then_returns_error() {
         assert!(parse_memory_limit("512x").is_err());
     }
 
     #[test]
-    fn cpu_limit_decimal_cores() {
+    fn when_cpu_limit_is_decimal_cores_then_converts_to_nanocpus() {
         assert_eq!(parse_cpu_limit("0.5").unwrap(), 500_000_000);
         assert_eq!(parse_cpu_limit("1.5").unwrap(), 1_500_000_000);
     }
 
     #[test]
-    fn cpu_limit_whole_cores() {
+    fn when_cpu_limit_is_whole_cores_then_converts_to_nanocpus() {
         assert_eq!(parse_cpu_limit("1").unwrap(), 1_000_000_000);
         assert_eq!(parse_cpu_limit("2").unwrap(), 2_000_000_000);
     }
 
     #[test]
-    fn cpu_limit_millicores() {
+    fn when_cpu_limit_has_m_suffix_then_converts_millicores_to_nanocpus() {
         assert_eq!(parse_cpu_limit("500m").unwrap(), 500_000_000);
         assert_eq!(parse_cpu_limit("1500m").unwrap(), 1_500_000_000);
         assert_eq!(parse_cpu_limit("250m").unwrap(), 250_000_000);
     }
 
     #[test]
-    fn cpu_limit_empty_is_error() {
+    fn when_cpu_limit_is_empty_string_then_returns_error() {
         assert!(parse_cpu_limit("").is_err());
     }
 
     #[test]
-    fn cpu_limit_no_number_is_error() {
+    fn when_cpu_limit_is_only_m_suffix_then_returns_error() {
         assert!(parse_cpu_limit("m").is_err());
     }
 
     #[test]
-    fn cpu_limit_invalid_unit_is_error() {
+    fn when_cpu_limit_has_unknown_unit_suffix_then_returns_error() {
         assert!(parse_cpu_limit("500x").is_err());
     }
 }

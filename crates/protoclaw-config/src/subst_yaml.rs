@@ -72,9 +72,10 @@ fn coerce_substituted_strings(value: &mut serde_yaml::Value) {
 mod tests {
     use super::*;
     use figment::Figment;
+    use rstest::rstest;
 
     #[test]
-    fn substitutes_env_var_in_string_value() {
+    fn when_yaml_contains_env_var_reference_then_substituted_from_env() {
         figment::Jail::expect_with(|jail| {
             jail.set_env("TEST_BINARY", "my-agent");
             jail.create_file("test.yaml", "agent:\n  binary: \"${TEST_BINARY}\"\n")?;
@@ -87,7 +88,7 @@ mod tests {
     }
 
     #[test]
-    fn substitutes_with_default_value() {
+    fn when_env_var_unset_then_uses_default_value_from_yaml() {
         figment::Jail::expect_with(|jail| {
             jail.create_file(
                 "test.yaml",
@@ -102,7 +103,7 @@ mod tests {
     }
 
     #[test]
-    fn coerces_substituted_string_to_boolean() {
+    fn when_env_var_is_true_string_then_coerced_to_boolean() {
         figment::Jail::expect_with(|jail| {
             jail.set_env("TEST_CHANNEL_ENABLED", "true");
             jail.create_file(
@@ -118,7 +119,7 @@ mod tests {
     }
 
     #[test]
-    fn passes_through_non_interpolated_values() {
+    fn when_yaml_has_no_env_var_reference_then_value_unchanged() {
         figment::Jail::expect_with(|jail| {
             jail.create_file("test.yaml", "agent:\n  binary: plain-value\n")?;
             let value: serde_json::Value = Figment::new()
@@ -130,7 +131,7 @@ mod tests {
     }
 
     #[test]
-    fn missing_file_falls_through_to_figment() {
+    fn when_yaml_file_does_not_exist_then_produces_empty_data() {
         figment::Jail::expect_with(|_jail| {
             let result: Result<serde_json::Value, _> = Figment::new()
                 .merge(SubstYaml::file("nonexistent.yaml"))

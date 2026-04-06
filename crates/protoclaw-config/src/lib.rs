@@ -45,9 +45,10 @@ mod tests {
     use super::*;
     use crate::WorkspaceConfig;
     use figment::Jail;
+    use rstest::rstest;
 
     #[test]
-    fn load_valid_config() {
+    fn when_valid_config_file_exists_then_loads_all_sections() {
         Jail::expect_with(|jail| {
             jail.create_file(
                 "protoclaw.yaml",
@@ -98,7 +99,7 @@ supervisor:
     }
 
     #[test]
-    fn missing_config_file_returns_error() {
+    fn when_config_file_does_not_exist_then_returns_error_with_path() {
         Jail::expect_with(|_jail| {
             let result = ProtoclawConfig::load(Some("nonexistent.yaml"));
             assert!(result.is_err());
@@ -113,7 +114,7 @@ supervisor:
     }
 
     #[test]
-    fn supervisor_defaults() {
+    fn when_config_has_no_supervisor_section_then_uses_defaults() {
         Jail::expect_with(|jail| {
             jail.create_file(
                 "protoclaw.yaml",
@@ -129,7 +130,7 @@ supervisor:
     }
 
     #[test]
-    fn empty_channels_defaults_to_empty_map() {
+    fn when_config_has_no_channels_section_then_channels_map_is_empty() {
         Jail::expect_with(|jail| {
             jail.create_file(
                 "protoclaw.yaml",
@@ -142,7 +143,7 @@ supervisor:
     }
 
     #[test]
-    fn empty_tools_defaults_to_empty_map() {
+    fn when_config_has_no_tools_section_then_tools_map_is_empty() {
         Jail::expect_with(|jail| {
             jail.create_file(
                 "protoclaw.yaml",
@@ -155,7 +156,7 @@ supervisor:
     }
 
     #[test]
-    fn env_var_overrides_supervisor_shutdown_timeout() {
+    fn when_env_var_set_then_overrides_supervisor_shutdown_timeout() {
         Jail::expect_with(|jail| {
             jail.create_file(
                 "protoclaw.yaml",
@@ -169,7 +170,7 @@ supervisor:
     }
 
     #[test]
-    fn unknown_keys_ignored() {
+    fn when_yaml_has_unknown_keys_then_load_succeeds() {
         Jail::expect_with(|jail| {
             jail.create_file(
                 "protoclaw.yaml",
@@ -186,7 +187,7 @@ supervisor:
     }
 
     #[test]
-    fn config_with_only_agents_section() {
+    fn when_config_has_only_agents_section_then_other_sections_default() {
         Jail::expect_with(|jail| {
             jail.create_file(
                 "protoclaw.yaml",
@@ -204,7 +205,7 @@ supervisor:
     }
 
     #[test]
-    fn config_error_displays_file_path() {
+    fn when_config_file_missing_then_error_message_includes_path() {
         Jail::expect_with(|_jail| {
             let result = ProtoclawConfig::load(Some("missing/path/protoclaw.yaml"));
             assert!(result.is_err());

@@ -408,37 +408,38 @@ impl ProtoclawConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     #[test]
-    fn log_level_defaults_to_info() {
+    fn when_no_log_level_set_then_defaults_to_info() {
         let yaml = "";
         let config: ProtoclawConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(config.log_level, "info");
     }
 
     #[test]
-    fn log_level_from_yaml() {
+    fn when_log_level_in_yaml_then_uses_provided_value() {
         let yaml = "log_level: \"debug\"";
         let config: ProtoclawConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(config.log_level, "debug");
     }
 
     #[test]
-    fn extensions_dir_defaults() {
+    fn when_no_extensions_dir_set_then_defaults_to_usr_local_bin() {
         let yaml = "";
         let config: ProtoclawConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(config.extensions_dir, "/usr/local/bin");
     }
 
     #[test]
-    fn extensions_dir_from_yaml() {
+    fn when_extensions_dir_in_yaml_then_uses_provided_path() {
         let yaml = "extensions_dir: \"/custom/path\"";
         let config: ProtoclawConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(config.extensions_dir, "/custom/path");
     }
 
     #[test]
-    fn agents_manager_named_map() {
+    fn when_agents_manager_has_agents_then_parses_named_map_with_workspace() {
         let yaml = r#"
 agents-manager:
   agents:
@@ -476,7 +477,7 @@ agents-manager:
     }
 
     #[test]
-    fn channel_config_no_name_field() {
+    fn when_channel_config_parsed_then_name_comes_from_map_key() {
         let yaml = r#"
 channels-manager:
   channels:
@@ -489,35 +490,35 @@ channels-manager:
     }
 
     #[test]
-    fn channel_enabled_defaults_true() {
+    fn when_channel_has_no_enabled_field_then_defaults_to_true() {
         let yaml = "binary: \"debug-http\"";
         let config: ChannelConfig = serde_yaml::from_str(yaml).unwrap();
         assert!(config.enabled);
     }
 
     #[test]
-    fn channel_enabled_false() {
+    fn when_channel_enabled_is_false_then_disabled() {
         let yaml = "binary: \"telegram-channel\"\nenabled: false";
         let config: ChannelConfig = serde_yaml::from_str(yaml).unwrap();
         assert!(!config.enabled);
     }
 
     #[test]
-    fn channel_agent_defaults_to_default() {
+    fn when_channel_has_no_agent_field_then_defaults_to_default() {
         let yaml = "binary: \"debug-http\"";
         let config: ChannelConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(config.agent, "default");
     }
 
     #[test]
-    fn channel_agent_from_yaml() {
+    fn when_channel_agent_in_yaml_then_uses_provided_name() {
         let yaml = "binary: \"telegram-channel\"\nagent: \"opencode\"";
         let config: ChannelConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(config.agent, "opencode");
     }
 
     #[test]
-    fn ack_config_defaults() {
+    fn when_ack_config_defaulted_then_reaction_and_typing_are_false() {
         let ack = AckConfig::default();
         assert!(!ack.reaction);
         assert!(!ack.typing);
@@ -526,7 +527,7 @@ channels-manager:
     }
 
     #[test]
-    fn ack_config_from_yaml() {
+    fn when_ack_config_in_yaml_then_all_fields_parsed() {
         let yaml = "reaction: true\ntyping: true\nreaction_emoji: \"⏳\"\nreaction_lifecycle: \"replace_done\"";
         let config: AckConfig = serde_yaml::from_str(yaml).unwrap();
         assert!(config.reaction);
@@ -536,7 +537,7 @@ channels-manager:
     }
 
     #[test]
-    fn channel_ack_nested() {
+    fn when_channel_has_nested_ack_config_then_parses_correctly() {
         let yaml = r#"
 channels-manager:
   channels:
@@ -557,7 +558,7 @@ channels-manager:
     }
 
     #[test]
-    fn tool_config_mcp_type() {
+    fn when_tool_has_no_type_field_then_defaults_to_mcp() {
         let yaml = r#"
 tools-manager:
   tools:
@@ -575,7 +576,7 @@ tools-manager:
     }
 
     #[test]
-    fn tool_config_wasm_type() {
+    fn when_tool_type_is_wasm_then_module_and_sandbox_parsed() {
         let yaml = r#"
 tools-manager:
   tools:
@@ -598,28 +599,28 @@ tools-manager:
     }
 
     #[test]
-    fn tool_config_name_not_in_struct() {
+    fn when_tool_config_parsed_then_name_comes_from_map_key() {
         let yaml = "binary: \"mcp-server-filesystem\"";
         let config: ToolConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(config.binary, Some("mcp-server-filesystem".into()));
     }
 
     #[test]
-    fn log_format_defaults_to_pretty() {
+    fn when_no_log_format_set_then_defaults_to_pretty() {
         let yaml = "";
         let config: ProtoclawConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(config.log_format, "pretty");
     }
 
     #[test]
-    fn log_format_from_yaml() {
+    fn when_log_format_in_yaml_then_uses_provided_value() {
         let yaml = "log_format: \"json\"";
         let config: ProtoclawConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(config.log_format, "json");
     }
 
     #[test]
-    fn defaults_yaml_parses() {
+    fn when_parsing_defaults_yaml_then_all_expected_values_present() {
         let config: ProtoclawConfig = serde_yaml::from_str(DEFAULTS_YAML).unwrap();
         assert_eq!(config.log_level, "info");
         assert_eq!(config.log_format, "pretty");
@@ -631,7 +632,7 @@ tools-manager:
     }
 
     #[test]
-    fn wasm_sandbox_config_defaults() {
+    fn when_wasm_sandbox_config_defaulted_then_has_expected_limits() {
         let config = WasmSandboxConfig::default();
         assert_eq!(config.fuel_limit, 1_000_000);
         assert_eq!(config.epoch_timeout_secs, 30);
@@ -640,7 +641,7 @@ tools-manager:
     }
 
     #[test]
-    fn agent_config_defaults() {
+    fn when_agent_config_has_only_workspace_then_all_optionals_absent() {
         let yaml = r#"
 workspace:
   type: local
@@ -657,7 +658,7 @@ workspace:
     }
 
     #[test]
-    fn agent_config_options_from_yaml() {
+    fn when_agent_config_has_options_map_then_parses_to_json_values() {
         let yaml = r#"
 workspace:
   type: local
@@ -672,7 +673,7 @@ options:
     }
 
     #[test]
-    fn default_agent_name_returns_first_enabled() {
+    fn when_multiple_agents_present_then_default_agent_name_returns_first_enabled() {
         let yaml = r#"
 agents-manager:
   agents:
@@ -691,20 +692,20 @@ agents-manager:
     }
 
     #[test]
-    fn default_agent_name_none_when_empty() {
+    fn when_no_agents_configured_then_default_agent_name_returns_none() {
         let yaml = "";
         let config: ProtoclawConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(config.default_agent_name(), None);
     }
 
     #[test]
-    fn pull_policy_defaults_to_if_not_present() {
+    fn when_pull_policy_empty_then_defaults_to_if_not_present() {
         let policy: PullPolicy = serde_yaml::from_str("").unwrap();
         assert_eq!(policy, PullPolicy::IfNotPresent);
     }
 
     #[test]
-    fn pull_policy_from_yaml() {
+    fn when_pull_policy_in_yaml_then_parses_all_variants() {
         let always: PullPolicy = serde_yaml::from_str("always").unwrap();
         assert_eq!(always, PullPolicy::Always);
         let never: PullPolicy = serde_yaml::from_str("never").unwrap();
@@ -714,7 +715,7 @@ agents-manager:
     }
 
     #[test]
-    fn workspace_config_local_from_yaml() {
+    fn when_workspace_type_is_local_then_parses_binary_working_dir_env() {
         let yaml = r#"
 type: local
 binary: "opencode"
@@ -734,7 +735,7 @@ env:
     }
 
     #[test]
-    fn workspace_config_local_minimal() {
+    fn when_workspace_type_is_local_minimal_then_optional_fields_absent() {
         let yaml = "type: local\nbinary: \"agent\"";
         let ws: WorkspaceConfig = serde_yaml::from_str(yaml).unwrap();
         match ws {
@@ -748,7 +749,7 @@ env:
     }
 
     #[test]
-    fn full_config_shape() {
+    fn when_full_config_yaml_parsed_then_all_sections_populated() {
         let yaml = r#"
 log_level: "info"
 extensions_dir: "/usr/local/bin"
@@ -797,14 +798,14 @@ supervisor:
     }
 
     #[test]
-    fn backoff_config_defaults() {
+    fn when_backoff_config_defaulted_then_has_expected_delays() {
         let config = BackoffConfig::default();
         assert_eq!(config.base_delay_ms, 100);
         assert_eq!(config.max_delay_secs, 30);
     }
 
     #[test]
-    fn backoff_config_from_yaml() {
+    fn when_backoff_config_in_yaml_then_uses_provided_values() {
         let yaml = "base_delay_ms: 200\nmax_delay_secs: 60";
         let config: BackoffConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(config.base_delay_ms, 200);
@@ -812,7 +813,7 @@ supervisor:
     }
 
     #[test]
-    fn backoff_config_partial_yaml_uses_defaults() {
+    fn when_backoff_config_partially_set_then_unset_fields_use_defaults() {
         let yaml = "base_delay_ms: 500";
         let config: BackoffConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(config.base_delay_ms, 500);
@@ -820,14 +821,14 @@ supervisor:
     }
 
     #[test]
-    fn crash_tracker_config_defaults() {
+    fn when_crash_tracker_config_defaulted_then_has_expected_limits() {
         let config = CrashTrackerConfig::default();
         assert_eq!(config.max_crashes, 5);
         assert_eq!(config.window_secs, 60);
     }
 
     #[test]
-    fn crash_tracker_config_from_yaml() {
+    fn when_crash_tracker_config_in_yaml_then_uses_provided_values() {
         let yaml = "max_crashes: 10\nwindow_secs: 120";
         let config: CrashTrackerConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(config.max_crashes, 10);
@@ -835,7 +836,7 @@ supervisor:
     }
 
     #[test]
-    fn agents_manager_config_defaults() {
+    fn when_agents_manager_config_defaulted_then_has_expected_timeouts() {
         let config = AgentsManagerConfig::default();
         assert_eq!(config.acp_timeout_secs, 30);
         assert_eq!(config.shutdown_grace_ms, 100);
@@ -843,14 +844,14 @@ supervisor:
     }
 
     #[test]
-    fn channels_manager_config_defaults() {
+    fn when_channels_manager_config_defaulted_then_has_expected_timeout() {
         let config = ChannelsManagerConfig::default();
         assert_eq!(config.init_timeout_secs, 10);
         assert!(config.channels.is_empty());
     }
 
     #[test]
-    fn per_agent_override_parses() {
+    fn when_agent_has_per_agent_timeout_and_backoff_then_all_parsed() {
         let yaml = r#"
 agents-manager:
   agents:
@@ -878,7 +879,7 @@ agents-manager:
     }
 
     #[test]
-    fn per_channel_override_parses() {
+    fn when_channel_has_per_channel_timeout_and_backoff_then_all_parsed() {
         let yaml = r#"
 channels-manager:
   channels:
@@ -902,7 +903,7 @@ channels-manager:
     }
 
     #[test]
-    fn channel_config_option_fields_default_none() {
+    fn when_channel_config_minimal_then_optional_override_fields_are_none() {
         let yaml = "binary: \"debug-http\"";
         let config: ChannelConfig = serde_yaml::from_str(yaml).unwrap();
         assert!(config.init_timeout_secs.is_none());
@@ -911,7 +912,7 @@ channels-manager:
     }
 
     #[test]
-    fn workspace_config_docker_full() {
+    fn when_workspace_type_is_docker_full_then_all_fields_parsed() {
         let yaml = r#"
 type: docker
 image: "protoclaw/opencode:latest"
@@ -945,7 +946,7 @@ pull_policy: always
     }
 
     #[test]
-    fn workspace_config_docker_minimal() {
+    fn when_workspace_type_is_docker_minimal_then_optional_fields_absent() {
         let yaml = "type: docker\nimage: \"my-agent:latest\"";
         let ws: WorkspaceConfig = serde_yaml::from_str(yaml).unwrap();
         match ws {
@@ -965,7 +966,7 @@ pull_policy: always
     }
 
     #[test]
-    fn agent_config_with_local_workspace() {
+    fn when_agent_config_has_local_workspace_then_binary_and_env_parsed() {
         let yaml = r#"
 workspace:
   type: local
@@ -993,7 +994,7 @@ tools:
     }
 
     #[test]
-    fn agent_config_with_docker_workspace() {
+    fn when_agent_config_has_docker_workspace_then_image_and_limits_parsed() {
         let yaml = r#"
 workspace:
   type: docker

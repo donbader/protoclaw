@@ -13,9 +13,10 @@ pub fn resolve_binary_path(binary: &str, extensions_dir: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     #[test]
-    fn resolves_built_in_prefix() {
+    fn when_binary_has_built_in_prefix_then_resolves_to_extensions_dir() {
         assert_eq!(
             resolve_binary_path("@built-in/mock-agent", "/usr/local/bin"),
             "/usr/local/bin/mock-agent"
@@ -23,7 +24,7 @@ mod tests {
     }
 
     #[test]
-    fn absolute_path_unchanged() {
+    fn when_binary_is_absolute_path_then_returned_unchanged() {
         assert_eq!(
             resolve_binary_path("/absolute/path/agent", "/usr/local/bin"),
             "/absolute/path/agent"
@@ -31,7 +32,7 @@ mod tests {
     }
 
     #[test]
-    fn relative_path_unchanged() {
+    fn when_binary_is_relative_name_then_returned_unchanged() {
         assert_eq!(
             resolve_binary_path("relative-binary", "/usr/local/bin"),
             "relative-binary"
@@ -39,7 +40,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_only_applies_to_local_workspace() {
+    fn when_resolving_local_workspace_binary_then_built_in_prefix_expanded() {
         use crate::{DockerWorkspaceConfig, LocalWorkspaceConfig, PullPolicy, WorkspaceConfig};
 
         let mut local = LocalWorkspaceConfig {

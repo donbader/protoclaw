@@ -17,3 +17,4 @@ subst.workspace = true
 figment = { workspace = true, features = ["test"] }
 tempfile.workspace = true
 serde_yaml.workspace = true
+rstest.workspace = true
