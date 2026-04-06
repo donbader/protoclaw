@@ -297,6 +297,7 @@ mod tests {
     use super::*;
     use async_trait::async_trait;
     use protoclaw_sdk_tool::ToolSdkError;
+    use rstest::rstest;
 
     struct DummyTool {
         tool_name: String,
@@ -322,7 +323,7 @@ mod tests {
     }
 
     #[test]
-    fn tools_manager_name() {
+    fn when_tools_manager_name_queried_then_returns_tools() {
         let m = ToolsManager::new(HashMap::new());
         assert_eq!(m.name(), "tools");
     }

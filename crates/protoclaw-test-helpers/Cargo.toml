@@ -19,3 +19,6 @@ reqwest = { version = "0.12", features = ["json", "stream"] }
 futures-core = "0.3"
 test-log = { version = "0.2", features = ["trace"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+[dev-dependencies]
+rstest = { workspace = true }

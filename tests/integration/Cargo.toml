@@ -21,3 +21,4 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 
 [dev-dependencies]
 tokio-test = { workspace = true }
+rstest = { workspace = true }

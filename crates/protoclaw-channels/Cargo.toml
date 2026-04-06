@@ -25,3 +25,4 @@ serde_json = { workspace = true }
 [dev-dependencies]
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 tokio-test = { workspace = true }
+rstest = { workspace = true }
