@@ -87,6 +87,20 @@ mod tests {
     use rstest::rstest;
 
     #[test]
+    fn when_no_known_binary_on_path_then_detect_agent_binary_returns_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let original_path = std::env::var("PATH").unwrap_or_default();
+        unsafe {
+            std::env::set_var("PATH", dir.path());
+        }
+        let result = detect_agent_binary();
+        unsafe {
+            std::env::set_var("PATH", &original_path);
+        }
+        assert!(result.is_none());
+    }
+
+    #[test]
     fn when_generate_config_yaml_called_then_contains_agent_binary() {
         let yaml = generate_config_yaml("opencode");
         assert!(yaml.contains(r#"binary: "opencode""#));

@@ -438,6 +438,37 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn when_debug_http_port_rx_called_then_returns_watch_receiver_with_initial_zero() {
+        let sup = Supervisor::new(test_config());
+        let rx = sup.debug_http_port_rx();
+        assert_eq!(*rx.borrow(), 0, "initial port value should be 0");
+    }
+
+    #[tokio::test]
+    async fn when_debug_http_port_rx_called_twice_then_both_receivers_see_same_value() {
+        let sup = Supervisor::new(test_config());
+        let rx1 = sup.debug_http_port_rx();
+        let rx2 = sup.debug_http_port_rx();
+        assert_eq!(*rx1.borrow(), *rx2.borrow());
+    }
+
+    #[tokio::test]
+    async fn when_supervisor_created_then_debug_http_port_rx_is_cloneable() {
+        let sup = Supervisor::new(test_config());
+        let rx = sup.debug_http_port_rx();
+        let _rx2 = rx.clone();
+    }
+
+    #[tokio::test]
+    async fn when_supervisor_created_then_debug_http_port_tx_sends_and_rx_sees_update() {
+        let sup = Supervisor::new(test_config());
+        let mut rx = sup.debug_http_port_rx();
+        sup.debug_http_port_tx.send(8080).unwrap();
+        rx.changed().await.unwrap();
+        assert_eq!(*rx.borrow(), 8080);
+    }
+
+    #[tokio::test]
     async fn when_supervisor_run_with_cancel_called_then_boots_all_managers_and_shuts_down_cleanly() {
         let cancel = CancellationToken::new();
         let c = cancel.clone();
