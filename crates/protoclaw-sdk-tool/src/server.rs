@@ -110,6 +110,7 @@ mod tests {
     use super::*;
     use async_trait::async_trait;
     use crate::error::ToolSdkError;
+    use rstest::rstest;
 
     struct EchoTool;
 
@@ -144,14 +145,14 @@ mod tests {
     }
 
     #[test]
-    fn tool_server_new_constructs_with_tools() {
+    fn when_tool_server_constructed_with_tools_then_tools_registered() {
         let tools: Vec<Box<dyn Tool>> = vec![Box::new(EchoTool)];
         let server = ToolServer::new(tools);
         assert_eq!(server.tools.len(), 1);
     }
 
     #[test]
-    fn tool_server_generates_correct_tool_list() {
+    fn when_tool_list_built_then_contains_all_registered_tools_with_metadata() {
         let tools: Vec<Box<dyn Tool>> = vec![Box::new(EchoTool), Box::new(FailTool)];
         let server = ToolServer::new(tools);
         let list = server.build_tool_list();
@@ -164,7 +165,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tool_server_dispatches_to_correct_tool() {
+    async fn when_known_tool_dispatched_then_returns_successful_result() {
         let tools: Vec<Box<dyn Tool>> = vec![Box::new(EchoTool)];
         let server = ToolServer::new(tools);
 
@@ -177,7 +178,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tool_server_returns_error_for_unknown_tool() {
+    async fn when_unknown_tool_dispatched_then_returns_invalid_params_error() {
         let tools: Vec<Box<dyn Tool>> = vec![Box::new(EchoTool)];
         let server = ToolServer::new(tools);
 
@@ -186,7 +187,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tool_server_returns_error_result_for_failing_tool() {
+    async fn when_tool_execute_returns_error_then_dispatch_returns_error_result() {
         let tools: Vec<Box<dyn Tool>> = vec![Box::new(FailTool)];
         let server = ToolServer::new(tools);
 
@@ -195,14 +196,14 @@ mod tests {
     }
 
     #[test]
-    fn tool_error_implements_std_error() {
+    fn when_tool_sdk_error_checked_then_implements_std_error() {
         let err = ToolSdkError::ExecutionFailed("test".into());
         let _: &dyn std::error::Error = &err;
         assert!(err.to_string().contains("test"));
     }
 
     #[test]
-    fn tool_trait_mock_compiles() {
+    fn when_tool_impl_created_then_name_description_and_schema_accessible() {
         let tool = EchoTool;
         assert_eq!(tool.name(), "echo");
         assert_eq!(tool.description(), "Echoes input back");
