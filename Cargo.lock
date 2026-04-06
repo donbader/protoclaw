@@ -2210,6 +2210,7 @@ name = "protoclaw-config"
 version = "0.1.0"
 dependencies = [
  "figment",
+ "rstest",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -2307,6 +2308,7 @@ dependencies = [
 name = "protoclaw-sdk-types"
 version = "0.1.0"
 dependencies = [
+ "rstest",
  "serde",
  "serde_json",
 ]
