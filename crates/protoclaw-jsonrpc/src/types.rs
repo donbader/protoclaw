@@ -77,9 +77,10 @@ impl JsonRpcResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     #[test]
-    fn request_serializes_with_jsonrpc_version() {
+    fn when_creating_request_then_jsonrpc_field_is_2_0() {
         let req = JsonRpcRequest::new("test_method", Some(serde_json::json!(1)), None);
         let json = serde_json::to_value(&req).unwrap();
         assert_eq!(json["jsonrpc"], "2.0");
@@ -88,14 +89,14 @@ mod tests {
     }
 
     #[test]
-    fn request_notification_omits_id() {
+    fn when_request_has_no_id_then_id_omitted_from_json() {
         let req = JsonRpcRequest::new("notify", None, None);
         let json = serde_json::to_value(&req).unwrap();
         assert!(json.get("id").is_none());
     }
 
     #[test]
-    fn request_is_notification_returns_true_when_id_none() {
+    fn when_id_is_none_then_is_notification_returns_true() {
         let req = JsonRpcRequest::new("notify", None, None);
         assert!(req.is_notification());
 
@@ -104,7 +105,7 @@ mod tests {
     }
 
     #[test]
-    fn response_with_result_omits_error() {
+    fn when_response_has_result_then_error_field_omitted() {
         let resp = JsonRpcResponse::success(Some(serde_json::json!(1)), serde_json::json!("ok"));
         let json = serde_json::to_value(&resp).unwrap();
         assert_eq!(json["jsonrpc"], "2.0");
@@ -113,7 +114,7 @@ mod tests {
     }
 
     #[test]
-    fn response_with_error_omits_result() {
+    fn when_response_has_error_then_result_field_omitted() {
         let err = JsonRpcError {
             code: -32600,
             message: "Invalid Request".to_string(),
@@ -127,7 +128,7 @@ mod tests {
     }
 
     #[test]
-    fn error_includes_code_message_optional_data() {
+    fn when_error_has_data_then_included_when_none_then_omitted() {
         let err = JsonRpcError {
             code: -32601,
             message: "Method not found".to_string(),
@@ -148,7 +149,7 @@ mod tests {
     }
 
     #[test]
-    fn message_deserializes_request() {
+    fn when_json_has_method_field_then_deserializes_as_request() {
         let json_str = r#"{"jsonrpc":"2.0","method":"test","id":1}"#;
         let msg: JsonRpcMessage = serde_json::from_str(json_str).unwrap();
         match msg {
@@ -161,7 +162,7 @@ mod tests {
     }
 
     #[test]
-    fn message_deserializes_response() {
+    fn when_json_has_result_field_then_deserializes_as_response() {
         let json_str = r#"{"jsonrpc":"2.0","id":1,"result":"hello"}"#;
         let msg: JsonRpcMessage = serde_json::from_str(json_str).unwrap();
         match msg {
@@ -173,7 +174,7 @@ mod tests {
     }
 
     #[test]
-    fn round_trip_request() {
+    fn when_request_serialized_then_deserializes_to_equal_value() {
         let req = JsonRpcRequest::new(
             "test_method",
             Some(serde_json::json!(42)),

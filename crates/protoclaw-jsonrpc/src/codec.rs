@@ -85,13 +85,14 @@ impl Encoder<serde_json::Value> for NdJsonCodec {
 mod tests {
     use super::*;
     use bytes::BufMut;
+    use rstest::rstest;
 
     fn codec() -> NdJsonCodec {
         NdJsonCodec::new()
     }
 
     #[test]
-    fn encode_appends_newline() {
+    fn when_encoding_value_then_output_ends_with_newline() {
         let mut codec = codec();
         let mut buf = BytesMut::new();
         let value = serde_json::json!({"method": "test"});
@@ -104,7 +105,7 @@ mod tests {
     }
 
     #[test]
-    fn encode_produces_compact_json() {
+    fn when_encoding_value_then_output_is_compact_json() {
         let mut codec = codec();
         let mut buf = BytesMut::new();
         let value = serde_json::json!({"key": "value", "num": 42});
@@ -120,7 +121,7 @@ mod tests {
     }
 
     #[test]
-    fn decode_complete_line() {
+    fn when_line_has_newline_then_decodes_json() {
         let mut codec = codec();
         let mut buf = BytesMut::from("{\"method\":\"test\"}\n");
         let result = codec.decode(&mut buf).unwrap();
@@ -129,7 +130,7 @@ mod tests {
     }
 
     #[test]
-    fn decode_no_newline_returns_none() {
+    fn when_line_has_no_newline_then_returns_none() {
         let mut codec = codec();
         let mut buf = BytesMut::from("{\"method\":\"test\"}");
         let result = codec.decode(&mut buf).unwrap();
@@ -140,7 +141,7 @@ mod tests {
     }
 
     #[test]
-    fn decode_empty_line_skipped() {
+    fn when_line_is_empty_then_skips_and_decodes_next() {
         let mut codec = codec();
         let mut buf = BytesMut::from("\n{\"method\":\"test\"}\n");
         let result = codec.decode(&mut buf).unwrap();
@@ -149,7 +150,7 @@ mod tests {
     }
 
     #[test]
-    fn decode_invalid_json_skipped() {
+    fn when_line_is_invalid_json_then_skips_and_decodes_next() {
         let mut codec = codec();
         let mut buf = BytesMut::from("not-json\n{\"method\":\"test\"}\n");
         let result = codec.decode(&mut buf).unwrap();
@@ -161,7 +162,7 @@ mod tests {
     }
 
     #[test]
-    fn decode_invalid_json_only_returns_none() {
+    fn when_only_invalid_json_present_then_returns_none() {
         let mut codec = codec();
         let mut buf = BytesMut::from("not-json\n");
         let result = codec.decode(&mut buf).unwrap();
@@ -173,7 +174,7 @@ mod tests {
     }
 
     #[test]
-    fn round_trip() {
+    fn when_encoding_then_decoding_then_value_unchanged() {
         let mut codec = codec();
         let mut buf = BytesMut::new();
         let value = serde_json::json!({"jsonrpc": "2.0", "method": "test", "id": 1});
@@ -183,7 +184,7 @@ mod tests {
     }
 
     #[test]
-    fn sequential_messages() {
+    fn when_encoding_multiple_messages_then_decodes_in_order() {
         let mut codec = codec();
         let mut buf = BytesMut::new();
         let msg1 = serde_json::json!({"id": 1});
@@ -202,7 +203,7 @@ mod tests {
     }
 
     #[test]
-    fn partial_byte_by_byte_feed() {
+    fn when_feeding_bytes_one_at_a_time_then_decodes_on_final_byte() {
         let mut codec = codec();
         let mut encode_buf = BytesMut::new();
         let value = serde_json::json!({"id": 1});
@@ -222,7 +223,7 @@ mod tests {
     }
 
     #[test]
-    fn multibyte_utf8_japanese() {
+    fn when_value_contains_multibyte_japanese_then_round_trips() {
         let mut codec = codec();
         let mut buf = BytesMut::new();
         let value = serde_json::json!({"text": "こんにちは"});
@@ -232,7 +233,7 @@ mod tests {
     }
 
     #[test]
-    fn multibyte_utf8_emoji() {
+    fn when_value_contains_emoji_then_round_trips() {
         let mut codec = codec();
         let mut buf = BytesMut::new();
         let value = serde_json::json!({"text": "Hello 🌍"});
@@ -242,7 +243,7 @@ mod tests {
     }
 
     #[test]
-    fn unicode_line_separator_in_string() {
+    fn when_json_contains_unicode_line_separator_then_does_not_split_line() {
         let mut codec = codec();
         let json_with_ls = "{\"text\":\"before\\u2028after\"}\n";
         let mut buf = BytesMut::from(json_with_ls);
@@ -256,7 +257,7 @@ mod tests {
     }
 
     #[test]
-    fn oversized_line_returns_error() {
+    fn when_line_exceeds_32mb_then_returns_error() {
         let mut codec = codec();
         let big_value = "x".repeat(33 * 1024 * 1024);
         let line = format!("{{\"data\":\"{big_value}\"}}\n");
@@ -266,7 +267,7 @@ mod tests {
     }
 
     #[test]
-    fn crlf_line_ending() {
+    fn when_line_ends_with_crlf_then_decodes_correctly() {
         let mut codec = codec();
         let mut buf = BytesMut::from("{\"method\":\"test\"}\r\n");
         let result = codec.decode(&mut buf).unwrap();

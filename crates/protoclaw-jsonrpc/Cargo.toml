@@ -11,3 +11,6 @@ serde_json.workspace = true
 thiserror.workspace = true
 bytes.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+rstest.workspace = true

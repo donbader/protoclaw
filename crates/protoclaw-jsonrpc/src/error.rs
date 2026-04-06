@@ -15,9 +15,10 @@ pub enum FramingError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     #[test]
-    fn framing_error_display_messages() {
+    fn when_framing_errors_created_then_display_matches_template() {
         let err = FramingError::InvalidHeader {
             reason: "bad format".to_string(),
         };
