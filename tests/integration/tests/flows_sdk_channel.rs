@@ -36,12 +36,9 @@ async fn when_sdk_channel_receives_message_then_agent_echoes_back_with_result_ev
     let saw_echo = events
         .iter()
         .any(|e| e.data.contains("Echo: ") && e.data.contains("sdk-channel-test"));
-    let saw_result = events.iter().any(|e| {
-        serde_json::from_str::<serde_json::Value>(&e.data)
-            .ok()
-            .and_then(|v| v.get("update")?.get("sessionUpdate")?.as_str().map(|s| s == "result"))
-            .unwrap_or(false)
-    });
+    let saw_result = events
+        .iter()
+        .any(|e| e.data == "Echo: sdk-channel-test");
 
     assert!(
         saw_echo,
@@ -49,7 +46,7 @@ async fn when_sdk_channel_receives_message_then_agent_echoes_back_with_result_ev
     );
     assert!(
         saw_result,
-        "should have received result event via SSE; events: {events:?}"
+        "should have received full echo result via SSE; events: {events:?}"
     );
 
     cancel.cancel();

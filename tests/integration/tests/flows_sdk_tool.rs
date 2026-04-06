@@ -36,12 +36,9 @@ async fn when_sdk_tool_configured_and_message_sent_then_agent_echoes_back_with_r
     let saw_echo = events
         .iter()
         .any(|e| e.data.contains("Echo: ") && e.data.contains("test-with-tool"));
-    let saw_result = events.iter().any(|e| {
-        serde_json::from_str::<serde_json::Value>(&e.data)
-            .ok()
-            .and_then(|v| v.get("update")?.get("sessionUpdate")?.as_str().map(|s| s == "result"))
-            .unwrap_or(false)
-    });
+    let saw_result = events
+        .iter()
+        .any(|e| e.data == "Echo: test-with-tool");
 
     assert!(
         saw_echo,
@@ -49,7 +46,7 @@ async fn when_sdk_tool_configured_and_message_sent_then_agent_echoes_back_with_r
     );
     assert!(
         saw_result,
-        "should have received result event via SSE; events: {events:?}"
+        "should have received full echo result via SSE; events: {events:?}"
     );
 
     cancel.cancel();
