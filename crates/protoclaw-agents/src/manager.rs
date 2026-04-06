@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
@@ -9,7 +10,7 @@ use crate::acp_types::{
     SessionUpdateEvent, SessionUpdateType,
 };
 use crate::slot::{find_slot_by_name, AgentSlot};
-use protoclaw_config::{AgentConfig, AgentsManagerConfig};
+use protoclaw_config::{AgentConfig, AgentsManagerConfig, WorkspaceConfig};
 use protoclaw_core::{constants, ChannelEvent, Manager, ManagerError, ManagerHandle, SessionKey};
 use protoclaw_sdk_agent::{AgentAdapter, GenericAcpAdapter};
 use protoclaw_sdk_types::PermissionOption;
@@ -661,6 +662,78 @@ impl AgentsManager {
             }
         }
     }
+
+    /// Remove any Docker containers left over from a previous (crashed) run.
+    ///
+    /// Scans all configured agents for Docker workspaces, connects to the matching
+    /// Docker daemon, and forcibly removes every container that carries the
+    /// `protoclaw.managed=true` label.  Errors are logged as warnings; this
+    /// method never propagates failures so that `start()` is not blocked by
+    /// stale-container cleanup.
+    async fn cleanup_stale_containers(&self) {
+        use bollard::container::{ListContainersOptions, RemoveContainerOptions, StopContainerOptions};
+
+        for (name, config) in &self.agent_configs {
+            let docker_config = match &config.workspace {
+                WorkspaceConfig::Docker(d) => d,
+                WorkspaceConfig::Local(_) => continue,
+            };
+
+            let docker = match &docker_config.docker_host {
+                Some(host) => bollard::Docker::connect_with_http(
+                    host,
+                    120,
+                    bollard::API_DEFAULT_VERSION,
+                ),
+                None => bollard::Docker::connect_with_local_defaults(),
+            };
+            let docker = match docker {
+                Ok(d) => d,
+                Err(e) => {
+                    tracing::warn!(agent = %name, error = %e, "cleanup: cannot connect to Docker daemon");
+                    continue;
+                }
+            };
+
+            let mut filters = HashMap::new();
+            filters.insert("label".to_string(), vec!["protoclaw.managed=true".to_string()]);
+            let opts = ListContainersOptions {
+                all: true,
+                filters,
+                ..Default::default()
+            };
+            let containers = match docker.list_containers(Some(opts)).await {
+                Ok(c) => c,
+                Err(e) => {
+                    tracing::warn!(agent = %name, error = %e, "cleanup: failed to list containers");
+                    continue;
+                }
+            };
+
+            for container in containers {
+                let id = match container.id {
+                    Some(ref id) => id.clone(),
+                    None => continue,
+                };
+                tracing::info!(container_id = %id, agent = %name, "cleanup: removing stale container");
+                if let Err(e) = docker
+                    .stop_container(&id, Some(StopContainerOptions { t: 5 }))
+                    .await
+                {
+                    tracing::warn!(container_id = %id, error = %e, "cleanup: stop failed, proceeding to remove");
+                }
+                if let Err(e) = docker
+                    .remove_container(
+                        &id,
+                        Some(RemoveContainerOptions { force: true, ..Default::default() }),
+                    )
+                    .await
+                {
+                    tracing::warn!(container_id = %id, error = %e, "cleanup: remove failed");
+                }
+            }
+        }
+    }
 }
 
 impl Manager for AgentsManager {
@@ -671,6 +744,8 @@ impl Manager for AgentsManager {
     }
 
     async fn start(&mut self) -> Result<(), ManagerError> {
+        self.cleanup_stale_containers().await;
+
         for (name, config) in self.agent_configs.iter() {
             if !config.enabled {
                 tracing::info!(agent = %name, "agent disabled, skipping");
