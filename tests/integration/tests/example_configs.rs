@@ -12,9 +12,10 @@
 
 use figment::Jail;
 use protoclaw_config::ProtoclawConfig;
+use rstest::rstest;
 
 #[test]
-fn example_01_config_parses() {
+fn given_example_01_yaml_when_loaded_via_figment_jail_then_config_parses() {
     Jail::expect_with(|jail| {
         jail.set_env("TELEGRAM_BOT_TOKEN", "test-token");
         jail.set_env("TELEGRAM_ENABLED", "false");
@@ -37,7 +38,7 @@ fn example_01_config_parses() {
 }
 
 #[test]
-fn example_02_config_parses() {
+fn given_example_02_yaml_when_loaded_via_figment_jail_then_config_parses() {
     Jail::expect_with(|jail| {
         jail.set_env("ANTHROPIC_API_KEY", "sk-test");
         jail.set_env("TELEGRAM_BOT_TOKEN", "test-token");
@@ -107,12 +108,12 @@ fn validate_docker_compose(example_name: &str) {
 
 #[test]
 #[ignore] // requires docker
-fn example_01_docker_compose_valid() {
+fn given_example_01_when_docker_compose_config_runs_then_syntax_is_valid() {
     validate_docker_compose("01-fake-agent-telegram-bot");
 }
 
 #[test]
 #[ignore] // requires docker
-fn example_02_docker_compose_valid() {
+fn given_example_02_when_docker_compose_config_runs_then_syntax_is_valid() {
     validate_docker_compose("02-real-agents-telegram-bot");
 }

@@ -1,3 +1,4 @@
+use rstest::rstest;
 use std::path::PathBuf;
 
 fn workspace_root() -> PathBuf {
@@ -8,7 +9,7 @@ fn workspace_root() -> PathBuf {
 }
 
 #[test]
-fn test_fake_agent_example_yaml_parses() {
+fn given_fake_agent_example_yaml_when_loaded_then_has_one_mock_agent() {
     let yaml_path = workspace_root().join("examples/01-fake-agent-telegram-bot/protoclaw.yaml");
     let config = protoclaw_config::ProtoclawConfig::load(Some(yaml_path.to_str().unwrap()))
         .unwrap_or_else(|e| panic!("failed to load protoclaw.yaml: {e}"));
@@ -28,7 +29,7 @@ fn test_fake_agent_example_yaml_parses() {
 }
 
 #[test]
-fn test_fake_agent_example_has_channels() {
+fn given_fake_agent_example_yaml_when_loaded_then_has_debug_http_and_telegram_channels() {
     let yaml_path = workspace_root().join("examples/01-fake-agent-telegram-bot/protoclaw.yaml");
     let config =
         protoclaw_config::ProtoclawConfig::load(Some(yaml_path.to_str().unwrap())).unwrap();
@@ -43,7 +44,7 @@ fn test_fake_agent_example_has_channels() {
 }
 
 #[test]
-fn test_real_agent_example_yaml_parses() {
+fn given_real_agent_example_yaml_when_loaded_then_has_opencode_and_claude_agents() {
     let yaml_path = workspace_root().join("examples/02-real-agents-telegram-bot/protoclaw.yaml");
     let config = protoclaw_config::ProtoclawConfig::load(Some(yaml_path.to_str().unwrap()))
         .unwrap_or_else(|e| panic!("failed to load protoclaw.yaml: {e}"));
@@ -77,7 +78,7 @@ fn test_real_agent_example_yaml_parses() {
 }
 
 #[test]
-fn test_real_agent_example_has_channels() {
+fn given_real_agent_example_yaml_when_loaded_then_has_two_channels_with_correct_routing() {
     let yaml_path = workspace_root().join("examples/02-real-agents-telegram-bot/protoclaw.yaml");
     let config =
         protoclaw_config::ProtoclawConfig::load(Some(yaml_path.to_str().unwrap())).unwrap();
