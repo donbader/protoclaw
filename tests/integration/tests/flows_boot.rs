@@ -1,7 +1,9 @@
 use protoclaw_integration_tests::{boot_supervisor_with_port, mock_agent_config, with_timeout};
+use rstest::rstest;
 
+#[rstest]
 #[test_log::test(tokio::test)]
-async fn flow_boot_and_shutdown() {
+async fn when_supervisor_boots_then_health_endpoint_responds_and_clean_shutdown() {
     let config = mock_agent_config();
     let (cancel, handle, port) = boot_supervisor_with_port(config).await;
 
