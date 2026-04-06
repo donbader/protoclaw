@@ -357,6 +357,53 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn when_channel_id_accessor_called_then_returns_configured_id() {
+        let config = cat_channel_config();
+        let channel_id = ChannelId::from("my-channel");
+        let mut conn = ChannelConnection::spawn(&config, channel_id).unwrap();
+        assert_eq!(conn.channel_id().as_ref(), "my-channel");
+        conn.kill().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn when_capabilities_not_set_then_accessor_returns_none() {
+        let config = cat_channel_config();
+        let channel_id = ChannelId::from("test");
+        let mut conn = ChannelConnection::spawn(&config, channel_id).unwrap();
+        assert!(conn.capabilities().is_none());
+        conn.kill().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn when_set_capabilities_called_then_accessor_returns_caps() {
+        let config = cat_channel_config();
+        let channel_id = ChannelId::from("test");
+        let mut conn = ChannelConnection::spawn(&config, channel_id).unwrap();
+
+        let caps = ChannelCapabilities {
+            streaming: true,
+            rich_text: false,
+        };
+        conn.set_capabilities(caps.clone());
+
+        let retrieved = conn.capabilities().expect("capabilities should be set");
+        assert_eq!(retrieved.streaming, true);
+        assert_eq!(retrieved.rich_text, false);
+        conn.kill().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn when_port_rx_called_then_returns_watch_receiver_with_initial_zero() {
+        let config = cat_channel_config();
+        let channel_id = ChannelId::from("test");
+        let mut conn = ChannelConnection::spawn(&config, channel_id).unwrap();
+
+        let port_rx = conn.port_rx();
+        assert_eq!(*port_rx.borrow(), 0u16);
+        conn.kill().await.unwrap();
+    }
+
+    #[tokio::test]
     async fn when_channel_sends_notification_then_recv_incoming_returns_it() {
         // cat echoes what we send. Send a notification-shaped JSON (method, no id).
         let config = cat_channel_config();
