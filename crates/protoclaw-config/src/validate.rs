@@ -510,4 +510,69 @@ mod tests {
             result.errors
         );
     }
+
+    #[rstest]
+    #[case::binary_not_on_path(
+        ValidationWarning::BinaryNotOnPath {
+            field: "agents-manager.agents.default.workspace.binary".into(),
+            binary: "mybin".into(),
+            found_at: "/opt/mybin".into(),
+        },
+        "agents-manager.agents.default.workspace.binary: binary 'mybin' found at /opt/mybin but not on PATH"
+    )]
+    fn when_validation_warning_displayed_then_message_matches_expected(
+        #[case] warning: ValidationWarning,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(warning.to_string(), expected);
+    }
+
+    #[rstest]
+    #[case::binary_not_found(
+        ValidationError::BinaryNotFound {
+            field: "agents-manager.agents.x.workspace.binary".into(),
+            binary: "missing".into(),
+        },
+        "agents-manager.agents.x.workspace.binary: binary 'missing' not found on PATH or as absolute path"
+    )]
+    #[case::working_dir_not_found(
+        ValidationError::WorkingDirNotFound { path: std::path::PathBuf::from("/no/such/dir") },
+        "agent.working_dir: directory '/no/such/dir' does not exist"
+    )]
+    #[case::invalid_memory_limit(
+        ValidationError::InvalidMemoryLimit {
+            field: "agents-manager.agents.x.workspace.memory_limit".into(),
+            value: "bad".into(),
+            reason: "unrecognised suffix".into(),
+        },
+        "agents-manager.agents.x.workspace.memory_limit: invalid memory limit 'bad': unrecognised suffix"
+    )]
+    #[case::invalid_cpu_limit(
+        ValidationError::InvalidCpuLimit {
+            field: "agents-manager.agents.x.workspace.cpu_limit".into(),
+            value: "notnum".into(),
+            reason: "not a float".into(),
+        },
+        "agents-manager.agents.x.workspace.cpu_limit: invalid cpu limit 'notnum': not a float"
+    )]
+    #[case::invalid_docker_host(
+        ValidationError::InvalidDockerHost {
+            field: "agents-manager.agents.x.workspace.docker_host".into(),
+            value: "http://bad".into(),
+        },
+        "agents-manager.agents.x.workspace.docker_host: invalid docker_host URI 'http://bad' (expected unix:// or tcp://)"
+    )]
+    #[case::invalid_volume_mount(
+        ValidationError::InvalidVolumeMount {
+            field: "agents-manager.agents.x.workspace.volumes".into(),
+            value: "nocolon".into(),
+        },
+        "agents-manager.agents.x.workspace.volumes: volume entry 'nocolon' missing ':' separator"
+    )]
+    fn when_validation_error_displayed_then_message_matches_expected(
+        #[case] error: ValidationError,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(error.to_string(), expected);
+    }
 }
