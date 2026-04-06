@@ -39,3 +39,51 @@ impl ProcessBackend for DockerBackend {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::rstest;
+
+    #[rstest]
+    fn when_docker_backend_is_alive_then_returns_false() {
+        let mut backend = DockerBackend;
+        assert!(!backend.is_alive());
+    }
+
+    #[rstest]
+    fn when_docker_backend_take_stdin_then_returns_none() {
+        let mut backend = DockerBackend;
+        assert!(backend.take_stdin().is_none());
+    }
+
+    #[rstest]
+    fn when_docker_backend_take_stdout_then_returns_none() {
+        let mut backend = DockerBackend;
+        assert!(backend.take_stdout().is_none());
+    }
+
+    #[rstest]
+    fn when_docker_backend_take_stderr_then_returns_none() {
+        let mut backend = DockerBackend;
+        assert!(backend.take_stderr().is_none());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_docker_backend_kill_then_returns_ok() {
+        let mut backend = DockerBackend;
+        let result = backend.kill().await;
+        assert!(result.is_ok());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_docker_backend_wait_then_returns_exit_status() {
+        let mut backend = DockerBackend;
+        let result = backend.wait().await;
+        assert!(result.is_ok());
+        let status = result.unwrap();
+        assert!(status.success());
+    }
+}
