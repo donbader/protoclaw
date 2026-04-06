@@ -81,6 +81,57 @@ Example binaries:
 - **Manager communication**: `tokio::sync::mpsc` channels via `ManagerHandle<C>`. No shared mutable state between managers.
 - **Config layering**: Defaults → YAML file → env vars (`PROTOCLAW_` prefix, `__` separator). Top-level fields: `log_level` (default "info"), `extensions_dir` (default "/usr/local/bin"). `@built-in/` binary prefix resolved against `extensions_dir` in supervisor before manager construction.
 - **Tracing**: Use `tracing` spans/events, not `println!` or `log` crate
+- **Test framework**: `rstest = "0.23"` is a `[dev-dependency]` in every workspace crate. Use `#[rstest]` for all new and migrated tests.
+- **BDD test naming**: Tests use `when_action_then_result` or `given_precondition_when_action_then_result` naming. No `test_` prefix. No `it_` prefix.
+- **Fixtures**: rstest fixtures are free functions named `given_*` that return a precondition value. Example: `fn given_empty_buffer() -> BytesMut { BytesMut::new() }`.
+- **Parameterised tests**: Use `#[case::label_name]` for named scenarios instead of anonymous `#[case]`. Example: `#[case::empty_input("")]`.
+- **Async unit tests**: `#[rstest] #[tokio::test]` — two separate attributes, tokio drives execution.
+- **Async integration tests**: `#[rstest] #[test_log::test(tokio::test)]` — three attributes; test_log captures tracing output on failure.
+
+**Test examples:**
+
+*Sync unit test with fixture:*
+```rust
+use rstest::{fixture, rstest};
+
+#[fixture]
+fn given_empty_buffer() -> BytesMut { BytesMut::new() }
+
+#[rstest]
+fn when_encoding_valid_json_then_output_ends_with_newline(
+    given_empty_buffer: BytesMut,
+) {
+    let mut codec = NdJsonCodec::new();
+    let mut buf = given_empty_buffer;
+    codec.encode(serde_json::json!({"k": "v"}), &mut buf).unwrap();
+    assert!(buf.ends_with(b"\n"));
+}
+```
+
+*Async unit test:*
+```rust
+#[rstest]
+#[tokio::test]
+async fn when_tool_called_with_valid_input_then_returns_ok() {
+    let tool = MyTool;
+    let result = tool.execute(serde_json::json!({})).await;
+    assert!(result.is_ok());
+}
+```
+
+*Parameterised test:*
+```rust
+#[rstest]
+#[case::empty_string("")]
+#[case::whitespace("   ")]
+#[case::newline_only("\n")]
+fn when_decoding_non_json_input_then_returns_none(#[case] input: &str) {
+    let mut codec = NdJsonCodec::new();
+    let mut buf = BytesMut::from(input);
+    assert!(codec.decode(&mut buf).unwrap().is_none());
+}
+```
+
 - **AGENTS.md maintenance**: When making code changes that affect module structure, public APIs, conventions, or anti-patterns documented in any AGENTS.md file, update the relevant AGENTS.md file(s) in the same commit. See "AGENTS.md Auto-Update Rule" below.
 
 ## Anti-Patterns (DO NOT)
