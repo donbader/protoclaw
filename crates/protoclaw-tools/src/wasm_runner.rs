@@ -156,6 +156,15 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn when_engine_accessor_called_then_returns_shared_engine() {
+        let runner = WasmToolRunner::new().unwrap();
+        let engine_ref = runner.engine();
+        assert!(Arc::strong_count(engine_ref) >= 2);
+        let cloned = engine_ref.clone();
+        assert!(Arc::ptr_eq(engine_ref, &cloned));
+    }
+
+    #[tokio::test]
     async fn when_echo_wasm_module_executed_then_output_matches_input() {
         let runner = WasmToolRunner::new().unwrap();
 
