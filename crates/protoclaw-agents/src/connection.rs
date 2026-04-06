@@ -4,14 +4,17 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use futures::StreamExt;
-use tokio::process::{Child, Command};
+use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::process::Command;
 use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio_util::codec::{FramedRead, FramedWrite};
 
 use protoclaw_config::{AgentConfig, WorkspaceConfig};
 use protoclaw_jsonrpc::NdJsonCodec;
 
+use crate::backend::ProcessBackend;
 use crate::error::AgentsError;
+use crate::local_backend::LocalBackend;
 use crate::manager::SlotIncoming;
 
 /// Messages received from the agent process (requests or notifications it initiates).
@@ -35,7 +38,7 @@ impl std::fmt::Debug for AgentConnection {
 }
 
 pub struct AgentConnection {
-    child: Child,
+    backend: Box<dyn ProcessBackend + Sync>,
     stdin_tx: mpsc::Sender<serde_json::Value>,
     incoming_rx: Option<mpsc::Receiver<IncomingMessage>>,
     pending_requests: Arc<Mutex<HashMap<u64, oneshot::Sender<serde_json::Value>>>>,
@@ -81,7 +84,7 @@ impl AgentConnection {
             .as_deref()
             .unwrap_or(Path::new("."));
 
-        let mut child = Command::new(&binary)
+        let child = Command::new(&binary)
             .args(&config.args)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
@@ -92,9 +95,14 @@ impl AgentConnection {
             .spawn()
             .map_err(|e| AgentsError::SpawnFailed(format!("{binary}: {e}")))?;
 
-        let stdin = child.stdin.take().expect("stdin was piped");
-        let stdout = child.stdout.take().expect("stdout was piped");
-        let stderr = child.stderr.take().expect("stderr was piped");
+        let mut backend: Box<dyn ProcessBackend + Sync> = Box::new(LocalBackend::new(child));
+
+        let stdin: Box<dyn AsyncWrite + Unpin + Send> =
+            backend.take_stdin().expect("stdin was piped");
+        let stdout: Box<dyn AsyncRead + Unpin + Send> =
+            backend.take_stdout().expect("stdout was piped");
+        let stderr: Box<dyn AsyncRead + Unpin + Send> =
+            backend.take_stderr().expect("stderr was piped");
 
         let pending_requests: Arc<Mutex<HashMap<u64, oneshot::Sender<serde_json::Value>>>> =
             Arc::new(Mutex::new(HashMap::new()));
@@ -180,7 +188,7 @@ impl AgentConnection {
         });
 
         Ok(Self {
-            child,
+            backend,
             stdin_tx,
             incoming_rx,
             pending_requests,
@@ -243,11 +251,11 @@ impl AgentConnection {
     }
 
     pub fn is_alive(&mut self) -> bool {
-        self.child.try_wait().ok().flatten().is_none()
+        self.backend.is_alive()
     }
 
     pub async fn kill(&mut self) -> Result<(), AgentsError> {
-        self.child.kill().await?;
+        self.backend.kill().await?;
         self.reader_handle.abort();
         self.writer_handle.abort();
         self.stderr_handle.abort();
@@ -255,7 +263,7 @@ impl AgentConnection {
     }
 
     pub async fn wait(&mut self) -> Result<std::process::ExitStatus, AgentsError> {
-        self.child.wait().await.map_err(AgentsError::Io)
+        self.backend.wait().await
     }
 }
 
@@ -362,5 +370,64 @@ mod tests {
 
         drop(pending);
         conn.kill().await.unwrap();
+    }
+
+    use std::future::Future;
+    use std::pin::Pin;
+
+    struct MockBackend {
+        alive: bool,
+    }
+
+    impl MockBackend {
+        fn new(alive: bool) -> Self {
+            Self { alive }
+        }
+    }
+
+    impl ProcessBackend for MockBackend {
+        fn is_alive(&mut self) -> bool {
+            self.alive
+        }
+        fn take_stdin(&mut self) -> Option<Box<dyn AsyncWrite + Unpin + Send>> {
+            None
+        }
+        fn take_stdout(&mut self) -> Option<Box<dyn AsyncRead + Unpin + Send>> {
+            None
+        }
+        fn take_stderr(&mut self) -> Option<Box<dyn AsyncRead + Unpin + Send>> {
+            None
+        }
+        fn kill(
+            &mut self,
+        ) -> Pin<Box<dyn Future<Output = Result<(), AgentsError>> + Send + '_>> {
+            self.alive = false;
+            Box::pin(async { Ok(()) })
+        }
+        fn wait(
+            &mut self,
+        ) -> Pin<
+            Box<dyn Future<Output = Result<std::process::ExitStatus, AgentsError>> + Send + '_>,
+        > {
+            Box::pin(async {
+                std::process::Command::new("true")
+                    .status()
+                    .map_err(AgentsError::Io)
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn mock_backend_is_alive() {
+        let mut backend = MockBackend::new(true);
+        assert!(backend.is_alive());
+        backend.kill().await.unwrap();
+        assert!(!backend.is_alive());
+    }
+
+    #[tokio::test]
+    async fn mock_backend_as_trait_object() {
+        let mut backend: Box<dyn ProcessBackend> = Box::new(MockBackend::new(true));
+        assert!(backend.is_alive());
     }
 }
