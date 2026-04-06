@@ -44,12 +44,7 @@ async fn given_agent_thinking_enabled_when_message_sent_then_thought_events_prec
 
     let result_position = events
         .iter()
-        .position(|e| {
-            serde_json::from_str::<serde_json::Value>(&e.data)
-                .ok()
-                .and_then(|v| v.get("update")?.get("sessionUpdate")?.as_str().map(|s| s == "result"))
-                .unwrap_or(false)
-        })
+        .position(|e| e.data == "Echo: think-test")
         .expect("should have received a result event via SSE");
 
     let last_thought = *thought_positions.last().unwrap();
