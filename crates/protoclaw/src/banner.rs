@@ -44,6 +44,7 @@ mod tests {
         LocalWorkspaceConfig, ProtoclawConfig, SupervisorConfig, ToolConfig, ToolsManagerConfig,
         WorkspaceConfig,
     };
+    use rstest::rstest;
     use std::collections::HashMap;
 
     fn make_config(
@@ -124,7 +125,8 @@ mod tests {
     }
 
     #[test]
-    fn banner_contains_agent_channel_tool_config() {
+    fn when_format_banner_called_with_full_config_then_contains_agent_channel_tool_and_config_path()
+    {
         let config = make_config(
             "opencode",
             vec![("debug-http", "protoclaw-debug-http")],
@@ -141,7 +143,7 @@ mod tests {
     }
 
     #[test]
-    fn banner_with_no_tools_shows_none_configured() {
+    fn given_no_tools_when_format_banner_called_then_shows_none_configured() {
         let config = make_config("opencode", vec![], vec![]);
         let output = format_banner(&config, "protoclaw.yaml");
         assert!(
@@ -151,7 +153,7 @@ mod tests {
     }
 
     #[test]
-    fn banner_starts_with_protoclaw_v() {
+    fn when_format_banner_called_then_output_starts_with_protoclaw_version() {
         let config = make_config("opencode", vec![], vec![]);
         let output = format_banner(&config, "protoclaw.yaml");
         assert!(

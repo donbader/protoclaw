@@ -73,10 +73,11 @@ pub async fn run_status(port: u16) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
     use serde_json::json;
 
     #[test]
-    fn format_status_with_connected_agent_and_components() {
+    fn when_format_status_called_with_connected_agent_then_shows_agent_channel_and_mcp() {
         let health = json!({
             "status": "ok",
             "agent": { "connected": true, "session_id": "abc" },
@@ -91,7 +92,7 @@ mod tests {
     }
 
     #[test]
-    fn format_status_disconnected_agent_shows_disconnected() {
+    fn given_disconnected_agent_when_format_status_called_then_shows_disconnected() {
         let health = json!({
             "status": "ok",
             "agent": { "connected": false },
@@ -103,7 +104,7 @@ mod tests {
     }
 
     #[test]
-    fn format_status_empty_channels_shows_none() {
+    fn given_empty_channels_when_format_status_called_then_shows_none() {
         let health = json!({
             "status": "ok",
             "agent": { "connected": false },
@@ -115,7 +116,7 @@ mod tests {
     }
 
     #[test]
-    fn format_status_empty_mcp_shows_none() {
+    fn given_empty_mcp_servers_when_format_status_called_then_shows_none() {
         let health = json!({
             "status": "ok",
             "agent": { "connected": false },
@@ -127,7 +128,7 @@ mod tests {
     }
 
     #[test]
-    fn format_status_multi_agent_mixed_connected() {
+    fn when_format_status_called_with_multiple_agents_then_shows_all_agents_and_session_counts() {
         let health = json!({
             "agents": [
                 { "name": "opencode", "connected": true, "session_count": 3 },
@@ -146,7 +147,7 @@ mod tests {
     }
 
     #[test]
-    fn format_status_multi_agent_empty_shows_none() {
+    fn given_empty_agents_array_when_format_status_called_then_shows_none() {
         let health = json!({
             "agents": [],
             "channels": [],
@@ -157,7 +158,7 @@ mod tests {
     }
 
     #[test]
-    fn format_status_legacy_single_agent_still_works() {
+    fn given_legacy_single_agent_format_when_format_status_called_then_still_renders_correctly() {
         let health = json!({
             "agent": { "connected": true, "session_id": "abc" },
             "channels": ["debug-http"],
@@ -169,7 +170,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn run_status_returns_err_when_unreachable() {
+    async fn when_run_status_called_with_unreachable_port_then_returns_error() {
         let result = run_status(19999).await;
         assert!(result.is_err(), "run_status with unreachable port should return Err");
     }

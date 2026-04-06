@@ -388,6 +388,7 @@ impl ManagerKind {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
     use std::sync::{Arc, Mutex};
 
     fn test_config() -> ProtoclawConfig {
@@ -437,7 +438,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn supervisor_boots_and_shuts_down() {
+    async fn when_supervisor_run_with_cancel_called_then_boots_all_managers_and_shuts_down_cleanly() {
         let cancel = CancellationToken::new();
         let c = cancel.clone();
         let boot_signal = Arc::new(tokio::sync::Notify::new());
@@ -454,7 +455,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn boot_order_is_tools_agents_channels() {
+    async fn when_boot_managers_called_then_slots_ordered_tools_agents_channels() {
         let log: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
         let cancel = CancellationToken::new();
 
@@ -484,7 +485,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn shutdown_order_is_channels_agents_tools() {
+    async fn when_shutdown_ordered_called_then_cancels_channels_then_agents_then_tools() {
         let cancel = CancellationToken::new();
         let shutdown_order: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
 
@@ -518,7 +519,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn shutdown_completes_within_timeout() {
+    async fn when_shutdown_ordered_called_with_timeout_then_completes_within_timeout() {
         let cancel = CancellationToken::new();
         let sup = Supervisor::new(test_config());
         let per_manager_timeout = Duration::from_secs(1);
@@ -546,7 +547,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn shutdown_aborts_on_timeout() {
+    async fn given_stuck_manager_when_shutdown_ordered_called_then_aborts_after_timeout() {
         let cancel = CancellationToken::new();
         let sup = Supervisor::new(test_config());
         let per_manager_timeout = Duration::from_millis(50);
@@ -571,7 +572,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn crash_triggers_restart() {
+    async fn given_crashed_manager_when_check_and_restart_called_then_manager_is_restarted() {
         let cancel = CancellationToken::new();
 
         let mut config = test_config();
@@ -605,7 +606,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn crash_loop_stops_restarting() {
+    async fn given_manager_in_crash_loop_when_check_and_restart_called_then_not_restarted() {
         let cancel = CancellationToken::new();
         let mut sup = Supervisor::new(test_config());
 
@@ -638,7 +639,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn cancellation_token_hierarchy_cascades() {
+    async fn when_root_cancellation_token_cancelled_then_all_child_tokens_cancelled() {
         let root = CancellationToken::new();
         let child1 = root.child_token();
         let child2 = root.child_token();
@@ -665,7 +666,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn supervisor_run_exits_on_cancel() {
+    async fn when_supervisor_run_with_cancel_signalled_after_boot_then_exits_cleanly_within_timeout() {
         let cancel = CancellationToken::new();
         let c = cancel.clone();
         let boot_signal = Arc::new(tokio::sync::Notify::new());
@@ -684,7 +685,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn restart_uses_exponential_backoff() {
+    async fn given_repeated_crashes_when_check_and_restart_called_then_backoff_increments() {
         let cancel = CancellationToken::new();
         let mut sup = Supervisor::new(test_config());
 

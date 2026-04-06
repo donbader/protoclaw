@@ -37,59 +37,60 @@ pub enum Commands {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     #[test]
-    fn bare_protoclaw_command_is_none() {
+    fn when_no_subcommand_given_then_command_is_none() {
         let cli = Cli::parse_from(["protoclaw"]);
         assert!(cli.command.is_none());
     }
 
     #[test]
-    fn run_subcommand_parses() {
+    fn when_run_subcommand_given_then_command_is_run() {
         let cli = Cli::parse_from(["protoclaw", "run"]);
         assert!(matches!(cli.command, Some(Commands::Run)));
     }
 
     #[test]
-    fn run_subcommand_with_config_flag() {
+    fn given_config_flag_when_run_subcommand_given_then_command_is_run_and_config_is_set() {
         let cli = Cli::parse_from(["protoclaw", "run", "--config", "custom.yaml"]);
         assert!(matches!(cli.command, Some(Commands::Run)));
         assert_eq!(cli.config, "custom.yaml");
     }
 
     #[test]
-    fn global_config_flag_with_no_subcommand() {
+    fn given_config_flag_when_no_subcommand_then_config_is_set_and_command_is_none() {
         let cli = Cli::parse_from(["protoclaw", "--config", "x.yaml"]);
         assert!(cli.command.is_none());
         assert_eq!(cli.config, "x.yaml");
     }
 
     #[test]
-    fn init_subcommand_defaults_force_false() {
+    fn when_init_subcommand_given_without_force_then_force_is_false() {
         let cli = Cli::parse_from(["protoclaw", "init"]);
         assert!(matches!(cli.command, Some(Commands::Init { force: false })));
     }
 
     #[test]
-    fn init_subcommand_with_force_flag() {
+    fn when_init_subcommand_given_with_force_flag_then_force_is_true() {
         let cli = Cli::parse_from(["protoclaw", "init", "--force"]);
         assert!(matches!(cli.command, Some(Commands::Init { force: true })));
     }
 
     #[test]
-    fn validate_subcommand_parses() {
+    fn when_validate_subcommand_given_then_command_is_validate() {
         let cli = Cli::parse_from(["protoclaw", "validate"]);
         assert!(matches!(cli.command, Some(Commands::Validate)));
     }
 
     #[test]
-    fn status_subcommand_defaults_port_3000() {
+    fn when_status_subcommand_given_without_port_then_port_defaults_to_3000() {
         let cli = Cli::parse_from(["protoclaw", "status"]);
         assert!(matches!(cli.command, Some(Commands::Status { port: 3000 })));
     }
 
     #[test]
-    fn status_subcommand_with_custom_port() {
+    fn when_status_subcommand_given_with_port_flag_then_port_is_set() {
         let cli = Cli::parse_from(["protoclaw", "status", "--port", "8080"]);
         assert!(matches!(cli.command, Some(Commands::Status { port: 8080 })));
     }

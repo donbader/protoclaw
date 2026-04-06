@@ -84,35 +84,36 @@ pub fn run_init(config_path: &str, force: bool) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     #[test]
-    fn generate_config_yaml_contains_binary() {
+    fn when_generate_config_yaml_called_then_contains_agent_binary() {
         let yaml = generate_config_yaml("opencode");
         assert!(yaml.contains(r#"binary: "opencode""#));
     }
 
     #[test]
-    fn generate_config_yaml_contains_comment_lines() {
+    fn when_generate_config_yaml_called_then_yaml_contains_comment_lines() {
         let yaml = generate_config_yaml("opencode");
         assert!(yaml.lines().any(|l| l.trim_start().starts_with('#')));
     }
 
     #[test]
-    fn generate_config_yaml_contains_required_sections() {
+    fn when_generate_config_yaml_called_then_contains_agents_manager_and_supervisor_sections() {
         let yaml = generate_config_yaml("opencode");
         assert!(yaml.contains("agents-manager:"));
         assert!(yaml.contains("supervisor:"));
     }
 
     #[test]
-    fn generate_config_yaml_round_trips_through_protoclaw_config() {
+    fn when_generate_config_yaml_called_then_yaml_deserializes_to_valid_protoclaw_config() {
         let yaml = generate_config_yaml("opencode");
         let result = serde_yaml::from_str::<protoclaw_config::ProtoclawConfig>(&yaml);
         assert!(result.is_ok(), "YAML failed to parse: {:?}", result.err());
     }
 
     #[test]
-    fn run_init_refuses_overwrite_without_force() {
+    fn given_existing_config_when_run_init_without_force_then_returns_error() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("protoclaw.yaml");
         std::fs::write(&path, "existing").unwrap();
@@ -125,7 +126,7 @@ mod tests {
     }
 
     #[test]
-    fn run_init_force_overwrites_existing_file() {
+    fn given_existing_config_when_run_init_with_force_then_succeeds() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("protoclaw.yaml");
         std::fs::write(&path, "existing").unwrap();
@@ -139,7 +140,7 @@ mod tests {
     }
 
     #[test]
-    fn run_init_creates_file_with_valid_yaml() {
+    fn given_no_existing_config_when_run_init_then_creates_file_with_valid_yaml() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("protoclaw.yaml");
         let path_str = path.to_str().unwrap();
