@@ -9,9 +9,10 @@ pub fn make_handle<C: Send + 'static>(buffer: usize) -> (ManagerHandle<C>, mpsc:
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     #[tokio::test]
-    async fn make_handle_sends_and_receives() {
+    async fn when_make_handle_called_then_messages_sent_via_handle_are_received_on_channel() {
         let (handle, mut rx) = make_handle::<String>(8);
         handle.send("hello".into()).await.unwrap();
         let msg = rx.recv().await.unwrap();

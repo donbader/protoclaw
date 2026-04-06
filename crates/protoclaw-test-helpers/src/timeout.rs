@@ -13,9 +13,10 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     #[tokio::test]
-    async fn with_timeout_completes_fast_future() {
+    async fn when_with_timeout_called_with_fast_future_then_returns_result() {
         let result = with_timeout(5, async { 42 }).await;
         assert_eq!(result, 42);
     }

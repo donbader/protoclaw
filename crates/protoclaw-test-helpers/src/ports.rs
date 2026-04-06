@@ -18,9 +18,10 @@ pub async fn wait_for_port(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     #[tokio::test]
-    async fn wait_for_port_returns_nonzero() {
+    async fn given_port_sent_after_delay_when_wait_for_port_called_then_returns_port() {
         let (tx, rx) = tokio::sync::watch::channel(0u16);
         tokio::spawn(async move {
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
@@ -31,7 +32,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn wait_for_port_returns_none_on_closed() {
+    async fn given_sender_dropped_when_wait_for_port_called_then_returns_none() {
         let (tx, rx) = tokio::sync::watch::channel(0u16);
         drop(tx);
         let port = wait_for_port(rx, 1000).await;

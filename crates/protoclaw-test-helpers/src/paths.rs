@@ -28,6 +28,7 @@ pub fn sdk_test_tool_path() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     #[test]
     fn mock_agent_path_ends_correctly() {

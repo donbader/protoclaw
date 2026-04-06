@@ -223,9 +223,10 @@ pub fn sdk_tool_config() -> protoclaw_config::ProtoclawConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     #[test]
-    fn mock_agent_config_has_agent_binary() {
+    fn when_mock_agent_config_called_then_default_agent_binary_contains_mock_agent() {
         let cfg = mock_agent_config();
         let agent = cfg
             .agents_manager
@@ -245,7 +246,7 @@ mod tests {
     }
 
     #[test]
-    fn mock_agent_config_has_debug_http_channel() {
+    fn when_mock_agent_config_called_then_debug_http_channel_binary_is_set() {
         let cfg = mock_agent_config();
         let ch = cfg
             .channels_manager
@@ -256,7 +257,8 @@ mod tests {
     }
 
     #[test]
-    fn mock_agent_config_with_options_inserts_values() {
+    fn given_options_map_when_mock_agent_config_with_options_called_then_options_present_on_agent()
+    {
         let mut opts = HashMap::new();
         opts.insert("exit_after".into(), serde_json::json!(1));
         let cfg = mock_agent_config_with_options(opts);
@@ -269,7 +271,7 @@ mod tests {
     }
 
     #[test]
-    fn sdk_channel_config_has_sdk_test_channel() {
+    fn when_sdk_channel_config_called_then_sdk_test_channel_is_enabled_and_uses_correct_binary() {
         let cfg = sdk_channel_config();
         let ch = cfg
             .channels_manager
@@ -286,13 +288,13 @@ mod tests {
     }
 
     #[test]
-    fn sdk_channel_config_has_debug_http() {
+    fn when_sdk_channel_config_called_then_debug_http_channel_is_present() {
         let cfg = sdk_channel_config();
         assert!(cfg.channels_manager.channels.contains_key("debug-http"));
     }
 
     #[test]
-    fn sdk_tool_config_has_echo_tool() {
+    fn when_sdk_tool_config_called_then_echo_tool_is_mcp_type_with_correct_binary() {
         let cfg = sdk_tool_config();
         let tool = cfg.tools_manager.tools.get("echo").expect("echo tool");
         assert_eq!(tool.tool_type, "mcp");
@@ -302,7 +304,7 @@ mod tests {
     }
 
     #[test]
-    fn sdk_tool_config_agent_has_echo_tool() {
+    fn when_sdk_tool_config_called_then_default_agent_has_echo_in_tools_list() {
         let cfg = sdk_tool_config();
         let agent = cfg
             .agents_manager
