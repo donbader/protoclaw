@@ -12,6 +12,7 @@ use protoclaw_config::{AgentConfig, WorkspaceConfig};
 use protoclaw_jsonrpc::NdJsonCodec;
 
 use crate::error::AgentsError;
+use crate::manager::SlotIncoming;
 
 /// Messages received from the agent process (requests or notifications it initiates).
 #[derive(Debug)]
@@ -46,6 +47,23 @@ pub struct AgentConnection {
 
 impl AgentConnection {
     pub fn spawn(config: &AgentConfig, name: &str) -> Result<Self, AgentsError> {
+        Self::spawn_inner(config, name, None)
+    }
+
+    pub(crate) fn spawn_with_bridge(
+        config: &AgentConfig,
+        name: &str,
+        slot_idx: usize,
+        bridge_tx: mpsc::Sender<SlotIncoming>,
+    ) -> Result<Self, AgentsError> {
+        Self::spawn_inner(config, name, Some((slot_idx, bridge_tx)))
+    }
+
+    fn spawn_inner(
+        config: &AgentConfig,
+        name: &str,
+        bridge: Option<(usize, mpsc::Sender<SlotIncoming>)>,
+    ) -> Result<Self, AgentsError> {
         let (binary, env, working_dir) = match &config.workspace {
             WorkspaceConfig::Local(local) => (
                 local.binary.clone(),
@@ -83,7 +101,13 @@ impl AgentConnection {
         let next_id = Arc::new(AtomicU64::new(1));
 
         let (stdin_tx, mut stdin_rx) = mpsc::channel::<serde_json::Value>(64);
-        let (incoming_tx, incoming_rx) = mpsc::channel::<IncomingMessage>(64);
+
+        let (local_incoming_tx, incoming_rx) = if bridge.is_none() {
+            let (tx, rx) = mpsc::channel::<IncomingMessage>(64);
+            (Some(tx), Some(rx))
+        } else {
+            (None, None)
+        };
 
         let writer_handle = tokio::spawn(async move {
             use futures::SinkExt;
@@ -122,11 +146,25 @@ impl AgentConnection {
                             .unwrap_or(serde_json::Value::Null);
                         let _ = tx.send(result);
                     }
-                } else if has_method && has_id {
-                    let _ = incoming_tx.send(IncomingMessage::AgentRequest(value)).await;
                 } else if has_method {
-                    let _ = incoming_tx.send(IncomingMessage::AgentNotification(value)).await;
+                    let msg = if has_id {
+                        IncomingMessage::AgentRequest(value)
+                    } else {
+                        IncomingMessage::AgentNotification(value)
+                    };
+                    if let Some((slot_idx, ref bridge_tx)) = bridge {
+                        if bridge_tx.send(SlotIncoming { slot_idx, msg: Some(msg) }).await.is_err() {
+                            break;
+                        }
+                    } else if let Some(ref local_tx) = local_incoming_tx {
+                        if local_tx.send(msg).await.is_err() {
+                            break;
+                        }
+                    }
                 }
+            }
+            if let Some((slot_idx, ref bridge_tx)) = bridge {
+                let _ = bridge_tx.send(SlotIncoming { slot_idx, msg: None }).await;
             }
         });
 
@@ -144,7 +182,7 @@ impl AgentConnection {
         Ok(Self {
             child,
             stdin_tx,
-            incoming_rx: Some(incoming_rx),
+            incoming_rx,
             pending_requests,
             next_id,
             reader_handle,

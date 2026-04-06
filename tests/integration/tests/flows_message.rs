@@ -50,12 +50,7 @@ async fn flow_message_echo_via_sse() {
     let saw_echo = events
         .iter()
         .any(|e| e.data.contains("Echo: ") && e.data.contains("ping"));
-    let saw_result = events.iter().any(|e| {
-        serde_json::from_str::<serde_json::Value>(&e.data)
-            .ok()
-            .and_then(|v| v.get("update")?.get("sessionUpdate")?.as_str().map(|s| s == "result"))
-            .unwrap_or(false)
-    });
+    let saw_result = events.iter().any(|e| e.data == "Echo: ping");
     assert!(saw_echo, "should have received echo chunk via SSE");
     assert!(saw_result, "should have received result via SSE");
 

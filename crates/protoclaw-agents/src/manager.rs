@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
@@ -69,9 +70,13 @@ pub enum AgentsCommand {
     },
 }
 
-struct SlotIncoming {
-    slot_idx: usize,
-    msg: Option<IncomingMessage>,
+pub(crate) struct SlotIncoming {
+    pub(crate) slot_idx: usize,
+    pub(crate) msg: Option<IncomingMessage>,
+}
+
+struct PromptCompletion {
+    session_key: SessionKey,
 }
 
 pub struct AgentsManager {
@@ -86,6 +91,9 @@ pub struct AgentsManager {
     parent_cancel: CancellationToken,
     incoming_tx: mpsc::Sender<SlotIncoming>,
     incoming_rx: Option<mpsc::Receiver<SlotIncoming>>,
+    completion_tx: mpsc::Sender<PromptCompletion>,
+    completion_rx: Option<mpsc::Receiver<PromptCompletion>>,
+    streaming_completed: HashSet<SessionKey>,
     update_seq: AtomicU64,
 }
 
@@ -94,6 +102,7 @@ impl AgentsManager {
         let configs: Vec<(String, AgentConfig)> = agents_manager_config.agents.clone().into_iter().collect();
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::channel(constants::CMD_CHANNEL_CAPACITY);
         let (incoming_tx, incoming_rx) = mpsc::channel::<SlotIncoming>(constants::EVENT_CHANNEL_CAPACITY);
+        let (completion_tx, completion_rx) = mpsc::channel::<PromptCompletion>(constants::CMD_CHANNEL_CAPACITY);
         Self {
             agent_configs: configs,
             manager_config: agents_manager_config,
@@ -106,6 +115,9 @@ impl AgentsManager {
             parent_cancel: CancellationToken::new(),
             incoming_tx,
             incoming_rx: Some(incoming_rx),
+            completion_tx,
+            completion_rx: Some(completion_rx),
+            streaming_completed: HashSet::new(),
             update_seq: AtomicU64::new(0),
         }
     }
@@ -122,19 +134,6 @@ impl AgentsManager {
 
     pub fn command_sender(&self) -> tokio::sync::mpsc::Sender<AgentsCommand> {
         self.cmd_tx.clone()
-    }
-
-    fn spawn_incoming_bridge(&self, slot_idx: usize, conn: &mut AgentConnection) {
-        let mut rx = conn.take_incoming_rx();
-        let tx = self.incoming_tx.clone();
-        tokio::spawn(async move {
-            while let Some(msg) = rx.recv().await {
-                if tx.send(SlotIncoming { slot_idx, msg: Some(msg) }).await.is_err() {
-                    break;
-                }
-            }
-            let _ = tx.send(SlotIncoming { slot_idx, msg: None }).await;
-        });
     }
 
     /// Resolve ACP timeout for a specific agent, falling back to manager default.
@@ -359,28 +358,14 @@ impl AgentsManager {
 
         let response_rx = conn.send_request("session/prompt", params).await?;
 
-        // Spawn a task to await the JSON-RPC response and synthesize a result event.
-        // The agent signals completion via the JSON-RPC response (stopReason: "end_turn"),
-        // NOT via a session/update notification. Without this, mark_idle() never fires.
-        if let Some(sender) = &self.channels_sender {
-            let sender = sender.clone();
+        {
+            let completion_tx = self.completion_tx.clone();
             let sk = session_key.clone();
-            let sid = acp_session_id.clone();
             tokio::spawn(async move {
                 match response_rx.await {
-                    Ok(response) => {
-                        let result_content = serde_json::json!({
-                            "sessionId": sid,
-                            "update": {
-                                "sessionUpdate": "result",
-                                "stopReason": response.get("stopReason")
-                                    .and_then(|s| s.as_str())
-                                    .unwrap_or("end_turn"),
-                            }
-                        });
-                        let _ = sender.send(ChannelEvent::DeliverMessage {
+                    Ok(_response) => {
+                        let _ = completion_tx.send(PromptCompletion {
                             session_key: sk,
-                            content: result_content,
                         }).await;
                     }
                     Err(_) => {
@@ -419,12 +404,24 @@ impl AgentsManager {
                     };
                     tracing::debug!(agent = %self.slots[slot_idx].name(), session_id = %event.session_id, update_type, seq, "session update routed");
 
+                    // Don't forward user_message_chunk to channels — it's the agent echoing
+                    // back the user's own message, which channels already have.
+                    if matches!(event.update, SessionUpdateType::UserMessageChunk { .. }) {
+                        return;
+                    }
+
+                    let is_result = matches!(event.update, SessionUpdateType::Result { .. });
+
                     if let Some(session_key) = self.slots[slot_idx].reverse_map.get(&event.session_id).cloned() {
                         if let Some(sender) = &self.channels_sender {
                             let _ = sender.send(ChannelEvent::DeliverMessage {
-                                session_key,
+                                session_key: session_key.clone(),
                                 content: params,
                             }).await;
+
+                            if is_result {
+                                self.streaming_completed.insert(session_key);
+                            }
                         }
                     }
                     }
@@ -536,6 +533,49 @@ impl AgentsManager {
         }
     }
 
+    async fn handle_prompt_completion(
+        &mut self,
+        completion: PromptCompletion,
+        incoming_rx: &mut mpsc::Receiver<SlotIncoming>,
+    ) {
+        // Drain any pending streaming events before sending SessionComplete.
+        // The RPC response arrives after all streaming events on the agent's stdout,
+        // but select! can pick completion_rx before incoming_rx is fully drained.
+        while let Ok(slot_msg) = incoming_rx.try_recv() {
+            match slot_msg.msg {
+                Some(incoming_msg) => self.handle_incoming(slot_msg.slot_idx, incoming_msg).await,
+                None => {
+                    self.handle_crash(slot_msg.slot_idx).await;
+                }
+            }
+        }
+
+        let already_got_result = self.streaming_completed.remove(&completion.session_key);
+
+        if let Some(sender) = &self.channels_sender {
+            if !already_got_result {
+                let acp_session_id = self.slots.iter()
+                    .find_map(|slot| slot.session_map.get(&completion.session_key).cloned())
+                    .unwrap_or_default();
+
+                let synthetic_result = serde_json::json!({
+                    "sessionId": acp_session_id,
+                    "update": {
+                        "sessionUpdate": "result",
+                    }
+                });
+                let _ = sender.send(ChannelEvent::DeliverMessage {
+                    session_key: completion.session_key.clone(),
+                    content: synthetic_result,
+                }).await;
+            }
+
+            let _ = sender.send(ChannelEvent::SessionComplete {
+                session_key: completion.session_key,
+            }).await;
+        }
+    }
+
     async fn shutdown_all(&mut self) {
         for slot in &mut self.slots {
             if let Some(conn) = &slot.connection {
@@ -561,18 +601,8 @@ impl AgentsManager {
         tracing::info!(agent = %agent_name, delay_ms = delay.as_millis(), "waiting before restart");
         tokio::time::sleep(delay).await;
 
-        match AgentConnection::spawn(&slot.config, &agent_name) {
-            Ok(mut conn) => {
-                let mut rx = conn.take_incoming_rx();
-                let tx = self.incoming_tx.clone();
-                tokio::spawn(async move {
-                    while let Some(msg) = rx.recv().await {
-                        if tx.send(SlotIncoming { slot_idx, msg: Some(msg) }).await.is_err() {
-                            break;
-                        }
-                    }
-                    let _ = tx.send(SlotIncoming { slot_idx, msg: None }).await;
-                });
+        match AgentConnection::spawn_with_bridge(&slot.config, &agent_name, slot_idx, self.incoming_tx.clone()) {
+            Ok(conn) => {
                 slot.connection = Some(conn);
             }
             Err(e) => {
@@ -649,10 +679,9 @@ impl Manager for AgentsManager {
 
             let mut slot = AgentSlot::new(name.clone(), config.clone(), &self.parent_cancel);
 
-            let mut conn = AgentConnection::spawn(config, name)
+            let conn = AgentConnection::spawn_with_bridge(config, name, self.slots.len(), self.incoming_tx.clone())
                 .map_err(|e| ManagerError::Internal(format!("{name}: {e}")))?;
 
-            self.spawn_incoming_bridge(self.slots.len(), &mut conn);
             slot.connection = Some(conn);
 
             let acp_timeout = Self::acp_timeout_for(config, &self.manager_config);
@@ -684,6 +713,7 @@ impl Manager for AgentsManager {
     async fn run(mut self, cancel: CancellationToken) -> Result<(), ManagerError> {
         let mut cmd_rx = self.cmd_rx.take().expect("cmd_rx must exist");
         let mut incoming_rx = self.incoming_rx.take().expect("incoming_rx must exist");
+        let mut completion_rx = self.completion_rx.take().expect("completion_rx must exist");
 
         tracing::info!(manager = self.name(), "manager running");
 
@@ -706,6 +736,9 @@ impl Manager for AgentsManager {
                             self.handle_crash(slot_msg.slot_idx).await;
                         }
                     }
+                }
+                Some(completion) = completion_rx.recv() => {
+                    self.handle_prompt_completion(completion, &mut incoming_rx).await;
                 }
             }
         }
@@ -917,6 +950,181 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn streaming_result_sends_deliver_and_sets_flag() {
+        // When handle_incoming processes a Result, it sends DeliverMessage
+        // but NOT SessionComplete. It sets streaming_completed so
+        // handle_prompt_completion knows to skip the synthetic result.
+        let (handle, _rx) = make_tools_handle();
+        let mut m = AgentsManager::new(mock_agents_manager_config_with(HashMap::new()), handle);
+
+        let (channels_tx, mut channels_rx) = mpsc::channel::<ChannelEvent>(16);
+        m.channels_sender = Some(channels_tx);
+
+        let cancel = CancellationToken::new();
+        let mut slot = AgentSlot::new("test-agent".into(), mock_agent_config(), &cancel);
+        let session_key = SessionKey::new("debug-http", "local", "dev");
+        let acp_session_id = "acp-sess-1".to_string();
+        slot.session_map.insert(session_key.clone(), acp_session_id.clone());
+        slot.reverse_map.insert(acp_session_id.clone(), session_key.clone());
+        m.slots.push(slot);
+
+        let result_notification = IncomingMessage::AgentNotification(serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "session/update",
+            "params": {
+                "sessionId": acp_session_id,
+                "update": {
+                    "sessionUpdate": "result",
+                    "content": "Echo: hello"
+                }
+            }
+        }));
+
+        m.handle_incoming(0, result_notification).await;
+
+        let mut got_deliver = false;
+        let mut got_complete = false;
+        while let Ok(event) = channels_rx.try_recv() {
+            match event {
+                ChannelEvent::DeliverMessage { .. } => got_deliver = true,
+                ChannelEvent::SessionComplete { .. } => got_complete = true,
+                _ => {}
+            }
+        }
+        assert!(got_deliver, "must send DeliverMessage for result content");
+        assert!(!got_complete, "streaming path must NOT send SessionComplete");
+        assert!(m.streaming_completed.contains(&session_key), "must set streaming_completed flag");
+    }
+
+    #[tokio::test]
+    async fn message_chunk_does_not_send_session_complete() {
+        // Non-result updates (message chunks, thought chunks) must NOT send SessionComplete.
+        let (handle, _rx) = make_tools_handle();
+        let mut m = AgentsManager::new(mock_agents_manager_config_with(HashMap::new()), handle);
+
+        let (channels_tx, mut channels_rx) = mpsc::channel::<ChannelEvent>(16);
+        m.channels_sender = Some(channels_tx);
+
+        let cancel = CancellationToken::new();
+        let mut slot = AgentSlot::new("test-agent".into(), mock_agent_config(), &cancel);
+        let session_key = SessionKey::new("debug-http", "local", "dev");
+        let acp_session_id = "acp-sess-1".to_string();
+        slot.session_map.insert(session_key.clone(), acp_session_id.clone());
+        slot.reverse_map.insert(acp_session_id.clone(), session_key.clone());
+        m.slots.push(slot);
+
+        let chunk_notification = IncomingMessage::AgentNotification(serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "session/update",
+            "params": {
+                "sessionId": acp_session_id,
+                "update": {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": "partial response"
+                }
+            }
+        }));
+
+        m.handle_incoming(0, chunk_notification).await;
+
+        while let Ok(event) = channels_rx.try_recv() {
+            assert!(
+                !matches!(event, ChannelEvent::SessionComplete { .. }),
+                "message chunk must NOT trigger SessionComplete"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn prompt_completion_sends_synthetic_result_when_no_streaming_result() {
+        // When handle_prompt_completion fires and streaming did NOT send a result,
+        // it must send a synthetic DeliverMessage with sessionUpdate "result"
+        // BEFORE SessionComplete.
+        let (handle, _rx) = make_tools_handle();
+        let mut m = AgentsManager::new(mock_agents_manager_config_with(HashMap::new()), handle);
+
+        let (channels_tx, mut channels_rx) = mpsc::channel::<ChannelEvent>(16);
+        m.channels_sender = Some(channels_tx);
+
+        let cancel = CancellationToken::new();
+        let mut slot = AgentSlot::new("test-agent".into(), mock_agent_config(), &cancel);
+        let session_key = SessionKey::new("telegram", "direct", "user1");
+        let acp_session_id = "acp-sess-1".to_string();
+        slot.session_map.insert(session_key.clone(), acp_session_id.clone());
+        slot.reverse_map.insert(acp_session_id.clone(), session_key.clone());
+        m.slots.push(slot);
+
+        let (_incoming_tx, mut incoming_rx) = mpsc::channel::<SlotIncoming>(16);
+
+        let completion = PromptCompletion {
+            session_key: session_key.clone(),
+        };
+        m.handle_prompt_completion(completion, &mut incoming_rx).await;
+
+        let mut events = Vec::new();
+        while let Ok(event) = channels_rx.try_recv() {
+            events.push(event);
+        }
+
+        assert!(events.len() >= 2, "expected DeliverMessage + SessionComplete, got {} events", events.len());
+
+        match &events[0] {
+            ChannelEvent::DeliverMessage { session_key: sk, content } => {
+                assert_eq!(sk, &session_key);
+                let update_type = content.get("update")
+                    .and_then(|u| u.get("sessionUpdate"))
+                    .and_then(|t| t.as_str());
+                assert_eq!(update_type, Some("result"), "synthetic DeliverMessage must have sessionUpdate: result");
+            }
+            other => panic!("expected DeliverMessage as first event, got {:?}", other),
+        }
+
+        assert!(
+            matches!(&events[1], ChannelEvent::SessionComplete { session_key: sk } if sk == &session_key),
+            "expected SessionComplete as second event"
+        );
+    }
+
+    #[tokio::test]
+    async fn prompt_completion_skips_synthetic_result_when_streaming_sent_it() {
+        // When streaming already sent the result, handle_prompt_completion
+        // must only send SessionComplete (no duplicate result DeliverMessage).
+        let (handle, _rx) = make_tools_handle();
+        let mut m = AgentsManager::new(mock_agents_manager_config_with(HashMap::new()), handle);
+
+        let (channels_tx, mut channels_rx) = mpsc::channel::<ChannelEvent>(16);
+        m.channels_sender = Some(channels_tx);
+
+        let cancel = CancellationToken::new();
+        let mut slot = AgentSlot::new("test-agent".into(), mock_agent_config(), &cancel);
+        let session_key = SessionKey::new("telegram", "direct", "user1");
+        let acp_session_id = "acp-sess-1".to_string();
+        slot.session_map.insert(session_key.clone(), acp_session_id.clone());
+        slot.reverse_map.insert(acp_session_id.clone(), session_key.clone());
+        m.slots.push(slot);
+
+        m.streaming_completed.insert(session_key.clone());
+
+        let (_incoming_tx, mut incoming_rx) = mpsc::channel::<SlotIncoming>(16);
+        let completion = PromptCompletion {
+            session_key: session_key.clone(),
+        };
+        m.handle_prompt_completion(completion, &mut incoming_rx).await;
+
+        let mut events = Vec::new();
+        while let Ok(event) = channels_rx.try_recv() {
+            events.push(event);
+        }
+
+        assert_eq!(events.len(), 1, "expected only SessionComplete, got {} events", events.len());
+        assert!(
+            matches!(&events[0], ChannelEvent::SessionComplete { session_key: sk } if sk == &session_key),
+            "expected SessionComplete only"
+        );
+        assert!(!m.streaming_completed.contains(&session_key), "flag must be cleared");
+    }
+
+    #[tokio::test]
     async fn start_skips_disabled_agents() {
         let mut config = mock_agent_config();
         config.enabled = false;
@@ -926,6 +1134,68 @@ mod tests {
         let result = m.start().await;
         assert!(result.is_ok());
         assert!(m.slots.is_empty(), "disabled agent should not create a slot");
+    }
+
+    #[tokio::test]
+    async fn prompt_completion_drains_pending_streaming_events() {
+        // When completion fires with pending streaming events in incoming_rx,
+        // all events must be forwarded as DeliverMessage BEFORE SessionComplete.
+        let (handle, _rx) = make_tools_handle();
+        let mut m = AgentsManager::new(mock_agents_manager_config_with(HashMap::new()), handle);
+
+        let (channels_tx, mut channels_rx) = mpsc::channel::<ChannelEvent>(16);
+        m.channels_sender = Some(channels_tx);
+
+        let cancel = CancellationToken::new();
+        let mut slot = AgentSlot::new("test-agent".into(), mock_agent_config(), &cancel);
+        let session_key = SessionKey::new("telegram", "direct", "user1");
+        let acp_session_id = "acp-sess-1".to_string();
+        slot.session_map.insert(session_key.clone(), acp_session_id.clone());
+        slot.reverse_map.insert(acp_session_id.clone(), session_key.clone());
+        m.slots.push(slot);
+
+        let (incoming_tx, mut incoming_rx) = mpsc::channel::<SlotIncoming>(16);
+
+        // Pre-populate incoming_rx with streaming events (simulating bridge lag)
+        let chunk1 = IncomingMessage::AgentNotification(serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "session/update",
+            "params": {
+                "sessionId": acp_session_id,
+                "update": { "sessionUpdate": "agent_message_chunk", "content": { "text": "hello", "type": "text" }, "messageId": "msg-1" }
+            }
+        }));
+        let result_event = IncomingMessage::AgentNotification(serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "session/update",
+            "params": {
+                "sessionId": acp_session_id,
+                "update": { "sessionUpdate": "result" }
+            }
+        }));
+        incoming_tx.send(SlotIncoming { slot_idx: 0, msg: Some(chunk1) }).await.unwrap();
+        incoming_tx.send(SlotIncoming { slot_idx: 0, msg: Some(result_event) }).await.unwrap();
+
+        let completion = PromptCompletion { session_key: session_key.clone() };
+        m.handle_prompt_completion(completion, &mut incoming_rx).await;
+
+        let mut events = Vec::new();
+        while let Ok(event) = channels_rx.try_recv() {
+            events.push(event);
+        }
+
+        // chunk DeliverMessage + result DeliverMessage + SessionComplete = 3 events
+        assert!(events.len() >= 3, "expected chunk + result + SessionComplete, got {} events", events.len());
+
+        let deliver_count = events.iter().filter(|e| matches!(e, ChannelEvent::DeliverMessage { .. })).count();
+        assert!(deliver_count >= 2, "expected at least 2 DeliverMessages (chunk + result), got {deliver_count}");
+
+        assert!(
+            matches!(events.last(), Some(ChannelEvent::SessionComplete { .. })),
+            "SessionComplete must be the LAST event"
+        );
+
+        assert!(!m.streaming_completed.contains(&session_key), "flag must be cleared");
     }
 
     #[tokio::test]

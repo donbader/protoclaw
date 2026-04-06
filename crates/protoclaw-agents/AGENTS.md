@@ -7,7 +7,7 @@ Manages the agent subprocess lifecycle and implements the ACP (Agent Client Prot
 | File | Purpose |
 |------|---------|
 | `manager.rs` | `AgentsManager` — session lifecycle, command handling, crash recovery |
-| `connection.rs` | `AgentConnection` — subprocess spawn, JSON-RPC framing over piped stdio |
+| `connection.rs` | `AgentConnection` — subprocess spawn, JSON-RPC framing over piped stdio, direct bridge to manager |
 | `acp_types.rs` | ACP wire types: `InitializeParams`, `SessionNewParams`, `SessionPromptParams`, etc. |
 | `acp_error.rs` | `AcpError` — protocol-level errors (version mismatch, etc.) |
 | `error.rs` | `AgentsError` — manager-level errors (spawn, timeout, connection) |
@@ -43,8 +43,28 @@ Manages the agent subprocess lifecycle and implements the ACP (Agent Client Prot
 5. If restore fails → start fresh session
 6. Reset backoff on success
 
+## Completion Signal Flow
+
+When an agent finishes processing a prompt, two signals arrive:
+
+1. **Streaming Result** (`session/update` with `sessionUpdate: "result"`) — arrives via `incoming_rx` → `handle_incoming()`. Sends `DeliverMessage` (content) to channels and sets `streaming_completed` flag. Does NOT send `SessionComplete`.
+
+2. **RPC Response** (JSON-RPC response to `session/prompt`) — arrives via `completion_rx` → `handle_prompt_completion()`. This is the **sole sender** of `SessionComplete`. Before sending, it drains `incoming_rx` to ensure all streaming events are forwarded first (the `select!` loop can pick `completion_rx` before `incoming_rx` is fully drained). If `streaming_completed` is set, skips the synthetic result `DeliverMessage`. If not set (agent didn't emit streaming Result), sends a synthetic result `DeliverMessage` before `SessionComplete`.
+
+## Connection Architecture (Bridge Collapse)
+
+`AgentConnection` supports two spawn modes:
+
+- **`spawn(config, name)`** — standalone mode. Creates its own internal `(incoming_tx, incoming_rx)` channel. Used in tests and when the caller manages its own receive loop.
+- **`spawn_with_bridge(config, name, slot_idx, bridge_tx)`** — bridge mode. The reader task pushes `SlotIncoming { slot_idx, msg }` directly to the manager's shared `incoming_tx`. No intermediate channel, no bridge task.
+
+The manager always uses `spawn_with_bridge()` in both `start()` and `handle_crash()`. This eliminates the two-hop latency that previously caused premature `SessionComplete` — the old design had a `spawn_incoming_bridge()` task forwarding from the connection's internal channel to the manager's channel, and events could be stuck in the bridge queue when `try_recv()` drained `incoming_rx`.
+
 ## Anti-Patterns (this crate)
 
+- Do not reintroduce `spawn_incoming_bridge()` or any intermediate forwarding channel between `AgentConnection` and the manager's `incoming_rx` — the two-hop latency causes premature `SessionComplete` when `try_recv()` sees an empty channel while events are still in the bridge queue.
+- Do not send `SessionComplete` from the streaming path (`handle_incoming`) — it races with the RPC response and can cause duplicate completions that skip queued messages.
+- Do not skip the `incoming_rx` drain in `handle_prompt_completion` — without it, `select!` can process the RPC response before all streaming events are forwarded, causing lost updates.
 - `_raw_response` is a hack — it sends pre-built JSON-RPC directly to stdin, bypassing normal request/response framing. Do not use it for new methods.
 - `cmd_rx.take().expect("cmd_rx must exist")` — consumed once at `run()` start. Never call `run()` twice.
 - Permission responses go through `_raw_response` because they're responses to agent-initiated requests, not client-initiated ones.

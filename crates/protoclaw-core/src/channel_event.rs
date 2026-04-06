@@ -11,6 +11,10 @@ pub enum ChannelEvent {
         session_key: SessionKey,
         content: serde_json::Value,
     },
+    /// Signal that the agent has finished processing a prompt for this session.
+    /// Triggers queue flush: marks the session idle and dispatches any queued messages.
+    /// Sent once per completed `session/prompt`, after all streaming updates have been forwarded.
+    SessionComplete { session_key: SessionKey },
     /// Route a permission request to the originating channel.
     RoutePermission {
         session_key: SessionKey,

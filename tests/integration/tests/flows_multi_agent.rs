@@ -141,7 +141,6 @@ fn build_two_agent_config(channel_routes_to: &str) -> protoclaw_config::Protocla
         },
         channels_manager: protoclaw_config::ChannelsManagerConfig {
             channels,
-            merge_window_ms: 0,
             ..Default::default()
         },
         tools_manager: protoclaw_config::ToolsManagerConfig::default(),

@@ -341,7 +341,7 @@ fn create_manager(
             let default_agent = config.default_agent_name()
                 .unwrap_or("default")
                 .to_string();
-            let mut cm = ChannelsManager::new(config.channels_manager.channels.clone(), config.channels_manager.init_timeout_secs, default_agent, config.channels_manager.merge_window_ms)
+            let mut cm = ChannelsManager::new(config.channels_manager.channels.clone(), config.channels_manager.init_timeout_secs, default_agent)
                 .with_agents_handle(agents_handle);
             if let Some(rx) = channel_events_rx {
                 cm = cm.with_channel_events_rx(rx);

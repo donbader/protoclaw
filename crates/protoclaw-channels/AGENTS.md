@@ -49,7 +49,7 @@ The `poll_channels()` method uses 1ms timeout polling per connection — it's a 
 
 ## Ack Flow
 
-Ack notification (`channel/ackMessage`) fires on every `push()` — both `Dispatch` (immediate) and `Enqueued` (queued). This gives users instant feedback that their message was received.
+Ack notification (`channel/ackMessage`) fires only at dispatch time — when a message (or merged batch) is actually sent to the agent. Queued messages do NOT receive ack until they are flushed and dispatched.
 
 `messageId` is always `Null` — Telegram tracks the last message independently via `last_message_ids`.
 
@@ -57,29 +57,16 @@ Ack notification (`channel/ackMessage`) fires on every `push()` — both `Dispat
 
 `channel/typingIndicator` fires at dispatch time inside `dispatch_to_agent()`. This signals the channel that the agent is actively processing a message. Queued messages do not trigger typing — only the message being dispatched.
 
-## Session Queue (FIFO)
+## Session Queue (FIFO) with Flush
 
-Per-session FIFO queue (`SessionQueue`) replaces the old debounce-merge model. Each message is processed individually in order, never merged.
+Per-session FIFO queue (`SessionQueue`). Messages queue while the agent is busy, then flush as a single merged prompt when the agent finishes.
 
-1. Message arrives, session idle → `Dispatch(msg)` — dispatched immediately
-2. Message arrives, session busy → `Enqueued` — queued behind active message
-3. Agent finishes (Result event) → `mark_idle()` pops next queued message → `Dispatch`
+1. Message arrives, session idle → `Dispatch(msg)` — dispatched immediately, ack sent
+2. Message arrives, session busy → `Enqueued` — queued (no ack)
+3. Agent finishes (Result event) → `mark_idle()` pops first queued + `drain_queued()` grabs rest → joined with `\n` → dispatched as single merged prompt, ack sent
 4. No queued messages on result → session returns to idle
 
 Key type: `SessionKey` (`"{channel}:{kind}:{peer_id}"`) is the queue key.
-
-## Message Merge Window
-
-Configurable merge window (`merge_window_ms`, default 1200ms) in `ChannelsManagerConfig` batches rapid user messages before dispatching to the agent.
-
-Flow:
-1. Message arrives, session idle → buffer message, start merge timer
-2. More messages within window → append to buffer, reset timer
-3. Timer expires → join buffered messages with `\n`, dispatch as single prompt
-4. Agent finishes (result), queued messages exist → drain queue into merge buffer, start new merge window
-5. `merge_window_ms: 0` disables batching (immediate dispatch, legacy behavior)
-
-State lives in `ChannelsManager`: `merge_buffers`, `merge_timers`, `merge_tx`/`merge_rx`. Timer communicates back to `run()` select loop via mpsc channel.
 
 ## Anti-Patterns (this crate)
 
@@ -87,4 +74,3 @@ State lives in `ChannelsManager`: `merge_buffers`, `merge_timers`, `merge_tx`/`m
 - Bad channel binaries don't block startup — they log errors and continue with `connection: None`
 - `cmd_rx.take().expect("cmd_rx must exist")` — same consumed-once pattern as agents
 - `start()` skips channels with `enabled = false` — no slot is created for disabled channels
-- Do not dispatch immediately when `merge_window_ms > 0` — always go through the merge buffer for idle sessions

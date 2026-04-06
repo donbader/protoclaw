@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use protoclaw_sdk_channel::ChannelAckConfig;
 use protoclaw_sdk_types::{ChannelSendMessage, PermissionResponse};
@@ -16,6 +16,10 @@ pub struct SharedState {
     pub thinking_messages: RwLock<HashMap<i64, (i32, Instant)>>,
     pub thought_buffers: RwLock<HashMap<i64, String>>,
     pub thought_debounce_handles: RwLock<HashMap<i64, tokio::task::JoinHandle<()>>>,
+    pub thought_suppressed: RwLock<HashSet<i64>>,
+    pub result_received: RwLock<HashSet<i64>>,
+    pub finalize_handles: RwLock<HashMap<i64, tokio::task::JoinHandle<()>>>,
+    pub current_message_id: RwLock<HashMap<i64, String>>,
     pub last_message_ids: RwLock<HashMap<i64, i32>>,
     pub ack_config: RwLock<Option<ChannelAckConfig>>,
 }
@@ -33,6 +37,10 @@ impl SharedState {
             thinking_messages: RwLock::new(HashMap::new()),
             thought_buffers: RwLock::new(HashMap::new()),
             thought_debounce_handles: RwLock::new(HashMap::new()),
+            thought_suppressed: RwLock::new(HashSet::new()),
+            result_received: RwLock::new(HashSet::new()),
+            finalize_handles: RwLock::new(HashMap::new()),
+            current_message_id: RwLock::new(HashMap::new()),
             last_message_ids: RwLock::new(HashMap::new()),
             ack_config: RwLock::new(None),
         }
@@ -64,5 +72,11 @@ mod tests {
     async fn thought_debounce_handles_initialized_empty() {
         let state = SharedState::new();
         assert!(state.thought_debounce_handles.read().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn finalize_handles_initialized_empty() {
+        let state = SharedState::new();
+        assert!(state.finalize_handles.read().await.is_empty());
     }
 }
