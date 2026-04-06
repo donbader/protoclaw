@@ -3,9 +3,10 @@ use std::time::Duration;
 use protoclaw_integration_tests::{
     boot_supervisor_with_port, mock_agent_config, with_timeout, SseCollector,
 };
+use rstest::rstest;
 
 #[test_log::test(tokio::test)]
-async fn acp_wire_session_new_includes_cwd_and_mcp_servers() {
+async fn when_supervisor_boots_then_acp_session_established_and_health_responds() {
     let config = mock_agent_config();
     let (cancel, handle, port) = boot_supervisor_with_port(config).await;
 
@@ -25,7 +26,7 @@ async fn acp_wire_session_new_includes_cwd_and_mcp_servers() {
 }
 
 #[test_log::test(tokio::test)]
-async fn acp_wire_session_prompt_uses_prompt_array() {
+async fn when_message_sent_then_acp_prompt_array_format_produces_echo_response() {
     let config = mock_agent_config();
     let (cancel, handle, port) = boot_supervisor_with_port(config).await;
 
@@ -55,7 +56,7 @@ async fn acp_wire_session_prompt_uses_prompt_array() {
 }
 
 #[test_log::test(tokio::test)]
-async fn acp_reader_survives_non_json_stdout_noise() {
+async fn given_agent_emits_non_json_startup_noise_when_message_sent_then_agent_still_responds() {
     let mut config = mock_agent_config();
     config
         .agents_manager

@@ -3,9 +3,10 @@ use std::collections::HashMap;
 use protoclaw_integration_tests::{
     boot_supervisor_with_port, mock_agent_config_with_options, with_timeout,
 };
+use rstest::rstest;
 
 #[test_log::test(tokio::test)]
-async fn flow_permission_request_and_respond() {
+async fn given_agent_requests_permission_when_responded_to_then_permission_acknowledged() {
     let mut opts = HashMap::new();
     opts.insert("request_permission".into(), serde_json::json!(true));
     let config = mock_agent_config_with_options(opts);

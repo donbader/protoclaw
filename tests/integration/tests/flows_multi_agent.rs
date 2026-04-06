@@ -4,11 +4,12 @@ use std::time::Duration;
 use protoclaw_integration_tests::{
     boot_supervisor_with_port, debug_http_path, mock_agent_path, with_timeout, SseCollector,
 };
+use rstest::rstest;
 
 /// Two agents (agent-a, agent-b) with different echo_prefix. Channel routes to agent-a.
 /// Verify response contains "agent-a:" and NOT "agent-b:".
 #[test_log::test(tokio::test)]
-async fn flow_multi_agent_routes_to_correct_agent() {
+async fn given_two_agents_when_channel_routes_to_agent_a_then_only_agent_a_responds() {
     let config = build_two_agent_config("agent-a");
 
     let (cancel, handle, port) = boot_supervisor_with_port(config).await;
@@ -45,7 +46,7 @@ async fn flow_multi_agent_routes_to_correct_agent() {
 /// Channel routes to nonexistent agent. Verify the system handles it
 /// without hanging — either boot fails or an error response arrives.
 #[test_log::test(tokio::test)]
-async fn flow_multi_agent_unknown_agent_errors() {
+async fn given_two_agents_when_channel_routes_to_nonexistent_agent_then_no_echo_received() {
     let config = build_two_agent_config("nonexistent-agent");
 
     let (cancel, handle, port) = boot_supervisor_with_port(config).await;

@@ -1,8 +1,9 @@
 use protoclaw_config::ProtoclawConfig;
 use protoclaw_integration_tests::{boot_supervisor_with_port, mock_agent_config, with_timeout};
+use rstest::rstest;
 
 #[test_log::test(tokio::test)]
-async fn flow_custom_config_path_boots() {
+async fn given_config_written_to_temp_path_when_loaded_and_supervisor_booted_then_health_responds() {
     // Write a valid config to a temp file at a non-default path
     let config = mock_agent_config();
     let yaml = serde_yaml::to_string(&config).expect("serialize config to yaml");
@@ -38,7 +39,7 @@ async fn flow_custom_config_path_boots() {
 }
 
 #[test]
-fn flow_missing_config_path_returns_error() {
+fn given_missing_config_path_when_load_called_then_error_contains_filename() {
     let missing = "/tmp/nonexistent-protoclaw-test.yaml";
     let result = ProtoclawConfig::load(Some(missing));
 

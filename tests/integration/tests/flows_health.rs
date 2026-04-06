@@ -1,8 +1,9 @@
 use protoclaw_integration_tests::{boot_supervisor_with_port, mock_agent_config, with_timeout};
+use rstest::rstest;
 
 /// GET /health returns 200 with {"status": "ok"} (channel-level health).
 #[test_log::test(tokio::test)]
-async fn flow_health_endpoint_returns_ok() {
+async fn when_supervisor_running_then_health_endpoint_returns_200_with_status_ok() {
     let config = mock_agent_config();
     let (cancel, handle, port) = boot_supervisor_with_port(config).await;
 

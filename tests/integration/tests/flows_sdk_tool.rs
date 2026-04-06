@@ -3,9 +3,10 @@ use std::time::Duration;
 use protoclaw_integration_tests::{
     boot_supervisor_with_port, sdk_tool_config, with_timeout, SseCollector,
 };
+use rstest::rstest;
 
 #[test_log::test(tokio::test)]
-async fn flow_sdk_tool_serves_mcp() {
+async fn when_sdk_tool_configured_and_message_sent_then_agent_echoes_back_with_result_event() {
     let config = sdk_tool_config();
     let (cancel, handle, port) = boot_supervisor_with_port(config).await;
 

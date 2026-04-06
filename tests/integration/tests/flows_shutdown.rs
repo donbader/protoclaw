@@ -3,10 +3,11 @@ use std::time::Duration;
 use protoclaw_integration_tests::{
     boot_supervisor_with_port, mock_agent_config, with_timeout, SseCollector,
 };
+use rstest::rstest;
 
 /// Send message, cancel after first SSE event arrives, assert full response + clean exit.
 #[test_log::test(tokio::test)]
-async fn flow_graceful_shutdown_waits_for_inflight() {
+async fn given_inflight_message_when_shutdown_signalled_then_response_delivered_before_exit() {
     let config = mock_agent_config();
 
     let (cancel, handle, port) = boot_supervisor_with_port(config).await;

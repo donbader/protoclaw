@@ -3,9 +3,10 @@ use std::time::Duration;
 use protoclaw_integration_tests::{
     boot_supervisor_with_port, mock_agent_config, with_timeout, SseCollector,
 };
+use rstest::rstest;
 
 #[test_log::test(tokio::test)]
-async fn flow_message_queued() {
+async fn when_message_posted_then_response_status_is_queued() {
     let config = mock_agent_config();
     let (cancel, handle, port) = boot_supervisor_with_port(config).await;
 
@@ -31,7 +32,7 @@ async fn flow_message_queued() {
 }
 
 #[test_log::test(tokio::test)]
-async fn flow_message_echo_via_sse() {
+async fn when_message_posted_then_agent_echoes_back_via_sse() {
     let config = mock_agent_config();
     let (cancel, handle, port) = boot_supervisor_with_port(config).await;
 
