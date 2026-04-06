@@ -11,6 +11,22 @@ mod tests {
     use super::*;
     use rstest::rstest;
 
+    #[tokio::test]
+    async fn when_generic_adapter_on_initialize_result_called_then_passthrough() {
+        let adapter = GenericAcpAdapter;
+        let input = serde_json::json!({"protocolVersion": 1, "capabilities": {}});
+        let output = adapter.on_initialize_result(input.clone()).await.unwrap();
+        assert_eq!(input, output);
+    }
+
+    #[tokio::test]
+    async fn when_generic_adapter_on_session_new_result_called_then_passthrough() {
+        let adapter = GenericAcpAdapter;
+        let input = serde_json::json!({"sessionId": "sess-42"});
+        let output = adapter.on_session_new_result(input.clone()).await.unwrap();
+        assert_eq!(input, output);
+    }
+
     #[test]
     fn when_generic_adapter_cast_to_trait_object_then_compiles() {
         let _adapter: Box<dyn AgentAdapter> = Box::new(GenericAcpAdapter);
