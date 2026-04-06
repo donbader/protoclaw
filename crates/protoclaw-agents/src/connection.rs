@@ -270,6 +270,7 @@ impl AgentConnection {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
     use std::collections::HashMap;
     use protoclaw_config::{LocalWorkspaceConfig, WorkspaceConfig};
 
@@ -301,7 +302,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn spawn_mock_agent() {
+    async fn when_mock_agent_spawned_then_process_starts_successfully() {
         let config = mock_agent_config();
         let mut conn = AgentConnection::spawn(&config, "test-agent").unwrap();
         assert!(conn.is_alive());
@@ -309,7 +310,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn spawn_nonexistent_binary_returns_error() {
+    async fn when_nonexistent_binary_spawned_then_returns_error() {
         let config = AgentConfig {
             workspace: WorkspaceConfig::Local(LocalWorkspaceConfig {
                 binary: "nonexistent-binary-xyz-12345".to_string(),
@@ -331,7 +332,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn send_request_and_receive_response() {
+    async fn when_request_sent_to_agent_then_response_received() {
         let config = mock_agent_config();
         let mut conn = AgentConnection::spawn(&config, "test-agent").unwrap();
 
@@ -350,7 +351,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn send_notification_does_not_create_pending_request() {
+    async fn when_notification_sent_then_no_pending_request_created() {
         let config = mock_agent_config();
         let mut conn = AgentConnection::spawn(&config, "test-agent").unwrap();
 
@@ -418,7 +419,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mock_backend_is_alive() {
+    async fn when_mock_backend_started_then_reports_alive() {
         let mut backend = MockBackend::new(true);
         assert!(backend.is_alive());
         backend.kill().await.unwrap();
@@ -426,7 +427,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mock_backend_as_trait_object() {
+    async fn when_mock_backend_used_as_trait_object_then_works_correctly() {
         let mut backend: Box<dyn ProcessBackend> = Box::new(MockBackend::new(true));
         assert!(backend.is_alive());
     }

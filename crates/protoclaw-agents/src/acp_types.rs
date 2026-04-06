@@ -212,16 +212,17 @@ pub struct SessionUpdateEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     #[test]
-    fn content_part_text_serializes_with_type_tag() {
+    fn when_text_content_part_serialized_then_includes_type_tag() {
         let part = ContentPart::text("hello");
         let json = serde_json::to_value(&part).unwrap();
         assert_eq!(json, serde_json::json!({"type": "text", "text": "hello"}));
     }
 
     #[test]
-    fn session_prompt_params_wire_format() {
+    fn when_session_prompt_params_serialized_then_matches_wire_format() {
         let params = SessionPromptParams {
             session_id: "ses-1".into(),
             prompt: vec![ContentPart::text("hi")],
@@ -235,7 +236,7 @@ mod tests {
     }
 
     #[test]
-    fn session_prompt_params_no_role_wrapper() {
+    fn when_session_prompt_params_serialized_then_no_role_wrapper_present() {
         let params = SessionPromptParams {
             session_id: "ses-1".into(),
             prompt: vec![ContentPart::text("hi")],
@@ -246,7 +247,7 @@ mod tests {
     }
 
     #[test]
-    fn content_part_image_serializes() {
+    fn when_image_content_part_serialized_then_produces_correct_json() {
         let part = ContentPart::Image {
             url: "http://example.com/img.png".into(),
         };

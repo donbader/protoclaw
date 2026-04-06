@@ -759,6 +759,7 @@ impl Manager for AgentsManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
     use std::collections::HashMap;
 
     fn mock_agent_config() -> AgentConfig {
@@ -819,14 +820,14 @@ mod tests {
     }
 
     #[test]
-    fn agents_manager_name() {
+    fn when_agents_manager_created_then_name_is_agents() {
         let (handle, _rx) = make_tools_handle();
         let m = AgentsManager::new(mock_agents_manager_config(), handle);
         assert_eq!(m.name(), "agents");
     }
 
     #[tokio::test]
-    async fn agents_manager_start_initializes_session() {
+    async fn when_manager_started_then_agent_session_initialized() {
         let (handle, rx) = make_tools_handle();
         let tools_task = tokio::spawn(serve_tools_urls(rx));
 
@@ -843,7 +844,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn agents_manager_health_check_alive() {
+    async fn when_agent_connected_then_health_check_returns_true() {
         let (handle, rx) = make_tools_handle();
         let tools_task = tokio::spawn(serve_tools_urls(rx));
 
@@ -856,21 +857,21 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn agents_manager_health_check_dead() {
+    async fn when_no_agents_connected_then_health_check_returns_false() {
         let (handle, _rx) = make_tools_handle();
         let m = AgentsManager::new(mock_agents_manager_config(), handle);
         assert!(!m.health_check().await);
     }
 
     #[tokio::test]
-    async fn agents_manager_health_check_no_agents_configured() {
+    async fn when_no_agents_configured_then_health_check_returns_true() {
         let (handle, _rx) = make_tools_handle();
         let m = AgentsManager::new(mock_agents_manager_config_with(HashMap::new()), handle);
         assert!(m.health_check().await);
     }
 
     #[tokio::test]
-    async fn agents_manager_health_check_all_disabled() {
+    async fn when_all_agents_disabled_then_health_check_returns_true() {
         let mut config = mock_agent_config();
         config.enabled = false;
         let (handle, _rx) = make_tools_handle();
@@ -879,7 +880,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn agents_manager_send_prompt_receives_echo() {
+    async fn when_prompt_sent_to_slot_then_no_error_returned() {
         let (handle, rx) = make_tools_handle();
         let tools_task = tokio::spawn(serve_tools_urls(rx));
 
@@ -896,7 +897,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn agents_manager_crash_recovery() {
+    async fn when_agent_crashes_then_handle_crash_reconnects() {
         let mut config = mock_agent_config();
         config.options.insert("exit_after".into(), serde_json::json!(1));
 
@@ -918,7 +919,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn get_status_returns_vec_of_agent_info() {
+    async fn when_get_status_command_sent_then_returns_agent_info_vec() {
         let (handle, _rx) = make_tools_handle();
         let mut m = AgentsManager::new(mock_agents_manager_config(), handle);
 
@@ -941,7 +942,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn create_session_with_unknown_agent_returns_error() {
+    async fn when_create_session_for_unknown_agent_then_returns_agent_not_found() {
         let (handle, _rx) = make_tools_handle();
         let mut m = AgentsManager::new(mock_agents_manager_config_with(HashMap::new()), handle);
 
@@ -950,7 +951,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn streaming_result_sends_deliver_and_sets_flag() {
+    async fn when_streaming_result_received_then_deliver_message_sent_and_flag_set() {
         // When handle_incoming processes a Result, it sends DeliverMessage
         // but NOT SessionComplete. It sets streaming_completed so
         // handle_prompt_completion knows to skip the synthetic result.
@@ -997,7 +998,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn message_chunk_does_not_send_session_complete() {
+    async fn when_message_chunk_received_then_session_complete_not_sent() {
         // Non-result updates (message chunks, thought chunks) must NOT send SessionComplete.
         let (handle, _rx) = make_tools_handle();
         let mut m = AgentsManager::new(mock_agents_manager_config_with(HashMap::new()), handle);
@@ -1036,7 +1037,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn prompt_completion_sends_synthetic_result_when_no_streaming_result() {
+    async fn when_completion_fires_without_streaming_result_then_synthetic_result_sent_first() {
         // When handle_prompt_completion fires and streaming did NOT send a result,
         // it must send a synthetic DeliverMessage with sessionUpdate "result"
         // BEFORE SessionComplete.
@@ -1086,7 +1087,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn prompt_completion_skips_synthetic_result_when_streaming_sent_it() {
+    async fn when_completion_fires_after_streaming_result_then_only_session_complete_sent() {
         // When streaming already sent the result, handle_prompt_completion
         // must only send SessionComplete (no duplicate result DeliverMessage).
         let (handle, _rx) = make_tools_handle();
@@ -1125,7 +1126,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn start_skips_disabled_agents() {
+    async fn when_agent_disabled_then_start_skips_it() {
         let mut config = mock_agent_config();
         config.enabled = false;
 
@@ -1137,7 +1138,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn prompt_completion_drains_pending_streaming_events() {
+    async fn when_completion_fires_with_pending_events_then_all_delivered_before_session_complete() {
         // When completion fires with pending streaming events in incoming_rx,
         // all events must be forwarded as DeliverMessage BEFORE SessionComplete.
         let (handle, _rx) = make_tools_handle();
@@ -1199,7 +1200,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn create_session_routes_to_correct_slot() {
+    async fn when_create_session_called_then_session_added_to_correct_agent_slot() {
         let (handle, rx) = make_tools_handle();
         let tools_task = tokio::spawn(serve_tools_urls(rx));
 

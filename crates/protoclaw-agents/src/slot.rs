@@ -68,6 +68,7 @@ pub fn find_slot_by_name(slots: &[AgentSlot], name: &str) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
     use std::collections::HashMap;
 
     fn test_agent_config(enabled: bool) -> AgentConfig {
@@ -90,7 +91,7 @@ mod tests {
     }
 
     #[test]
-    fn slot_new_creates_empty_state() {
+    fn when_new_slot_created_then_state_is_empty() {
         let cancel = CancellationToken::new();
         let slot = AgentSlot::new("test-agent".into(), test_agent_config(true), &cancel);
 
@@ -104,7 +105,7 @@ mod tests {
     }
 
     #[test]
-    fn slot_disabled_agent_has_disabled_true() {
+    fn when_slot_created_for_disabled_agent_then_disabled_flag_is_true() {
         let cancel = CancellationToken::new();
         let slot = AgentSlot::new("disabled-agent".into(), test_agent_config(false), &cancel);
 
@@ -113,7 +114,7 @@ mod tests {
     }
 
     #[test]
-    fn find_slot_by_name_returns_correct_index() {
+    fn when_finding_slot_by_known_name_then_returns_correct_index() {
         let cancel = CancellationToken::new();
         let slots = vec![
             AgentSlot::new("alpha".into(), test_agent_config(true), &cancel),
@@ -127,7 +128,7 @@ mod tests {
     }
 
     #[test]
-    fn find_slot_by_name_returns_none_for_unknown() {
+    fn when_finding_slot_by_unknown_name_then_returns_none() {
         let cancel = CancellationToken::new();
         let slots = vec![AgentSlot::new(
             "alpha".into(),
@@ -139,13 +140,13 @@ mod tests {
     }
 
     #[test]
-    fn find_slot_by_name_empty_slots() {
+    fn when_finding_slot_in_empty_list_then_returns_none() {
         let slots: Vec<AgentSlot> = vec![];
         assert_eq!(find_slot_by_name(&slots, "any"), None);
     }
 
     #[test]
-    fn slot_session_map_insert_and_lookup() {
+    fn when_session_inserted_into_slot_map_then_lookup_returns_it() {
         let cancel = CancellationToken::new();
         let mut slot = AgentSlot::new("agent".into(), test_agent_config(true), &cancel);
 
@@ -157,7 +158,7 @@ mod tests {
     }
 
     #[test]
-    fn slot_reverse_map_lookup_returns_correct_session_key() {
+    fn when_reverse_map_queried_then_returns_correct_session_key() {
         let cancel = CancellationToken::new();
         let mut slot = AgentSlot::new("agent".into(), test_agent_config(true), &cancel);
 
@@ -171,7 +172,7 @@ mod tests {
     }
 
     #[test]
-    fn slot_cancel_token_is_child_of_parent() {
+    fn when_slot_cancel_token_created_then_is_child_of_parent_token() {
         let parent = CancellationToken::new();
         let slot = AgentSlot::new("agent".into(), test_agent_config(true), &parent);
 
