@@ -32,54 +32,55 @@ pub const DEFAULT_CRASH_WINDOW_SECS: u64 = 60;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     #[test]
-    fn internal_guard_poll_interval() {
+    fn when_checking_poll_interval_then_matches_expected_value() {
         assert_eq!(POLL_INTERVAL_MS, 50);
     }
 
     #[test]
-    fn internal_guard_poll_timeout() {
+    fn when_checking_poll_timeout_then_matches_expected_value() {
         assert_eq!(POLL_TIMEOUT_MS, 1);
     }
 
     #[test]
-    fn internal_guard_cmd_channel_capacity() {
+    fn when_checking_cmd_channel_capacity_then_matches_expected_value() {
         assert_eq!(CMD_CHANNEL_CAPACITY, 16);
     }
 
     #[test]
-    fn internal_guard_event_channel_capacity() {
+    fn when_checking_event_channel_capacity_then_matches_expected_value() {
         assert_eq!(EVENT_CHANNEL_CAPACITY, 64);
     }
 
     #[test]
-    fn internal_guard_epoch_tick_interval() {
+    fn when_checking_epoch_tick_interval_then_matches_expected_value() {
         assert_eq!(EPOCH_TICK_INTERVAL_SECS, 1);
     }
 
     #[test]
-    fn internal_guard_status_http_timeout() {
+    fn when_checking_status_http_timeout_then_matches_expected_value() {
         assert_eq!(STATUS_HTTP_TIMEOUT_SECS, 5);
     }
 
     #[test]
-    fn default_backoff_base_ms() {
+    fn when_checking_backoff_base_ms_then_matches_expected_value() {
         assert_eq!(DEFAULT_BACKOFF_BASE_MS, 100);
     }
 
     #[test]
-    fn default_backoff_max_secs() {
+    fn when_checking_backoff_max_secs_then_matches_expected_value() {
         assert_eq!(DEFAULT_BACKOFF_MAX_SECS, 30);
     }
 
     #[test]
-    fn default_crash_max() {
+    fn when_checking_crash_max_then_matches_expected_value() {
         assert_eq!(DEFAULT_CRASH_MAX, 5);
     }
 
     #[test]
-    fn default_crash_window_secs() {
+    fn when_checking_crash_window_secs_then_matches_expected_value() {
         assert_eq!(DEFAULT_CRASH_WINDOW_SECS, 60);
     }
 }

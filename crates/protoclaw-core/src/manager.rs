@@ -47,9 +47,10 @@ pub enum ManagerCommand {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     #[tokio::test]
-    async fn manager_handle_sends_command() {
+    async fn when_command_sent_via_handle_then_receiver_gets_command() {
         let (tx, mut rx) = mpsc::channel::<ManagerCommand>(8);
         let handle = ManagerHandle::new(tx);
 
@@ -60,7 +61,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn manager_handle_send_fails_on_closed_channel() {
+    async fn when_channel_closed_then_handle_send_returns_error() {
         let (tx, rx) = mpsc::channel::<ManagerCommand>(8);
         let handle = ManagerHandle::new(tx);
         drop(rx);

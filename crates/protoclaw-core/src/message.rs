@@ -63,9 +63,10 @@ impl InternalMessage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     #[test]
-    fn internal_message_construction() {
+    fn when_internal_message_constructed_then_fields_set_correctly() {
         let source = ChannelId::from("telegram");
         let msg = InternalMessage::text(source.clone(), "hello");
 
@@ -76,7 +77,7 @@ mod tests {
     }
 
     #[test]
-    fn internal_message_with_metadata() {
+    fn when_internal_message_has_metadata_then_metadata_accessible() {
         let msg = InternalMessage {
             id: MessageId::new(),
             source: ChannelId::from("slack"),
@@ -99,7 +100,7 @@ mod tests {
     }
 
     #[test]
-    fn message_content_permission_response() {
+    fn when_permission_response_content_created_then_serializes_correctly() {
         let content = MessageContent::PermissionResponse { granted: true };
         assert!(matches!(
             content,
@@ -108,7 +109,7 @@ mod tests {
     }
 
     #[test]
-    fn internal_message_serializes_to_json() {
+    fn when_internal_message_serialized_then_produces_valid_json() {
         let msg = InternalMessage::text(ChannelId::from("test"), "hi");
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains("\"source\""));
@@ -116,13 +117,13 @@ mod tests {
     }
 
     #[test]
-    fn message_content_agent_text_delta() {
+    fn when_agent_text_delta_content_created_then_serializes_correctly() {
         let content = MessageContent::AgentTextDelta("chunk".to_string());
         assert!(matches!(content, MessageContent::AgentTextDelta(ref s) if s == "chunk"));
     }
 
     #[test]
-    fn message_content_tool_call_started() {
+    fn when_tool_call_started_content_created_then_serializes_correctly() {
         let content = MessageContent::ToolCallStarted {
             tool_call_id: "tc-1".to_string(),
             name: "read_file".to_string(),
@@ -134,7 +135,7 @@ mod tests {
     }
 
     #[test]
-    fn message_content_serializes_streaming_variants() {
+    fn when_streaming_variant_contents_serialized_then_each_produces_correct_json() {
         let content = MessageContent::AgentResponseComplete {
             content: Some("done".to_string()),
         };

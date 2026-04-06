@@ -33,9 +33,10 @@ pub enum ChannelEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     #[test]
-    fn channel_event_deliver_message_round_trip() {
+    fn when_deliver_message_event_serialized_then_deserializes_correctly() {
         let event = ChannelEvent::DeliverMessage {
             session_key: SessionKey::new("debug-http", "local", "dev"),
             content: serde_json::json!({"text": "hello"}),
@@ -46,7 +47,7 @@ mod tests {
     }
 
     #[test]
-    fn channel_event_route_permission_round_trip() {
+    fn when_route_permission_event_serialized_then_deserializes_correctly() {
         let event = ChannelEvent::RoutePermission {
             session_key: SessionKey::new("telegram", "direct", "alice"),
             request_id: "req-1".into(),
@@ -59,7 +60,7 @@ mod tests {
     }
 
     #[test]
-    fn channel_event_ack_message_round_trip() {
+    fn when_ack_message_event_serialized_then_deserializes_correctly() {
         let event = ChannelEvent::AckMessage {
             session_key: SessionKey::new("telegram", "direct", "alice"),
             channel_name: "telegram".into(),
@@ -72,7 +73,7 @@ mod tests {
     }
 
     #[test]
-    fn channel_event_ack_message_none_message_id() {
+    fn when_ack_message_has_no_message_id_then_serializes_as_null() {
         let event = ChannelEvent::AckMessage {
             session_key: SessionKey::new("debug-http", "local", "dev"),
             channel_name: "debug-http".into(),

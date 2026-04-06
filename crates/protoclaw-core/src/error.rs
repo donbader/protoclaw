@@ -33,9 +33,10 @@ pub enum ManagerError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     #[test]
-    fn supervisor_error_display_boot_failed() {
+    fn when_boot_failed_error_displayed_then_includes_manager_name() {
         let err = SupervisorError::BootFailed {
             manager: "tools".into(),
             reason: "port in use".into(),
@@ -44,7 +45,7 @@ mod tests {
     }
 
     #[test]
-    fn supervisor_error_display_crash_loop() {
+    fn when_crash_loop_error_displayed_then_includes_manager_name() {
         let err = SupervisorError::CrashLoop {
             manager: "agents".into(),
             count: 5,
@@ -57,7 +58,7 @@ mod tests {
     }
 
     #[test]
-    fn manager_error_display_variants() {
+    fn when_manager_error_variants_displayed_then_each_formats_correctly() {
         assert_eq!(ManagerError::NotStarted.to_string(), "manager not started");
         assert_eq!(
             ManagerError::AlreadyRunning.to_string(),
@@ -78,7 +79,7 @@ mod tests {
     }
 
     #[test]
-    fn errors_implement_std_error() {
+    fn when_error_types_checked_then_implement_std_error_trait() {
         fn assert_error<T: std::error::Error>() {}
         assert_error::<SupervisorError>();
         assert_error::<ManagerError>();

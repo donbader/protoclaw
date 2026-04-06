@@ -94,15 +94,16 @@ impl Default for CrashTracker {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     #[test]
-    fn backoff_starts_at_100ms() {
+    fn when_new_backoff_created_then_initial_delay_is_100ms() {
         let mut b = ExponentialBackoff::default();
         assert_eq!(b.next_delay(), Duration::from_millis(100));
     }
 
     #[test]
-    fn backoff_doubles_each_call() {
+    fn when_next_called_repeatedly_then_delay_doubles_each_time() {
         let mut b = ExponentialBackoff::default();
         assert_eq!(b.next_delay(), Duration::from_millis(100));
         assert_eq!(b.next_delay(), Duration::from_millis(200));
@@ -111,7 +112,7 @@ mod tests {
     }
 
     #[test]
-    fn backoff_caps_at_30s() {
+    fn when_delay_exceeds_max_then_capped_at_30s() {
         let mut b = ExponentialBackoff::default();
         for _ in 0..20 {
             b.next_delay();
@@ -120,7 +121,7 @@ mod tests {
     }
 
     #[test]
-    fn backoff_resets_to_base() {
+    fn when_reset_called_then_delay_returns_to_base() {
         let mut b = ExponentialBackoff::default();
         b.next_delay();
         b.next_delay();
@@ -130,7 +131,7 @@ mod tests {
     }
 
     #[test]
-    fn backoff_tracks_attempts() {
+    fn when_next_called_multiple_times_then_attempt_count_increments() {
         let mut b = ExponentialBackoff::default();
         assert_eq!(b.attempts(), 0);
         b.next_delay();
@@ -140,13 +141,13 @@ mod tests {
     }
 
     #[test]
-    fn backoff_default_has_correct_params() {
+    fn when_default_backoff_created_then_params_match_constants() {
         let mut b = ExponentialBackoff::default();
         assert_eq!(b.next_delay(), Duration::from_millis(100));
     }
 
     #[test]
-    fn crash_tracker_detects_crash_loop() {
+    fn given_rapid_crashes_when_threshold_exceeded_then_crash_loop_detected() {
         let mut tracker = CrashTracker::new(3, Duration::from_secs(60));
         assert!(!tracker.is_crash_loop());
 
@@ -159,7 +160,7 @@ mod tests {
     }
 
     #[test]
-    fn crash_tracker_reset_clears_history() {
+    fn when_reset_called_then_crash_history_cleared() {
         let mut tracker = CrashTracker::new(3, Duration::from_secs(60));
         tracker.record_crash();
         tracker.record_crash();
@@ -171,7 +172,7 @@ mod tests {
     }
 
     #[test]
-    fn crash_tracker_default_is_5_in_60s() {
+    fn when_default_crash_tracker_created_then_max_is_5_in_60s() {
         let mut tracker = CrashTracker::default();
         for _ in 0..4 {
             tracker.record_crash();

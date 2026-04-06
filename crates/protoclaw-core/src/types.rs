@@ -121,36 +121,37 @@ impl_id_type!(MessageId);
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     #[test]
-    fn session_id_display_and_from_str() {
+    fn when_session_id_round_tripped_through_display_and_from_str_then_equal() {
         let id = SessionId::from("sess-123");
         assert_eq!(id.to_string(), "sess-123");
         assert_eq!(id.as_ref(), "sess-123");
     }
 
     #[test]
-    fn channel_id_display_and_from_string() {
+    fn when_channel_id_round_tripped_through_display_and_from_string_then_equal() {
         let id = ChannelId::from("telegram".to_string());
         assert_eq!(id.to_string(), "telegram");
         assert_eq!(id.as_ref(), "telegram");
     }
 
     #[test]
-    fn manager_id_constants() {
+    fn when_manager_id_constants_checked_then_values_are_correct() {
         assert_eq!(ManagerId::TOOLS, "tools");
         assert_eq!(ManagerId::AGENTS, "agents");
         assert_eq!(ManagerId::CHANNELS, "channels");
     }
 
     #[test]
-    fn manager_id_display() {
+    fn when_manager_id_displayed_then_produces_expected_string() {
         let id = ManagerId::from("tools");
         assert_eq!(id.to_string(), "tools");
     }
 
     #[test]
-    fn message_id_new_generates_unique_ids() {
+    fn when_two_message_ids_created_then_they_are_unique() {
         let id1 = MessageId::new();
         let id2 = MessageId::new();
         assert_ne!(id1, id2);
@@ -158,25 +159,25 @@ mod tests {
     }
 
     #[test]
-    fn message_id_default_generates_uuid() {
+    fn when_default_message_id_created_then_is_valid_uuid() {
         let id = MessageId::default();
         assert_eq!(id.as_ref().len(), 36); // UUID v4 string length
     }
 
     #[test]
-    fn session_key_new_formats_correctly() {
+    fn when_session_key_created_then_formatted_as_channel_slash_peer() {
         let key = SessionKey::new("debug-http", "local", "dev");
         assert_eq!(key.to_string(), "debug-http:local:dev");
     }
 
     #[test]
-    fn session_key_channel_name_extracts_first_segment() {
+    fn when_channel_name_extracted_from_session_key_then_returns_first_segment() {
         let key = SessionKey::new("telegram", "direct", "alice");
         assert_eq!(key.channel_name(), "telegram");
     }
 
     #[test]
-    fn session_key_display_from_str_round_trip() {
+    fn when_session_key_round_tripped_through_display_and_from_str_then_equal() {
         let key = SessionKey::new("slack", "group", "general");
         let s = key.to_string();
         let parsed: SessionKey = s.parse().unwrap();
@@ -184,7 +185,7 @@ mod tests {
     }
 
     #[test]
-    fn session_key_hash_eq() {
+    fn when_two_equal_session_keys_compared_then_hash_and_eq_consistent() {
         let a = SessionKey::new("debug-http", "local", "dev");
         let b = SessionKey::new("debug-http", "local", "dev");
         assert_eq!(a, b);
