@@ -388,4 +388,24 @@ mod tests {
         let deser: ChannelInitializeParams = serde_json::from_value(json).unwrap();
         assert_eq!(deser.ack, None);
     }
+
+    #[test]
+    fn when_session_created_serialized_then_uses_camel_case() {
+        let sc = SessionCreated {
+            session_id: "acp-sess-42".into(),
+            peer_info: PeerInfo {
+                channel_name: "telegram".into(),
+                peer_id: "tg:99999".into(),
+                kind: "user".into(),
+            },
+        };
+        let json = serde_json::to_value(&sc).unwrap();
+        assert_eq!(json["sessionId"], "acp-sess-42");
+        assert!(json.get("session_id").is_none());
+        assert_eq!(json["peerInfo"]["channelName"], "telegram");
+        assert_eq!(json["peerInfo"]["peerId"], "tg:99999");
+        assert!(json.get("peer_info").is_none());
+        let deser: SessionCreated = serde_json::from_value(json).unwrap();
+        assert_eq!(deser, sc);
+    }
 }
