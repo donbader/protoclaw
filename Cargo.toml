@@ -40,3 +40,4 @@ wasmtime-wasi = "42"
 rstest = "0.23"
 serde_yaml = "0.9"
 subst = { version = "0.3", features = ["toml", "yaml"] }
+bollard = "0.18"

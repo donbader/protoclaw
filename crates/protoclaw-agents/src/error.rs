@@ -18,6 +18,10 @@ pub enum AgentsError {
     Json(#[from] serde_json::Error),
     #[error("Agent not found: {0}")]
     AgentNotFound(String),
+    #[error("Docker error: {0}")]
+    DockerError(String),
+    #[error("Failed to pull image {image}: {reason}")]
+    ImagePullFailed { image: String, reason: String },
 }
 
 #[cfg(test)]
@@ -75,5 +79,23 @@ mod tests {
     fn when_agents_error_checked_then_implements_std_error() {
         let err = AgentsError::ConnectionClosed;
         assert_std_error(&err);
+    }
+
+    #[rstest]
+    fn when_docker_error_displayed_then_shows_message() {
+        let err = AgentsError::DockerError("connection refused".into());
+        assert_eq!(err.to_string(), "Docker error: connection refused");
+    }
+
+    #[rstest]
+    fn when_image_pull_failed_displayed_then_shows_image_and_reason() {
+        let err = AgentsError::ImagePullFailed {
+            image: "myrepo/agent:latest".into(),
+            reason: "manifest unknown".into(),
+        };
+        assert_eq!(
+            err.to_string(),
+            "Failed to pull image myrepo/agent:latest: manifest unknown"
+        );
     }
 }
