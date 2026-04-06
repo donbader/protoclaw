@@ -255,4 +255,35 @@ mod tests {
         assert_eq!(json["type"], "image");
         assert_eq!(json["url"], "http://example.com/img.png");
     }
+
+    #[rstest]
+    #[case::agent_message_chunk(SessionUpdateEvent {
+        session_id: "ses-abc".into(),
+        update: SessionUpdateType::AgentMessageChunk {
+            content: serde_json::json!("hello"),
+            message_id: Some("msg-1".into()),
+        },
+    })]
+    #[case::result_variant(SessionUpdateEvent {
+        session_id: "ses-xyz".into(),
+        update: SessionUpdateType::Result {
+            content: Some("final answer".into()),
+        },
+    })]
+    #[case::usage_update(SessionUpdateEvent {
+        session_id: "ses-usage".into(),
+        update: SessionUpdateType::UsageUpdate {
+            input_tokens: Some(10),
+            output_tokens: Some(20),
+            cache_read_tokens: None,
+            cache_write_tokens: None,
+        },
+    })]
+    fn when_session_update_event_serialized_then_round_trips_correctly(
+        #[case] event: SessionUpdateEvent,
+    ) {
+        let json = serde_json::to_string(&event).expect("serialize");
+        let deserialized: SessionUpdateEvent = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(event, deserialized);
+    }
 }
