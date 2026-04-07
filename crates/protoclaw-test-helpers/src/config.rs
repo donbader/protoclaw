@@ -222,6 +222,98 @@ pub fn sdk_tool_config() -> protoclaw_config::ProtoclawConfig {
     }
 }
 
+/// Config with a mock-agent, debug-http channel, and 2 instances of sdk-test-tool registered as MCP tools.
+/// Both tools ("echo" and "echo-2") use the same sdk-test-tool binary but have distinct config names.
+pub fn multi_tool_config() -> protoclaw_config::ProtoclawConfig {
+    let mut agents = HashMap::new();
+    agents.insert(
+        "default".to_string(),
+        protoclaw_config::AgentConfig {
+            workspace: protoclaw_config::WorkspaceConfig::Local(
+                protoclaw_config::LocalWorkspaceConfig {
+                    binary: mock_agent_path().to_string_lossy().to_string(),
+                    working_dir: None,
+                    env: HashMap::new(),
+                },
+            ),
+            args: vec![],
+            enabled: true,
+            tools: vec!["echo".into(), "echo-2".into()],
+            acp_timeout_secs: None,
+            backoff: None,
+            crash_tracker: None,
+            options: HashMap::new(),
+        },
+    );
+
+    let mut channels = HashMap::new();
+    channels.insert(
+        "debug-http".to_string(),
+        protoclaw_config::ChannelConfig {
+            binary: debug_http_path().to_string_lossy().to_string(),
+            args: vec![],
+            enabled: true,
+            agent: "default".into(),
+            ack: Default::default(),
+            init_timeout_secs: None,
+            backoff: None,
+            crash_tracker: None,
+            options: HashMap::new(),
+        },
+    );
+
+    let mut tools = HashMap::new();
+    tools.insert(
+        "echo".to_string(),
+        protoclaw_config::ToolConfig {
+            tool_type: "mcp".into(),
+            binary: Some(sdk_test_tool_path().to_string_lossy().to_string()),
+            args: vec![],
+            enabled: true,
+            module: None,
+            description: String::new(),
+            input_schema: None,
+            sandbox: Default::default(),
+            options: HashMap::new(),
+        },
+    );
+    tools.insert(
+        "echo-2".to_string(),
+        protoclaw_config::ToolConfig {
+            tool_type: "mcp".into(),
+            binary: Some(sdk_test_tool_path().to_string_lossy().to_string()),
+            args: vec![],
+            enabled: true,
+            module: None,
+            description: String::new(),
+            input_schema: None,
+            sandbox: Default::default(),
+            options: HashMap::new(),
+        },
+    );
+
+    protoclaw_config::ProtoclawConfig {
+        agents_manager: protoclaw_config::AgentsManagerConfig {
+            agents,
+            ..Default::default()
+        },
+        channels_manager: protoclaw_config::ChannelsManagerConfig {
+            channels,
+            ..Default::default()
+        },
+        tools_manager: protoclaw_config::ToolsManagerConfig { tools },
+        supervisor: protoclaw_config::SupervisorConfig {
+            shutdown_timeout_secs: 5,
+            health_check_interval_secs: 1,
+            max_restarts: 3,
+            restart_window_secs: 60,
+        },
+        log_level: "info".into(),
+        log_format: "pretty".into(),
+        extensions_dir: "/usr/local/bin".into(),
+    }
+}
+
 /// Config with a docker-workspace agent ("docker-agent") backed by `protoclaw-mock-agent:test`
 /// and a debug-http channel. Uses `PullPolicy::Never` — image must be built first via
 /// `build_mock_agent_docker_image()`.
@@ -470,5 +562,50 @@ mod tests {
             .get("default")
             .expect("default agent");
         assert!(agent.tools.contains(&"echo".to_string()));
+    }
+
+    #[rstest]
+    fn when_multi_tool_config_called_then_two_tools_present() {
+        let cfg = multi_tool_config();
+        assert!(
+            cfg.tools_manager.tools.contains_key("echo"),
+            "tools map should contain 'echo'"
+        );
+        assert!(
+            cfg.tools_manager.tools.contains_key("echo-2"),
+            "tools map should contain 'echo-2'"
+        );
+        assert_eq!(cfg.tools_manager.tools.len(), 2);
+    }
+
+    #[rstest]
+    fn when_multi_tool_config_called_then_default_agent_has_both_tools_in_list() {
+        let cfg = multi_tool_config();
+        let agent = cfg
+            .agents_manager
+            .agents
+            .get("default")
+            .expect("default agent");
+        assert!(
+            agent.tools.contains(&"echo".to_string()),
+            "agent tools should contain 'echo'"
+        );
+        assert!(
+            agent.tools.contains(&"echo-2".to_string()),
+            "agent tools should contain 'echo-2'"
+        );
+    }
+
+    #[rstest]
+    fn when_multi_tool_config_called_then_both_tools_use_sdk_test_tool_binary() {
+        let cfg = multi_tool_config();
+        for name in ["echo", "echo-2"] {
+            let tool = cfg.tools_manager.tools.get(name).expect(name);
+            let binary = tool.binary.as_deref().expect("binary should be set");
+            assert!(
+                binary.contains("sdk-test-tool"),
+                "tool '{name}' binary should contain 'sdk-test-tool': {binary}"
+            );
+        }
     }
 }
