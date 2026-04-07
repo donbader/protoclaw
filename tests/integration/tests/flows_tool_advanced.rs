@@ -1,7 +1,8 @@
 use std::time::Duration;
 
 use protoclaw_integration_tests::{
-    boot_supervisor_with_port, multi_tool_config, sdk_tool_config, with_timeout, SseCollector,
+    boot_supervisor_with_port, invalid_tool_config, multi_tool_config, sdk_tool_config,
+    with_timeout, SseCollector,
 };
 use rstest::rstest;
 
@@ -44,6 +45,105 @@ async fn when_two_tools_configured_and_message_sent_then_agent_echoes_back() {
     assert!(
         saw_result,
         "should have received full echo result via SSE; events: {events:?}"
+    );
+
+    cancel.cancel();
+    let result = with_timeout(5, handle)
+        .await
+        .expect("supervisor task panicked");
+    assert!(result.is_ok(), "supervisor should shut down cleanly");
+}
+
+#[rstest]
+#[test_log::test(tokio::test)]
+async fn when_tool_binary_missing_then_supervisor_boots_and_agent_still_echoes() {
+    let config = invalid_tool_config();
+    let (cancel, handle, port) = boot_supervisor_with_port(config).await;
+
+    let client = reqwest::Client::new();
+
+    let health = client
+        .get(format!("http://127.0.0.1:{port}/health"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(health.status(), 200, "debug-http health check failed");
+
+    let mut sse = SseCollector::connect(port).await;
+
+    let resp = client
+        .post(format!("http://127.0.0.1:{port}/message"))
+        .json(&serde_json::json!({"message": "error-test"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "POST /message failed");
+
+    let events = sse.collect_events(Duration::from_secs(10)).await;
+
+    let saw_echo = events
+        .iter()
+        .any(|e| e.data.contains("Echo: ") && e.data.contains("error-test"));
+    assert!(
+        saw_echo,
+        "agent should still echo despite bad tool binary; events: {events:?}"
+    );
+
+    cancel.cancel();
+    let result = with_timeout(5, handle)
+        .await
+        .expect("supervisor task panicked");
+    assert!(result.is_ok(), "supervisor should shut down cleanly");
+}
+
+#[rstest]
+#[test_log::test(tokio::test)]
+async fn when_disabled_tool_configured_then_supervisor_boots_normally() {
+    let mut config = sdk_tool_config();
+    config.tools_manager.tools.insert(
+        "disabled-tool".to_string(),
+        protoclaw_config::ToolConfig {
+            tool_type: "mcp".into(),
+            binary: Some("/nonexistent/disabled-tool-xyz".into()),
+            args: vec![],
+            enabled: false,
+            module: None,
+            description: String::new(),
+            input_schema: None,
+            sandbox: Default::default(),
+            options: std::collections::HashMap::new(),
+        },
+    );
+
+    let (cancel, handle, port) = boot_supervisor_with_port(config).await;
+
+    let client = reqwest::Client::new();
+
+    let health = client
+        .get(format!("http://127.0.0.1:{port}/health"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(health.status(), 200, "debug-http health check failed");
+
+    let mut sse = SseCollector::connect(port).await;
+
+    let resp = client
+        .post(format!("http://127.0.0.1:{port}/message"))
+        .json(&serde_json::json!({"message": "disabled-tool-test"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "POST /message failed");
+
+    let events = sse.collect_events(Duration::from_secs(10)).await;
+
+    let saw_echo = events
+        .iter()
+        .any(|e| e.data.contains("Echo: ") && e.data.contains("disabled-tool-test"));
+    assert!(
+        saw_echo,
+        "agent should echo normally with disabled tool configured; events: {events:?}"
     );
 
     cancel.cancel();
