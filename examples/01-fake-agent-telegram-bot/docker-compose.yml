@@ -33,6 +33,7 @@ services:
       - .env
     networks:
       - protoclaw-internal
+      - protoclaw-external
     depends_on:
       - socket-proxy
     restart: unless-stopped
@@ -48,4 +49,7 @@ services:
 
 networks:
   protoclaw-internal:
+    name: protoclaw-internal
     internal: true
+  protoclaw-external:
+    name: protoclaw-external
