@@ -14,7 +14,7 @@ fn given_fake_agent_example_yaml_when_loaded_then_has_one_mock_agent() {
     let config = protoclaw_config::ProtoclawConfig::load(Some(yaml_path.to_str().unwrap()))
         .unwrap_or_else(|e| panic!("failed to load protoclaw.yaml: {e}"));
 
-    assert_eq!(config.agents_manager.agents.len(), 1);
+    assert_eq!(config.agents_manager.agents.len(), 2);
     let mock = config
         .agents_manager
         .agents
@@ -25,6 +25,19 @@ fn given_fake_agent_example_yaml_when_loaded_then_has_one_mock_agent() {
             assert_eq!(local.binary, "@built-in/mock-agent");
         }
         other => panic!("expected Local workspace, got {other:?}"),
+    }
+
+    let mock_docker = config
+        .agents_manager
+        .agents
+        .get("mock-docker")
+        .expect("missing 'mock-docker' agent");
+    assert!(!mock_docker.enabled);
+    match &mock_docker.workspace {
+        protoclaw_config::WorkspaceConfig::Docker(docker) => {
+            assert_eq!(docker.image, "protoclaw-mock-agent:latest");
+        }
+        other => panic!("expected Docker workspace, got {other:?}"),
     }
 }
 
@@ -49,19 +62,32 @@ fn given_real_agent_example_yaml_when_loaded_then_has_opencode_and_claude_agents
     let config = protoclaw_config::ProtoclawConfig::load(Some(yaml_path.to_str().unwrap()))
         .unwrap_or_else(|e| panic!("failed to load protoclaw.yaml: {e}"));
 
-    assert_eq!(config.agents_manager.agents.len(), 2);
+    assert_eq!(config.agents_manager.agents.len(), 3);
     let opencode = config
         .agents_manager
         .agents
         .get("opencode")
         .expect("missing 'opencode' agent");
     match &opencode.workspace {
+        protoclaw_config::WorkspaceConfig::Docker(docker) => {
+            assert_eq!(docker.image, "protoclaw-opencode-agent:latest");
+        }
+        other => panic!("expected Docker workspace, got {other:?}"),
+    }
+    assert!(opencode.enabled);
+
+    let opencode_local = config
+        .agents_manager
+        .agents
+        .get("opencode-local")
+        .expect("missing 'opencode-local' agent");
+    match &opencode_local.workspace {
         protoclaw_config::WorkspaceConfig::Local(local) => {
-            assert_eq!(local.binary, "opencode");
+            assert_eq!(local.binary, "@built-in/agents/opencode");
         }
         other => panic!("expected Local workspace, got {other:?}"),
     }
-    assert!(opencode.enabled);
+    assert!(!opencode_local.enabled);
 
     let claude = config
         .agents_manager
