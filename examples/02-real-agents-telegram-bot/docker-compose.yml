@@ -1,21 +1,52 @@
 services:
+  socket-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    environment:
+      CONTAINERS: 1
+      IMAGES: 1
+      POST: 1
+      SECRETS: 0
+      BUILD: 0
+      EXEC: 0
+      NETWORKS: 0
+      VOLUMES: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - protoclaw-internal
+    restart: unless-stopped
+
   protoclaw:
     build:
       context: ../..
       dockerfile: examples/02-real-agents-telegram-bot/Dockerfile
-      target: opencode  # Change to 'claude-code' for Claude Code
+      target: opencode
     ports:
       - "8080:8080"
     volumes:
       - ./protoclaw.yaml:/workspace/protoclaw.yaml:ro
-      # OpenCode mounts (D-03):
-      - ./.opencode:/home/protoclaw/.config/opencode:ro
-      # Claude Code config mount — uncomment when using claude-code target (D-03):
-      # - ~/.claude:/home/protoclaw/.claude:ro
     environment:
       - LOG_LEVEL=debug
       - PORT=8080
       - HOST=0.0.0.0
+      - DOCKER_HOST=tcp://socket-proxy:2375
     env_file:
       - .env
+    networks:
+      - protoclaw-internal
+    depends_on:
+      - socket-proxy
     restart: unless-stopped
+
+  # Build-only: creates the opencode agent image for protoclaw to spawn via bollard
+  opencode-agent-image:
+    build:
+      context: ../..
+      dockerfile: examples/02-real-agents-telegram-bot/Dockerfile.agent
+    image: protoclaw-opencode-agent:latest
+    profiles:
+      - build-only
+
+networks:
+  protoclaw-internal:
+    internal: true
