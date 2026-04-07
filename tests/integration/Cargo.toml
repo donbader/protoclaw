@@ -16,6 +16,7 @@ tokio-util = { workspace = true }
 tokio-stream = { workspace = true }
 anyhow = { workspace = true }
 figment = { version = "0.10", features = ["yaml", "test"] }
+bollard = { workspace = true }
 test-log = { version = "0.2", features = ["trace"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 rstest = { workspace = true }

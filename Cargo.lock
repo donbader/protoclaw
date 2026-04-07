@@ -2330,6 +2330,7 @@ name = "protoclaw-integration-tests"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bollard",
  "figment",
  "protoclaw",
  "protoclaw-config",
@@ -2422,6 +2423,7 @@ dependencies = [
  "reqwest",
  "rstest",
  "serde_json",
+ "tempfile",
  "test-log",
  "tokio",
  "tokio-stream",

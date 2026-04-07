@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-use crate::paths::{debug_http_path, mock_agent_path, sdk_test_channel_path, sdk_test_tool_path};
+use crate::paths::{
+    debug_http_path, mock_agent_path, sdk_test_channel_path, sdk_test_tool_path, workspace_root,
+};
 
 pub fn mock_agent_config() -> protoclaw_config::ProtoclawConfig {
     mock_agent_config_with_options(HashMap::new())
@@ -218,6 +220,162 @@ pub fn sdk_tool_config() -> protoclaw_config::ProtoclawConfig {
         log_format: "pretty".into(),
         extensions_dir: "/usr/local/bin".into(),
     }
+}
+
+/// Config with a docker-workspace agent ("docker-agent") backed by `protoclaw-mock-agent:test`
+/// and a debug-http channel. Uses `PullPolicy::Never` — image must be built first via
+/// `build_mock_agent_docker_image()`.
+pub fn docker_agent_config() -> protoclaw_config::ProtoclawConfig {
+    docker_agent_config_with_options(HashMap::new())
+}
+
+/// Same as `docker_agent_config()` but passes `options` to the agent config (e.g. `exit_after`).
+pub fn docker_agent_config_with_options(
+    options: HashMap<String, serde_json::Value>,
+) -> protoclaw_config::ProtoclawConfig {
+    let mut agents = HashMap::new();
+    agents.insert(
+        "docker-agent".to_string(),
+        protoclaw_config::AgentConfig {
+            workspace: protoclaw_config::WorkspaceConfig::Docker(
+                protoclaw_config::DockerWorkspaceConfig {
+                    image: "protoclaw-mock-agent:test".to_string(),
+                    entrypoint: None,
+                    volumes: vec![],
+                    env: HashMap::new(),
+                    memory_limit: None,
+                    cpu_limit: None,
+                    docker_host: None,
+                    network: None,
+                    pull_policy: protoclaw_config::PullPolicy::Never,
+                },
+            ),
+            args: vec![],
+            enabled: true,
+            tools: vec![],
+            acp_timeout_secs: None,
+            backoff: None,
+            crash_tracker: None,
+            options,
+        },
+    );
+
+    let mut channels = HashMap::new();
+    channels.insert(
+        "debug-http".to_string(),
+        protoclaw_config::ChannelConfig {
+            binary: debug_http_path().to_string_lossy().to_string(),
+            args: vec![],
+            enabled: true,
+            agent: "docker-agent".into(),
+            ack: Default::default(),
+            init_timeout_secs: None,
+            backoff: None,
+            crash_tracker: None,
+            options: HashMap::new(),
+        },
+    );
+
+    protoclaw_config::ProtoclawConfig {
+        agents_manager: protoclaw_config::AgentsManagerConfig {
+            agents,
+            ..Default::default()
+        },
+        channels_manager: protoclaw_config::ChannelsManagerConfig {
+            channels,
+            ..Default::default()
+        },
+        tools_manager: protoclaw_config::ToolsManagerConfig::default(),
+        supervisor: protoclaw_config::SupervisorConfig {
+            shutdown_timeout_secs: 5,
+            health_check_interval_secs: 1,
+            max_restarts: 3,
+            restart_window_secs: 60,
+        },
+        log_level: "info".into(),
+        log_format: "pretty".into(),
+        extensions_dir: "/usr/local/bin".into(),
+    }
+}
+
+/// Build the Docker image `protoclaw-mock-agent:test` from the local workspace.
+///
+/// Copies `target/debug/mock-agent` into a temporary build context alongside
+/// `tests/integration/Dockerfile.mock-agent`, then runs `docker build`.
+///
+/// Returns `Ok(())` on success or `Err(String)` with the error output on failure.
+pub fn build_mock_agent_docker_image() -> Result<(), String> {
+    let root = workspace_root();
+    let mock_agent_binary = root.join("target/debug/mock-agent");
+    let dockerfile = root.join("tests/integration/Dockerfile.mock-agent");
+
+    if !mock_agent_binary.exists() {
+        return Err(format!(
+            "mock-agent binary not found at {}. Run `cargo build --bin mock-agent` first.",
+            mock_agent_binary.display()
+        ));
+    }
+    if !dockerfile.exists() {
+        return Err(format!("Dockerfile not found at {}", dockerfile.display()));
+    }
+
+    let build_ctx = tempfile::tempdir().map_err(|e| format!("failed to create temp dir: {e}"))?;
+    let ctx_path = build_ctx.path();
+
+    std::fs::copy(&mock_agent_binary, ctx_path.join("mock-agent"))
+        .map_err(|e| format!("failed to copy mock-agent: {e}"))?;
+
+    std::fs::copy(&dockerfile, ctx_path.join("Dockerfile"))
+        .map_err(|e| format!("failed to copy Dockerfile: {e}"))?;
+
+    let output = std::process::Command::new("docker")
+        .args(["build", "-t", "protoclaw-mock-agent:test", "."])
+        .current_dir(ctx_path)
+        .output()
+        .map_err(|e| format!("docker build failed to run: {e}"))?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "docker build failed (exit {}):\nstdout: {}\nstderr: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+        ))
+    }
+}
+
+/// Stop and remove all containers managed by protoclaw that have the `protoclaw.managed=true` label.
+///
+/// Best-effort cleanup — ignores individual container removal errors. Intended to run before
+/// Docker integration tests to ensure a clean environment.
+pub fn cleanup_test_containers() {
+    let list_output = std::process::Command::new("docker")
+        .args(["ps", "-aq", "--filter", "label=protoclaw.managed=true"])
+        .output();
+
+    let ids_output = match list_output {
+        Ok(o) if o.status.success() => o,
+        _ => return,
+    };
+
+    let ids_text = String::from_utf8_lossy(&ids_output.stdout);
+    let ids: Vec<&str> = ids_text
+        .split_whitespace()
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    if ids.is_empty() {
+        return;
+    }
+
+    let mut cmd = std::process::Command::new("docker");
+    cmd.arg("rm").arg("-f");
+    for id in &ids {
+        cmd.arg(id);
+    }
+    let _ = cmd.output();
 }
 
 #[cfg(test)]

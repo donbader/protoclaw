@@ -1,0 +1,3 @@
+FROM debian:bookworm-slim
+COPY mock-agent /usr/local/bin/mock-agent
+ENTRYPOINT ["/usr/local/bin/mock-agent"]
