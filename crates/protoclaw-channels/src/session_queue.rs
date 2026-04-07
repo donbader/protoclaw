@@ -260,4 +260,33 @@ mod tests {
         let q = SessionQueue::new();
         assert!(!q.is_active(&key("nobody")));
     }
+
+    #[rstest]
+    fn when_mark_idle_then_drain_queued_returns_remaining_messages_for_merge() {
+        let mut q = SessionQueue::new();
+        q.push(&key("alice"), "msg1".into());
+        q.push(&key("alice"), "msg2".into());
+        q.push(&key("alice"), "msg3".into());
+        q.push(&key("alice"), "msg4".into());
+
+        let first = q.mark_idle(&key("alice"));
+        assert_eq!(first, Some("msg2".into()));
+
+        let remaining = q.drain_queued(&key("alice"));
+        assert_eq!(remaining, vec!["msg3".to_string(), "msg4".to_string()]);
+        assert!(q.is_active(&key("alice")));
+    }
+
+    #[rstest]
+    fn when_mark_idle_returns_single_queued_then_drain_returns_empty() {
+        let mut q = SessionQueue::new();
+        q.push(&key("alice"), "msg1".into());
+        q.push(&key("alice"), "msg2".into());
+
+        let first = q.mark_idle(&key("alice"));
+        assert_eq!(first, Some("msg2".into()));
+
+        let remaining = q.drain_queued(&key("alice"));
+        assert!(remaining.is_empty());
+    }
 }

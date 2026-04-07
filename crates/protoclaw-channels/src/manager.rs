@@ -311,8 +311,27 @@ impl ChannelsManager {
                         .get(&session_key)
                         .map(|e| e.agent_name.clone())
                         .unwrap_or_default();
+
+                    // Drain remaining queued messages and merge with the first
+                    // so the agent receives one combined prompt instead of N separate turns.
+                    let remaining = self.queue.drain_queued(&session_key);
+                    let merged = if remaining.is_empty() {
+                        next_msg
+                    } else {
+                        let mut parts = vec![next_msg];
+                        parts.extend(remaining);
+                        let count = parts.len();
+                        let merged = parts.join("\n");
+                        tracing::info!(
+                            session_key = %session_key,
+                            merged_count = count,
+                            "merged queued messages into single prompt"
+                        );
+                        merged
+                    };
+
                     self.send_ack_to_channel(&session_key).await;
-                    self.dispatch_to_agent(&session_key, &next_msg, &agent_name).await;
+                    self.dispatch_to_agent(&session_key, &merged, &agent_name).await;
                 }
             }
             ChannelEvent::RoutePermission { session_key, request_id, description, options } => {

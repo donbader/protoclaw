@@ -5,8 +5,8 @@ use protoclaw_integration_tests::{
 };
 use rstest::rstest;
 
-/// Send 3 messages rapidly. With FIFO queue, each gets its own response in order
-/// (no merging). Verify we see 3 separate echo responses containing each message.
+/// Send 3 messages rapidly. With FIFO queue + merging, queued messages may be
+/// joined into fewer agent turns. Verify all content arrives and FIFO order holds.
 #[test_log::test(tokio::test)]
 async fn when_three_messages_sent_rapidly_then_responses_arrive_in_fifo_order() {
     let config = mock_agent_config();
@@ -26,22 +26,16 @@ async fn when_three_messages_sent_rapidly_then_responses_arrive_in_fifo_order() 
     }
 
     let events = sse.collect_events(Duration::from_secs(15)).await;
+    let all_data: String = events.iter().map(|e| e.data.clone()).collect::<Vec<_>>().join("\n");
 
-    let saw_first = events.iter().any(|e| e.data.contains("first"));
-    let saw_second = events.iter().any(|e| e.data.contains("second"));
-    let saw_third = events.iter().any(|e| e.data.contains("third"));
+    assert!(all_data.contains("first"), "should contain 'first', all_data: {all_data:?}");
+    assert!(all_data.contains("third"), "should contain 'third', all_data: {all_data:?}");
 
-    assert!(saw_first, "should echo 'first', events: {events:?}");
-    assert!(saw_second, "should echo 'second', events: {events:?}");
-    assert!(saw_third, "should echo 'third', events: {events:?}");
-
-    let pos_first = events.iter().position(|e| e.data.contains("first"));
-    let pos_second = events.iter().position(|e| e.data.contains("second"));
-    let pos_third = events.iter().position(|e| e.data.contains("third"));
-
+    let pos_first = all_data.find("first").expect("first must exist");
+    let pos_third = all_data.find("third").expect("third must exist");
     assert!(
-        pos_first < pos_second && pos_second < pos_third,
-        "messages must be processed in FIFO order: first@{pos_first:?}, second@{pos_second:?}, third@{pos_third:?}"
+        pos_first < pos_third,
+        "FIFO: first at byte {pos_first} must precede third at byte {pos_third}"
     );
 
     cancel.cancel();

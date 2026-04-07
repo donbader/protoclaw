@@ -37,11 +37,12 @@ Manages the agent subprocess lifecycle and implements the ACP (Agent Client Prot
 ## Crash Recovery Flow
 
 1. Agent process exits → `handle_crash()` called
-2. Backoff delay (exponential, 100ms→30s)
-3. Respawn subprocess + re-initialize
-4. If agent supports `session/load` → attempt session restore
-5. If restore fails → start fresh session
-6. Reset backoff on success
+2. Old connection cleaned up via `kill()` (stops + removes Docker container if applicable)
+3. Backoff delay (exponential, 100ms→30s)
+4. Respawn subprocess + re-initialize
+5. If agent supports `session/load` → attempt session restore
+6. If restore fails → start fresh session
+7. Reset backoff on success
 
 ## Completion Signal Flow
 

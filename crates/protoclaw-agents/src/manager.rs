@@ -596,7 +596,11 @@ impl AgentsManager {
         let slot = &mut self.slots[slot_idx];
         let agent_name = slot.name().to_string();
         tracing::warn!(agent = %agent_name, "agent process exited, attempting recovery");
-        slot.connection = None;
+        if let Some(mut old_conn) = slot.connection.take() {
+            if let Err(e) = old_conn.kill().await {
+                tracing::debug!(agent = %agent_name, error = %e, "failed to clean up old connection (may already be dead)");
+            }
+        }
 
         let delay = slot.backoff.next_delay();
         tracing::info!(agent = %agent_name, delay_ms = delay.as_millis(), "waiting before restart");

@@ -11,8 +11,8 @@ agents-manager:
       workspace:
         type: local
         binary: "@built-in/mock-agent"
-        env:
-          MOCK_AGENT_THINK: "1"
+      options:
+        thinking: true
       tools:
         - "system-info"
     # Docker workspace agent (opt-in — disabled by default)
@@ -29,9 +29,9 @@ agents-manager:
         image: "protoclaw-mock-agent:latest"
         docker_host: "tcp://socket-proxy:2375"
         network: "protoclaw-internal"
-        env:
-          MOCK_AGENT_THINK: "1"
       pull_policy: "Never"
+      options:
+        thinking: true
       tools:
         - "system-info"
 
