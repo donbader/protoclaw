@@ -16,7 +16,8 @@ RUN cargo build --release \
     --bin protoclaw \
     --bin debug-http \
     --bin telegram-channel \
-    --bin system-info
+    --bin system-info \
+    --bin opencode-wrapper
 
 # Stage 4a: OpenCode agent target (D-02)
 FROM node:20-slim AS opencode
@@ -27,6 +28,9 @@ COPY --from=builder /build/target/release/protoclaw /usr/local/bin/protoclaw
 COPY --from=builder /build/target/release/debug-http /usr/local/bin/debug-http
 COPY --from=builder /build/target/release/telegram-channel /usr/local/bin/telegram-channel
 COPY --from=builder /build/target/release/system-info /usr/local/bin/system-info
+# opencode-wrapper at @built-in/agents/opencode path (D-07)
+RUN mkdir -p /usr/local/bin/agents
+COPY --from=builder /build/target/release/opencode-wrapper /usr/local/bin/agents/opencode
 WORKDIR /workspace
 ENTRYPOINT ["protoclaw"]
 

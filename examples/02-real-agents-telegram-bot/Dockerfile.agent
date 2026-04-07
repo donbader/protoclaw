@@ -1,0 +1,39 @@
+# Opencode agent container — managed by protoclaw via bollard
+# Config is baked in at build time. API keys passed via env at runtime.
+
+# Stage 1: Chef base
+FROM lukemathwalker/cargo-chef:latest-rust-1.91-bookworm AS chef
+WORKDIR /build
+
+# Stage 2: Planner
+FROM chef AS planner
+COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
+
+# Stage 3: Builder — build opencode-wrapper from Rust workspace
+FROM chef AS builder
+COPY --from=planner /build/recipe.json recipe.json
+RUN cargo chef cook --release --recipe-path recipe.json
+COPY . .
+RUN cargo build --release --bin opencode-wrapper
+
+# Stage 4: Runtime — node for opencode + wrapper binary
+FROM node:20-slim
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN npm install -g opencode-ai@latest
+
+# Copy wrapper binary — this is the entrypoint that protoclaw spawns
+COPY --from=builder /build/target/release/opencode-wrapper /usr/local/bin/opencode-wrapper
+
+# Bake in opencode config (D-14)
+# Users can customize by editing .opencode/ in the example dir and rebuilding
+COPY examples/02-real-agents-telegram-bot/.opencode /home/agent/.config/opencode
+
+# Non-root user for security (D-03)
+RUN useradd -m -u 1000 agent
+USER agent
+WORKDIR /home/agent
+
+# Wrapper is the entrypoint — protoclaw sends ACP over stdio
+ENTRYPOINT ["opencode-wrapper"]
