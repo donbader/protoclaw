@@ -3,10 +3,16 @@ set -euo pipefail
 
 # Self-contained E2E test for the fake-agent example.
 # Builds, starts, tests, and tears down Docker containers automatically.
-# Usage: ./test.sh [base_url]
+# Usage: ./test.sh [--docker] [base_url]
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
+
+DOCKER_MODE=false
+if [[ "${1:-}" == "--docker" ]]; then
+  DOCKER_MODE=true
+  shift
+fi
 
 BASE_URL="${1:-http://localhost:8080}"
 PASS=0
@@ -15,26 +21,33 @@ FAIL=0
 pass() { ((PASS++)); printf "  ✓ %s\n" "$1"; }
 fail() { ((FAIL++)); printf "  ✗ %s\n" "$1"; }
 
-# --- Trap-based cleanup (runs on success, failure, or Ctrl+C) ---
 SSE_PID=""
 cleanup() {
   [ -n "$SSE_PID" ] && kill "$SSE_PID" 2>/dev/null || true
   printf "\nTearing down...\n"
   docker compose down --timeout 10 2>/dev/null || true
+  [ -f protoclaw.yaml.bak ] && mv protoclaw.yaml.bak protoclaw.yaml
 }
 trap cleanup EXIT
 
-# --- Ensure .env exists ---
 if [ ! -f .env ]; then
   cp .env.example .env
   printf "Created .env from .env.example\n"
 fi
 
-# --- Build + start ---
+if [ "$DOCKER_MODE" = true ]; then
+  printf "Building mock-agent Docker image...\n"
+  docker compose --profile build-only build
+  cp protoclaw.yaml protoclaw.yaml.bak
+  sed -e '/mock-docker:/,/enabled:/{s/enabled: false/enabled: true/}' \
+      -e 's/agent: "mock"/agent: "mock-docker"/g' \
+      protoclaw.yaml.bak > protoclaw.yaml
+  printf "Patched protoclaw.yaml for Docker workspace mode\n"
+fi
+
 printf "Building and starting containers...\n"
 docker compose up --build -d
 
-# --- Wait for readiness ---
 printf "Waiting for health endpoint"
 for i in $(seq 1 30); do
   if curl -sf "$BASE_URL/health" >/dev/null 2>&1; then
@@ -52,12 +65,10 @@ done
 
 printf "Testing %s\n\n" "$BASE_URL"
 
-# --- Test 1: Health ---
 printf "Health\n"
 STATUS=$(curl -sf -o /dev/null -w "%{http_code}" "$BASE_URL/health")
 if [ "$STATUS" = "200" ]; then pass "GET /health → 200"; else fail "GET /health → $STATUS"; fi
 
-# --- Test 2: Send message ---
 printf "Send message\n"
 RESP=$(curl -sf -X POST "$BASE_URL/message" \
   -H "Content-Type: application/json" \
@@ -66,13 +77,11 @@ if echo "$RESP" | grep -q '"queued"\|"sent"'; then pass "POST /message → accep
 
 sleep 3
 
-# --- Open single SSE connection for all streaming tests ---
 SSE_FILE=$(mktemp)
 curl -sN "$BASE_URL/events" > "$SSE_FILE" 2>/dev/null &
 SSE_PID=$!
 sleep 2
 
-# --- Test 3: SSE stream receives echo ---
 printf "SSE response\n"
 curl -sf -X POST "$BASE_URL/message" \
   -H "Content-Type: application/json" \
@@ -98,7 +107,6 @@ else
   fail "SSE stream missing result event"
 fi
 
-# --- Test 4: Thinking pipeline (mock agent sends thought events) ---
 printf "Thinking pipeline\n"
 if grep -q "thought" "$SSE_FILE"; then
   pass "SSE stream contains thought events"
@@ -108,7 +116,6 @@ fi
 
 sleep 2
 
-# --- Test 5: Batch debounce (3 rapid messages → single merged response) ---
 printf "Batch debounce\n"
 BEFORE_BATCH=$(wc -l < "$SSE_FILE")
 
@@ -148,6 +155,45 @@ kill "$SSE_PID" 2>/dev/null || true
 wait "$SSE_PID" 2>/dev/null || true
 SSE_PID=""
 rm -f "$SSE_FILE"
+
+if [ "$DOCKER_MODE" = true ]; then
+  printf "\n--- Docker workspace tests ---\n"
+  printf "Docker health\n"
+  D_STATUS=$(curl -sf -o /dev/null -w "%{http_code}" "$BASE_URL/health")
+  if [ "$D_STATUS" = "200" ]; then pass "Docker: GET /health → 200"; else fail "Docker: GET /health → $D_STATUS"; fi
+
+  printf "Docker send message\n"
+  D_RESP=$(curl -sf -X POST "$BASE_URL/message" \
+    -H "Content-Type: application/json" \
+    -d '{"message": "docker-ping"}')
+  if echo "$D_RESP" | grep -q '"queued"\|"sent"'; then
+    pass "Docker: POST /message → accepted"
+  else
+    fail "Docker: POST /message → $D_RESP"
+  fi
+
+  D_SSE_FILE=$(mktemp)
+  curl -sN "$BASE_URL/events" > "$D_SSE_FILE" 2>/dev/null &
+  SSE_PID=$!
+  sleep 2
+
+  curl -sf -X POST "$BASE_URL/message" \
+    -H "Content-Type: application/json" \
+    -d '{"message": "docker-test"}' >/dev/null
+  sleep 5
+
+  printf "Docker SSE response\n"
+  if grep -q "Echo: docker-test" "$D_SSE_FILE"; then
+    pass "Docker: SSE result contains 'Echo: docker-test'"
+  else
+    fail "Docker: SSE result missing 'Echo: docker-test' (got: $(cat "$D_SSE_FILE"))"
+  fi
+
+  kill "$SSE_PID" 2>/dev/null || true
+  wait "$SSE_PID" 2>/dev/null || true
+  SSE_PID=""
+  rm -f "$D_SSE_FILE"
+fi
 
 printf "\n%d passed, %d failed\n" "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1

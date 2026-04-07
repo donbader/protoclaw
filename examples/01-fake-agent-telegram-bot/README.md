@@ -36,6 +36,58 @@ data: {"type":"result","content":"Echo: hello"}
 
 Check the Docker logs for debug output showing the full routing flow.
 
+## Docker Workspace
+
+By default, the mock agent runs as a local subprocess inside the protoclaw container. You can optionally run it in an isolated Docker container instead, managed by protoclaw via [bollard](https://github.com/fussybeaver/bollard).
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────┐
+│  protoclaw-internal network (internal: true) │
+│                                              │
+│  ┌────────────┐    ┌───────────────────┐     │
+│  │ protoclaw  │───▶│  socket-proxy     │     │
+│  │            │    │  (Docker API gate) │     │
+│  └────────────┘    └───────┬───────────┘     │
+│        │                   │                 │
+│        │           /var/run/docker.sock (ro)  │
+│        ▼                                     │
+│  ┌────────────────┐                          │
+│  │ mock-agent     │  (spawned by protoclaw   │
+│  │ container      │   via bollard at runtime) │
+│  └────────────────┘                          │
+└──────────────────────────────────────────────┘
+```
+
+The [Tecnativa docker-socket-proxy](https://github.com/Tecnativa/docker-socket-proxy) restricts Docker API access to containers and images only — no exec, build, secrets, networks, or volumes.
+
+### Setup
+
+1. Build the agent image:
+   ```sh
+   docker compose --profile build-only build
+   ```
+
+2. Edit `protoclaw.yaml`:
+   - Set `mock-docker.enabled: true`
+   - Set `mock.enabled: false` (or remove it)
+   - Change channel `agent` fields from `"mock"` to `"mock-docker"`
+
+3. Start:
+   ```sh
+   docker compose up --build
+   ```
+
+### Security
+
+The Docker workspace applies defense-in-depth:
+
+- **Socket proxy** — Only `CONTAINERS` and `IMAGES` API endpoints are exposed. `EXEC`, `BUILD`, `SECRETS`, `NETWORKS`, `VOLUMES` are all denied.
+- **Read-only socket** — Docker socket is mounted `:ro` on the proxy.
+- **Internal network** — `protoclaw-internal` is marked `internal: true`, preventing external access.
+- **Container hardening** — protoclaw's DockerBackend applies `cap_drop: ALL` and `no-new-privileges` to spawned agent containers at runtime via bollard's HostConfig.
+
 ## Enable Telegram
 
 After verifying debug-http works:
@@ -69,6 +121,20 @@ With `LOG_LEVEL=debug` (the default), Docker logs show:
 
 **Tip:** Edit `protoclaw.yaml` and restart the container — no rebuild needed. The config file is volume-mounted, so changes take effect on next `docker compose restart`.
 
+## Testing
+
+Run the full test suite:
+
+```sh
+./test.sh
+```
+
+Run with Docker workspace mode (builds agent image, patches config, tests Docker path):
+
+```sh
+./test.sh --docker
+```
+
 ## Troubleshooting
 
 **Build fails with out of memory** — Ensure Docker has at least 4GB memory. Rust compilation is memory-intensive.
@@ -82,9 +148,11 @@ With `LOG_LEVEL=debug` (the default), Docker logs show:
 | File | Purpose |
 |------|---------|
 | `Dockerfile` | Multi-stage cargo-chef build, all binaries in one image |
-| `docker-compose.yml` | Single service with port 8080, debug logging |
-| `protoclaw.yaml` | Config: mock-agent, debug-http, telegram, system-info |
+| `Dockerfile.agent` | Multi-stage build for mock-agent Docker workspace image |
+| `docker-compose.yml` | Protoclaw + socket-proxy + build-only agent image service |
+| `protoclaw.yaml` | Config: mock-agent (local default), mock-docker (opt-in), channels, tools |
 | `.env.example` | Environment template — copy to `.env` |
 | `.dockerignore` | Build context exclusions |
+| `test.sh` | E2E test script (`--docker` flag for Docker workspace path) |
 | `README.md` | This file |
 | `tools/system-info/` | Demo MCP tool binary (workspace member) |
