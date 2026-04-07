@@ -1,0 +1,26 @@
+# Mock agent container — used with workspace: docker
+# Builds only the mock-agent binary for use as a Docker workspace agent.
+# protoclaw spawns this image via bollard when an agent has workspace.type: docker.
+
+# Stage 1: Chef base
+FROM lukemathwalker/cargo-chef:latest-rust-1.91-bookworm AS chef
+WORKDIR /build
+
+# Stage 2: Planner
+FROM chef AS planner
+COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
+
+# Stage 3: Builder — cook deps then build mock-agent only
+FROM chef AS builder
+COPY --from=planner /build/recipe.json recipe.json
+RUN cargo chef cook --release --recipe-path recipe.json
+COPY . .
+RUN cargo build --release --bin mock-agent
+
+# Stage 4: Runtime — minimal image with just mock-agent
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /build/target/release/mock-agent /usr/local/bin/mock-agent
+ENTRYPOINT ["mock-agent"]
