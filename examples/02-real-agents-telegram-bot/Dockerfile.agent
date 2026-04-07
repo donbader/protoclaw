@@ -28,12 +28,12 @@ COPY --from=builder /build/target/release/opencode-wrapper /usr/local/bin/openco
 
 # Bake in opencode config (D-14)
 # Users can customize by editing .opencode/ in the example dir and rebuilding
-COPY examples/02-real-agents-telegram-bot/.opencode /home/agent/.config/opencode
+COPY examples/02-real-agents-telegram-bot/.opencode /home/node/.config/opencode
 
 # Non-root user for security (D-03)
-RUN useradd -m -u 1000 agent
-USER agent
-WORKDIR /home/agent
+# node:20-slim ships with UID 1000 as 'node' — reuse it
+USER node
+WORKDIR /home/node
 
 # Wrapper is the entrypoint — protoclaw sends ACP over stdio
 ENTRYPOINT ["opencode-wrapper"]

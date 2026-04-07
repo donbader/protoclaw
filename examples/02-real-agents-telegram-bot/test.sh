@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Local-only E2E test — requires ANTHROPIC_API_KEY in .env
+# Local-only E2E test — ANTHROPIC_API_KEY optional (agent uses baked-in config)
 # CI skips this script (no secrets available in CI runner)
 # Usage: ./test.sh [--local] [base_url]
 
@@ -31,18 +31,13 @@ trap cleanup EXIT
 
 # --- .env validation ---
 if [ ! -f .env ]; then
-  printf "ERROR: .env file not found.\n"
-  printf "Copy .env.example to .env and set ANTHROPIC_API_KEY:\n\n"
-  printf "  cp .env.example .env\n"
-  printf "  # Edit .env — set your Anthropic API key\n\n"
-  exit 1
+  printf "WARN: .env file not found — creating from .env.example\n"
+  cp .env.example .env
 fi
 
 source .env
 if [ -z "${ANTHROPIC_API_KEY:-}" ] || [ "$ANTHROPIC_API_KEY" = "your-api-key-here" ]; then
-  printf "ERROR: ANTHROPIC_API_KEY not set in .env\n"
-  printf "Get your key from https://console.anthropic.com\n"
-  exit 1
+  printf "NOTE: ANTHROPIC_API_KEY not set — agent uses baked-in config\n"
 fi
 
 # --- Local mode setup ---
@@ -65,11 +60,11 @@ fi
 # --- Build agent image + start ---
 if [ "$LOCAL_MODE" = false ]; then
   printf "Building agent Docker image...\n"
-  docker compose --profile build-only build
+  docker compose --profile build-only build || { printf "FAIL: agent image build failed\n"; exit 1; }
 fi
 
 printf "Building and starting containers...\n"
-docker compose up --build -d
+docker compose up --build -d || { printf "FAIL: docker compose up failed\n"; exit 1; }
 
 # --- Wait for readiness ---
 printf "Waiting for health endpoint"

@@ -17,13 +17,13 @@ agents-manager:
         image: "protoclaw-opencode-agent:latest"
         entrypoint: "opencode-wrapper"
         docker_host: "tcp://socket-proxy:2375"
-        network: "protoclaw-internal"
+        network: "protoclaw-external"
         env:
           OPENCODE_PROVIDER: "${OPENCODE_PROVIDER:anthropic}"
           OPENCODE_MODEL: "${OPENCODE_MODEL:claude-sonnet-4-20250514}"
           ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:}"
-          XDG_CONFIG_HOME: "/home/agent/.config"
-          XDG_DATA_HOME: "/home/agent/.local/share"
+          XDG_CONFIG_HOME: "/home/node/.config"
+          XDG_DATA_HOME: "/home/node/.local/share"
       pull_policy: "Never"
       enabled: true
       tools:

@@ -5,7 +5,7 @@ Opencode runs in an isolated Docker container managed by protoclaw via bollard. 
 ## Prerequisites
 
 - Docker and Docker Compose v2
-- Anthropic API key
+- Anthropic API key (optional — agent uses baked-in opencode config if not set)
 
 ## Quick Start
 
@@ -39,14 +39,20 @@ SSE events stream back with the agent's response.
 │  │          │    tcp:2375    │ (haproxy)    │   │
 │  └────┬─────┘               └──────┬───────┘   │
 │       │                            │            │
-│       │ spawns via bollard         │ :ro        │
-│       ▼                            ▼            │
-│  ┌──────────────┐         /var/run/docker.sock  │
-│  │ opencode     │                               │
-│  │ agent        │                               │
-│  │ container    │                               │
-│  └──────────────┘                               │
-└─────────────────────────────────────────────────┘
+│       │                            │ :ro        │
+│       │                            ▼            │
+│       │                    /var/run/docker.sock  │
+└───────┼─────────────────────────────────────────┘
+        │
+        │ also on protoclaw-external (internet access)
+        │
+        │ spawns via bollard
+        ▼
+   ┌──────────────┐
+   │ opencode     │  ← protoclaw-external network
+   │ agent        │    (internet for API calls)
+   │ container    │
+   └──────────────┘
 ```
 
 Protoclaw connects to Docker through [Tecnativa/docker-socket-proxy](https://github.com/Tecnativa/docker-socket-proxy), an haproxy-based filter that restricts which Docker API endpoints are accessible:
@@ -62,7 +68,7 @@ Protoclaw connects to Docker through [Tecnativa/docker-socket-proxy](https://git
 | NETWORKS | ✗ | No network manipulation |
 | VOLUMES | ✗ | No volume management |
 
-The socket proxy and protoclaw run on an `internal: true` Docker network. Agent containers join the same network when spawned.
+The socket proxy runs on an `internal: true` Docker network (no internet). Protoclaw joins both the internal network (to reach socket-proxy) and an external network (for Telegram API, etc.). Agent containers are spawned on the external network so they can reach AI provider APIs.
 
 ## Security
 
