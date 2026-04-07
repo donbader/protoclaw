@@ -3,10 +3,16 @@ set -euo pipefail
 
 # Local-only E2E test — requires ANTHROPIC_API_KEY in .env
 # CI skips this script (no secrets available in CI runner)
-# Usage: ./test.sh [base_url]
+# Usage: ./test.sh [--local] [base_url]
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
+
+LOCAL_MODE=false
+if [[ "${1:-}" == "--local" ]]; then
+  LOCAL_MODE=true
+  shift
+fi
 
 BASE_URL="${1:-http://localhost:8080}"
 PASS=0
@@ -18,6 +24,8 @@ fail() { ((FAIL++)); printf "  ✗ %s\n" "$1"; }
 cleanup() {
   printf "\nTearing down...\n"
   docker compose down --timeout 10 2>/dev/null || true
+  [ -f protoclaw.yaml.bak ] && mv protoclaw.yaml.bak protoclaw.yaml
+  [ -f docker-compose.override.yml ] && rm -f docker-compose.override.yml
 }
 trap cleanup EXIT
 
@@ -37,7 +45,29 @@ if [ -z "${ANTHROPIC_API_KEY:-}" ] || [ "$ANTHROPIC_API_KEY" = "your-api-key-her
   exit 1
 fi
 
-# --- Build + start ---
+# --- Local mode setup ---
+if [ "$LOCAL_MODE" = true ]; then
+  printf "Running in local workspace mode (--local)\n\n"
+  cp protoclaw.yaml protoclaw.yaml.bak
+  sed -i.tmp 's/^\(\s*\)enabled: true/\1enabled: false/' protoclaw.yaml
+  sed -i.tmp '/opencode-local:/,/tools:/{s/enabled: false/enabled: true/}' protoclaw.yaml
+  sed -i.tmp 's/agent: "opencode"/agent: "opencode-local"/' protoclaw.yaml
+  rm -f protoclaw.yaml.tmp
+  cat > docker-compose.override.yml <<'OVERRIDE'
+services:
+  protoclaw:
+    volumes:
+      - ./protoclaw.yaml:/workspace/protoclaw.yaml:ro
+      - ./.opencode:/home/protoclaw/.config/opencode:ro
+OVERRIDE
+fi
+
+# --- Build agent image + start ---
+if [ "$LOCAL_MODE" = false ]; then
+  printf "Building agent Docker image...\n"
+  docker compose --profile build-only build
+fi
+
 printf "Building and starting containers...\n"
 docker compose up --build -d
 
