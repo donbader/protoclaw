@@ -82,6 +82,31 @@ impl ChatTurn {
             }
         }
     }
+
+    pub fn begin_finalizing(&mut self, handle: JoinHandle<()>) {
+        if let TurnPhase::Finalizing(old) = &self.phase {
+            old.abort();
+        }
+        self.phase = TurnPhase::Finalizing(handle);
+    }
+
+    pub fn take_response_for_finalize(&mut self) -> Option<(String, i32)> {
+        self.response.as_ref().map(|r| (r.buffer.clone(), r.msg_id))
+    }
+
+    pub fn cleanup(&mut self) {
+        if let TurnPhase::Finalizing(handle) = &self.phase {
+            handle.abort();
+        }
+        if let Some(ref track) = self.thought {
+            if let Some(ref h) = track.debounce_handle {
+                h.abort();
+            }
+        }
+        self.thought = None;
+        self.response = None;
+        self.phase = TurnPhase::Active;
+    }
 }
 
 #[cfg(test)]
@@ -136,5 +161,51 @@ mod tests {
             last_edit: Instant::now() - Duration::from_secs(2),
         });
         assert!(turn.can_edit_response());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_result_received_then_phase_becomes_finalizing() {
+        let mut turn = ChatTurn::new("msg-1".to_string());
+        turn.append_response("hello world", 100);
+        let handle = tokio::spawn(async { tokio::time::sleep(Duration::from_secs(10)).await });
+        turn.begin_finalizing(handle);
+        assert!(matches!(turn.phase, TurnPhase::Finalizing(_)));
+    }
+
+    #[rstest]
+    fn when_finalized_then_response_buffer_returned() {
+        let mut turn = ChatTurn::new("msg-1".to_string());
+        turn.append_response("hello world", 100);
+        let (response_text, response_msg_id) = turn.take_response_for_finalize().unwrap();
+        assert_eq!(response_text, "hello world");
+        assert_eq!(response_msg_id, 100);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_cleanup_called_then_handles_aborted_and_state_cleared() {
+        let mut turn = ChatTurn::new("msg-1".to_string());
+        turn.append_thought("thinking", 42);
+        turn.append_response("text", 100);
+        let handle = tokio::spawn(async { tokio::time::sleep(Duration::from_secs(10)).await });
+        turn.begin_finalizing(handle);
+        turn.cleanup();
+        assert!(turn.thought.is_none());
+        assert!(turn.response.is_none());
+        assert!(matches!(turn.phase, TurnPhase::Active));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn given_late_chunk_when_finalizing_then_buffer_grows() {
+        let mut turn = ChatTurn::new("msg-1".to_string());
+        turn.append_response("hello ", 100);
+        let handle = tokio::spawn(async { tokio::time::sleep(Duration::from_secs(10)).await });
+        turn.begin_finalizing(handle);
+        turn.append_response("world", 100);
+        let (text, _) = turn.take_response_for_finalize().unwrap();
+        assert_eq!(text, "hello world");
+        assert!(matches!(turn.phase, TurnPhase::Finalizing(_)));
     }
 }
