@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::convert::Infallible;
 use std::sync::Arc;
 
@@ -8,12 +7,15 @@ use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Json};
 use axum::routing::{get, post};
 use axum::Router;
-use protoclaw_sdk_channel::{Channel, ChannelCapabilities, ChannelHarness, ChannelSdkError, ChannelSendMessage};
+use protoclaw_sdk_channel::{
+    content_to_string, Channel, ChannelCapabilities, ChannelHarness, ChannelSdkError,
+    ChannelSendMessage, PermissionBroker,
+};
 use protoclaw_sdk_types::{
-    ChannelRequestPermission, DeliverMessage, PeerInfo, PermissionResponse,
+    ChannelRequestPermission, ContentKind, DeliverMessage, PeerInfo, PermissionResponse,
 };
 use serde::Deserialize;
-use tokio::sync::{broadcast, mpsc, oneshot, Mutex, RwLock};
+use tokio::sync::{broadcast, mpsc, Mutex, RwLock};
 use tokio_stream::StreamExt;
 
 #[derive(Clone, Debug)]
@@ -41,8 +43,7 @@ struct SharedState {
     event_tx: broadcast::Sender<SsePayload>,
     /// Pending permission requests from the agent.
     pending_permissions: RwLock<Vec<PendingPermission>>,
-    /// Oneshot senders for permission responses — HTTP handler resolves these.
-    permission_resolvers: Mutex<HashMap<String, oneshot::Sender<PermissionResponse>>>,
+    permission_broker: Mutex<PermissionBroker>,
 }
 
 #[derive(Deserialize)]
@@ -95,53 +96,26 @@ impl Channel for DebugHttpChannel {
     }
 
     async fn deliver_message(&mut self, msg: DeliverMessage) -> Result<(), ChannelSdkError> {
-        let update = msg.content.get("update");
-        let update_type = update
-            .and_then(|u| u.get("sessionUpdate"))
-            .and_then(|t| t.as_str());
-        let payload = match update_type {
-            Some("agent_thought_chunk") => {
-                let thought = update
-                    .and_then(|u| u.get("content"))
-                    .map(|c| {
-                        // OpenCode sends content as {"type": "text", "text": "actual text"}
-                        c.get("text").and_then(|t| t.as_str())
-                            .or_else(|| c.as_str())
-                            .unwrap_or("")
-                    })
-                    .unwrap_or("");
-                SsePayload {
-                    event_type: Some("thought".into()),
-                    data: thought.to_string(),
-                }
-            }
-            Some("user_message_chunk") => {
-                let text = update
-                    .and_then(|u| u.get("content"))
-                    .and_then(|c| c.get("text").and_then(|t| t.as_str())
-                        .or_else(|| c.as_str()))
-                    .unwrap_or("");
-                SsePayload {
-                    event_type: Some("user_message_chunk".into()),
-                    data: text.to_string(),
-                }
-            }
+        let kind = ContentKind::from_content(&msg.content);
+        let payload = match kind {
+            ContentKind::Thought(thought) => SsePayload {
+                event_type: Some("thought".into()),
+                data: thought.content,
+            },
+            ContentKind::UserMessageChunk { text } => SsePayload {
+                event_type: Some("user_message_chunk".into()),
+                data: text,
+            },
+            ContentKind::MessageChunk { text } => SsePayload {
+                event_type: None,
+                data: text,
+            },
+            ContentKind::Result { text } => SsePayload {
+                event_type: None,
+                data: text,
+            },
             _ => {
-                let content_str = update
-                    .and_then(|u| u.get("content"))
-                    .map(|c| {
-                        // Unwrap {"type": "text", "text": "..."} content objects
-                        c.get("text").and_then(|t| t.as_str())
-                            .map(|s| s.to_string())
-                            .unwrap_or_else(|| match c {
-                                serde_json::Value::String(s) => s.clone(),
-                                other => serde_json::to_string(other).unwrap_or_default(),
-                            })
-                    })
-                    .unwrap_or_else(|| match msg.content {
-                        serde_json::Value::String(s) => s,
-                        other => serde_json::to_string(&other).unwrap_or_default(),
-                    });
+                let content_str = content_to_string(&msg.content);
                 SsePayload { event_type: None, data: content_str }
             }
         };
@@ -153,8 +127,6 @@ impl Channel for DebugHttpChannel {
         &mut self,
         req: ChannelRequestPermission,
     ) -> Result<PermissionResponse, ChannelSdkError> {
-        let (tx, rx) = oneshot::channel();
-
         self.state
             .pending_permissions
             .write()
@@ -166,11 +138,11 @@ impl Channel for DebugHttpChannel {
                 options: serde_json::to_value(&req.options).unwrap_or_default(),
             });
 
-        self.state
-            .permission_resolvers
+        let rx = self.state
+            .permission_broker
             .lock()
             .await
-            .insert(req.request_id.clone(), tx);
+            .register(&req.request_id);
 
         rx.await.map_err(|_| {
             ChannelSdkError::Protocol("permission response channel closed".into())
@@ -272,13 +244,7 @@ async fn handle_permission_respond(
         perms.retain(|p| p.request_id != id);
     }
     {
-        let mut resolvers = state.permission_resolvers.lock().await;
-        if let Some(tx) = resolvers.remove(&id) {
-            let _ = tx.send(PermissionResponse {
-                request_id: id.clone(),
-                option_id: body.option_id,
-            });
-        }
+        state.permission_broker.lock().await.resolve(&id, &body.option_id);
     }
     Json(serde_json::json!({"status": "responded"}))
 }
@@ -313,7 +279,7 @@ async fn main() {
         outbound: Mutex::new(None),
         event_tx,
         pending_permissions: RwLock::new(Vec::new()),
-        permission_resolvers: Mutex::new(HashMap::new()),
+        permission_broker: Mutex::new(PermissionBroker::new()),
     });
 
     let channel = DebugHttpChannel {
@@ -340,7 +306,7 @@ mod tests {
             outbound: Mutex::new(None),
             event_tx,
             pending_permissions: RwLock::new(Vec::new()),
-            permission_resolvers: Mutex::new(HashMap::new()),
+            permission_broker: Mutex::new(PermissionBroker::new()),
         })
     }
 
@@ -435,23 +401,13 @@ mod tests {
             }],
         };
 
-        // Spawn the request_permission call
         let state2 = state.clone();
         let handle = tokio::spawn(async move { ch.request_permission(req).await });
 
-        // Give it a moment to register the oneshot
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
-        // Simulate HTTP handler resolving the permission
         {
-            let mut resolvers = state2.permission_resolvers.lock().await;
-            if let Some(tx) = resolvers.remove("perm-1") {
-                tx.send(PermissionResponse {
-                    request_id: "perm-1".into(),
-                    option_id: "allow".into(),
-                })
-                .unwrap();
-            }
+            state2.permission_broker.lock().await.resolve("perm-1", "allow");
         }
 
         let resp = handle.await.unwrap().unwrap();
@@ -502,20 +458,13 @@ mod tests {
     #[tokio::test]
     async fn permission_respond_endpoint_resolves_pending() {
         let state = make_shared_state();
-        // Add a pending permission
         state.pending_permissions.write().await.push(PendingPermission {
             request_id: "perm-1".into(),
             session_id: "s1".into(),
             description: "Allow?".into(),
             options: serde_json::json!([{"optionId": "allow", "label": "Allow"}]),
         });
-        // Add a resolver
-        let (tx, rx) = oneshot::channel();
-        state
-            .permission_resolvers
-            .lock()
-            .await
-            .insert("perm-1".into(), tx);
+        let rx = state.permission_broker.lock().await.register("perm-1");
 
         let app = build_router(state.clone());
         let req = Request::builder()
@@ -527,11 +476,9 @@ mod tests {
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
 
-        // Verify the oneshot was resolved
-        let perm_resp = rx.await.expect("oneshot should have been resolved");
+        let perm_resp = rx.await.expect("broker should have resolved the permission");
         assert_eq!(perm_resp.option_id, "allow");
 
-        // Verify pending was removed
         let pending = state.pending_permissions.read().await;
         assert!(pending.is_empty());
     }

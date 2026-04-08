@@ -183,12 +183,11 @@ impl Channel for TelegramChannel {
             .await
             .insert(req.request_id.clone(), (chat_id, sent.id.0));
 
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.state
-            .permission_resolvers
+        let rx = self.state
+            .permission_broker
             .lock()
             .await
-            .insert(req.request_id.clone(), tx);
+            .register(&req.request_id);
 
         rx.await.map_err(|_| {
             ChannelSdkError::Protocol("permission response channel closed".into())

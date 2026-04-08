@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use protoclaw_sdk_channel::ChannelSdkError;
+use protoclaw_sdk_types::ContentKind;
 use teloxide::prelude::*;
 use teloxide::types::{ChatId, MessageId};
 
@@ -54,17 +55,6 @@ async fn send_flush(bot: &Bot, chat_id: i64, flush: &PendingFlush) {
     }
 }
 
-pub fn content_to_string(content: &serde_json::Value) -> String {
-    // OpenCode sends content as {"type": "text", "text": "actual text"}
-    if let Some(text) = content.get("text").and_then(|t| t.as_str()) {
-        return text.to_string();
-    }
-    match content {
-        serde_json::Value::String(s) => s.clone(),
-        other => serde_json::to_string(other).unwrap_or_default(),
-    }
-}
-
 pub fn split_message(text: &str, max_len: usize) -> Vec<String> {
     if text.len() <= max_len {
         return vec![text.to_string()];
@@ -109,19 +99,15 @@ pub async fn deliver_to_chat(
         .ok_or_else(|| ChannelSdkError::Protocol(format!("unknown session: {session_id}")))?;
 
     let update_obj = content.get("update");
-    let update_type = update_obj
-        .and_then(|u| u.get("sessionUpdate"))
-        .and_then(|t| t.as_str())
-        .unwrap_or("");
-
+    let kind = ContentKind::from_content(content);
     let message_id = update_obj
         .and_then(|u| u.get("messageId"))
         .and_then(|v| v.as_str());
 
-    tracing::debug!(chat_id, update_type, message_id, "deliver_to_chat");
+    tracing::debug!(chat_id, ?kind, message_id, "deliver_to_chat");
 
-    match update_type {
-        "agent_thought_chunk" => {
+    match kind {
+        ContentKind::Thought(thought) => {
             {
                 let flush = {
                     let mut turns = state.turns.write().await;
@@ -176,10 +162,7 @@ pub async fn deliver_to_chat(
                 }
             }
 
-            let thought_content = update_obj
-                .and_then(|u| u.get("content"))
-                .map(content_to_string)
-                .unwrap_or_default();
+            let thought_content = thought.content;
 
             let (accumulated, existing_thought_msg_id) = {
                 let mut turns = state.turns.write().await;
@@ -256,7 +239,7 @@ pub async fn deliver_to_chat(
             Ok(())
         }
 
-        "agent_message_chunk" => {
+        ContentKind::MessageChunk { text: chunk_text } => {
             {
                 let flush = {
                     let mut turns = state.turns.write().await;
@@ -282,11 +265,6 @@ pub async fn deliver_to_chat(
                 }
             }
 
-            let chunk_content = update_obj
-                .and_then(|u| u.get("content"))
-                .map(content_to_string)
-                .unwrap_or_default();
-
             let (accumulated, existing_response_msg_id, is_finalizing) = {
                 let mut turns = state.turns.write().await;
                 let mid = message_id.unwrap_or("").to_string();
@@ -297,7 +275,7 @@ pub async fn deliver_to_chat(
                 if let Some(track) = turn.thought.as_mut() {
                     track.suppressed = false;
                 }
-                turn.append_response(&chunk_content, 0);
+                turn.append_response(&chunk_text, 0);
                 let track = turn.response.as_ref().unwrap();
                 let accumulated = track.buffer.clone();
                 let existing_response_msg_id = track.msg_id;
@@ -404,7 +382,7 @@ pub async fn deliver_to_chat(
             Ok(())
         }
 
-        "result" => {
+        ContentKind::Result { .. } => {
             {
                 let turns = state.turns.read().await;
                 if let Some(turn) = turns.get(&chat_id) {
@@ -518,11 +496,11 @@ pub async fn deliver_to_chat(
             Ok(())
         }
 
-        "user_message_chunk" | "usage_update" | "available_commands_update" => {
+        ContentKind::UserMessageChunk { .. } | ContentKind::UsageUpdate => {
             Ok(())
         }
 
-        _ => {
+        ContentKind::Unknown => {
             Ok(())
         }
     }
@@ -532,26 +510,6 @@ pub async fn deliver_to_chat(
 mod tests {
     use super::*;
     use std::sync::Arc;
-
-    #[test]
-    fn content_to_string_extracts_plain_string() {
-        let val = serde_json::Value::String("hello".into());
-        assert_eq!(content_to_string(&val), "hello");
-    }
-
-    #[test]
-    fn content_to_string_serializes_object() {
-        let val = serde_json::json!({"key": "value"});
-        let result = content_to_string(&val);
-        assert!(result.contains("key"));
-        assert!(result.contains("value"));
-    }
-
-    #[test]
-    fn content_to_string_serializes_number() {
-        let val = serde_json::json!(42);
-        assert_eq!(content_to_string(&val), "42");
-    }
 
     #[test]
     fn split_message_short_text_returns_single_chunk() {

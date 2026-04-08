@@ -1,4 +1,4 @@
-use protoclaw_sdk_types::{PermissionOption, PermissionResponse};
+use protoclaw_sdk_types::PermissionOption;
 use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup};
 
 use crate::state::SharedState;
@@ -27,19 +27,13 @@ pub fn parse_callback_data(data: &str) -> Option<(&str, &str)> {
 }
 
 pub async fn process_callback(request_id: &str, option_id: &str, state: &SharedState) {
-    if let Some(tx) = state.permission_resolvers.lock().await.remove(request_id) {
-        let _ = tx.send(PermissionResponse {
-            request_id: request_id.to_string(),
-            option_id: option_id.to_string(),
-        });
-    }
+    state.permission_broker.lock().await.resolve(request_id, option_id);
     state.permission_messages.lock().await.remove(request_id);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::sync::oneshot;
 
     #[test]
     fn build_keyboard_with_two_options_returns_one_row_two_buttons() {
@@ -116,12 +110,7 @@ mod tests {
     #[tokio::test]
     async fn process_callback_resolves_oneshot() {
         let state = SharedState::new();
-        let (tx, rx) = oneshot::channel();
-        state
-            .permission_resolvers
-            .lock()
-            .await
-            .insert("req-1".into(), tx);
+        let rx = state.permission_broker.lock().await.register("req-1");
 
         process_callback("req-1", "allow", &state).await;
 
@@ -139,27 +128,17 @@ mod tests {
     #[tokio::test]
     async fn process_callback_removes_resolver_after_resolving() {
         let state = SharedState::new();
-        let (tx, _rx) = oneshot::channel();
-        state
-            .permission_resolvers
-            .lock()
-            .await
-            .insert("req-1".into(), tx);
+        let _rx = state.permission_broker.lock().await.register("req-1");
 
         process_callback("req-1", "allow", &state).await;
 
-        assert!(state.permission_resolvers.lock().await.get("req-1").is_none());
+        assert!(!state.permission_broker.lock().await.resolve("req-1", "allow"));
     }
 
     #[tokio::test]
     async fn process_callback_removes_permission_message() {
         let state = SharedState::new();
-        let (tx, _rx) = oneshot::channel();
-        state
-            .permission_resolvers
-            .lock()
-            .await
-            .insert("req-1".into(), tx);
+        let _rx = state.permission_broker.lock().await.register("req-1");
         state
             .permission_messages
             .lock()
