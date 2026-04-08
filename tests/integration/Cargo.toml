@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-protoclaw = { path = "../../crates/protoclaw" }
+protoclaw-supervisor = { workspace = true }
 protoclaw-config = { workspace = true }
 protoclaw-test-helpers = { workspace = true }
 tokio = { workspace = true }

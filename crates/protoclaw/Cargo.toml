@@ -7,12 +7,8 @@ rust-version.workspace = true
 [dependencies]
 protoclaw-core = { path = "../protoclaw-core" }
 protoclaw-config = { path = "../protoclaw-config" }
-protoclaw-jsonrpc = { path = "../protoclaw-jsonrpc" }
-protoclaw-agents = { path = "../protoclaw-agents" }
-protoclaw-channels = { workspace = true }
-protoclaw-tools = { workspace = true }
+protoclaw-supervisor = { workspace = true }
 tokio.workspace = true
-tokio-util = { workspace = true }
 anyhow.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
