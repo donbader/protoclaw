@@ -89,6 +89,92 @@ impl ThoughtContent {
     }
 }
 
+/// Typed dispatch over all content update types in a `DeliverMessage`.
+///
+/// Channels receive `DeliverMessage` with a JSON `content` field. Instead of
+/// matching raw `content["update"]["sessionUpdate"]` strings, use
+/// `ContentKind::from_content(&msg.content)` for typed dispatch.
+///
+/// # Example
+/// ```
+/// use protoclaw_sdk_types::channel::ContentKind;
+/// let content = serde_json::json!({
+///     "update": {
+///         "sessionUpdate": "agent_message_chunk",
+///         "content": "hello"
+///     }
+/// });
+/// match ContentKind::from_content(&content) {
+///     ContentKind::MessageChunk { text } => assert_eq!(text, "hello"),
+///     _ => panic!("expected MessageChunk"),
+/// }
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub enum ContentKind {
+    Thought(ThoughtContent),
+    MessageChunk { text: String },
+    Result { text: String },
+    UserMessageChunk { text: String },
+    UsageUpdate,
+    Unknown,
+}
+
+impl ContentKind {
+    /// Classify a `DeliverMessage.content` value into a typed variant.
+    ///
+    /// Reads `content["update"]["sessionUpdate"]` as the type discriminator
+    /// (the actual wire format both channels use).
+    pub fn from_content(content: &serde_json::Value) -> Self {
+        let update = match content.get("update") {
+            Some(u) => u,
+            None => return ContentKind::Unknown,
+        };
+        let session_update = match update.get("sessionUpdate").and_then(|v| v.as_str()) {
+            Some(s) => s,
+            None => return ContentKind::Unknown,
+        };
+        match session_update {
+            "agent_thought_chunk" => {
+                let text = extract_content_text(update);
+                ContentKind::Thought(ThoughtContent {
+                    session_id: String::new(),
+                    update_type: "agent_thought_chunk".into(),
+                    content: text,
+                })
+            }
+            "agent_message_chunk" => ContentKind::MessageChunk {
+                text: extract_content_text(update),
+            },
+            "result" => ContentKind::Result {
+                text: extract_content_text(update),
+            },
+            "user_message_chunk" => ContentKind::UserMessageChunk {
+                text: extract_content_text(update),
+            },
+            "usage_update" => ContentKind::UsageUpdate,
+            _ => ContentKind::Unknown,
+        }
+    }
+}
+
+/// Extract displayable text from `update["content"]`.
+/// Handles OpenCode's `{"type": "text", "text": "actual text"}` wrapper,
+/// plain string values, and falls back to empty string.
+fn extract_content_text(update: &serde_json::Value) -> String {
+    match update.get("content") {
+        Some(c) => {
+            if let Some(text) = c.get("text").and_then(|t| t.as_str()) {
+                return text.to_string();
+            }
+            if let Some(s) = c.as_str() {
+                return s.to_string();
+            }
+            String::new()
+        }
+        None => String::new(),
+    }
+}
+
 /// Protoclaw → Channel: acknowledge message receipt.
 /// Channel uses this to add emoji reaction and/or show typing indicator.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -387,6 +473,110 @@ mod tests {
         });
         let deser: ChannelInitializeParams = serde_json::from_value(json).unwrap();
         assert_eq!(deser.ack, None);
+    }
+
+    #[rstest]
+    fn when_content_is_thought_chunk_then_returns_thought() {
+        let content = serde_json::json!({
+            "update": {
+                "sessionUpdate": "agent_thought_chunk",
+                "content": "analyzing the problem..."
+            }
+        });
+        let kind = ContentKind::from_content(&content);
+        match kind {
+            ContentKind::Thought(t) => assert_eq!(t.content, "analyzing the problem..."),
+            other => panic!("expected Thought, got {:?}", other),
+        }
+    }
+
+    #[rstest]
+    fn when_content_is_message_chunk_then_returns_message_chunk() {
+        let content = serde_json::json!({
+            "update": {
+                "sessionUpdate": "agent_message_chunk",
+                "content": "hello world"
+            }
+        });
+        let kind = ContentKind::from_content(&content);
+        match kind {
+            ContentKind::MessageChunk { text } => assert_eq!(text, "hello world"),
+            other => panic!("expected MessageChunk, got {:?}", other),
+        }
+    }
+
+    #[rstest]
+    fn when_content_is_result_then_returns_result() {
+        let content = serde_json::json!({
+            "update": {
+                "sessionUpdate": "result",
+                "content": "done"
+            }
+        });
+        let kind = ContentKind::from_content(&content);
+        match kind {
+            ContentKind::Result { text } => assert_eq!(text, "done"),
+            other => panic!("expected Result, got {:?}", other),
+        }
+    }
+
+    #[rstest]
+    fn when_content_is_usage_update_then_returns_usage_update() {
+        let content = serde_json::json!({
+            "update": {
+                "sessionUpdate": "usage_update",
+                "content": {}
+            }
+        });
+        let kind = ContentKind::from_content(&content);
+        assert_eq!(kind, ContentKind::UsageUpdate);
+    }
+
+    #[rstest]
+    fn when_content_is_user_message_chunk_then_returns_user_message_chunk() {
+        let content = serde_json::json!({
+            "update": {
+                "sessionUpdate": "user_message_chunk",
+                "content": "user said this"
+            }
+        });
+        let kind = ContentKind::from_content(&content);
+        match kind {
+            ContentKind::UserMessageChunk { text } => assert_eq!(text, "user said this"),
+            other => panic!("expected UserMessageChunk, got {:?}", other),
+        }
+    }
+
+    #[rstest]
+    fn when_content_has_unknown_update_type_then_returns_unknown() {
+        let content = serde_json::json!({
+            "update": {
+                "sessionUpdate": "some_future_type",
+                "content": "whatever"
+            }
+        });
+        assert_eq!(ContentKind::from_content(&content), ContentKind::Unknown);
+    }
+
+    #[rstest]
+    fn when_content_has_no_update_key_then_returns_unknown() {
+        let content = serde_json::json!({"text": "plain message"});
+        assert_eq!(ContentKind::from_content(&content), ContentKind::Unknown);
+    }
+
+    #[rstest]
+    fn when_content_is_thought_with_opencode_wrapper_then_extracts_text() {
+        let content = serde_json::json!({
+            "update": {
+                "sessionUpdate": "agent_thought_chunk",
+                "content": {"type": "text", "text": "wrapped thought"}
+            }
+        });
+        let kind = ContentKind::from_content(&content);
+        match kind {
+            ContentKind::Thought(t) => assert_eq!(t.content, "wrapped thought"),
+            other => panic!("expected Thought, got {:?}", other),
+        }
     }
 
     #[test]
