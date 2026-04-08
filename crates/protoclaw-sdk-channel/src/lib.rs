@@ -1,8 +1,10 @@
+pub mod broker;
 pub mod content;
 pub mod error;
 pub mod harness;
 pub mod trait_def;
 
+pub use broker::PermissionBroker;
 pub use content::content_to_string;
 pub use error::ChannelSdkError;
 pub use harness::ChannelHarness;
