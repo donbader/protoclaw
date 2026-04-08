@@ -399,6 +399,9 @@ pub async fn deliver_to_chat(
 
             return Ok(());
         }
+        "user_message_chunk" => {
+            return Ok(());
+        }
         _ => {}
     }
 
