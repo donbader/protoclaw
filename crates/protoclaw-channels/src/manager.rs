@@ -42,8 +42,7 @@ pub enum ChannelsCommand {
 
 /// Routing table entry mapping a session key to its channel and ACP session.
 struct RoutingEntry {
-    #[allow(dead_code)]
-    channel_id: ChannelId,
+    _channel_id: ChannelId,
     acp_session_id: String,
     slot_index: usize,
     agent_name: String,
@@ -69,8 +68,6 @@ struct ChannelSlot {
 /// Outbound agent updates route back to the originating channel via routing table.
 pub struct ChannelsManager {
     channel_configs: HashMap<String, ChannelConfig>,
-    #[allow(dead_code)]
-    default_agent_name: String,
     init_timeout_secs: u64,
     slots: Vec<ChannelSlot>,
     cmd_rx: Option<mpsc::Receiver<ChannelsCommand>>,
@@ -83,11 +80,10 @@ pub struct ChannelsManager {
 }
 
 impl ChannelsManager {
-    pub fn new(channel_configs: HashMap<String, ChannelConfig>, init_timeout_secs: u64, default_agent_name: String) -> Self {
+    pub fn new(channel_configs: HashMap<String, ChannelConfig>, init_timeout_secs: u64, _default_agent_name: String) -> Self {
         let (cmd_tx, cmd_rx) = mpsc::channel(constants::CMD_CHANNEL_CAPACITY);
         Self {
             channel_configs,
-            default_agent_name,
             init_timeout_secs,
             slots: Vec::new(),
             cmd_rx: Some(cmd_rx),
@@ -491,7 +487,7 @@ impl ChannelsManager {
                                     "session created"
                                 );
                                 self.routing_table.insert(session_key.clone(), RoutingEntry {
-                                    channel_id: channel_id.clone(),
+                                    _channel_id: channel_id.clone(),
                                     acp_session_id: acp_session_id.clone(),
                                     slot_index,
                                     agent_name: agent_name.clone(),
@@ -846,7 +842,7 @@ mod tests {
         let mut table: HashMap<SessionKey, RoutingEntry> = HashMap::new();
         let key = SessionKey::new("debug-http", "local", "dev");
         table.insert(key.clone(), RoutingEntry {
-            channel_id: ChannelId::from("debug-http"),
+            _channel_id: ChannelId::from("debug-http"),
             acp_session_id: "acp-sess-1".into(),
             slot_index: 0,
             agent_name: "default".into(),
@@ -865,13 +861,13 @@ mod tests {
         let key_bob = SessionKey::new("telegram", "direct", "bob");
 
         table.insert(key_alice.clone(), RoutingEntry {
-            channel_id: ChannelId::from("telegram"),
+            _channel_id: ChannelId::from("telegram"),
             acp_session_id: "sess-alice".into(),
             slot_index: 0,
             agent_name: "default".into(),
         });
         table.insert(key_bob.clone(), RoutingEntry {
-            channel_id: ChannelId::from("telegram"),
+            _channel_id: ChannelId::from("telegram"),
             acp_session_id: "sess-bob".into(),
             slot_index: 0,
             agent_name: "default".into(),
@@ -887,7 +883,7 @@ mod tests {
         let mut m = ChannelsManager::new(HashMap::new(), default_init_timeout(), "default".into());
         let key = SessionKey::new("test", "local", "dev");
         m.routing_table.insert(key.clone(), RoutingEntry {
-            channel_id: ChannelId::from("test"),
+            _channel_id: ChannelId::from("test"),
             acp_session_id: "acp-1".into(),
             slot_index: 0,
             agent_name: "default".into(),
@@ -992,7 +988,7 @@ mod tests {
         });
         let key = SessionKey::new("telegram", "direct", "alice");
         m.routing_table.insert(key.clone(), RoutingEntry {
-            channel_id: ChannelId::from("telegram"),
+            _channel_id: ChannelId::from("telegram"),
             acp_session_id: "sess-1".into(),
             slot_index: 0,
             agent_name: "default".into(),

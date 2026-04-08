@@ -23,8 +23,6 @@ use crate::error::AgentsError;
 pub struct DockerBackend {
     docker: Docker,
     container_id: Option<String>,
-    #[allow(dead_code)] // used by Plan 02 for container cleanup/lookup
-    container_name: String,
     alive: Arc<AtomicBool>,
     stdin: Mutex<Option<Box<dyn AsyncWrite + Unpin + Send>>>,
     stdout: Mutex<Option<Box<dyn AsyncRead + Unpin + Send>>>,
@@ -190,7 +188,6 @@ impl DockerBackend {
         Ok(DockerBackend {
             docker,
             container_id: Some(container_id),
-            container_name: cname,
             alive: alive_flag,
             stdin: Mutex::new(Some(Box::new(stdin_tx) as Box<dyn AsyncWrite + Unpin + Send>)),
             stdout: Mutex::new(Some(Box::new(stdout_read) as Box<dyn AsyncRead + Unpin + Send>)),

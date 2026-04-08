@@ -359,15 +359,6 @@ enum ManagerKind {
 }
 
 impl ManagerKind {
-    #[allow(dead_code)]
-    fn name(&self) -> &str {
-        match self {
-            Self::Tools(m) => m.name(),
-            Self::Agents(m) => m.name(),
-            Self::Channels(m) => m.name(),
-        }
-    }
-
     async fn start(&mut self) -> Result<(), ManagerError> {
         match self {
             Self::Tools(m) => m.start().await,

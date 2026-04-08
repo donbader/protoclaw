@@ -10,8 +10,9 @@ Foundation crate used by all internal crates. Defines the Manager contract, resi
 | `backoff.rs` | `ExponentialBackoff` (100ms→30s) + `CrashTracker` (N crashes in window) |
 | `error.rs` | `SupervisorError` + `ManagerError` — all `thiserror` |
 | `types.rs` | ID newtypes (`SessionId`, `ChannelId`, `ManagerId`, `MessageId`) |
-| `message.rs` | Internal message envelope types |
 | `constants.rs` | Named constants: internal guards (`POLL_INTERVAL_MS`, `CMD_CHANNEL_CAPACITY`) and default values (`DEFAULT_BACKOFF_BASE_MS`, `DEFAULT_CRASH_MAX`) |
+| `agents_command.rs` | `AgentsCommand` enum for cross-manager dispatch |
+| `tools_command.rs` | `ToolsCommand` enum for cross-manager dispatch |
 
 ## Manager Trait
 

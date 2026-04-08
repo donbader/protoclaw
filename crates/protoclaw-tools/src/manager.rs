@@ -195,36 +195,7 @@ impl Manager for ToolsManager {
         let external_servers = Arc::new(external_servers);
         self.external_servers = Some(external_servers.clone());
 
-        let aggregated = AggregatedToolServer::new(native_host, external_servers);
-
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .map_err(|e| ManagerError::Internal(format!("bind failed: {e}")))?;
-
-        let addr = listener
-            .local_addr()
-            .map_err(|e| ManagerError::Internal(format!("local_addr failed: {e}")))?;
-
-        let url = format!("http://127.0.0.1:{}", addr.port());
-        tracing::info!(%url, "aggregated MCP server listening");
-
-        self.server_urls.push(McpServerUrl {
-            name: "protoclaw-tools".into(),
-            url,
-        });
-
-        let handle = tokio::spawn(async move {
-            let _aggregated = aggregated;
-            loop {
-                let Ok((_stream, _addr)) = listener.accept().await else {
-                    break;
-                };
-                // TODO: Wire MCP protocol over accepted TCP streams (Phase 7+)
-            }
-        });
-        self.server_handles.push(handle);
-
-        tracing::info!(manager = self.name(), count = self.server_urls.len(), "manager started");
+        tracing::info!(manager = self.name(), "manager started");
         Ok(())
     }
 
