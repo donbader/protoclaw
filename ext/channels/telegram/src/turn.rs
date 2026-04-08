@@ -94,6 +94,18 @@ impl ChatTurn {
         self.response.as_ref().map(|r| (r.buffer.clone(), r.msg_id))
     }
 
+    pub fn is_different_turn(&self, message_id: &str) -> bool {
+        self.message_id != message_id
+    }
+
+    pub fn collapse_thought(&mut self) -> Option<(i32, f32)> {
+        let track = self.thought.take()?;
+        if let Some(h) = &track.debounce_handle {
+            h.abort();
+        }
+        Some((track.msg_id, track.started_at.elapsed().as_secs_f32()))
+    }
+
     pub fn cleanup(&mut self) {
         if let TurnPhase::Finalizing(handle) = &self.phase {
             handle.abort();
@@ -194,6 +206,42 @@ mod tests {
         assert!(turn.thought.is_none());
         assert!(turn.response.is_none());
         assert!(matches!(turn.phase, TurnPhase::Active));
+    }
+
+    #[rstest]
+    fn given_different_message_id_when_checked_then_is_new_turn() {
+        let turn = ChatTurn::new("msg-1".to_string());
+        assert!(turn.is_different_turn("msg-2"));
+    }
+
+    #[rstest]
+    fn given_same_message_id_when_checked_then_not_new_turn() {
+        let turn = ChatTurn::new("msg-1".to_string());
+        assert!(!turn.is_different_turn("msg-1"));
+    }
+
+    #[rstest]
+    fn when_stale_result_checked_then_detected() {
+        let turn = ChatTurn::new("msg-2".to_string());
+        assert!(turn.is_different_turn("msg-1"));
+    }
+
+    #[rstest]
+    fn when_thought_collapsed_then_returns_elapsed_and_clears() {
+        let mut turn = ChatTurn::new("msg-1".to_string());
+        turn.thought = Some(ThoughtTrack {
+            msg_id: 42,
+            started_at: Instant::now(),
+            buffer: "thinking...".to_string(),
+            debounce_handle: None,
+            suppressed: false,
+        });
+        let collapsed = turn.collapse_thought();
+        assert!(collapsed.is_some());
+        let (msg_id, elapsed_secs) = collapsed.unwrap();
+        assert_eq!(msg_id, 42);
+        assert!(elapsed_secs < 1.0);
+        assert!(turn.thought.is_none());
     }
 
     #[rstest]
