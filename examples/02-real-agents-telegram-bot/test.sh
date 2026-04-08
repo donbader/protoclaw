@@ -131,12 +131,18 @@ else
 fi
 
 printf "Message merging\n"
+
+curl -sf -X POST "$BASE_URL/message" \
+  -H "Content-Type: application/json" \
+  -d '{"message": "From now on, repeat every message I send exactly as-is. No commentary, no explanation. Just echo it back."}' >/dev/null
+sleep 45
+
 BEFORE_BATCH=$(wc -l < "$SSE_FILE")
 
 for i in $(seq 1 5); do
   curl -sf -X POST "$BASE_URL/message" \
     -H "Content-Type: application/json" \
-    -d "{\"message\": \"batch$i\"}" >/dev/null
+    -d "{\"message\": \"PROTO_BATCH_$i\"}" >/dev/null
   sleep 0.03
 done
 
@@ -145,13 +151,13 @@ sleep 60
 BATCH_OUTPUT=$(tail -n +"$((BEFORE_BATCH + 1))" "$SSE_FILE")
 MISSING=""
 for i in $(seq 1 5); do
-  if ! echo "$BATCH_OUTPUT" | grep -q "batch$i"; then
-    MISSING="$MISSING batch$i"
+  if ! echo "$BATCH_OUTPUT" | grep -q "PROTO_BATCH_$i"; then
+    MISSING="$MISSING PROTO_BATCH_$i"
   fi
 done
 
 if [ -z "$MISSING" ]; then
-  pass "All 5 batch messages appear in SSE stream"
+  pass "All 5 batch messages echoed back"
 else
   fail "Missing batch messages:$MISSING"
 fi
