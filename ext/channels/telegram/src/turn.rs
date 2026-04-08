@@ -246,6 +246,59 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
+    async fn given_finalizing_turn_when_cleanup_without_take_then_response_lost() {
+        let mut turn = ChatTurn::new("msg-1".to_string());
+        turn.append_response("full response text", 100);
+        let handle = tokio::spawn(async { tokio::time::sleep(Duration::from_secs(10)).await });
+        turn.begin_finalizing(handle);
+
+        // BUG: calling cleanup without take_response_for_finalize loses the buffer
+        turn.cleanup();
+        assert!(
+            turn.take_response_for_finalize().is_none(),
+            "response data lost after cleanup without take"
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn given_finalizing_turn_when_take_before_cleanup_then_response_preserved() {
+        let mut turn = ChatTurn::new("msg-1".to_string());
+        turn.append_response("full response text", 100);
+        let handle = tokio::spawn(async { tokio::time::sleep(Duration::from_secs(10)).await });
+        turn.begin_finalizing(handle);
+
+        // CORRECT: take response before cleanup preserves the data
+        let data = turn.take_response_for_finalize();
+        assert!(data.is_some(), "response must be available before cleanup");
+        let (text, msg_id) = data.unwrap();
+        assert_eq!(text, "full response text");
+        assert_eq!(msg_id, 100);
+
+        turn.cleanup();
+        assert!(turn.take_response_for_finalize().is_none());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn given_active_turn_with_response_when_new_turn_forces_cleanup_then_response_preserved() {
+        let mut turn = ChatTurn::new("msg-1".to_string());
+        turn.append_response("partial response from agent", 100);
+
+        // Simulate rapid-fire: new turn arrives while old turn is Active with buffered response
+        assert!(turn.is_different_turn("msg-2"));
+
+        // CORRECT pattern: take before cleanup
+        let data = turn.take_response_for_finalize();
+        assert!(data.is_some());
+        let (text, _) = data.unwrap();
+        assert_eq!(text, "partial response from agent");
+
+        turn.cleanup();
+    }
+
+    #[rstest]
+    #[tokio::test]
     async fn given_late_chunk_when_finalizing_then_buffer_grows() {
         let mut turn = ChatTurn::new("msg-1".to_string());
         turn.append_response("hello ", 100);

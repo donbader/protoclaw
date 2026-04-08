@@ -8,6 +8,52 @@ use teloxide::types::{ChatId, MessageId};
 use crate::state::SharedState;
 use crate::turn::{ChatTurn, TurnPhase};
 
+struct PendingFlush {
+    response: Option<(String, i32)>,
+    thought_collapse: Option<(i32, f32)>,
+}
+
+fn flush_turn_data(turn: &mut ChatTurn) -> PendingFlush {
+    let response = turn.take_response_for_finalize();
+    let thought_collapse = turn.collapse_thought();
+    turn.cleanup();
+    PendingFlush {
+        response,
+        thought_collapse,
+    }
+}
+
+async fn send_flush(bot: &Bot, chat_id: i64, flush: &PendingFlush) {
+    if let Some((ref text, msg_id)) = flush.response {
+        if !text.is_empty() && msg_id != 0 {
+            tracing::info!(chat_id, msg_id, buf_len = text.len(), "flush: sending final edit before cleanup");
+            let chunks = split_message(text, 4096);
+            if let Err(e) = bot
+                .edit_message_text(ChatId(chat_id), MessageId(msg_id), &chunks[0])
+                .await
+            {
+                tracing::warn!(%e, chat_id, msg_id, "flush: final edit failed");
+            }
+            for chunk in chunks.iter().skip(1) {
+                let _ = bot.send_message(ChatId(chat_id), chunk).await;
+            }
+        } else {
+            tracing::debug!(chat_id, msg_id, buf_empty = text.is_empty(), "flush: skipping final edit (empty or no msg_id)");
+        }
+    } else {
+        tracing::debug!(chat_id, "flush: no response to send");
+    }
+    if let Some((thought_msg_id, elapsed_secs)) = flush.thought_collapse {
+        if thought_msg_id != 0 {
+            let emoji = thought_emoji();
+            let collapse_text = format!("{emoji} Thought for {elapsed_secs:.1}s");
+            let _ = bot
+                .edit_message_text(ChatId(chat_id), MessageId(thought_msg_id), &collapse_text)
+                .await;
+        }
+    }
+}
+
 pub fn content_to_string(content: &serde_json::Value) -> String {
     // OpenCode sends content as {"type": "text", "text": "actual text"}
     if let Some(text) = content.get("text").and_then(|t| t.as_str()) {
@@ -72,18 +118,32 @@ pub async fn deliver_to_chat(
         .and_then(|u| u.get("messageId"))
         .and_then(|v| v.as_str());
 
+    tracing::debug!(chat_id, update_type, message_id, "deliver_to_chat");
+
     match update_type {
         "agent_thought_chunk" => {
             {
-                let mut turns = state.turns.write().await;
-                if let Some(mid) = message_id {
-                    if let Some(turn) = turns.get_mut(&chat_id) {
-                        if turn.is_different_turn(mid) {
-                            tracing::info!(chat_id, old_message_id = %turn.message_id, new_message_id = mid, "messageId turn change detected in thought");
-                            turn.cleanup();
-                            turns.remove(&chat_id);
+                let flush = {
+                    let mut turns = state.turns.write().await;
+                    if let Some(mid) = message_id {
+                        if let Some(turn) = turns.get_mut(&chat_id) {
+                            if turn.is_different_turn(mid) {
+                                tracing::info!(chat_id, old_message_id = %turn.message_id, new_message_id = mid, "messageId turn change detected in thought");
+                                let flush = flush_turn_data(turn);
+                                turns.remove(&chat_id);
+                                Some(flush)
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
                         }
+                    } else {
+                        None
                     }
+                };
+                if let Some(flush) = &flush {
+                    send_flush(bot, chat_id, flush).await;
                 }
             }
 
@@ -97,16 +157,22 @@ pub async fn deliver_to_chat(
             }
 
             {
-                let mut turns = state.turns.write().await;
-                let is_finalizing = turns
-                    .get(&chat_id)
-                    .map(|t| matches!(t.phase, TurnPhase::Finalizing(_)))
-                    .unwrap_or(false);
-                if is_finalizing {
-                    if let Some(turn) = turns.get_mut(&chat_id) {
-                        turn.cleanup();
+                let flush = {
+                    let mut turns = state.turns.write().await;
+                    let is_finalizing = turns
+                        .get(&chat_id)
+                        .map(|t| matches!(t.phase, TurnPhase::Finalizing(_)))
+                        .unwrap_or(false);
+                    if is_finalizing {
+                        let flush = turns.get_mut(&chat_id).map(flush_turn_data);
+                        turns.remove(&chat_id);
+                        flush
+                    } else {
+                        None
                     }
-                    turns.remove(&chat_id);
+                };
+                if let Some(flush) = &flush {
+                    send_flush(bot, chat_id, flush).await;
                 }
             }
 
@@ -187,20 +253,32 @@ pub async fn deliver_to_chat(
                     }
                 }
             }
-            return Ok(());
+            Ok(())
         }
 
         "agent_message_chunk" => {
             {
-                let mut turns = state.turns.write().await;
-                if let Some(mid) = message_id {
-                    if let Some(turn) = turns.get_mut(&chat_id) {
-                        if turn.is_different_turn(mid) {
-                            tracing::info!(chat_id, old_message_id = %turn.message_id, new_message_id = mid, "messageId turn change detected in message chunk");
-                            turn.cleanup();
-                            turns.remove(&chat_id);
+                let flush = {
+                    let mut turns = state.turns.write().await;
+                    if let Some(mid) = message_id {
+                        if let Some(turn) = turns.get_mut(&chat_id) {
+                            if turn.is_different_turn(mid) {
+                                tracing::info!(chat_id, old_message_id = %turn.message_id, new_message_id = mid, "messageId turn change detected in message chunk");
+                                let flush = flush_turn_data(turn);
+                                turns.remove(&chat_id);
+                                Some(flush)
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
                         }
+                    } else {
+                        None
                     }
+                };
+                if let Some(flush) = &flush {
+                    send_flush(bot, chat_id, flush).await;
                 }
             }
 
@@ -323,12 +401,35 @@ pub async fn deliver_to_chat(
                     }
                 }
             }
-            return Ok(());
+            Ok(())
         }
 
         "result" => {
             {
                 let turns = state.turns.read().await;
+                if let Some(turn) = turns.get(&chat_id) {
+                    let has_response = turn.response.is_some();
+                    let response_msg_id = turn.response.as_ref().map(|r| r.msg_id).unwrap_or(-1);
+                    let response_buf_len = turn.response.as_ref().map(|r| r.buffer.len()).unwrap_or(0);
+                    let has_thought = turn.thought.is_some();
+                    let phase = match &turn.phase {
+                        TurnPhase::Active => "active",
+                        TurnPhase::Finalizing(_) => "finalizing",
+                    };
+                    tracing::info!(
+                        chat_id,
+                        turn_message_id = %turn.message_id,
+                        has_response,
+                        response_msg_id,
+                        response_buf_len,
+                        has_thought,
+                        phase,
+                        "result received: turn state snapshot"
+                    );
+                } else {
+                    tracing::debug!(chat_id, "result received: no turn exists for chat");
+                }
+
                 if let Some(mid) = message_id {
                     if let Some(turn) = turns.get(&chat_id) {
                         if turn.is_different_turn(mid) {
@@ -388,6 +489,7 @@ pub async fn deliver_to_chat(
                     turns.get_mut(&chat_id).and_then(|t| t.take_response_for_finalize())
                 };
                 if let Some((text, msg_id)) = final_data {
+                    tracing::debug!(chat_id, msg_id, buf_len = text.len(), "result finalization timer: sending final edit");
                     if !text.is_empty() && msg_id != 0 {
                         let final_chunks = split_message(&text, 4096);
                         if let Err(e) = bot_clone
@@ -402,6 +504,8 @@ pub async fn deliver_to_chat(
                             }
                         }
                     }
+                } else {
+                    tracing::debug!(chat_id, "result finalization timer: no response data to send");
                 }
                 state_clone.turns.write().await.remove(&chat_id);
             });
@@ -411,83 +515,17 @@ pub async fn deliver_to_chat(
                 turn.begin_finalizing(handle);
             }
 
-            return Ok(());
+            Ok(())
         }
 
-        "user_message_chunk" => {
-            return Ok(());
+        "user_message_chunk" | "usage_update" | "available_commands_update" => {
+            Ok(())
         }
 
-        _ => {}
-    }
-
-    let text = update_obj
-        .and_then(|u| u.get("content"))
-        .map(content_to_string)
-        .unwrap_or_default();
-
-    if text.is_empty() {
-        state.turns.write().await.remove(&chat_id);
-        return Ok(());
-    }
-
-    let chunks = split_message(&text, 4096);
-
-    for (i, chunk) in chunks.iter().enumerate() {
-        let existing_msg_id = if i == 0 {
-            state
-                .turns
-                .read()
-                .await
-                .get(&chat_id)
-                .and_then(|t| t.response.as_ref())
-                .map(|r| r.msg_id)
-                .filter(|&id| id != 0)
-        } else {
-            None
-        };
-
-        if let Some(msg_id) = existing_msg_id {
-            let can_edit = {
-                let mut turns = state.turns.write().await;
-                turns
-                    .get_mut(&chat_id)
-                    .map(|t| t.can_edit_response())
-                    .unwrap_or(false)
-            };
-            if can_edit {
-                let edit_result = bot
-                    .edit_message_text(ChatId(chat_id), MessageId(msg_id), chunk)
-                    .await;
-                match edit_result {
-                    Ok(_) => continue,
-                    Err(e) => {
-                        tracing::warn!(%e, "failed to edit message text");
-                    }
-                }
-            } else {
-                continue;
-            }
-        }
-
-        match bot.send_message(ChatId(chat_id), chunk).await {
-            Ok(sent) => {
-                let mut turns = state.turns.write().await;
-                let mid = message_id.unwrap_or("").to_string();
-                let turn = turns.entry(chat_id).or_insert_with(|| ChatTurn::new(mid));
-                if turn.response.is_none() {
-                    turn.append_response("", sent.id.0);
-                } else if let Some(track) = turn.response.as_mut() {
-                    track.msg_id = sent.id.0;
-                }
-            }
-            Err(e) => {
-                tracing::warn!(%e, "failed to send message");
-            }
+        _ => {
+            Ok(())
         }
     }
-
-    Ok(())
 }
 
 #[cfg(test)]
@@ -560,7 +598,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn empty_content_clears_active_message() {
+    async fn when_unknown_update_type_with_empty_content_then_turn_preserved() {
         let state = Arc::new(SharedState::new());
         state
             .session_chat_map
@@ -579,6 +617,9 @@ mod tests {
         let content = serde_json::json!("");
         let result = deliver_to_chat(&bot, &state, "sess-1", &content).await;
         assert!(result.is_ok());
-        assert!(state.turns.read().await.get(&12345).is_none());
+        assert!(
+            state.turns.read().await.get(&12345).is_some(),
+            "unknown update types must not destroy active turns"
+        );
     }
 }

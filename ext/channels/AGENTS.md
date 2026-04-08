@@ -30,37 +30,47 @@ Both channels inspect `content["type"]` in `DeliverMessage` to render thoughts d
 
 **debug-http:** Emits thoughts as named SSE event `"thought"` and user message chunks as named SSE event `"user_message_chunk"` via `SsePayload` struct. Regular messages use default SSE data events. SSE clients filter by event type.
 
-**telegram:** Streams thoughts as 🧠-prefixed messages with debounced edits (400ms internal timer). On `"result"`, collapses to "🧠 Thought for Xs" (timing only, no content). Emoji prefix configurable via `TELEGRAM_THOUGHT_EMOJI` env var (default: 🧠). Thinking state tracked in `SharedState.thinking_messages` and `SharedState.thought_debounce_handles`.
+**telegram:** Streams thoughts as 🧠-prefixed messages with debounced edits (400ms internal timer). On `"result"`, collapses to "🧠 Thought for Xs" (timing only, no content). Emoji prefix configurable via `TELEGRAM_THOUGHT_EMOJI` env var (default: 🧠). Thinking state tracked inside `ChatTurn.thought` (see below).
 
-## Late-chunk Race Condition Fix (telegram)
+## ChatTurn State Machine (telegram)
 
-The agents manager sends `result` events via a separate channel from `agent_message_chunk` events, so chunks can arrive after the result. This is handled with a timer-based finalization pattern using `SharedState.result_received: RwLock<HashSet<i64>>` and `SharedState.finalize_handles: RwLock<HashMap<i64, JoinHandle<()>>>`:
+All per-chat streaming state is encapsulated in a single `ChatTurn` struct per chat, stored in `SharedState.turns: RwLock<HashMap<i64, ChatTurn>>`. This replaced 12 scattered `HashMap`/`HashSet` fields that were prone to race conditions.
 
-- **`result` handler**: Collapses thinking message. Sets `result_received` and `thought_suppressed`. Does NOT immediately clean up `message_buffers` or `active_messages`. Spawns a 200ms debounced finalization task.
-- **`agent_message_chunk` handler (late chunk)**: If `result_received` is set, this is a late chunk. Accumulate into buffer, force an immediate edit (bypass rate-limit), cancel the old finalization timer, and spawn a new 200ms timer. This ensures all late chunks are captured before final state cleanup.
-- **Finalization timer**: After 200ms with no more late chunks, reads the complete buffer, does the final edit with overflow splitting, then cleans up all state (`message_buffers`, `active_messages`, `last_edit_time`, `thought_suppressed`, `result_received`, `finalize_handles`).
-- **`agent_thought_chunk` handler (new turn)**: If `result_received` is set, cancel the finalization timer immediately and do synchronous cleanup of all previous-turn state before processing the new thought.
+### Types (`turn.rs`)
 
-## messageId-based Turn Detection (telegram)
+| Type | Purpose |
+|------|---------|
+| `ChatTurn` | One agent turn per chat. Owns `message_id`, `phase`, `thought`, `response`. |
+| `ThoughtTrack` | Telegram message ID, buffer, debounce handle, timing, suppression flag. |
+| `ResponseTrack` | Telegram message ID, buffer, last-edit timestamp (rate limiting). |
+| `TurnPhase` | `Active` (streaming) or `Finalizing(JoinHandle<()>)` (waiting for late chunks). |
 
-Handles the race where a new prompt's streaming events arrive at the telegram channel before the previous prompt's `result` event. State is keyed by `chat_id`, but events from different prompts carry different `messageId` values.
+### Lifecycle
 
-- **`current_message_id: RwLock<HashMap<i64, String>>`** — tracks the `messageId` of the current turn per chat.
-- **`check_message_id_turn_change()`** — called at the top of both `agent_thought_chunk` and `agent_message_chunk` handlers. Compares incoming `messageId` against `current_message_id`. If different, finalizes the previous turn (cancels timers, clears all per-chat state) before processing the new event.
-- **`finalize_previous_turn()`** — shared cleanup function used by both messageId turn detection and the finalization timer. Clears all per-chat state including `current_message_id`.
-- First event for a chat (no `current_message_id` entry) is not treated as a turn change.
-- `messageId` is extracted from `content["update"]["messageId"]` in the ACP `session/update` payload.
+1. **First event arrives** → `ChatTurn::new(message_id)` inserted into `turns` map.
+2. **Thought/response chunks** → `append_thought()` / `append_response()` accumulate into track buffers. `can_edit_response()` enforces 1-second rate limit.
+3. **`result` received** → `collapse_thought()` returns elapsed time for "🧠 Thought for Xs". `begin_finalizing(handle)` transitions phase to `Finalizing` with a 200ms timer.
+4. **Late chunks after result** → `append_response()` still works during `Finalizing`. Timer is cancelled and restarted (new `begin_finalizing()` aborts old handle).
+5. **Finalization timer fires** → `take_response_for_finalize()` reads buffer atomically. Final edit sent. Turn removed from map.
+6. **New turn detected** → `is_different_turn(message_id)` returns true. `cleanup()` aborts all handles and clears state. Old turn removed, new `ChatTurn` inserted.
 
-Anti-patterns:
-- Do NOT skip the messageId check — without it, new prompt events corrupt the previous turn's state when the result event is delayed.
-- Do NOT remove `current_message_id` cleanup from finalization timers — stale entries would prevent turn detection on the next prompt cycle.
+### Truncation Fix
 
-Anti-patterns:
-- Do NOT clean up `message_buffers`/`active_messages` in the `result` handler — doing so breaks late-chunk delivery.
-- Do NOT call `result_received.remove()` in the `agent_message_chunk` handler — it must remain set until the timer fires.
-- The `can_edit` rate-limiter is bypassed only for late chunks (when `result_received` is set); normal streaming still respects the 1-second limit.
+The old architecture had a race: `finalize_previous_turn()` cleared `message_buffers` before the finalization timer could read them, causing truncated final edits. The ChatTurn fix: the buffer lives inside the struct, and `take_response_for_finalize()` reads it atomically before any state transitions — no race possible.
 
-## telegram/ (7 files)
+### Lock Discipline
+
+`state.turns.write().await` must NEVER be held across `.await` points. Pattern: extract data → drop lock → do async work (Telegram API calls) → re-acquire if needed.
+
+### Anti-patterns
+
+- Do NOT hold `turns` write lock across Telegram API calls — causes deadlocks when concurrent events arrive.
+- Do NOT clean up response buffer in the `result` handler — late chunks still need to append. Cleanup happens only when the finalization timer fires or a new turn is detected.
+- Do NOT skip `is_different_turn()` check — without it, new prompt events corrupt the previous turn's state.
+- Do NOT bypass `can_edit_response()` for normal streaming — only late chunks (during `Finalizing` phase) skip the rate limit.
+- Do NOT call `cleanup()` without removing the turn from the `turns` map — the struct clears internal state but doesn't remove itself.
+
+## telegram/ (8 files)
 
 | File | Purpose |
 |------|---------|
@@ -68,9 +78,10 @@ Anti-patterns:
 | `channel.rs` | `TelegramChannel` impl of `Channel` trait |
 | `dispatcher.rs` | Teloxide dispatcher setup, message/callback handlers |
 | `deliver.rs` | Outbound: agent updates → Telegram messages, thought rendering + collapse |
+| `turn.rs` | `ChatTurn` state machine — per-chat turn lifecycle, thought/response tracks |
 | `permissions.rs` | Permission request → inline keyboard buttons |
 | `peer.rs` | `PeerInfo` extraction from Telegram update context |
-| `state.rs` | Shared state: bot instance, session tracking |
+| `state.rs` | Shared state: bot instance, session tracking, `turns` map |
 
 Requires `TELEGRAM_BOT_TOKEN` env var.
 
