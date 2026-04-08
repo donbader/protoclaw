@@ -5,6 +5,8 @@ use protoclaw_core::{AgentsCommand, ManagerHandle};
 use tokio::sync::{oneshot, watch};
 use tokio_util::sync::CancellationToken;
 
+use crate::error::ChannelsError;
+
 #[derive(Clone)]
 struct AppState {
     agents_handle: ManagerHandle<AgentsCommand>,
@@ -51,7 +53,7 @@ impl DebugHttpChannel {
         self.port_tx.subscribe()
     }
 
-    pub async fn run(self, cancel: CancellationToken) -> anyhow::Result<()> {
+    pub async fn run(self, cancel: CancellationToken) -> Result<(), ChannelsError> {
         let state = AppState {
             agents_handle: self.agents_handle.clone(),
             channel_names: self.channel_names.clone(),

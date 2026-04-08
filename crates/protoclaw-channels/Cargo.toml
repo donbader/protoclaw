@@ -9,7 +9,6 @@ protoclaw-core = { workspace = true }
 protoclaw-config = { workspace = true }
 protoclaw-sdk-types = { workspace = true }
 protoclaw-jsonrpc = { workspace = true }
-anyhow = { workspace = true }
 axum = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
