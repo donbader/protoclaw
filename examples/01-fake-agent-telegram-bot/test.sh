@@ -119,36 +119,34 @@ sleep 2
 printf "Message merging\n"
 BEFORE_BATCH=$(wc -l < "$SSE_FILE")
 
-curl -sf -X POST "$BASE_URL/message" \
-  -H "Content-Type: application/json" \
-  -d '{"message": "batch1"}' >/dev/null
-sleep 0.05
-curl -sf -X POST "$BASE_URL/message" \
-  -H "Content-Type: application/json" \
-  -d '{"message": "batch2"}' >/dev/null
-sleep 0.05
-curl -sf -X POST "$BASE_URL/message" \
-  -H "Content-Type: application/json" \
-  -d '{"message": "batch3"}' >/dev/null
+for i in $(seq 1 10); do
+  curl -sf -X POST "$BASE_URL/message" \
+    -H "Content-Type: application/json" \
+    -d "{\"message\": \"batch$i\"}" >/dev/null
+  sleep 0.03
+done
 
-sleep 10
+sleep 15
 
 BATCH_OUTPUT=$(tail -n +"$((BEFORE_BATCH + 1))" "$SSE_FILE")
-HAS_BATCH1=$(echo "$BATCH_OUTPUT" | grep -c "batch1" || true)
-HAS_BATCH2=$(echo "$BATCH_OUTPUT" | grep -c "batch2" || true)
-HAS_BATCH3=$(echo "$BATCH_OUTPUT" | grep -c "batch3" || true)
+MISSING=""
+for i in $(seq 1 10); do
+  if ! echo "$BATCH_OUTPUT" | grep -q "batch$i"; then
+    MISSING="$MISSING batch$i"
+  fi
+done
 
-if [ "$HAS_BATCH1" -gt 0 ] && [ "$HAS_BATCH2" -gt 0 ] && [ "$HAS_BATCH3" -gt 0 ]; then
-  pass "All 3 batch messages appear in SSE stream"
+if [ -z "$MISSING" ]; then
+  pass "All 10 batch messages appear in SSE stream"
 else
-  fail "Missing batch messages (batch1=$HAS_BATCH1 batch2=$HAS_BATCH2 batch3=$HAS_BATCH3)"
+  fail "Missing batch messages:$MISSING"
 fi
 
 AGENT_TURNS=$(echo "$BATCH_OUTPUT" | grep -c "Analyzing your message" || true)
-if [ "$AGENT_TURNS" -lt 3 ]; then
-  pass "Messages merged: 3 sent, $AGENT_TURNS agent turn(s)"
+if [ "$AGENT_TURNS" -lt 10 ]; then
+  pass "Messages merged: 10 sent, $AGENT_TURNS agent turn(s)"
 else
-  fail "No merging detected: expected fewer than 3 agent turns, got $AGENT_TURNS"
+  fail "No merging detected: expected fewer than 10 agent turns, got $AGENT_TURNS"
 fi
 
 kill "$SSE_PID" 2>/dev/null || true
