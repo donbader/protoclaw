@@ -19,8 +19,8 @@ services:
   protoclaw:
     build:
       context: ../..
-      dockerfile: examples/02-real-agents-telegram-bot/Dockerfile
-      target: opencode
+      dockerfile: Dockerfile
+      target: example-02-opencode
     ports:
       - "8080:8080"
     volumes:
@@ -39,11 +39,11 @@ services:
       - socket-proxy
     restart: unless-stopped
 
-  # Build-only: creates the opencode agent image for protoclaw to spawn via bollard
   opencode-agent-image:
     build:
       context: ../..
-      dockerfile: examples/02-real-agents-telegram-bot/Dockerfile.agent
+      dockerfile: Dockerfile
+      target: opencode-agent
     image: protoclaw-opencode-agent:latest
     profiles:
       - build-only

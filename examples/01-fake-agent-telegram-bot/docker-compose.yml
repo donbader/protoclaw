@@ -19,7 +19,8 @@ services:
   protoclaw:
     build:
       context: ../..
-      dockerfile: examples/01-fake-agent-telegram-bot/Dockerfile
+      dockerfile: Dockerfile
+      target: example-01
     ports:
       - "8080:8080"
     volumes:
@@ -38,11 +39,11 @@ services:
       - socket-proxy
     restart: unless-stopped
 
-  # Build-only: creates the mock-agent image for protoclaw to spawn via bollard
   mock-agent-image:
     build:
       context: ../..
-      dockerfile: examples/01-fake-agent-telegram-bot/Dockerfile.agent
+      dockerfile: Dockerfile
+      target: mock-agent
     image: protoclaw-mock-agent:latest
     profiles:
       - build-only
