@@ -6,7 +6,7 @@ A protoclaw bot with a real AI agent (OpenCode + Claude). The agent runs in an i
 
 ```sh
 cp .env.example .env
-# Optionally set ANTHROPIC_API_KEY in .env (agent works without it via baked-in config)
+# Edit .env — set ANTHROPIC_API_KEY (required for the AI agent)
 docker compose --profile build-only build   # Build agent image (required first time)
 docker compose up --build -d                # Start in background
 ```
