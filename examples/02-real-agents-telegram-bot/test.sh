@@ -157,6 +157,19 @@ else
   fail "Expected 1-4 agent turns (merging), got $RESULT_COUNT"
 fi
 
+CONTAINER_LOGS=$(docker compose logs protoclaw --no-color 2>/dev/null || true)
+CONTENT_FOUND=0
+for i in $(seq 1 5); do
+  if printf '%s' "$CONTAINER_LOGS" | grep -q "PROTO_BATCH_$i" 2>/dev/null; then
+    CONTENT_FOUND=$((CONTENT_FOUND + 1))
+  fi
+done
+if [ "$CONTENT_FOUND" -ge 3 ]; then
+  pass "Merged prompt contains batch content ($CONTENT_FOUND/5 in server logs)"
+else
+  fail "Merged prompt missing batch content ($CONTENT_FOUND/5 in server logs)"
+fi
+
 kill "$SSE_PID" 2>/dev/null || true
 wait "$SSE_PID" 2>/dev/null || true
 SSE_PID=""
