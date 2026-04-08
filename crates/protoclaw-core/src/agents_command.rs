@@ -1,6 +1,6 @@
 use tokio::sync::oneshot;
 
-use crate::types::SessionKey;
+use crate::SessionKey;
 use protoclaw_sdk_types::PermissionOption;
 
 #[derive(Debug, Clone)]

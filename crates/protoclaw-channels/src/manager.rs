@@ -4,7 +4,8 @@ use std::time::Duration;
 use crate::types::PermissionOption;
 use protoclaw_config::ChannelConfig;
 use protoclaw_core::types::ChannelId;
-use protoclaw_core::{constants, AgentsCommand, ChannelEvent, CrashTracker, ExponentialBackoff, Manager, ManagerError, ManagerHandle, SessionKey};
+use protoclaw_core::{constants, AgentsCommand, CrashTracker, ExponentialBackoff, Manager, ManagerError, ManagerHandle, SessionKey};
+use protoclaw_sdk_types::{ChannelAckConfig, ChannelEvent};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
@@ -12,6 +13,15 @@ use crate::connection::{ChannelConnection, IncomingChannelMessage};
 use crate::session_queue::{QueueAction, SessionQueue};
 use crate::error::ChannelsError;
 use crate::types::{ChannelCapabilities, ChannelInitializeResult, ChannelSendMessage, ChannelRespondPermission};
+
+fn ack_config_to_channel(ack: &protoclaw_config::AckConfig) -> ChannelAckConfig {
+    ChannelAckConfig {
+        reaction: ack.reaction,
+        typing: ack.typing,
+        reaction_emoji: ack.reaction_emoji.clone(),
+        reaction_lifecycle: ack.reaction_lifecycle.clone(),
+    }
+}
 
 /// Commands sent to the ChannelsManager from other managers.
 pub enum ChannelsCommand {
@@ -133,16 +143,10 @@ impl ChannelsManager {
     ) -> Result<(ChannelConnection, ChannelCapabilities), ChannelsError> {
         let mut conn = ChannelConnection::spawn(config, channel_id.clone())?;
 
-        let ack_json = serde_json::json!({
-            "reaction": config.ack.reaction,
-            "typing": config.ack.typing,
-            "reactionEmoji": config.ack.reaction_emoji,
-            "reactionLifecycle": config.ack.reaction_lifecycle,
-        });
         let params = serde_json::json!({
             "protocolVersion": 1,
             "channelId": channel_id.as_ref(),
-            "ack": ack_json,
+            "ack": ack_config_to_channel(&config.ack),
         });
 
         let rx = conn.send_request("initialize", params).await?;
@@ -994,5 +998,28 @@ mod tests {
             agent_name: "default".into(),
         });
         m.send_ack_to_channel(&key).await;
+    }
+
+    #[rstest]
+    fn when_ack_config_converted_then_all_fields_match() {
+        let config_ack = protoclaw_config::AckConfig {
+            reaction: true,
+            typing: true,
+            reaction_emoji: "🤔".to_string(),
+            reaction_lifecycle: "per_message".to_string(),
+        };
+        let channel_ack = ack_config_to_channel(&config_ack);
+        assert_eq!(channel_ack.reaction, true);
+        assert_eq!(channel_ack.typing, true);
+        assert_eq!(channel_ack.reaction_emoji, "🤔");
+        assert_eq!(channel_ack.reaction_lifecycle, "per_message");
+    }
+
+    #[rstest]
+    fn when_default_ack_config_converted_then_matches_defaults() {
+        let config_ack = protoclaw_config::AckConfig::default();
+        let channel_ack = ack_config_to_channel(&config_ack);
+        assert_eq!(channel_ack.reaction, false);
+        assert_eq!(channel_ack.typing, false);
     }
 }

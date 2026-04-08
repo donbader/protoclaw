@@ -1,16 +1,22 @@
 # protoclaw-sdk-types — Shared SDK Wire Types
 
-Shared serde types used by all three SDK crates (agent, channel, tool). Exists as a separate leaf crate to avoid circular dependencies between SDK implementation crates.
+Shared serde types used by all three SDK crates (agent, channel, tool) and by internal crates (agents, channels, core). Exists as a separate leaf crate to avoid circular dependencies.
 
 ## Files
 
 | File | Purpose |
 |------|---------|
 | `channel.rs` | Channel protocol types: capabilities, initialize, deliver, send, ack, thought, session |
+| `channel_event.rs` | `ChannelEvent` enum — agents→channels bridge type (relocated from protoclaw-core in v5.0) |
+| `session_key.rs` | `SessionKey` newtype — routing key encoding channel + conversation identity (relocated from protoclaw-core in v5.0) |
 | `permission.rs` | Permission types: request, response, options |
-| `lib.rs` | Re-exports from both modules |
+| `lib.rs` | Re-exports from all modules |
 
 ## Key Types
+
+**Cross-manager types (relocated from protoclaw-core in v5.0):**
+- `ChannelEvent` — agents→channels message enum: `DeliverMessage`, `SessionComplete`, `RoutePermission`, `AckMessage`
+- `SessionKey` — routing key newtype: `"{channel_name}:{kind}:{peer_id}"`, with `new()`, `channel_name()`, `Display`, `FromStr`
 
 **Channel protocol:**
 - `ChannelCapabilities { streaming, rich_text }` — advertised during initialize

@@ -4,7 +4,6 @@ pub mod error;
 pub mod manager;
 pub mod constants;
 pub mod backoff;
-pub mod channel_event;
 pub mod agents_command;
 pub mod tools_command;
 
@@ -14,6 +13,8 @@ pub use error::*;
 pub use manager::*;
 pub use constants::*;
 pub use backoff::*;
-pub use channel_event::*;
 pub use agents_command::*;
 pub use tools_command::*;
+
+pub use protoclaw_sdk_types::ChannelEvent;
+pub use protoclaw_sdk_types::SessionKey;

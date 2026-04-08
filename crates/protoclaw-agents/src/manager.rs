@@ -11,9 +11,9 @@ use crate::acp_types::{
 };
 use crate::slot::{find_slot_by_name, AgentSlot};
 use protoclaw_config::{AgentConfig, AgentsManagerConfig, WorkspaceConfig};
-use protoclaw_core::{constants, AgentStatusInfo, AgentsCommand, ChannelEvent, Manager, ManagerError, ManagerHandle, McpServerUrl, PendingPermissionInfo, SessionKey, ToolsCommand};
+use protoclaw_core::{constants, AgentStatusInfo, AgentsCommand, Manager, ManagerError, ManagerHandle, McpServerUrl, PendingPermissionInfo, SessionKey, ToolsCommand};
 use protoclaw_sdk_agent::{AgentAdapter, GenericAcpAdapter};
-use protoclaw_sdk_types::PermissionOption;
+use protoclaw_sdk_types::{ChannelEvent, PermissionOption};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 

@@ -63,7 +63,7 @@ protoclaw (binary)
 └── protoclaw-tools ───→ protoclaw-core
 
 SDK crates (for external implementors):
-├── protoclaw-sdk-types (shared types, no deps on internal crates)
+├── protoclaw-sdk-types (shared types: wire types, SessionKey, ChannelEvent)
 ├── protoclaw-sdk-agent ──→ sdk-types, jsonrpc
 ├── protoclaw-sdk-channel ─→ sdk-types, jsonrpc
 └── protoclaw-sdk-tool ───→ sdk-types
@@ -145,7 +145,7 @@ fn when_decoding_non_json_input_then_returns_none(#[case] input: &str) {
 - **Do not change `MANAGER_ORDER`**: Boot order `tools → agents → channels` and reverse shutdown are load-bearing. Tests verify this explicitly.
 - **Do not call `run()` without `start()`**: Manager lifecycle is `start().await?` then `run(cancel).await`. Both phases required.
 - **Do not call `run()` twice**: `cmd_rx` is consumed via `.take()` on first `run()`. Second call panics.
-- **Do not move `ChannelEvent` out of `protoclaw-core`**: It lives there to break the circular dependency between agents and channels crates.
+- **`ChannelEvent` lives in `protoclaw-sdk-types`**: Relocated from `protoclaw-core` in v5.0. `protoclaw-core` re-exports it for backward compatibility. Both agents and channels import from `protoclaw-sdk-types` directly.
 - **Do not remove the 50ms sleep in `poll_channels()`**: It prevents busy-looping in the channel polling select.
 - **Do not access `binary`/`env`/`working_dir` on `AgentConfig` directly**: These fields moved into `WorkspaceConfig::Local`. Match on `agent.workspace` to extract them.
 

@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-use crate::types::SessionKey;
+use crate::session_key::SessionKey;
 
 /// Events sent from AgentsManager to ChannelsManager via mpsc channel.
-/// Defined in protoclaw-core to avoid circular dependency between agents and channels crates.
+/// Defined in protoclaw-sdk-types as the shared wire type for agent→channel routing.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ChannelEvent {
     /// Deliver an agent session/update message to the originating channel.

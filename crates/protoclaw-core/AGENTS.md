@@ -9,9 +9,8 @@ Foundation crate used by all internal crates. Defines the Manager contract, resi
 | `manager.rs` | `Manager` trait + `ManagerHandle<C>` typed command sender |
 | `backoff.rs` | `ExponentialBackoff` (100ms→30s) + `CrashTracker` (N crashes in window) |
 | `error.rs` | `SupervisorError` + `ManagerError` — all `thiserror` |
-| `types.rs` | ID newtypes (`SessionKey`, `AgentId`, `ChannelId`), `SessionKey::new(channel, kind, peer)` |
+| `types.rs` | ID newtypes (`SessionId`, `ChannelId`, `ManagerId`, `MessageId`) |
 | `message.rs` | Internal message envelope types |
-| `channel_event.rs` | `ChannelEvent` enum — agents→channels bridge |
 | `constants.rs` | Named constants: internal guards (`POLL_INTERVAL_MS`, `CMD_CHANNEL_CAPACITY`) and default values (`DEFAULT_BACKOFF_BASE_MS`, `DEFAULT_CRASH_MAX`) |
 
 ## Manager Trait
@@ -32,11 +31,13 @@ pub trait Manager: Send + 'static {
 
 Typed wrapper around `mpsc::Sender<C>`. Only way to send commands across manager boundaries. Cloneable. `send()` returns `ManagerError::SendFailed` if channel closed.
 
-## ChannelEvent (WHY it's here)
+## Re-exports from protoclaw-sdk-types
 
-`ChannelEvent` is the agents→channels message type. It lives in `protoclaw-core` (not agents or channels) because both crates need it — putting it in either would create a circular dependency. Two variants:
-- `DeliverMessage { session_key, content }` — forward agent response to channel
-- `RoutePermission { session_key, request_id, description, options }` — forward permission request
+`ChannelEvent` and `SessionKey` were relocated to `protoclaw-sdk-types` in v5.0. `protoclaw-core` re-exports both for backward compatibility:
+- `pub use protoclaw_sdk_types::ChannelEvent;`
+- `pub use protoclaw_sdk_types::SessionKey;`
+
+Crates that already depend on `protoclaw-sdk-types` should import directly from there.
 
 ## Backoff Defaults (tested explicitly)
 
@@ -47,4 +48,4 @@ Do not change defaults without updating tests in `backoff.rs`.
 
 ## SessionKey Format
 
-`"{channel_name}:{kind}:{peer_id}"` — used as routing key in both agents and channels managers.
+`"{channel_name}:{kind}:{peer_id}"` — used as routing key in both agents and channels managers. Defined in `protoclaw-sdk-types`, re-exported here.
