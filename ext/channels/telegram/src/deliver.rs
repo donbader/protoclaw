@@ -26,7 +26,7 @@ fn flush_turn_data(turn: &mut ChatTurn) -> PendingFlush {
 async fn send_flush(bot: &Bot, chat_id: i64, flush: &PendingFlush) {
     if let Some((ref text, msg_id)) = flush.response {
         if !text.is_empty() && msg_id != 0 {
-            tracing::info!(chat_id, msg_id, buf_len = text.len(), "flush: sending final edit before cleanup");
+            tracing::debug!(chat_id, msg_id, buf_len = text.len(), "flush: sending final edit before cleanup");
             let chunks = split_message(text, 4096);
             if let Err(e) = bot
                 .edit_message_text(ChatId(chat_id), MessageId(msg_id), &chunks[0])
@@ -416,7 +416,7 @@ pub async fn deliver_to_chat(
                         TurnPhase::Active => "active",
                         TurnPhase::Finalizing(_) => "finalizing",
                     };
-                    tracing::info!(
+                    tracing::debug!(
                         chat_id,
                         turn_message_id = %turn.message_id,
                         has_response,
