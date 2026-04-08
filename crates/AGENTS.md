@@ -15,7 +15,7 @@
 | `protoclaw-jsonrpc` | lib | 4 | JSON-RPC 2.0 codec (LinesCodec), types, error |
 | `protoclaw-sdk-types` | lib | 3 | Shared wire types: capabilities, permissions, messages |
 | `protoclaw-sdk-agent` | lib | 4 | AgentAdapter trait + GenericAcpAdapter |
-| `protoclaw-sdk-channel` | lib | 4 | Channel trait + ChannelHarness |
+| `protoclaw-sdk-channel` | lib | 7 | Channel trait + ChannelHarness + PermissionBroker + ChannelTester |
 | `protoclaw-sdk-tool` | lib | 4 | Tool trait + ToolServer |
 | `protoclaw-test-helpers` | lib | 1 | Shared test utilities (mock configs, port waiter, timeout helpers) |
 

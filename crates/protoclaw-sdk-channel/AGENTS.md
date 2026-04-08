@@ -8,8 +8,11 @@ SDK for building channel extensions. Provides the `Channel` trait for business l
 |------|---------|
 | `trait_def.rs` | `Channel` trait — implement this to build a channel |
 | `harness.rs` | `ChannelHarness<C>` — JSON-RPC stdio loop, dispatches to `Channel` methods |
+| `broker.rs` | `PermissionBroker` — register/resolve helper for permission oneshot management |
+| `testing.rs` | `ChannelTester<C>` — typed test wrapper that bypasses JSON-RPC framing |
+| `content.rs` | `content_to_string` — extract displayable text from agent content |
 | `error.rs` | `ChannelSdkError` enum (thiserror) |
-| `lib.rs` | Re-exports `Channel`, `ChannelHarness`, `ChannelSdkError`, and sdk-types |
+| `lib.rs` | Re-exports `Channel`, `ChannelHarness`, `ChannelSdkError`, `PermissionBroker`, and sdk-types |
 
 ## Key Types
 
