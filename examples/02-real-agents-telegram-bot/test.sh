@@ -21,7 +21,9 @@ FAIL=0
 pass() { ((PASS++)); printf "  ✓ %s\n" "$1"; }
 fail() { ((FAIL++)); printf "  ✗ %s\n" "$1"; }
 
+SSE_PID=""
 cleanup() {
+  [ -n "$SSE_PID" ] && kill "$SSE_PID" 2>/dev/null || true
   printf "\nTearing down...\n"
   docker compose down --timeout 10 2>/dev/null || true
   [ -f protoclaw.yaml.bak ] && mv protoclaw.yaml.bak protoclaw.yaml
@@ -89,26 +91,81 @@ printf "Health\n"
 STATUS=$(curl -sf -o /dev/null -w "%{http_code}" "$BASE_URL/health")
 if [ "$STATUS" = "200" ]; then pass "GET /health → 200"; else fail "GET /health → $STATUS"; fi
 
-# --- Test 2: Send message + verify agent responds ---
-printf "Agent response\n"
-SSE_FILE=$(mktemp)
-curl -sf -N "$BASE_URL/events" > "$SSE_FILE" 2>/dev/null &
-SSE_PID=$!
-sleep 1
+printf "Send message\n"
+RESP=$(curl -sf -X POST "$BASE_URL/message" \
+  -H "Content-Type: application/json" \
+  -d '{"message": "hello"}')
+if echo "$RESP" | grep -q '"queued"\|"sent"'; then pass "POST /message → accepted"; else fail "POST /message → $RESP"; fi
 
+sleep 3
+
+SSE_FILE=$(mktemp)
+curl -sN "$BASE_URL/events" > "$SSE_FILE" 2>/dev/null &
+SSE_PID=$!
+sleep 2
+
+printf "SSE response\n"
 curl -sf -X POST "$BASE_URL/message" \
   -H "Content-Type: application/json" \
-  -d '{"message": "Say hello in exactly 3 words"}' >/dev/null
+  -d '{"message": "Reply with exactly: PROTOCLAW_TEST_OK"}' >/dev/null
 
-sleep 30
+sleep 45
+
+if grep -q "PROTOCLAW_TEST_OK\|agent_message_chunk\|data:" "$SSE_FILE"; then
+  pass "SSE stream contains agent response"
+else
+  fail "SSE stream empty (got: $(head -20 "$SSE_FILE"))"
+fi
+
+printf "Streaming\n"
+if grep -q "agent_message_chunk\|^data: " "$SSE_FILE"; then
+  pass "SSE stream contains streaming chunks"
+else
+  fail "SSE stream missing streaming chunks"
+fi
+
+if grep -q "result\|^data: .*PROTOCLAW_TEST_OK" "$SSE_FILE"; then
+  pass "SSE stream contains result"
+else
+  fail "SSE stream missing result"
+fi
+
+printf "Message merging\n"
+BEFORE_BATCH=$(wc -l < "$SSE_FILE")
+
+for i in $(seq 1 5); do
+  curl -sf -X POST "$BASE_URL/message" \
+    -H "Content-Type: application/json" \
+    -d "{\"message\": \"batch$i\"}" >/dev/null
+  sleep 0.03
+done
+
+sleep 60
+
+BATCH_OUTPUT=$(tail -n +"$((BEFORE_BATCH + 1))" "$SSE_FILE")
+MISSING=""
+for i in $(seq 1 5); do
+  if ! echo "$BATCH_OUTPUT" | grep -q "batch$i"; then
+    MISSING="$MISSING batch$i"
+  fi
+done
+
+if [ -z "$MISSING" ]; then
+  pass "All 5 batch messages appear in SSE stream"
+else
+  fail "Missing batch messages:$MISSING"
+fi
+
+RESULT_COUNT=$(echo "$BATCH_OUTPUT" | grep -c '"result"\|^event: result' || true)
+if [ "$RESULT_COUNT" -lt 5 ]; then
+  pass "Messages merged: 5 sent, $RESULT_COUNT agent turn(s)"
+else
+  fail "No merging detected: expected fewer than 5 agent turns, got $RESULT_COUNT"
+fi
+
 kill "$SSE_PID" 2>/dev/null || true
 wait "$SSE_PID" 2>/dev/null || true
-
-if grep -q '"result"' "$SSE_FILE"; then
-  pass "SSE stream contains result event (agent responded)"
-else
-  fail "SSE stream missing result event (got: $(head -20 "$SSE_FILE"))"
-fi
+SSE_PID=""
 rm -f "$SSE_FILE"
 
 printf "\n%d passed, %d failed\n" "$PASS" "$FAIL"
