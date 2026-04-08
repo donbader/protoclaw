@@ -3466,6 +3466,7 @@ dependencies = [
  "async-trait",
  "protoclaw-sdk-channel",
  "protoclaw-sdk-types",
+ "rstest",
  "serde",
  "serde_json",
  "teloxide",
