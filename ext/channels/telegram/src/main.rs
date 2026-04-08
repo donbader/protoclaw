@@ -4,6 +4,7 @@ mod dispatcher;
 mod peer;
 mod permissions;
 mod state;
+mod turn;
 
 use std::sync::Arc;
 

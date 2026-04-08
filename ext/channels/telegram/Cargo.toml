@@ -20,4 +20,5 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
 [dev-dependencies]
+rstest = { workspace = true }
 tokio-test = { workspace = true }
