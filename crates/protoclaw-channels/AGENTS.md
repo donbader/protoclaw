@@ -9,7 +9,6 @@ Manages channel subprocesses with per-channel crash isolation and session-keyed 
 | `manager.rs` | `ChannelsManager` — routing table, crash isolation, poll loop |
 | `connection.rs` | `ChannelConnection` — subprocess spawn, JSON-RPC framing, port discovery |
 | `session_queue.rs` | `SessionQueue` — per-session FIFO message queue |
-| `types.rs` | Wire types: `ChannelSendMessage`, `ChannelRespondPermission`, `ChannelCapabilities`, `PeerInfo` |
 | `debug_http.rs` | `DebugHttpChannel` — in-process debug channel (not subprocess) |
 | `error.rs` | `ChannelsError` |
 
@@ -25,7 +24,7 @@ Manages channel subprocesses with per-channel crash isolation and session-keyed 
 
 ## Routing Model
 
-- `routing_table: HashMap<SessionKey, RoutingEntry>` — maps session key → (channel_id, acp_session_id, slot_index)
+- `routing_table: HashMap<SessionKey, RoutingEntry>` — maps session key → (_channel_id, acp_session_id, slot_index)
 - Inbound: `channel/sendMessage` → lookup/create session via `AgentsCommand::CreateSession` → `AgentsCommand::PromptSession`
 - Outbound: `ChannelEvent::DeliverMessage` from agents → lookup routing table → `channel/deliverMessage` to correct channel
 

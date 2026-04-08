@@ -80,7 +80,7 @@ Example binaries:
 - **Module structure**: Flat `lib.rs` with `pub mod` + `pub use` re-exports. No `mod.rs` files.
 - **Manager communication**: `tokio::sync::mpsc` channels via `ManagerHandle<C>`. No shared mutable state between managers.
 - **Config layering**: Defaults → YAML file → env vars (`PROTOCLAW_` prefix, `__` separator). Top-level fields: `log_level` (default "info"), `extensions_dir` (default "/usr/local/bin"). `@built-in/` binary prefix resolved against `extensions_dir` in supervisor before manager construction.
-- **Tracing**: Use `tracing` spans/events, not `println!` or `log` crate
+- **Tracing**: Use `tracing` spans/events, not `println!` or `log` crate. Exception: CLI entry points (`main.rs`, `init.rs`, `status.rs`) may use `println!`/`eprintln!` for user-facing output before tracing is initialized.
 - **Test framework**: `rstest = "0.23"` is a `[dev-dependency]` in every workspace crate. Use `#[rstest]` for all new and migrated tests.
 - **BDD test naming**: Tests use `when_action_then_result` or `given_precondition_when_action_then_result` naming. No `test_` prefix. No `it_` prefix.
 - **Fixtures**: rstest fixtures are free functions named `given_*` that return a precondition value. Example: `fn given_empty_buffer() -> BytesMut { BytesMut::new() }`.
@@ -148,6 +148,9 @@ fn when_decoding_non_json_input_then_returns_none(#[case] input: &str) {
 - **`ChannelEvent` lives in `protoclaw-sdk-types`**: Relocated from `protoclaw-core` in v5.0. `protoclaw-core` re-exports it for backward compatibility. Both agents and channels import from `protoclaw-sdk-types` directly.
 - **Do not remove the 50ms sleep in `poll_channels()`**: It prevents busy-looping in the channel polling select.
 - **Do not access `binary`/`env`/`working_dir` on `AgentConfig` directly**: These fields moved into `WorkspaceConfig::Local`. Match on `agent.workspace` to extract them.
+- **No `std::env::var` in channel/tool binaries**: Runtime config flows through the initialize handshake (`ChannelInitializeParams.options`). CLI entry points (`main.rs`, `init.rs`, `status.rs`) are exempt.
+- **No cross-manager crate imports**: Managers communicate only via `ManagerHandle<C>` commands. Use trait abstractions (e.g., `AgentDispatch`) instead of importing another manager's crate.
+- **Config-driven channels**: Channel subprocesses receive configuration through `ChannelInitializeParams.options`, not environment variables. `ChannelConfig.options` in `protoclaw.yaml` is the single source.
 
 ## Design Documentation
 

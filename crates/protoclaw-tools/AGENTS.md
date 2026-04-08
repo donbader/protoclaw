@@ -27,10 +27,6 @@ Implements rmcp's `ServerHandler` trait. Aggregates tools from all three sources
 - `list_tools()` — merges native host tools + external server tools
 - `call_tool()` — routes to native host first, then external servers by name match
 
-## TCP Listener (INCOMPLETE)
-
-`start()` binds `127.0.0.1:0` and spawns an accept loop, but the TODO at line 235 means accepted TCP streams are NOT wired to the MCP protocol yet. The URL is still passed to agents via `GetMcpUrls` — agents will get the URL but tool calls over TCP won't work until Phase 7+.
-
 ## WASM Sandbox Model
 
 - `WasmToolRunner` creates a shared `wasmtime::Engine` (compilation cache)
@@ -42,7 +38,6 @@ Implements rmcp's `ServerHandler` trait. Aggregates tools from all three sources
 
 ## Anti-Patterns (this crate)
 
-- Do not assume tools are callable end-to-end over TCP — the accept loop is a stub
 - Failed external MCP servers and invalid WASM modules are logged and skipped, not fatal
 - `cmd_rx` uses `unwrap_or_else` fallback (creates dummy channel) unlike other managers — this is intentional because tools manager can run without external commands
 - `start()` skips MCP servers with `enabled = false` — no spawn attempt for disabled servers

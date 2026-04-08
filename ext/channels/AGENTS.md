@@ -31,7 +31,7 @@ Both channels use `ContentKind::from_content(&msg.content)` from `protoclaw-sdk-
 
 **debug-http:** Emits thoughts as named SSE event `"thought"` and user message chunks as named SSE event `"user_message_chunk"` via `SsePayload` struct. Regular messages use default SSE data events. SSE clients filter by event type.
 
-**telegram:** Streams thoughts as 🧠-prefixed messages with debounced edits (400ms internal timer). On `"result"`, collapses to "🧠 Thought for Xs" (timing only, no content). Emoji prefix configurable via `TELEGRAM_THOUGHT_EMOJI` env var (default: 🧠). Thinking state tracked inside `ChatTurn.thought` (see below).
+**telegram:** Streams thoughts as 🧠-prefixed messages with debounced edits (400ms internal timer). On `"result"`, collapses to "🧠 Thought for Xs" (timing only, no content). Emoji prefix configurable via `thought_emoji` option in `ChannelInitializeParams.options` (default: 🧠). Thinking state tracked inside `ChatTurn.thought` (see below).
 
 ## ChatTurn State Machine (telegram)
 
@@ -84,11 +84,11 @@ The old architecture had a race: `finalize_previous_turn()` cleared `message_buf
 | `peer.rs` | `PeerInfo` extraction from Telegram update context |
 | `state.rs` | Shared state: bot instance, session tracking, `turns` map |
 
-Requires `TELEGRAM_BOT_TOKEN` env var.
+Bot token and thought emoji are received via `ChannelInitializeParams.options` in `on_initialize()`, not from environment variables.
 
 ## debug-http/ (1 file)
 
-Single `main.rs` — axum HTTP server with `SsePayload` typed broadcast for named SSE events. Emits `PORT:{n}` to stderr on bind for port discovery by supervisor. Used in integration tests and local development.
+Single `main.rs` — axum HTTP server with `SsePayload` typed broadcast for named SSE events. Emits `PORT:{n}` to stderr on bind for port discovery by supervisor. Used in integration tests and local development. Host and port are received via `ChannelInitializeParams.options` in `on_initialize()`.
 
 ## Adding a New Channel
 

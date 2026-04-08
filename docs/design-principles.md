@@ -40,9 +40,9 @@ Separating them means each can crash and recover independently. A Telegram chann
 - **Crash isolation** — A buggy channel binary crashes without affecting other channels or the agent. The supervisor restarts it independently.
 - **Deployment flexibility** — Channel binaries can be pre-built, distributed separately, or resolved at runtime via `@built-in/` prefix against `extensions_dir`.
 
-### Why ChannelEvent Lives in protoclaw-core?
+### Why ChannelEvent Lives in protoclaw-sdk-types
 
-`ChannelEvent` is the agents→channels message type (deliver message, route permission). Both `protoclaw-agents` and `protoclaw-channels` need it. Putting it in either crate would create a circular dependency. `protoclaw-core` is the shared foundation — both crates already depend on it.
+`ChannelEvent` is the agents→channels message type (deliver message, route permission). Both `protoclaw-agents` and `protoclaw-channels` need it. Putting it in either crate would create a circular dependency. As of v5.0, `ChannelEvent` (and `SessionKey`) live in `protoclaw-sdk-types` — the dependency-free leaf crate shared by all SDK and internal crates. `protoclaw-core` re-exports both types for backward compatibility.
 
 ## Failure Mode Catalog
 
@@ -102,6 +102,33 @@ Tests verify both orders explicitly. Reordering causes initialization races that
 
 Without it, the `select!` loop busy-spins when no messages are pending. The sleep yields back to the tokio runtime. This was a TDD-caught bug — `pending().await` (the original approach) permanently blocked the select branch after the first timeout.
 
+## v5.0 Design Decisions
+
+### Crate Boundary Invariants
+
+v5.0 established clear crate boundary rules:
+
+1. **SDK types are the canonical source** — `ChannelEvent`, `SessionKey`, and all channel wire types live in `protoclaw-sdk-types`. Internal crates may re-export for convenience but must not duplicate definitions.
+2. **No cross-manager imports** — Managers communicate only via `ManagerHandle<C>` commands. The `AgentDispatch` trait in `protoclaw-channels` abstracts agent interaction without importing `protoclaw-agents`.
+3. **No `std::env::var` in channel/tool binaries** — Runtime configuration flows through the initialize handshake (`ChannelInitializeParams.options`). The supervisor forwards `ChannelConfig.options` as the single config source. CLI entry points (`main.rs`, `init.rs`, `status.rs`) are exempt.
+
+### Config-Driven Operation
+
+Channel subprocesses receive all configuration through the JSON-RPC initialize handshake, not environment variables:
+
+1. `protoclaw.yaml` defines `options: HashMap<String, Value>` per channel
+2. Supervisor forwards options in `ChannelInitializeParams.options`
+3. Channel reads config in `on_initialize()`, not at construction time
+4. This makes channels testable (no env setup) and deployable (config is explicit)
+
+### Docker Build Consolidation
+
+A single root `Dockerfile` with named stages (`core`, `example-01`, `mock-agent`, etc.) replaced per-example Dockerfiles. Benefits:
+- Shared dependency cache across all targets
+- `docker build --target <stage>` selects the output binary
+- docker-compose files reference the root Dockerfile with `target:` field
+- No duplicated `cargo chef` / dependency layers
+
 ---
 
-*Last updated: 2026-04-04*
+*Last updated: 2026-04-09*

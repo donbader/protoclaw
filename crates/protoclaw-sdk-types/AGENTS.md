@@ -20,7 +20,7 @@ Shared serde types used by all three SDK crates (agent, channel, tool) and by in
 
 **Channel protocol:**
 - `ChannelCapabilities { streaming, rich_text }` — advertised during initialize
-- `ChannelInitializeParams` / `ChannelInitializeResult` — handshake types
+- `ChannelInitializeParams { agent_name, ack_config, options }` / `ChannelInitializeResult` — handshake types. `options: HashMap<String, Value>` forwards channel-specific config from `protoclaw.yaml`
 - `DeliverMessage { session_id, content }` — protoclaw → channel
 - `ChannelSendMessage { peer_info, content }` — channel → protoclaw
 - `PeerInfo { channel_name, peer_id, kind }` — inbound message identity
