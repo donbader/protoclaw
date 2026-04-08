@@ -116,17 +116,17 @@ fi
 
 sleep 2
 
-printf "Batch debounce\n"
+printf "Message merging\n"
 BEFORE_BATCH=$(wc -l < "$SSE_FILE")
 
 curl -sf -X POST "$BASE_URL/message" \
   -H "Content-Type: application/json" \
   -d '{"message": "batch1"}' >/dev/null
-sleep 0.1
+sleep 0.05
 curl -sf -X POST "$BASE_URL/message" \
   -H "Content-Type: application/json" \
   -d '{"message": "batch2"}' >/dev/null
-sleep 0.1
+sleep 0.05
 curl -sf -X POST "$BASE_URL/message" \
   -H "Content-Type: application/json" \
   -d '{"message": "batch3"}' >/dev/null
@@ -134,7 +134,6 @@ curl -sf -X POST "$BASE_URL/message" \
 sleep 10
 
 BATCH_OUTPUT=$(tail -n +"$((BEFORE_BATCH + 1))" "$SSE_FILE")
-BATCH_RESULTS=$(echo "$BATCH_OUTPUT" | grep -c '"result"\|^data: Echo: batch' || true)
 HAS_BATCH1=$(echo "$BATCH_OUTPUT" | grep -c "batch1" || true)
 HAS_BATCH2=$(echo "$BATCH_OUTPUT" | grep -c "batch2" || true)
 HAS_BATCH3=$(echo "$BATCH_OUTPUT" | grep -c "batch3" || true)
@@ -145,10 +144,11 @@ else
   fail "Missing batch messages (batch1=$HAS_BATCH1 batch2=$HAS_BATCH2 batch3=$HAS_BATCH3)"
 fi
 
-if [ "$BATCH_RESULTS" -le 2 ]; then
-  pass "Debounce reduced 3 messages to $BATCH_RESULTS result(s)"
+AGENT_TURNS=$(echo "$BATCH_OUTPUT" | grep -c "Analyzing your message" || true)
+if [ "$AGENT_TURNS" -lt 3 ]; then
+  pass "Messages merged: 3 sent, $AGENT_TURNS agent turn(s)"
 else
-  fail "Expected debounce to merge, got $BATCH_RESULTS results"
+  fail "No merging detected: expected fewer than 3 agent turns, got $AGENT_TURNS"
 fi
 
 kill "$SSE_PID" 2>/dev/null || true
