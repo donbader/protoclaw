@@ -11,64 +11,20 @@ use crate::acp_types::{
 };
 use crate::slot::{find_slot_by_name, AgentSlot};
 use protoclaw_config::{AgentConfig, AgentsManagerConfig, WorkspaceConfig};
-use protoclaw_core::{constants, ChannelEvent, Manager, ManagerError, ManagerHandle, SessionKey};
+use protoclaw_core::{constants, AgentStatusInfo, AgentsCommand, ChannelEvent, Manager, ManagerError, ManagerHandle, McpServerUrl, PendingPermissionInfo, SessionKey, ToolsCommand};
 use protoclaw_sdk_agent::{AgentAdapter, GenericAcpAdapter};
 use protoclaw_sdk_types::PermissionOption;
-use protoclaw_tools::{McpServerUrl, ToolsCommand};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
 use crate::connection::{AgentConnection, IncomingMessage};
 use crate::error::AgentsError;
 
-#[derive(Debug, Clone)]
-pub struct AgentStatusInfo {
-    pub name: String,
-    pub connected: bool,
-    pub session_count: usize,
-}
-
 pub struct PendingPermission {
     pub request: serde_json::Value,
     pub description: String,
     pub options: Vec<PermissionOption>,
     pub received_at: std::time::Instant,
-}
-
-pub struct PendingPermissionInfo {
-    pub request_id: String,
-    pub description: String,
-    pub options: Vec<PermissionOption>,
-}
-
-pub enum AgentsCommand {
-    SendPrompt {
-        message: String,
-        reply: oneshot::Sender<Result<(), AgentsError>>,
-    },
-    CancelOperation,
-    RespondPermission {
-        request_id: String,
-        option_id: String,
-    },
-    GetPendingPermissions {
-        reply: oneshot::Sender<Vec<PendingPermissionInfo>>,
-    },
-    Shutdown,
-    GetStatus {
-        reply: oneshot::Sender<Vec<AgentStatusInfo>>,
-    },
-    CreateSession {
-        agent_name: String,
-        session_key: SessionKey,
-        reply: oneshot::Sender<Result<String, AgentsError>>,
-    },
-    PromptSession {
-        agent_name: String,
-        session_key: SessionKey,
-        message: String,
-        reply: oneshot::Sender<Result<(), AgentsError>>,
-    },
 }
 
 pub(crate) struct SlotIncoming {
@@ -229,7 +185,7 @@ impl AgentsManager {
                 } else {
                     Err(AgentsError::ConnectionClosed)
                 };
-                let _ = reply.send(result);
+                let _ = reply.send(result.map_err(|e| e.to_string()));
             }
             AgentsCommand::CancelOperation => {
                 for slot in &self.slots {
@@ -298,11 +254,11 @@ impl AgentsManager {
             }
             AgentsCommand::CreateSession { agent_name, session_key, reply } => {
                 let result = self.create_session(&agent_name, session_key).await;
-                let _ = reply.send(result);
+                let _ = reply.send(result.map_err(|e| e.to_string()));
             }
             AgentsCommand::PromptSession { agent_name, session_key, message, reply } => {
                 let result = self.prompt_session(&agent_name, &session_key, &message).await;
-                let _ = reply.send(result);
+                let _ = reply.send(result.map_err(|e| e.to_string()));
             }
         }
         false

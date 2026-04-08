@@ -11,3 +11,4 @@ pub use mcp_host::McpHost;
 pub use external::ExternalMcpServer;
 pub use wasm_runner::WasmToolRunner;
 pub use wasm_tool::WasmTool;
+pub use protoclaw_core::{McpServerUrl, ToolsCommand};

@@ -14,3 +14,4 @@ pub use error::*;
 pub use local_backend::LocalBackend;
 pub use manager::*;
 pub use slot::*;
+pub use protoclaw_core::{AgentsCommand, AgentStatusInfo, PendingPermissionInfo, ToolsCommand, McpServerUrl};

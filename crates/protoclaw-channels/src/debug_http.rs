@@ -1,8 +1,7 @@
 use axum::extract::State;
 use axum::routing::get;
 use axum::{Json, Router};
-use protoclaw_agents::AgentsCommand;
-use protoclaw_core::ManagerHandle;
+use protoclaw_core::{AgentsCommand, ManagerHandle};
 use tokio::sync::{oneshot, watch};
 use tokio_util::sync::CancellationToken;
 
@@ -114,7 +113,7 @@ async fn handle_health(State(state): State<AppState>) -> Json<serde_json::Value>
 mod tests {
     use super::*;
     use rstest::rstest;
-    use protoclaw_agents::{AgentStatusInfo, AgentsCommand};
+    use protoclaw_core::{AgentStatusInfo, AgentsCommand};
     use protoclaw_core::ManagerHandle;
 
     #[test]

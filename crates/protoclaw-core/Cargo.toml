@@ -5,6 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+protoclaw-sdk-types = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }
 tokio-util.workspace = true
 serde.workspace = true

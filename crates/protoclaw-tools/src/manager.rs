@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use protoclaw_config::ToolConfig;
-use protoclaw_core::{Manager, ManagerError};
+use protoclaw_core::{Manager, ManagerError, McpServerUrl, ToolsCommand};
 use protoclaw_sdk_tool::Tool;
 use rmcp::handler::server::ServerHandler;
 use rmcp::model::{
@@ -17,20 +17,6 @@ use crate::external::ExternalMcpServer;
 use crate::mcp_host::McpHost;
 use crate::wasm_runner::WasmToolRunner;
 use crate::wasm_tool::WasmTool;
-
-#[derive(Clone)]
-pub struct McpServerUrl {
-    pub name: String,
-    pub url: String,
-}
-
-pub enum ToolsCommand {
-    GetMcpUrls {
-        tool_names: Option<Vec<String>>,
-        reply: tokio::sync::oneshot::Sender<Vec<McpServerUrl>>,
-    },
-    Shutdown,
-}
 
 pub struct AggregatedToolServer {
     native_host: Arc<McpHost>,

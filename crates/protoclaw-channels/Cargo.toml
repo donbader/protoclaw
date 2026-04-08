@@ -7,7 +7,6 @@ rust-version.workspace = true
 [dependencies]
 protoclaw-core = { workspace = true }
 protoclaw-config = { workspace = true }
-protoclaw-agents = { workspace = true }
 protoclaw-sdk-types = { workspace = true }
 protoclaw-jsonrpc = { workspace = true }
 anyhow = { workspace = true }

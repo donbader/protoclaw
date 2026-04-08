@@ -2,10 +2,9 @@ use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
 use crate::types::PermissionOption;
-use protoclaw_agents::AgentsCommand;
 use protoclaw_config::ChannelConfig;
 use protoclaw_core::types::ChannelId;
-use protoclaw_core::{constants, ChannelEvent, CrashTracker, ExponentialBackoff, Manager, ManagerError, ManagerHandle, SessionKey};
+use protoclaw_core::{constants, AgentsCommand, ChannelEvent, CrashTracker, ExponentialBackoff, Manager, ManagerError, ManagerHandle, SessionKey};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
