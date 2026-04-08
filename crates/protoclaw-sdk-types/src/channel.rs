@@ -16,6 +16,8 @@ pub struct ChannelInitializeParams {
     pub channel_id: String,
     #[serde(default)]
     pub ack: Option<ChannelAckConfig>,
+    #[serde(default)]
+    pub options: std::collections::HashMap<String, serde_json::Value>,
 }
 
 /// Initialize handshake — channel subprocess responds.
@@ -308,6 +310,7 @@ mod tests {
             protocol_version: 1,
             channel_id: "ch-1".into(),
             ack: None,
+            options: std::collections::HashMap::new(),
         };
         let json = serde_json::to_value(&params).unwrap();
         assert_eq!(json["protocolVersion"], 1);
@@ -457,6 +460,7 @@ mod tests {
                 reaction_emoji: "👀".into(),
                 reaction_lifecycle: "remove".into(),
             }),
+            options: std::collections::HashMap::new(),
         };
         let json = serde_json::to_value(&params).unwrap();
         assert_eq!(json["ack"]["reaction"], true);

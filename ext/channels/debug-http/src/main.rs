@@ -72,6 +72,19 @@ impl Channel for DebugHttpChannel {
         }
     }
 
+    async fn on_initialize(
+        &mut self,
+        params: protoclaw_sdk_types::ChannelInitializeParams,
+    ) -> Result<(), ChannelSdkError> {
+        if let Some(host) = params.options.get("HOST").and_then(|v| v.as_str()) {
+            self.host = host.to_string();
+        }
+        if let Some(port) = params.options.get("PORT").and_then(|v| v.as_str()).and_then(|s| s.parse().ok()) {
+            self.port = port;
+        }
+        Ok(())
+    }
+
     async fn on_ready(
         &mut self,
         outbound: mpsc::Sender<ChannelSendMessage>,
@@ -256,22 +269,12 @@ async fn main() {
         .with_ansi(false)
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .or_else(|_| {
-                    std::env::var("LOG_LEVEL").map(|level| {
-                        // Scope noisy third-party crates to warn when using LOG_LEVEL
-                        let filter = format!("hyper=warn,h2=warn,reqwest=warn,tower=warn,{level}");
-                        tracing_subscriber::EnvFilter::new(filter)
-                    })
-                })
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
         )
         .init();
 
-    let host = std::env::var("HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
-    let port: u16 = std::env::var("PORT")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(0);
+    let host = "127.0.0.1".to_string();
+    let port: u16 = 0;
 
     let (event_tx, _) = broadcast::channel::<SsePayload>(256);
 

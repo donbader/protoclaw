@@ -24,7 +24,7 @@ fn flush_turn_data(turn: &mut ChatTurn) -> PendingFlush {
     }
 }
 
-async fn send_flush(bot: &Bot, chat_id: i64, flush: &PendingFlush) {
+async fn send_flush(bot: &Bot, state: &Arc<SharedState>, chat_id: i64, flush: &PendingFlush) {
     if let Some((ref text, msg_id)) = flush.response {
         if !text.is_empty() && msg_id != 0 {
             tracing::debug!(chat_id, msg_id, buf_len = text.len(), "flush: sending final edit before cleanup");
@@ -46,7 +46,7 @@ async fn send_flush(bot: &Bot, chat_id: i64, flush: &PendingFlush) {
     }
     if let Some((thought_msg_id, elapsed_secs)) = flush.thought_collapse {
         if thought_msg_id != 0 {
-            let emoji = thought_emoji();
+            let emoji = thought_emoji(state).await;
             let collapse_text = format!("{emoji} Thought for {elapsed_secs:.1}s");
             let _ = bot
                 .edit_message_text(ChatId(chat_id), MessageId(thought_msg_id), &collapse_text)
@@ -81,8 +81,8 @@ pub fn split_message(text: &str, max_len: usize) -> Vec<String> {
     chunks
 }
 
-fn thought_emoji() -> String {
-    std::env::var("TELEGRAM_THOUGHT_EMOJI").unwrap_or_else(|_| "🧠".to_string())
+async fn thought_emoji(state: &SharedState) -> String {
+    state.thought_emoji.read().await.clone()
 }
 
 pub async fn deliver_to_chat(
@@ -129,7 +129,7 @@ pub async fn deliver_to_chat(
                     }
                 };
                 if let Some(flush) = &flush {
-                    send_flush(bot, chat_id, flush).await;
+                    send_flush(bot, state, chat_id, flush).await;
                 }
             }
 
@@ -158,7 +158,7 @@ pub async fn deliver_to_chat(
                     }
                 };
                 if let Some(flush) = &flush {
-                    send_flush(bot, chat_id, flush).await;
+                    send_flush(bot, state, chat_id, flush).await;
                 }
             }
 
@@ -182,7 +182,7 @@ pub async fn deliver_to_chat(
                 (accumulated, existing_thought_msg_id)
             };
 
-            let emoji = thought_emoji();
+            let emoji = thought_emoji(state).await;
             let thought_text = format!("{emoji} {accumulated}");
 
             if existing_thought_msg_id == 0 {
@@ -214,7 +214,7 @@ pub async fn deliver_to_chat(
                             None => return,
                         }
                     };
-                    let emoji = thought_emoji();
+                    let emoji = thought_emoji(&state_clone).await;
                     let text = format!("{emoji} {accumulated}");
                     if thought_msg_id != 0 {
                         let _ = bot_clone
@@ -261,7 +261,7 @@ pub async fn deliver_to_chat(
                     }
                 };
                 if let Some(flush) = &flush {
-                    send_flush(bot, chat_id, flush).await;
+                    send_flush(bot, state, chat_id, flush).await;
                 }
             }
 
@@ -425,7 +425,7 @@ pub async fn deliver_to_chat(
 
             if let Some((thought_msg_id, elapsed_secs)) = collapse_data {
                 if thought_msg_id != 0 {
-                    let emoji = thought_emoji();
+                    let emoji = thought_emoji(state).await;
                     let collapse_text = format!("{emoji} Thought for {elapsed_secs:.1}s");
                     if let Err(e) = bot
                         .edit_message_text(ChatId(chat_id), MessageId(thought_msg_id), &collapse_text)

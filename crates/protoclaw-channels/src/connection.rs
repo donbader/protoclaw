@@ -60,13 +60,22 @@ impl ChannelConnection {
     ///
     /// Creates reader + writer + stderr tasks using NdJsonCodec framing.
     pub fn spawn(config: &ChannelConfig, channel_id: ChannelId) -> Result<Self, ChannelsError> {
-        let mut child = Command::new(&config.binary)
-            .args(&config.args)
+        let mut cmd = Command::new(&config.binary);
+        cmd.args(&config.args)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
+            .kill_on_drop(true);
+
+        for (key, value) in &config.options {
+            let env_val = match value {
+                serde_json::Value::String(s) => s.clone(),
+                other => other.to_string(),
+            };
+            cmd.env(key, env_val);
+        }
+
+        let mut child = cmd.spawn()
             .map_err(|e| ChannelsError::SpawnFailed(format!("{}: {e}", config.binary)))?;
 
         let stdin = child.stdin.take().expect("stdin was piped");

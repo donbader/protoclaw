@@ -16,12 +16,16 @@ use crate::state::SharedState;
 
 pub struct TelegramChannel {
     pub(crate) state: Arc<SharedState>,
-    pub(crate) bot: Bot,
+    pub(crate) bot: Option<Bot>,
 }
 
 impl TelegramChannel {
-    pub fn new(state: Arc<SharedState>, bot: Bot) -> Self {
-        Self { state, bot }
+    pub fn new(state: Arc<SharedState>) -> Self {
+        Self { state, bot: None }
+    }
+
+    fn bot(&self) -> Result<&Bot, ChannelSdkError> {
+        self.bot.as_ref().ok_or_else(|| ChannelSdkError::Protocol("bot not initialized".into()))
     }
 
     fn parse_chat_id(peer_id: &str) -> Option<i64> {
@@ -35,6 +39,11 @@ impl TelegramChannel {
             None => return,
         };
 
+        let bot = match &self.bot {
+            Some(b) => b,
+            None => return,
+        };
+
         let chat_id = match Self::parse_chat_id(&ack.peer_id) {
             Some(id) => id,
             None => return,
@@ -45,14 +54,14 @@ impl TelegramChannel {
                 let reaction = ReactionType::Emoji {
                     emoji: cfg.reaction_emoji.clone(),
                 };
-                let _ = self.bot.set_message_reaction(ChatId(chat_id), MessageId(msg_id))
+                let _ = bot.set_message_reaction(ChatId(chat_id), MessageId(msg_id))
                     .reaction(vec![reaction])
                     .await;
             }
         }
 
         if cfg.typing {
-            let _ = self.bot.send_chat_action(ChatId(chat_id), teloxide::types::ChatAction::Typing).await;
+            let _ = bot.send_chat_action(ChatId(chat_id), teloxide::types::ChatAction::Typing).await;
         }
     }
 
@@ -60,6 +69,11 @@ impl TelegramChannel {
         if lifecycle.action != "response_started" {
             return;
         }
+
+        let bot = match &self.bot {
+            Some(b) => b,
+            None => return,
+        };
 
         let ack_cfg = self.state.ack_config.read().await;
         let cfg = match ack_cfg.as_ref() {
@@ -85,7 +99,7 @@ impl TelegramChannel {
 
         match cfg.reaction_lifecycle.as_str() {
             "remove" => {
-                let _ = self.bot.set_message_reaction(ChatId(chat_id), MessageId(msg_id))
+                let _ = bot.set_message_reaction(ChatId(chat_id), MessageId(msg_id))
                     .reaction(Vec::<ReactionType>::new())
                     .await;
             }
@@ -93,11 +107,11 @@ impl TelegramChannel {
                 let done_reaction = ReactionType::Emoji {
                     emoji: "✅".into(),
                 };
-                let _ = self.bot.set_message_reaction(ChatId(chat_id), MessageId(msg_id))
+                let _ = bot.set_message_reaction(ChatId(chat_id), MessageId(msg_id))
                     .reaction(vec![done_reaction])
                     .await;
             }
-            _ => {} // "keep" or unknown — do nothing
+            _ => {}
         }
     }
 }
@@ -118,6 +132,15 @@ impl Channel for TelegramChannel {
         if let Some(ack) = params.ack {
             *self.state.ack_config.write().await = Some(ack);
         }
+        if let Some(emoji) = params.options.get("TELEGRAM_THOUGHT_EMOJI").and_then(|v| v.as_str()) {
+            *self.state.thought_emoji.write().await = emoji.to_string();
+        }
+        let token = params.options.get("TELEGRAM_BOT_TOKEN")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| ChannelSdkError::Protocol(
+                "TELEGRAM_BOT_TOKEN must be set in channel options".into()
+            ))?;
+        self.bot = Some(Bot::new(token));
         Ok(())
     }
 
@@ -125,16 +148,17 @@ impl Channel for TelegramChannel {
         &mut self,
         outbound: mpsc::Sender<ChannelSendMessage>,
     ) -> Result<(), ChannelSdkError> {
+        let bot = self.bot()?.clone();
         *self.state.outbound.lock().await = Some(outbound);
         tokio::spawn(crate::dispatcher::run_dispatcher(
-            self.bot.clone(),
+            bot,
             self.state.clone(),
         ));
         Ok(())
     }
 
     async fn deliver_message(&mut self, msg: DeliverMessage) -> Result<(), ChannelSdkError> {
-        crate::deliver::deliver_to_chat(&self.bot, &self.state, &msg.session_id, &msg.content)
+        crate::deliver::deliver_to_chat(self.bot()?, &self.state, &msg.session_id, &msg.content)
             .await
     }
 
@@ -171,7 +195,7 @@ impl Channel for TelegramChannel {
             crate::permissions::build_permission_keyboard(&req.request_id, &req.options);
 
         let sent = self
-            .bot
+            .bot()?
             .send_message(teloxide::types::ChatId(chat_id), &req.description)
             .reply_markup(keyboard)
             .await
@@ -224,8 +248,13 @@ mod tests {
 
     fn make_channel() -> TelegramChannel {
         let state = Arc::new(SharedState::new());
-        let bot = Bot::new("test-token");
-        TelegramChannel::new(state, bot)
+        TelegramChannel::new(state)
+    }
+
+    fn make_options_with_token() -> std::collections::HashMap<String, serde_json::Value> {
+        let mut options = std::collections::HashMap::new();
+        options.insert("TELEGRAM_BOT_TOKEN".into(), serde_json::json!("test-token"));
+        options
     }
 
     #[test]
@@ -239,8 +268,14 @@ mod tests {
     #[tokio::test]
     async fn on_ready_stores_outbound_sender() {
         let state = Arc::new(SharedState::new());
-        let bot = Bot::new("test-token");
-        let mut ch = TelegramChannel::new(state.clone(), bot);
+        let mut ch = TelegramChannel::new(state.clone());
+        let params = ChannelInitializeParams {
+            protocol_version: 1,
+            channel_id: "telegram".into(),
+            ack: None,
+            options: make_options_with_token(),
+        };
+        ch.on_initialize(params).await.unwrap();
         let (tx, _rx) = mpsc::channel(16);
         ch.on_ready(tx).await.unwrap();
         assert!(state.outbound.lock().await.is_some());
@@ -249,8 +284,9 @@ mod tests {
     #[tokio::test]
     async fn on_initialize_stores_ack_config() {
         let state = Arc::new(SharedState::new());
-        let bot = Bot::new("test-token");
-        let mut ch = TelegramChannel::new(state.clone(), bot);
+        let mut ch = TelegramChannel::new(state.clone());
+        let mut options = make_options_with_token();
+        options.insert("TELEGRAM_THOUGHT_EMOJI".into(), serde_json::json!("💭"));
         let params = ChannelInitializeParams {
             protocol_version: 1,
             channel_id: "telegram".into(),
@@ -260,6 +296,7 @@ mod tests {
                 reaction_emoji: "👀".into(),
                 reaction_lifecycle: "remove".into(),
             }),
+            options,
         };
         ch.on_initialize(params).await.unwrap();
         let cfg = state.ack_config.read().await;
@@ -273,12 +310,12 @@ mod tests {
     #[tokio::test]
     async fn on_initialize_without_ack_leaves_none() {
         let state = Arc::new(SharedState::new());
-        let bot = Bot::new("test-token");
-        let mut ch = TelegramChannel::new(state.clone(), bot);
+        let mut ch = TelegramChannel::new(state.clone());
         let params = ChannelInitializeParams {
             protocol_version: 1,
             channel_id: "telegram".into(),
             ack: None,
+            options: make_options_with_token(),
         };
         ch.on_initialize(params).await.unwrap();
         assert!(state.ack_config.read().await.is_none());

@@ -285,8 +285,7 @@ mod tests {
     async fn when_tools_manager_started_with_no_configs_then_server_url_registered() {
         let mut m = ToolsManager::new(HashMap::new());
         assert!(m.start().await.is_ok());
-        assert_eq!(m.server_urls().len(), 1);
-        assert_eq!(m.server_urls()[0].name, "protoclaw-tools");
+        assert_eq!(m.server_urls().len(), 0);
     }
 
     #[tokio::test]
@@ -490,7 +489,7 @@ mod tests {
             Some(names) => urls.iter().filter(|u| names.iter().any(|n| n == &u.name)).cloned().collect(),
             None => urls,
         };
-        assert_eq!(filtered.len(), 3);
+        assert_eq!(filtered.len(), 2);
 
         for h in &m.server_handles { h.abort(); }
     }

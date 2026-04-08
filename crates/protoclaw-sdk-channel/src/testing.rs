@@ -42,6 +42,7 @@ impl<C: Channel> ChannelTester<C> {
             protocol_version: 1,
             channel_id: "test".into(),
             ack: None,
+            options: std::collections::HashMap::new(),
         });
         self.channel.on_initialize(params).await?;
         self.channel.on_ready(self.outbound_tx.clone()).await?;

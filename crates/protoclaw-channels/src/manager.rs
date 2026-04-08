@@ -143,6 +143,7 @@ impl ChannelsManager {
             "protocolVersion": 1,
             "channelId": channel_id.as_ref(),
             "ack": ack_config_to_channel(&config.ack),
+            "options": config.options,
         });
 
         let rx = conn.send_request("initialize", params).await?;

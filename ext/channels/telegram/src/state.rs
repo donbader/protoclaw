@@ -14,6 +14,7 @@ pub struct SharedState {
     pub last_message_ids: RwLock<HashMap<i64, i32>>,
     pub ack_config: RwLock<Option<ChannelAckConfig>>,
     pub turns: RwLock<HashMap<i64, ChatTurn>>,
+    pub thought_emoji: RwLock<String>,
 }
 
 impl SharedState {
@@ -26,6 +27,7 @@ impl SharedState {
             last_message_ids: RwLock::new(HashMap::new()),
             ack_config: RwLock::new(None),
             turns: RwLock::new(HashMap::new()),
+            thought_emoji: RwLock::new("🧠".into()),
         }
     }
 }
