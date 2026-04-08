@@ -6,7 +6,7 @@ Channel implementations that run as subprocesses spawned by `ChannelsManager`. T
 
 | Binary | Files | Purpose |
 |--------|-------|---------|
-| `telegram` | 7 | Full Telegram bot channel via `teloxide` |
+| `telegram` | 8 | Full Telegram bot channel via `teloxide` |
 | `debug-http` | 1 | Minimal HTTP endpoint for development/testing |
 
 ## Why ext/ and not crates/
@@ -22,11 +22,12 @@ Both channels follow the same structure:
 
 ## Thought Rendering
 
-Both channels inspect `content["type"]` in `DeliverMessage` to render thoughts differently:
+Both channels use `ContentKind::from_content(&msg.content)` from `protoclaw-sdk-types` for typed dispatch over content types:
 
-- `"agent_thought_chunk"` — thought content from the agent's reasoning process
-- `"user_message_chunk"` — user's message echoed back (includes merged prompt text)
-- All other types — existing behavior (message chunks, results, etc.)
+- `ContentKind::Thought(thought)` — thought content from the agent's reasoning process
+- `ContentKind::UserMessageChunk { text }` — user's message echoed back (includes merged prompt text)
+- `ContentKind::MessageChunk { text }` / `ContentKind::Result { text }` — agent response chunks and final result
+- `ContentKind::UsageUpdate` / `ContentKind::Unknown` — silently ignored
 
 **debug-http:** Emits thoughts as named SSE event `"thought"` and user message chunks as named SSE event `"user_message_chunk"` via `SsePayload` struct. Regular messages use default SSE data events. SSE clients filter by event type.
 
@@ -96,3 +97,64 @@ Single `main.rs` — axum HTTP server with `SsePayload` typed broadcast for name
 3. Implement `Channel` trait, use `ChannelHarness::run_stdio()`
 4. Add `ChannelConfig` entry in `protoclaw.yaml`
 5. Update `crates/protoclaw-channels/` if new routing logic needed
+
+### Channel trait skeleton
+
+```rust
+use protoclaw_sdk_channel::{Channel, ChannelCapabilities, ChannelSdkError, ChannelSendMessage, PermissionBroker};
+use protoclaw_sdk_types::{ChannelRequestPermission, ContentKind, DeliverMessage, PermissionResponse};
+
+#[async_trait]
+impl Channel for MyChannel {
+    fn capabilities(&self) -> ChannelCapabilities { /* ... */ }
+    async fn on_ready(&mut self, outbound: mpsc::Sender<ChannelSendMessage>) -> Result<(), ChannelSdkError> { /* ... */ }
+    async fn deliver_message(&mut self, msg: DeliverMessage) -> Result<(), ChannelSdkError> { /* ... */ }
+    async fn request_permission(&mut self, req: ChannelRequestPermission) -> Result<PermissionResponse, ChannelSdkError> { /* ... */ }
+}
+```
+
+### ContentKind matching in deliver_message
+
+```rust
+let kind = ContentKind::from_content(&msg.content);
+match kind {
+    ContentKind::Thought(thought) => { /* thought.content has the text */ }
+    ContentKind::MessageChunk { text } => { /* streaming response chunk */ }
+    ContentKind::Result { text } => { /* final result */ }
+    ContentKind::UserMessageChunk { .. } | ContentKind::UsageUpdate | ContentKind::Unknown => Ok(()),
+}
+```
+
+### content_to_string for displayable text
+
+```rust
+use protoclaw_sdk_channel::content_to_string;
+let text = content_to_string(&msg.content); // handles OpenCode wrapper + plain strings
+```
+
+### PermissionBroker for oneshot management
+
+```rust
+// In state struct:
+pub permission_broker: Mutex<PermissionBroker>,
+
+// In request_permission():
+let rx = self.state.permission_broker.lock().await.register(&req.request_id);
+// ... send UI prompt ...
+rx.await.map_err(|_| ChannelSdkError::Protocol("closed".into()))
+
+// In callback/resolution handler:
+self.state.permission_broker.lock().await.resolve(&request_id, &option_id);
+```
+
+### ChannelTester for unit tests
+
+```rust
+use protoclaw_sdk_channel::testing::ChannelTester;
+let mut tester = ChannelTester::new(my_channel);
+tester.initialize(None).await.unwrap();
+tester.deliver(DeliverMessage { session_id: "s1".into(), content: json!("hi") }).await.unwrap();
+let outbound_msg = tester.outbound_rx.try_recv();
+```
+
+See `ext/channels/telegram/` and `ext/channels/debug-http/` for full working examples.
