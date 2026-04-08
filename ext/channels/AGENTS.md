@@ -25,9 +25,10 @@ Both channels follow the same structure:
 Both channels inspect `content["type"]` in `DeliverMessage` to render thoughts differently:
 
 - `"agent_thought_chunk"` — thought content from the agent's reasoning process
+- `"user_message_chunk"` — user's message echoed back (includes merged prompt text)
 - All other types — existing behavior (message chunks, results, etc.)
 
-**debug-http:** Emits thoughts as named SSE event `"thought"` via `SsePayload` struct. Regular messages use default SSE data events. SSE clients filter by event type.
+**debug-http:** Emits thoughts as named SSE event `"thought"` and user message chunks as named SSE event `"user_message_chunk"` via `SsePayload` struct. Regular messages use default SSE data events. SSE clients filter by event type.
 
 **telegram:** Streams thoughts as 🧠-prefixed messages with debounced edits (400ms internal timer). On `"result"`, collapses to "🧠 Thought for Xs" (timing only, no content). Emoji prefix configurable via `TELEGRAM_THOUGHT_EMOJI` env var (default: 🧠). Thinking state tracked in `SharedState.thinking_messages` and `SharedState.thought_debounce_handles`.
 
