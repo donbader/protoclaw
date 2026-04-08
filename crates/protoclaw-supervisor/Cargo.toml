@@ -1,0 +1,21 @@
+[package]
+name = "protoclaw-supervisor"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+protoclaw-core = { path = "../protoclaw-core" }
+protoclaw-config = { path = "../protoclaw-config" }
+protoclaw-agents = { path = "../protoclaw-agents" }
+protoclaw-channels = { workspace = true }
+protoclaw-tools = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+rstest = { workspace = true }
+tempfile = { workspace = true }
