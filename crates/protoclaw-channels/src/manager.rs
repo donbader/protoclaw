@@ -1,18 +1,18 @@
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
-use crate::types::PermissionOption;
+
 use protoclaw_config::ChannelConfig;
 use protoclaw_core::types::ChannelId;
 use protoclaw_core::{constants, AgentsCommand, CrashTracker, ExponentialBackoff, Manager, ManagerError, ManagerHandle, SessionKey};
-use protoclaw_sdk_types::{ChannelAckConfig, ChannelEvent};
+use protoclaw_sdk_types::{ChannelAckConfig, ChannelEvent, PermissionOption};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
 use crate::connection::{ChannelConnection, IncomingChannelMessage};
 use crate::session_queue::{QueueAction, SessionQueue};
 use crate::error::ChannelsError;
-use crate::types::{ChannelCapabilities, ChannelInitializeResult, ChannelSendMessage, ChannelRespondPermission};
+use protoclaw_sdk_types::{ChannelCapabilities, ChannelInitializeResult, ChannelSendMessage, ChannelRespondPermission};
 
 fn ack_config_to_channel(ack: &protoclaw_config::AckConfig) -> ChannelAckConfig {
     ChannelAckConfig {

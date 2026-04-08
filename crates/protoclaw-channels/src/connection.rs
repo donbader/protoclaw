@@ -12,7 +12,7 @@ use tokio::task::JoinHandle;
 use tokio_util::codec::{FramedRead, FramedWrite};
 
 use crate::error::ChannelsError;
-use crate::types::ChannelCapabilities;
+use protoclaw_sdk_types::ChannelCapabilities;
 
 // Port discovery: channel subprocesses can print `PORT:{port}` to stderr
 // to advertise their listening port (e.g., debug-http's HTTP server).

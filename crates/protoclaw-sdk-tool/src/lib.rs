@@ -5,4 +5,3 @@ pub mod trait_def;
 pub use error::ToolSdkError;
 pub use server::ToolServer;
 pub use trait_def::Tool;
-pub use schemars;
