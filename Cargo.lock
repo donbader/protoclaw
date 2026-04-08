@@ -2230,19 +2230,15 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
- "protoclaw-agents",
- "protoclaw-channels",
  "protoclaw-config",
  "protoclaw-core",
- "protoclaw-jsonrpc",
- "protoclaw-tools",
+ "protoclaw-supervisor",
  "reqwest",
  "rstest",
  "serde_json",
  "serde_yaml",
  "tempfile",
  "tokio",
- "tokio-util",
  "tracing",
  "tracing-subscriber",
 ]
@@ -2258,7 +2254,6 @@ dependencies = [
  "protoclaw-jsonrpc",
  "protoclaw-sdk-agent",
  "protoclaw-sdk-types",
- "protoclaw-tools",
  "rstest",
  "serde",
  "serde_json",
@@ -2275,10 +2270,8 @@ dependencies = [
 name = "protoclaw-channels"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "axum",
  "futures",
- "protoclaw-agents",
  "protoclaw-config",
  "protoclaw-core",
  "protoclaw-jsonrpc",
@@ -2315,6 +2308,7 @@ dependencies = [
 name = "protoclaw-core"
 version = "0.1.0"
 dependencies = [
+ "protoclaw-sdk-types",
  "rstest",
  "serde",
  "serde_json",
@@ -2332,8 +2326,8 @@ dependencies = [
  "anyhow",
  "bollard",
  "figment",
- "protoclaw",
  "protoclaw-config",
+ "protoclaw-supervisor",
  "protoclaw-test-helpers",
  "reqwest",
  "rstest",
@@ -2411,15 +2405,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "protoclaw-supervisor"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "protoclaw-agents",
+ "protoclaw-channels",
+ "protoclaw-config",
+ "protoclaw-core",
+ "protoclaw-tools",
+ "rstest",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
 name = "protoclaw-test-helpers"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "bytes",
  "futures-core",
- "protoclaw",
  "protoclaw-config",
  "protoclaw-core",
+ "protoclaw-supervisor",
  "reqwest",
  "rstest",
  "serde_json",
