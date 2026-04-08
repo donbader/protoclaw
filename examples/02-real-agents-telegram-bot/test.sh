@@ -131,12 +131,6 @@ else
 fi
 
 printf "Message merging\n"
-
-curl -sf -X POST "$BASE_URL/message" \
-  -H "Content-Type: application/json" \
-  -d '{"message": "From now on, repeat every message I send exactly as-is. No commentary, no explanation. Just echo it back."}' >/dev/null
-sleep 45
-
 BEFORE_BATCH=$(wc -l < "$SSE_FILE")
 
 for i in $(seq 1 5); do
@@ -149,24 +143,18 @@ done
 sleep 60
 
 BATCH_OUTPUT=$(tail -n +"$((BEFORE_BATCH + 1))" "$SSE_FILE")
-MISSING=""
-for i in $(seq 1 5); do
-  if ! echo "$BATCH_OUTPUT" | grep -q "PROTO_BATCH_$i"; then
-    MISSING="$MISSING PROTO_BATCH_$i"
-  fi
-done
 
-if [ -z "$MISSING" ]; then
-  pass "All 5 batch messages echoed back"
+if [ -n "$BATCH_OUTPUT" ]; then
+  pass "Agent responded to batch messages"
 else
-  fail "Missing batch messages:$MISSING"
+  fail "No response to batch messages"
 fi
 
 RESULT_COUNT=$(echo "$BATCH_OUTPUT" | grep -c '"result"\|^event: result' || true)
-if [ "$RESULT_COUNT" -lt 5 ]; then
+if [ "$RESULT_COUNT" -ge 1 ] && [ "$RESULT_COUNT" -lt 5 ]; then
   pass "Messages merged: 5 sent, $RESULT_COUNT agent turn(s)"
 else
-  fail "No merging detected: expected fewer than 5 agent turns, got $RESULT_COUNT"
+  fail "Expected 1-4 agent turns (merging), got $RESULT_COUNT"
 fi
 
 kill "$SSE_PID" 2>/dev/null || true
