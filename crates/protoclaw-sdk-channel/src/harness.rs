@@ -353,4 +353,40 @@ mod tests {
         let result = harness.run(reader, &mut output).await;
         assert!(result.is_ok());
     }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_channel_tester_initialized_then_on_ready_called() {
+        use crate::testing::ChannelTester;
+
+        let ch = TestChannel::new();
+        let on_ready_called = ch.on_ready_called.clone();
+        let mut tester = ChannelTester::new(ch);
+
+        tester.initialize(None).await.unwrap();
+        assert!(*on_ready_called.lock().unwrap());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_channel_tester_delivers_message_then_channel_receives_it() {
+        use crate::testing::ChannelTester;
+
+        let ch = TestChannel::new();
+        let delivered = ch.delivered.clone();
+        let mut tester = ChannelTester::new(ch);
+        tester.initialize(None).await.unwrap();
+
+        tester
+            .deliver(DeliverMessage {
+                session_id: "s1".into(),
+                content: serde_json::json!("test-msg"),
+            })
+            .await
+            .unwrap();
+
+        let msgs = delivered.lock().unwrap();
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(msgs[0].session_id, "s1");
+    }
 }

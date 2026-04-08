@@ -2,6 +2,7 @@ pub mod broker;
 pub mod content;
 pub mod error;
 pub mod harness;
+pub mod testing;
 pub mod trait_def;
 
 pub use broker::PermissionBroker;
