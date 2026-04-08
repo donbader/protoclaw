@@ -401,15 +401,10 @@ impl AgentsManager {
                         SessionUpdateType::ToolCallUpdate { .. } => "tool_call_update",
                         SessionUpdateType::Plan { .. } => "plan",
                         SessionUpdateType::UsageUpdate { .. } => "usage_update",
+                        SessionUpdateType::UserMessageChunk { .. } => "user_message_chunk",
                         _ => "other",
                     };
                     tracing::debug!(agent = %self.slots[slot_idx].name(), session_id = %event.session_id, update_type, seq, "session update routed");
-
-                    // Don't forward user_message_chunk to channels — it's the agent echoing
-                    // back the user's own message, which channels already have.
-                    if matches!(event.update, SessionUpdateType::UserMessageChunk { .. }) {
-                        return;
-                    }
 
                     let is_result = matches!(event.update, SessionUpdateType::Result { .. });
 

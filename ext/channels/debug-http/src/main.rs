@@ -115,6 +115,17 @@ impl Channel for DebugHttpChannel {
                     data: thought.to_string(),
                 }
             }
+            Some("user_message_chunk") => {
+                let text = update
+                    .and_then(|u| u.get("content"))
+                    .and_then(|c| c.get("text").and_then(|t| t.as_str())
+                        .or_else(|| c.as_str()))
+                    .unwrap_or("");
+                SsePayload {
+                    event_type: Some("user_message_chunk".into()),
+                    data: text.to_string(),
+                }
+            }
             _ => {
                 let content_str = update
                     .and_then(|u| u.get("content"))
