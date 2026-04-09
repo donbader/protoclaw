@@ -329,7 +329,8 @@ fn create_manager(
         }
         "agents" => {
             let handle = protoclaw_core::ManagerHandle::new(tools_tx.clone());
-            let mut agents = AgentsManager::new(config.agents_manager.clone(), handle);
+            let mut agents = AgentsManager::new(config.agents_manager.clone(), handle)
+                .with_log_level(config.log_level.clone());
             if let Some(tx) = channel_events_tx {
                 agents = agents.with_channels_sender(tx);
             }
@@ -342,7 +343,8 @@ fn create_manager(
                 .unwrap_or("default")
                 .to_string();
             let mut cm = ChannelsManager::new(config.channels_manager.channels.clone(), config.channels_manager.init_timeout_secs, default_agent)
-                .with_agents_handle(agents_handle);
+                .with_agents_handle(agents_handle)
+                .with_log_level(config.log_level.clone());
             if let Some(rx) = channel_events_rx {
                 cm = cm.with_channel_events_rx(rx);
             }

@@ -51,7 +51,7 @@ pub struct AgentConnection {
 
 impl AgentConnection {
     pub async fn spawn(config: &AgentConfig, name: &str) -> Result<Self, AgentsError> {
-        Self::spawn_inner(config, name, None).await
+        Self::spawn_inner(config, name, None, None).await
     }
 
     pub(crate) async fn spawn_with_bridge(
@@ -59,14 +59,16 @@ impl AgentConnection {
         name: &str,
         slot_idx: usize,
         bridge_tx: mpsc::Sender<SlotIncoming>,
+        log_level: Option<&str>,
     ) -> Result<Self, AgentsError> {
-        Self::spawn_inner(config, name, Some((slot_idx, bridge_tx))).await
+        Self::spawn_inner(config, name, Some((slot_idx, bridge_tx)), log_level).await
     }
 
     async fn spawn_inner(
         config: &AgentConfig,
         name: &str,
         bridge: Option<(usize, mpsc::Sender<SlotIncoming>)>,
+        log_level: Option<&str>,
     ) -> Result<Self, AgentsError> {
         let (backend, stdin, stdout, stderr) = match &config.workspace {
             WorkspaceConfig::Local(local) => {
@@ -75,15 +77,18 @@ impl AgentConnection {
                     .as_deref()
                     .unwrap_or(Path::new("."));
 
-                let child = Command::new(&local.binary)
-                    .args(&config.args)
+                let mut cmd = Command::new(&local.binary);
+                cmd.args(&config.args)
                     .stdin(std::process::Stdio::piped())
                     .stdout(std::process::Stdio::piped())
                     .stderr(std::process::Stdio::piped())
                     .kill_on_drop(true)
                     .envs(&local.env)
-                    .current_dir(work_dir)
-                    .spawn()
+                    .current_dir(work_dir);
+                if let Some(level) = log_level {
+                    cmd.env("RUST_LOG", level);
+                }
+                let child = cmd.spawn()
                     .map_err(|e| AgentsError::SpawnFailed(format!("{}: {e}", local.binary)))?;
 
                 let mut backend: Box<dyn ProcessBackend> = Box::new(LocalBackend::new(child));

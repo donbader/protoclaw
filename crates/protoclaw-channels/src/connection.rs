@@ -59,13 +59,17 @@ impl ChannelConnection {
     /// Spawn a channel subprocess with piped stdin/stdout/stderr.
     ///
     /// Creates reader + writer + stderr tasks using NdJsonCodec framing.
-    pub fn spawn(config: &ChannelConfig, channel_id: ChannelId) -> Result<Self, ChannelsError> {
+    pub fn spawn(config: &ChannelConfig, channel_id: ChannelId, log_level: Option<&str>) -> Result<Self, ChannelsError> {
         let mut cmd = Command::new(&config.binary);
         cmd.args(&config.args)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .kill_on_drop(true);
+
+        if let Some(level) = log_level {
+            cmd.env("RUST_LOG", level);
+        }
 
         for (key, value) in &config.options {
             let env_val = match value {
@@ -277,7 +281,7 @@ mod tests {
     async fn when_channel_subprocess_spawned_then_reports_alive() {
         let config = cat_channel_config();
         let channel_id = ChannelId::from("test");
-        let mut conn = ChannelConnection::spawn(&config, channel_id).unwrap();
+        let mut conn = ChannelConnection::spawn(&config, channel_id, None).unwrap();
         assert!(conn.is_alive());
         conn.kill().await.unwrap();
     }
@@ -295,7 +299,7 @@ mod tests {
             crash_tracker: None,
             options: HashMap::new(),
         };
-        let result = ChannelConnection::spawn(&config, ChannelId::from("bad"));
+        let result = ChannelConnection::spawn(&config, ChannelId::from("bad"), None);
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), ChannelsError::SpawnFailed(_)));
     }
@@ -316,7 +320,7 @@ mod tests {
         // a pending entry. We'll verify full correlation in integration tests.
         let config = cat_channel_config();
         let channel_id = ChannelId::from("test");
-        let conn = ChannelConnection::spawn(&config, channel_id).unwrap();
+        let conn = ChannelConnection::spawn(&config, channel_id, None).unwrap();
 
         let rx = conn
             .send_request("initialize", serde_json::json!({"protocolVersion": 1}))
@@ -352,7 +356,7 @@ mod tests {
             options: HashMap::new(),
         };
         let channel_id = ChannelId::from("exits");
-        let mut conn = ChannelConnection::spawn(&config, channel_id).unwrap();
+        let mut conn = ChannelConnection::spawn(&config, channel_id, None).unwrap();
 
         // Process exits immediately, reader task sees EOF, incoming channel closes
         let result = tokio::time::timeout(
@@ -369,7 +373,7 @@ mod tests {
     async fn when_channel_id_accessor_called_then_returns_configured_id() {
         let config = cat_channel_config();
         let channel_id = ChannelId::from("my-channel");
-        let mut conn = ChannelConnection::spawn(&config, channel_id).unwrap();
+        let mut conn = ChannelConnection::spawn(&config, channel_id, None).unwrap();
         assert_eq!(conn.channel_id().as_ref(), "my-channel");
         conn.kill().await.unwrap();
     }
@@ -378,7 +382,7 @@ mod tests {
     async fn when_capabilities_not_set_then_accessor_returns_none() {
         let config = cat_channel_config();
         let channel_id = ChannelId::from("test");
-        let mut conn = ChannelConnection::spawn(&config, channel_id).unwrap();
+        let mut conn = ChannelConnection::spawn(&config, channel_id, None).unwrap();
         assert!(conn.capabilities().is_none());
         conn.kill().await.unwrap();
     }
@@ -387,7 +391,7 @@ mod tests {
     async fn when_set_capabilities_called_then_accessor_returns_caps() {
         let config = cat_channel_config();
         let channel_id = ChannelId::from("test");
-        let mut conn = ChannelConnection::spawn(&config, channel_id).unwrap();
+        let mut conn = ChannelConnection::spawn(&config, channel_id, None).unwrap();
 
         let caps = ChannelCapabilities {
             streaming: true,
@@ -405,7 +409,7 @@ mod tests {
     async fn when_port_rx_called_then_returns_watch_receiver_with_initial_zero() {
         let config = cat_channel_config();
         let channel_id = ChannelId::from("test");
-        let mut conn = ChannelConnection::spawn(&config, channel_id).unwrap();
+        let mut conn = ChannelConnection::spawn(&config, channel_id, None).unwrap();
 
         let port_rx = conn.port_rx();
         assert_eq!(*port_rx.borrow(), 0u16);
@@ -417,7 +421,7 @@ mod tests {
         // cat echoes what we send. Send a notification-shaped JSON (method, no id).
         let config = cat_channel_config();
         let channel_id = ChannelId::from("test");
-        let mut conn = ChannelConnection::spawn(&config, channel_id).unwrap();
+        let mut conn = ChannelConnection::spawn(&config, channel_id, None).unwrap();
 
         // Send a notification-shaped message through stdin — cat echoes it back on stdout
         conn.send_notification("channel/sendMessage", serde_json::json!({"content": "hi"}))

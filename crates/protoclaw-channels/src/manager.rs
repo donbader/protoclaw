@@ -60,6 +60,7 @@ struct ChannelSlot {
 pub struct ChannelsManager {
     channel_configs: HashMap<String, ChannelConfig>,
     init_timeout_secs: u64,
+    log_level: Option<String>,
     slots: Vec<ChannelSlot>,
     cmd_rx: Option<mpsc::Receiver<ChannelsCommand>>,
     cmd_tx: mpsc::Sender<ChannelsCommand>,
@@ -76,6 +77,7 @@ impl ChannelsManager {
         Self {
             channel_configs,
             init_timeout_secs,
+            log_level: None,
             slots: Vec::new(),
             cmd_rx: Some(cmd_rx),
             cmd_tx,
@@ -92,6 +94,11 @@ impl ChannelsManager {
     }
 
     /// Set the agents handle for creating/prompting sessions.
+    pub fn with_log_level(mut self, level: String) -> Self {
+        self.log_level = Some(level);
+        self
+    }
+
     pub fn with_agents_handle(mut self, handle: ManagerHandle<AgentsCommand>) -> Self {
         self.agents_handle = Some(handle);
         self
@@ -127,8 +134,9 @@ impl ChannelsManager {
         config: &ChannelConfig,
         channel_id: &ChannelId,
         init_timeout: Duration,
+        log_level: Option<&str>,
     ) -> Result<(ChannelConnection, ChannelCapabilities), ChannelsError> {
-        let mut conn = ChannelConnection::spawn(config, channel_id.clone())?;
+        let mut conn = ChannelConnection::spawn(config, channel_id.clone(), log_level)?;
 
         let params = serde_json::json!({
             "protocolVersion": 1,
@@ -175,7 +183,7 @@ impl ChannelsManager {
         );
         tokio::time::sleep(delay).await;
 
-        match Self::spawn_and_initialize(&slot.config, &slot.channel_id, Duration::from_secs(self.init_timeout_secs)).await {
+        match Self::spawn_and_initialize(&slot.config, &slot.channel_id, Duration::from_secs(self.init_timeout_secs), self.log_level.as_deref()).await {
             Ok((conn, caps)) => {
                 tracing::info!(
                     channel = %channel_name,
@@ -641,7 +649,7 @@ impl Manager for ChannelsManager {
                 None => CrashTracker::default(),
             };
 
-            match Self::spawn_and_initialize(config, &channel_id, init_timeout).await {
+            match Self::spawn_and_initialize(config, &channel_id, init_timeout, self.log_level.as_deref()).await {
                 Ok((conn, caps)) => {
                     tracing::info!(
                         channel = %name,
