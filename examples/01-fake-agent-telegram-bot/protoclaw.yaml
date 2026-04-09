@@ -13,7 +13,7 @@ agents-manager:
         binary: "@built-in/mock-agent"
       options:
         thinking: true
-        delay_ms: 3000
+        thinking_time_ms: 3000
       tools:
         - "system-info"
     # Docker workspace agent (opt-in — disabled by default)
@@ -33,6 +33,7 @@ agents-manager:
       pull_policy: "Never"
       options:
         thinking: true
+        thinking_time_ms: 3000
       tools:
         - "system-info"
 

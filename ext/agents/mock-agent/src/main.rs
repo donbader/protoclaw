@@ -10,7 +10,7 @@ static AGENT_OPTIONS: OnceLock<AgentOptions> = OnceLock::new();
 #[derive(Debug)]
 struct AgentOptions {
     exit_after: Option<usize>,
-    delay_ms: Option<u64>,
+    thinking_time_ms: Option<u64>,
     request_permission: bool,
     reject_load: bool,
     echo_prefix: String,
@@ -20,7 +20,7 @@ impl Default for AgentOptions {
     fn default() -> Self {
         Self {
             exit_after: None,
-            delay_ms: None,
+            thinking_time_ms: None,
             request_permission: false,
             reject_load: false,
             echo_prefix: "Echo".to_string(),
@@ -33,7 +33,7 @@ impl AgentOptions {
         let options = &params["options"];
         Self {
             exit_after: options["exit_after"].as_u64().map(|v| v as usize),
-            delay_ms: options["delay_ms"].as_u64(),
+            thinking_time_ms: options["thinking_time_ms"].as_u64().or_else(|| options["delay_ms"].as_u64()),
             request_permission: options["request_permission"].as_bool().unwrap_or(false),
             reject_load: options["reject_load"].as_bool().unwrap_or(false),
             echo_prefix: options["echo_prefix"]
@@ -264,7 +264,7 @@ async fn handle_session_prompt<W: AsyncWrite + Unpin>(
             tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
         }
 
-        if let Some(ms) = AGENT_OPTIONS.get().and_then(|o| o.delay_ms) {
+        if let Some(ms) = AGENT_OPTIONS.get().and_then(|o| o.thinking_time_ms) {
             tokio::time::sleep(tokio::time::Duration::from_millis(ms)).await;
         }
     }
