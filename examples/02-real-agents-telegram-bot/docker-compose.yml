@@ -18,7 +18,7 @@ services:
 
   protoclaw:
     build:
-      context: ../..
+      context: .
       dockerfile: Dockerfile
       target: example-02-opencode
     ports:
@@ -41,7 +41,7 @@ services:
 
   opencode-agent-image:
     build:
-      context: ../..
+      context: .
       dockerfile: Dockerfile
       target: opencode-agent
     image: protoclaw-opencode-agent:latest
