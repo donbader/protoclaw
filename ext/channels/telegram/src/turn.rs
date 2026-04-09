@@ -66,7 +66,7 @@ impl ChatTurn {
         }
     }
 
-    pub fn append_thought(&mut self, text: &str, msg_id: i32) {
+    pub fn append_thought(&mut self, text: &str, msg_id: i32, origin_time: Option<Instant>) {
         match &mut self.thought {
             Some(track) => {
                 track.buffer.push_str(text);
@@ -74,7 +74,7 @@ impl ChatTurn {
             None => {
                 self.thought = Some(ThoughtTrack {
                     msg_id,
-                    started_at: Instant::now(),
+                    started_at: origin_time.unwrap_or_else(Instant::now),
                     buffer: text.to_string(),
                     debounce_handle: None,
                     suppressed: false,
@@ -138,8 +138,8 @@ mod tests {
     #[rstest]
     fn when_thought_appended_then_buffer_accumulates() {
         let mut turn = ChatTurn::new("msg-1".to_string());
-        turn.append_thought("hello ", 42);
-        turn.append_thought("world", 42);
+        turn.append_thought("hello ", 42, None);
+        turn.append_thought("world", 42, None);
         let track = turn.thought.as_ref().unwrap();
         assert_eq!(track.buffer, "hello world");
         assert_eq!(track.msg_id, 42);
@@ -198,7 +198,7 @@ mod tests {
     #[tokio::test]
     async fn when_cleanup_called_then_handles_aborted_and_state_cleared() {
         let mut turn = ChatTurn::new("msg-1".to_string());
-        turn.append_thought("thinking", 42);
+        turn.append_thought("thinking", 42, None);
         turn.append_response("text", 100);
         let handle = tokio::spawn(async { tokio::time::sleep(Duration::from_secs(10)).await });
         turn.begin_finalizing(handle);

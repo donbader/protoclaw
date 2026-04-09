@@ -371,11 +371,22 @@ impl AgentsManager {
 
                     let is_result = matches!(event.update, SessionUpdateType::Result { .. });
 
+                    // Stamp wall-clock receive time so channels can measure
+                    // thought duration from agent emission, not display time.
+                    let mut content = params;
+                    if let Some(obj) = content.as_object_mut() {
+                        let now_ms = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis() as u64;
+                        obj.insert("_received_at_ms".to_string(), serde_json::json!(now_ms));
+                    }
+
                     if let Some(session_key) = self.slots[slot_idx].reverse_map.get(&event.session_id).cloned() {
                         if let Some(sender) = &self.channels_sender {
                             let _ = sender.send(ChannelEvent::DeliverMessage {
                                 session_key: session_key.clone(),
-                                content: params,
+                                content,
                             }).await;
 
                             if is_result {

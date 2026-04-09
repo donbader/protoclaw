@@ -5,6 +5,7 @@ use protoclaw_sdk_channel::ChannelSdkError;
 use protoclaw_sdk_types::ContentKind;
 use teloxide::prelude::*;
 use teloxide::types::{ChatId, MessageId};
+use tokio::time::Instant;
 
 use crate::state::SharedState;
 use crate::turn::{ChatTurn, TurnPhase};
@@ -104,6 +105,17 @@ pub async fn deliver_to_chat(
         .and_then(|u| u.get("messageId"))
         .and_then(|v| v.as_str());
 
+    let origin_instant = content.get("_received_at_ms")
+        .and_then(|v| v.as_u64())
+        .and_then(|received_ms| {
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64;
+            let age = Duration::from_millis(now_ms.saturating_sub(received_ms));
+            Instant::now().checked_sub(age)
+        });
+
     tracing::debug!(chat_id, ?kind, message_id, "deliver_to_chat");
 
     match kind {
@@ -171,7 +183,7 @@ pub async fn deliver_to_chat(
                 if !mid.is_empty() {
                     turn.message_id = mid;
                 }
-                turn.append_thought(&thought_content, 0);
+                turn.append_thought(&thought_content, 0, origin_instant);
                 let track = turn.thought.as_ref().unwrap();
                 let accumulated = track.buffer.clone();
                 let existing_thought_msg_id = track.msg_id;
