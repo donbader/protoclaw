@@ -80,12 +80,6 @@ async fn main() {
         let method = msg["method"].as_str().unwrap_or("");
         let id = msg.get("id").cloned();
 
-        if AGENT_OPTIONS.get().is_some() {
-            if let Some(ms) = opts().delay_ms {
-                tokio::time::sleep(tokio::time::Duration::from_millis(ms)).await;
-            }
-        }
-
         match method {
             "initialize" => {
                 handle_initialize(&mut stdout, id, &msg).await;
@@ -268,6 +262,10 @@ async fn handle_session_prompt<W: AsyncWrite + Unpin>(
             });
             write_message(stdout, &chunk).await;
             tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+        }
+
+        if let Some(ms) = AGENT_OPTIONS.get().and_then(|o| o.delay_ms) {
+            tokio::time::sleep(tokio::time::Duration::from_millis(ms)).await;
         }
     }
 
