@@ -2,6 +2,7 @@ target/
 .git/
 .planning/
 .opencode/
+!examples/02-real-agents-telegram-bot/.opencode/
 .claude/
 .sisyphus/
 *.md

@@ -7,8 +7,6 @@ A protoclaw bot with a real AI agent (OpenCode + Claude). The agent runs in an i
 ```sh
 cp .env.example .env
 # Edit .env — set ANTHROPIC_API_KEY (required for the AI agent)
-# Build core image (first time only, from repo root):
-docker build -t protoclaw-core --target core -f ../../Dockerfile ../..
 # Build agent image and start:
 docker compose --profile build-only build
 docker compose up --build -d
@@ -95,7 +93,7 @@ To switch, edit `protoclaw.yaml`: disable the current agent, enable the new one,
 
 | File | Purpose |
 |------|---------|
-| `Dockerfile` | Example Dockerfile extending protoclaw-core base image (opencode + claude-code targets) |
+| `Dockerfile` | Multi-stage Dockerfile: Rust build + opencode/claude-code targets + agent image |
 | `docker-compose.yml` | Socket-proxy + protoclaw + agent image build |
 | `protoclaw.yaml` | Agent, channel, tool, and supervisor config |
 | `.opencode/` | OpenCode config baked into agent image |
