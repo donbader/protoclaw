@@ -10,7 +10,7 @@ use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
 use crate::connection::{ChannelConnection, IncomingChannelMessage};
-use crate::session_queue::{QueueAction, SessionQueue};
+use crate::session_queue::SessionQueue;
 use crate::error::ChannelsError;
 use protoclaw_sdk_types::{ChannelCapabilities, ChannelInitializeResult, ChannelSendMessage, ChannelRespondPermission};
 
@@ -428,8 +428,9 @@ impl ChannelsManager {
         }
     }
 
-    /// Handle an incoming message from a channel subprocess (inbound: channel → agent).
-    async fn handle_channel_message(&mut self, slot_index: usize, msg: IncomingChannelMessage) {
+    /// Collect an incoming channel message into the session queue without dispatching.
+    /// Returns the session key if the message was collected (for later flush).
+    async fn collect_channel_message(&mut self, slot_index: usize, msg: IncomingChannelMessage) -> Option<SessionKey> {
         let channel_name = self.slots[slot_index].name.clone();
         let channel_id = self.slots[slot_index].channel_id.clone();
 
@@ -453,7 +454,7 @@ impl ChannelsManager {
                         Some(h) => h.clone(),
                         None => {
                             tracing::warn!(channel = %channel_name, "no agents handle, cannot route message");
-                            return;
+                            return None;
                         }
                     };
 
@@ -467,7 +468,7 @@ impl ChannelsManager {
                             reply: reply_tx,
                         }).await {
                             tracing::error!(channel = %channel_name, error = %e, "failed to send CreateSession");
-                            return;
+                            return None;
                         }
 
                          match reply_rx.await {
@@ -501,11 +502,11 @@ impl ChannelsManager {
                             }
                             Ok(Err(e)) => {
                                 tracing::error!(channel = %channel_name, error = %e, "CreateSession failed");
-                                return;
+                                return None;
                             }
                             Err(_) => {
                                 tracing::error!(channel = %channel_name, "CreateSession reply dropped");
-                                return;
+                                return None;
                             }
                         }
                     }
@@ -518,17 +519,14 @@ impl ChannelsManager {
                             session_key = %session_key,
                             "message queued (session busy)"
                         );
+                        None
                     } else {
-                        match self.queue.push(&session_key, content) {
-                            QueueAction::Dispatch(msg) => {
-                                self.send_ack_to_channel(&session_key).await;
-                                self.dispatch_to_agent(&session_key, &msg, &agent_name).await;
-                            }
-                            QueueAction::Enqueued => {}
-                        }
+                        self.queue.push_only(&session_key, content);
+                        Some(session_key)
                     }
                 } else {
                     tracing::warn!(channel = %channel_name, "failed to parse channel/sendMessage params");
+                    None
                 }
             }
             "channel/respondPermission" => {
@@ -549,6 +547,7 @@ impl ChannelsManager {
                 } else {
                     tracing::warn!(channel = %channel_name, "failed to parse channel/respondPermission params");
                 }
+                None
             }
             _ => {
                 tracing::debug!(
@@ -556,7 +555,30 @@ impl ChannelsManager {
                     method = %method,
                     "unhandled channel message"
                 );
+                None
             }
+        }
+    }
+
+    /// Flush pending messages for a session and dispatch as a single merged prompt.
+    async fn flush_and_dispatch(&mut self, session_key: &SessionKey) {
+        if let Some(merged) = self.queue.flush_pending(session_key) {
+            let agent_name = self.routing_table
+                .get(session_key)
+                .map(|e| e.agent_name.clone())
+                .unwrap_or_default();
+
+            let count = merged.matches('\n').count() + 1;
+            if count > 1 {
+                tracing::info!(
+                    session_key = %session_key,
+                    merged_count = count,
+                    "merged buffered messages into single prompt"
+                );
+            }
+
+            self.send_ack_to_channel(session_key).await;
+            self.dispatch_to_agent(session_key, &merged, &agent_name).await;
         }
     }
 
@@ -571,24 +593,20 @@ impl ChannelsManager {
     }
 
     /// Poll all active channel connections for incoming messages.
-    /// Returns (slot_index, message) or (slot_index, None) for crash.
-    async fn poll_channels(&mut self) -> Option<(usize, Option<IncomingChannelMessage>)> {
-        // Build futures for each active connection
-        // We need to poll them without holding &mut self across await,
-        // so we iterate and find the first ready one.
+    /// Drains all ready messages across all connections in one pass.
+    async fn poll_channels(&mut self) -> Vec<(usize, Option<IncomingChannelMessage>)> {
+        let mut results = Vec::new();
         for (i, slot) in self.slots.iter_mut().enumerate() {
             if slot.disabled {
                 continue;
             }
             if let Some(conn) = &mut slot.connection {
-                // Try a non-blocking poll using tokio::time::timeout with zero duration
-                match tokio::time::timeout(Duration::from_millis(constants::POLL_TIMEOUT_MS), conn.recv_incoming()).await {
-                    Ok(msg) => return Some((i, msg)),
-                    Err(_) => continue, // timeout = no message ready
+                while let Ok(msg) = tokio::time::timeout(Duration::from_millis(constants::POLL_TIMEOUT_MS), conn.recv_incoming()).await {
+                    results.push((i, msg));
                 }
             }
         }
-        None
+        results
     }
 }
 
@@ -702,10 +720,19 @@ impl Manager for ChannelsManager {
                     self.handle_channel_event(event).await;
                 }
                 _ = poll_interval.tick() => {
-                    if let Some((idx, msg)) = self.poll_channels().await {
+                    let messages = self.poll_channels().await;
+                    if messages.is_empty() {
+                        continue;
+                    }
+
+                    let mut sessions_to_flush: HashSet<SessionKey> = HashSet::new();
+
+                    for (idx, msg) in messages {
                         match msg {
                             Some(incoming) => {
-                                self.handle_channel_message(idx, incoming).await;
+                                if let Some(session_key) = self.collect_channel_message(idx, incoming).await {
+                                    sessions_to_flush.insert(session_key);
+                                }
                             }
                             None => {
                                 let channel_name = self.slots[idx].name.clone();
@@ -713,6 +740,10 @@ impl Manager for ChannelsManager {
                                 self.handle_channel_crash(idx).await;
                             }
                         }
+                    }
+
+                    for session_key in sessions_to_flush {
+                        self.flush_and_dispatch(&session_key).await;
                     }
                 }
             }

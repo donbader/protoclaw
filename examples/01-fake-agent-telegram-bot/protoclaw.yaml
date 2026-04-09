@@ -13,6 +13,7 @@ agents-manager:
         binary: "@built-in/mock-agent"
       options:
         thinking: true
+        delay_ms: 3000
       tools:
         - "system-info"
     # Docker workspace agent (opt-in — disabled by default)
@@ -36,9 +37,6 @@ agents-manager:
         - "system-info"
 
 channels-manager:
-  debounce:
-    enabled: true
-    window_ms: 2000
   channels:
     debug-http:
       binary: "@built-in/debug-http"

@@ -83,7 +83,11 @@ impl SseCollector {
                         if let Some(event_val) = line.strip_prefix("event:") {
                             self.pending_event_type = Some(event_val.trim().to_string());
                         } else if let Some(data_val) = line.strip_prefix("data:") {
-                            self.pending_data = Some(data_val.trim().to_string());
+                            let trimmed = data_val.trim().to_string();
+                            self.pending_data = Some(match self.pending_data.take() {
+                                Some(existing) => format!("{existing}\n{trimmed}"),
+                                None => trimmed,
+                            });
                         } else if line.is_empty() {
                             if let Some(data) = self.pending_data.take() {
                                 self.buffer.push(SseEvent {

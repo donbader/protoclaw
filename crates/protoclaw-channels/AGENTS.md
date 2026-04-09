@@ -44,7 +44,7 @@ Channel subprocesses emit `PORT:{n}` to stderr when they bind a port. `ChannelCo
 
 ## poll_channels() Pattern
 
-The `poll_channels()` method uses 1ms timeout polling per connection — it's a workaround because `tokio::select!` can't dynamically branch over a variable number of futures. The 50ms sleep in the `else` branch prevents busy-looping when no messages are ready. Do not remove it.
+The `poll_channels()` method drains ALL ready messages across all connections in one pass using 1ms timeout polling per connection — it's a workaround because `tokio::select!` can't dynamically branch over a variable number of futures. Returns `Vec<(usize, Option<IncomingChannelMessage>)>`. The run loop collects sessions needing flush into a `HashSet<SessionKey>`, then flushes all after processing all polled messages.
 
 ## Ack Flow
 
@@ -56,15 +56,20 @@ Ack notification (`channel/ackMessage`) fires only at dispatch time — when a m
 
 `channel/typingIndicator` fires at dispatch time inside `dispatch_to_agent()`. This signals the channel that the agent is actively processing a message. Queued messages do not trigger typing — only the message being dispatched.
 
-## Session Queue (FIFO) with Flush
+## Session Queue (FIFO) with Two-Phase Collect+Flush
 
-Per-session FIFO queue (`SessionQueue`). Messages queue while the agent is busy, then flush as a single merged prompt when the agent finishes.
+Per-session FIFO queue (`SessionQueue`). Two-phase design ensures ALL buffered messages (including those arriving while session is idle) merge into a single prompt.
 
-1. Message arrives, session idle → `Dispatch(msg)` — dispatched immediately, ack sent
-2. Message arrives, session busy → `Enqueued` — queued (no ack)
-3. Agent finishes (Result event) → `mark_idle()` pops first queued + `drain_queued()` grabs rest → joined with `\n` → dispatched as single merged prompt, ack sent
-4. No queued messages on result → session returns to idle
+**Idle session (two-phase collect+flush):**
+1. Messages arrive, session idle → `push_only()` queues without dispatching, returns session key for flush
+2. After all polled messages processed → `flush_pending()` drains queue, joins with `\n`, marks active → dispatched as single merged prompt, ack sent
 
+**Busy session (queue+drain on completion):**
+1. Message arrives, session busy → `push()` returns `Enqueued` — queued (no ack)
+2. Agent finishes (Result event) → `mark_idle()` pops first queued + `drain_queued()` grabs rest → joined with `\n` → dispatched as single merged prompt, ack sent
+3. No queued messages on result → session returns to idle
+
+Key methods: `push_only()`, `flush_pending()`, `push()`, `mark_idle()`, `drain_queued()`
 Key type: `SessionKey` (`"{channel}:{kind}:{peer_id}"`) is the queue key.
 
 ## Anti-Patterns (this crate)

@@ -78,8 +78,35 @@ impl SessionQueue {
         self.active.contains(session_key)
     }
 
-    /// Drain all queued messages for a session without marking it idle.
-    /// Returns the messages in FIFO order. The session remains active.
+    /// Push a message without dispatching. Returns true if the session was idle
+    /// (caller may want to dispatch after collecting all messages).
+    pub fn push_only(&mut self, session_key: &SessionKey, message: String) -> bool {
+        let was_idle = !self.active.contains(session_key);
+        self.queues
+            .entry(session_key.clone())
+            .or_default()
+            .push_back(message);
+        was_idle
+    }
+
+    /// Flush a session that has pending messages but isn't active yet.
+    /// Drains all queued messages, joins them, marks the session active,
+    /// and returns the merged content for dispatch.
+    pub fn flush_pending(&mut self, session_key: &SessionKey) -> Option<String> {
+        if self.active.contains(session_key) {
+            return None;
+        }
+        if let Some(queue) = self.queues.remove(session_key) {
+            if queue.is_empty() {
+                return None;
+            }
+            self.active.insert(session_key.clone());
+            let messages: Vec<String> = queue.into_iter().collect();
+            Some(messages.join("\n"))
+        } else {
+            None
+        }
+    }
     pub fn drain_queued(&mut self, session_key: &SessionKey) -> Vec<String> {
         if let Some(queue) = self.queues.remove(session_key) {
             queue.into_iter().collect()
@@ -288,5 +315,102 @@ mod tests {
 
         let remaining = q.drain_queued(&key("alice"));
         assert!(remaining.is_empty());
+    }
+
+    #[rstest]
+    fn when_push_only_on_idle_session_then_returns_true() {
+        let mut q = SessionQueue::new();
+        let was_idle = q.push_only(&key("alice"), "hello".into());
+        assert!(was_idle);
+    }
+
+    #[rstest]
+    fn when_push_only_on_active_session_then_returns_false() {
+        let mut q = SessionQueue::new();
+        q.push(&key("alice"), "msg1".into());
+        let was_idle = q.push_only(&key("alice"), "msg2".into());
+        assert!(!was_idle);
+    }
+
+    #[rstest]
+    fn when_push_only_called_then_message_queued_not_dispatched() {
+        let mut q = SessionQueue::new();
+        q.push_only(&key("alice"), "hello".into());
+        assert!(!q.is_active(&key("alice")));
+        assert_eq!(q.queued_count(&key("alice")), 1);
+    }
+
+    #[rstest]
+    fn when_push_only_called_multiple_times_then_all_messages_queued() {
+        let mut q = SessionQueue::new();
+        q.push_only(&key("alice"), "msg1".into());
+        q.push_only(&key("alice"), "msg2".into());
+        q.push_only(&key("alice"), "msg3".into());
+        assert_eq!(q.queued_count(&key("alice")), 3);
+        assert!(!q.is_active(&key("alice")));
+    }
+
+    #[rstest]
+    fn when_flush_pending_on_idle_session_with_messages_then_returns_merged() {
+        let mut q = SessionQueue::new();
+        q.push_only(&key("alice"), "msg1".into());
+        q.push_only(&key("alice"), "msg2".into());
+        q.push_only(&key("alice"), "msg3".into());
+
+        let merged = q.flush_pending(&key("alice"));
+        assert_eq!(merged, Some("msg1\nmsg2\nmsg3".into()));
+        assert!(q.is_active(&key("alice")));
+        assert_eq!(q.queued_count(&key("alice")), 0);
+    }
+
+    #[rstest]
+    fn when_flush_pending_on_active_session_then_returns_none() {
+        let mut q = SessionQueue::new();
+        q.push(&key("alice"), "msg1".into());
+        q.push_only(&key("alice"), "msg2".into());
+
+        let merged = q.flush_pending(&key("alice"));
+        assert_eq!(merged, None);
+        assert_eq!(q.queued_count(&key("alice")), 1);
+    }
+
+    #[rstest]
+    fn when_flush_pending_on_empty_queue_then_returns_none() {
+        let mut q = SessionQueue::new();
+        let merged = q.flush_pending(&key("alice"));
+        assert_eq!(merged, None);
+        assert!(!q.is_active(&key("alice")));
+    }
+
+    #[rstest]
+    fn when_flush_pending_with_single_message_then_returns_that_message() {
+        let mut q = SessionQueue::new();
+        q.push_only(&key("alice"), "only-one".into());
+
+        let merged = q.flush_pending(&key("alice"));
+        assert_eq!(merged, Some("only-one".into()));
+        assert!(q.is_active(&key("alice")));
+    }
+
+    #[rstest]
+    fn given_flushed_session_when_mark_idle_then_session_goes_idle() {
+        let mut q = SessionQueue::new();
+        q.push_only(&key("alice"), "msg1".into());
+        q.flush_pending(&key("alice"));
+
+        let next = q.mark_idle(&key("alice"));
+        assert_eq!(next, None);
+        assert!(!q.is_active(&key("alice")));
+    }
+
+    #[rstest]
+    fn given_flushed_session_when_new_messages_arrive_then_queued_normally() {
+        let mut q = SessionQueue::new();
+        q.push_only(&key("alice"), "msg1".into());
+        q.flush_pending(&key("alice"));
+
+        let action = q.push(&key("alice"), "msg2".into());
+        assert_eq!(action, QueueAction::Enqueued);
+        assert_eq!(q.queued_count(&key("alice")), 1);
     }
 }
