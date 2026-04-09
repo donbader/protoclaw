@@ -3,6 +3,7 @@ target/
 .planning/
 .opencode/
 .claude/
+.sisyphus/
 *.md
 !README.md
 *.yaml
@@ -11,3 +12,4 @@ target/
 docker-compose*
 Dockerfile
 docs/
+tests/integration/tests/
