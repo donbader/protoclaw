@@ -33,7 +33,7 @@ impl AgentOptions {
         let options = &params["options"];
         Self {
             exit_after: options["exit_after"].as_u64().map(|v| v as usize),
-            thinking_time_ms: options["thinking_time_ms"].as_u64().or_else(|| options["delay_ms"].as_u64()),
+            thinking_time_ms: options["thinking_time_ms"].as_u64(),
             request_permission: options["request_permission"].as_bool().unwrap_or(false),
             reject_load: options["reject_load"].as_bool().unwrap_or(false),
             echo_prefix: options["echo_prefix"]

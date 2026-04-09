@@ -8,11 +8,11 @@ use rstest::rstest;
 fn slow_agent_config() -> protoclaw_config::ProtoclawConfig {
     let mut options = HashMap::new();
     options.insert("thinking".to_string(), serde_json::json!(true));
-    options.insert("delay_ms".to_string(), serde_json::json!(1000));
+    options.insert("thinking_time_ms".to_string(), serde_json::json!(1000));
     mock_agent_config_with_options(options)
 }
 
-/// Send 5 messages rapidly while agent has delay_ms=1000.
+/// Send 5 messages rapidly while agent has thinking_time_ms=1000.
 /// First message dispatches immediately. While agent is busy thinking,
 /// remaining messages queue. On completion, queued messages merge into
 /// a single prompt. Verify the echo contains multiple messages joined by \n.
@@ -69,7 +69,7 @@ async fn given_slow_agent_when_messages_sent_rapidly_then_queued_messages_merge_
 }
 
 /// Rapid-fire 10 messages with no delay — verify all content arrives and FIFO order holds.
-/// Without delay_ms, merging is not guaranteed (agent may process faster than messages arrive).
+/// Without thinking_time_ms, merging is not guaranteed (agent may process faster than messages arrive).
 #[rstest]
 #[test_log::test(tokio::test)]
 async fn when_ten_messages_sent_rapidly_then_all_responses_arrive() {
