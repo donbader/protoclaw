@@ -60,6 +60,9 @@ channels-manager:
     debug-http:
       binary: "@built-in/debug-http"
       agent: "opencode"
+      options:
+        HOST: "0.0.0.0"
+        PORT: "8080"
       ack:
         reaction: false
         typing: false
