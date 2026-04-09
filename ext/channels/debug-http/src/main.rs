@@ -96,7 +96,7 @@ impl Channel for DebugHttpChannel {
         let listener = tokio::net::TcpListener::bind(&addr)
             .await
             .map_err(ChannelSdkError::Io)?;
-        let bound_port = listener.local_addr().unwrap().port();
+        let bound_port = listener.local_addr().expect("TCP listener must have local address after successful bind").port();
 
         eprintln!("PORT:{bound_port}");
         tracing::info!(port = bound_port, "debug-http listening");

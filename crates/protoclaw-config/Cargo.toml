@@ -12,6 +12,7 @@ thiserror.workspace = true
 tracing.workspace = true
 serde_yaml.workspace = true
 subst.workspace = true
+protoclaw-sdk-types = { path = "../protoclaw-sdk-types" }
 
 [dev-dependencies]
 figment = { workspace = true, features = ["test"] }

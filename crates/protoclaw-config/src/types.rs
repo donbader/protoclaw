@@ -231,6 +231,17 @@ impl Default for AckConfig {
     }
 }
 
+impl From<AckConfig> for protoclaw_sdk_types::ChannelAckConfig {
+    fn from(ack: AckConfig) -> Self {
+        Self {
+            reaction: ack.reaction,
+            typing: ack.typing,
+            reaction_emoji: ack.reaction_emoji,
+            reaction_lifecycle: ack.reaction_lifecycle,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ToolConfig {
     #[serde(default = "default_tool_type")]

@@ -14,15 +14,6 @@ use crate::session_queue::{QueueAction, SessionQueue};
 use crate::error::ChannelsError;
 use protoclaw_sdk_types::{ChannelCapabilities, ChannelInitializeResult, ChannelSendMessage, ChannelRespondPermission};
 
-fn ack_config_to_channel(ack: &protoclaw_config::AckConfig) -> ChannelAckConfig {
-    ChannelAckConfig {
-        reaction: ack.reaction,
-        typing: ack.typing,
-        reaction_emoji: ack.reaction_emoji.clone(),
-        reaction_lifecycle: ack.reaction_lifecycle.clone(),
-    }
-}
-
 /// Commands sent to the ChannelsManager from other managers.
 pub enum ChannelsCommand {
     /// Deliver agent message to a specific channel (by session key).
@@ -142,7 +133,7 @@ impl ChannelsManager {
         let params = serde_json::json!({
             "protocolVersion": 1,
             "channelId": channel_id.as_ref(),
-            "ack": ack_config_to_channel(&config.ack),
+            "ack": ChannelAckConfig::from(config.ack.clone()),
             "options": config.options,
         });
 
@@ -1005,7 +996,7 @@ mod tests {
             reaction_emoji: "🤔".to_string(),
             reaction_lifecycle: "per_message".to_string(),
         };
-        let channel_ack = ack_config_to_channel(&config_ack);
+        let channel_ack: ChannelAckConfig = config_ack.into();
         assert_eq!(channel_ack.reaction, true);
         assert_eq!(channel_ack.typing, true);
         assert_eq!(channel_ack.reaction_emoji, "🤔");
@@ -1015,7 +1006,7 @@ mod tests {
     #[rstest]
     fn when_default_ack_config_converted_then_matches_defaults() {
         let config_ack = protoclaw_config::AckConfig::default();
-        let channel_ack = ack_config_to_channel(&config_ack);
+        let channel_ack: ChannelAckConfig = config_ack.into();
         assert_eq!(channel_ack.reaction, false);
         assert_eq!(channel_ack.typing, false);
     }
