@@ -13,6 +13,7 @@ async-trait = "0.1"
 teloxide = { version = "0.17", features = ["macros"] }
 protoclaw-sdk-channel = { workspace = true }
 protoclaw-sdk-types = { workspace = true }
+regex = "1"
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }

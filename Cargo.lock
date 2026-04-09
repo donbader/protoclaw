@@ -3479,6 +3479,7 @@ dependencies = [
  "async-trait",
  "protoclaw-sdk-channel",
  "protoclaw-sdk-types",
+ "regex",
  "rstest",
  "serde",
  "serde_json",

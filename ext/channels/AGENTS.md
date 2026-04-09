@@ -71,20 +71,25 @@ The old architecture had a race: `finalize_previous_turn()` cleared `message_buf
 - Do NOT bypass `can_edit_response()` for normal streaming — only late chunks (during `Finalizing` phase) skip the rate limit.
 - Do NOT call `cleanup()` without removing the turn from the `turns` map — the struct clears internal state but doesn't remove itself.
 
-## telegram/ (8 files)
+## telegram/ (9 files)
 
 | File | Purpose |
 |------|---------|
 | `main.rs` | Entry point, `ChannelHarness::run_stdio()` |
-| `channel.rs` | `TelegramChannel` impl of `Channel` trait |
+| `channel.rs` | `TelegramChannel` impl of `Channel` trait (`rich_text: true`) |
 | `dispatcher.rs` | Teloxide dispatcher setup, message/callback handlers |
 | `deliver.rs` | Outbound: agent updates → Telegram messages, thought rendering + collapse |
+| `formatting.rs` | Markdown→HTML conversion, `escape_html`, `close_open_tags` for streaming |
 | `turn.rs` | `ChatTurn` state machine — per-chat turn lifecycle, thought/response tracks |
 | `permissions.rs` | Permission request → inline keyboard buttons |
 | `peer.rs` | `PeerInfo` extraction from Telegram update context |
 | `state.rs` | Shared state: bot instance, session tracking, `turns` map |
 
 Bot token and thought emoji are received via `ChannelInitializeParams.options` in `on_initialize()`, not from environment variables.
+
+### HTML Parse Mode
+
+All outbound messages use `ParseMode::Html`. Agent responses go through `format_telegram_html()` which converts markdown to Telegram-safe HTML using a placeholder-extraction pattern (code blocks extracted first to prevent double-escaping). Streaming edits additionally use `close_open_tags()` to ensure partial HTML is valid. Thought messages use `escape_html()` only (no markdown conversion). The `split_message()` function respects `<pre>` block boundaries — never splits inside them.
 
 ## debug-http/ (1 file)
 

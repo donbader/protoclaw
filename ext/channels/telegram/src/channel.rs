@@ -121,7 +121,7 @@ impl Channel for TelegramChannel {
     fn capabilities(&self) -> ChannelCapabilities {
         ChannelCapabilities {
             streaming: true,
-            rich_text: false,
+            rich_text: true,
         }
     }
 
@@ -258,11 +258,11 @@ mod tests {
     }
 
     #[test]
-    fn capabilities_streaming_true_rich_text_false() {
+    fn capabilities_streaming_true_rich_text_true() {
         let ch = make_channel();
         let caps = ch.capabilities();
         assert!(caps.streaming);
-        assert!(!caps.rich_text);
+        assert!(caps.rich_text);
     }
 
     #[tokio::test]

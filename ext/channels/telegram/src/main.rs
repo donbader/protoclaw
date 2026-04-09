@@ -1,6 +1,7 @@
 mod channel;
 mod deliver;
 mod dispatcher;
+mod formatting;
 mod peer;
 mod permissions;
 mod state;
