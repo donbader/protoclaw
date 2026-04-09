@@ -18,7 +18,7 @@ services:
 
   protoclaw:
     build:
-      context: ../..
+      context: .
       dockerfile: Dockerfile
       target: example-01
     ports:
@@ -41,7 +41,7 @@ services:
 
   mock-agent-image:
     build:
-      context: ../..
+      context: .
       dockerfile: Dockerfile
       target: mock-agent
     image: protoclaw-mock-agent:latest

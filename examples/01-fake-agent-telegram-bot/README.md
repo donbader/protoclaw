@@ -6,6 +6,9 @@ A working protoclaw bot with zero API keys. The mock agent echoes messages back 
 
 ```sh
 cp .env.example .env
+# Build core image (first time only, from repo root):
+docker build -t protoclaw-core --target core -f ../../Dockerfile ../..
+# Start the example:
 docker compose up --build
 ```
 
@@ -98,7 +101,7 @@ Security: socket proxy restricts Docker API to containers/images only. Agent con
 
 | File | Purpose |
 |------|---------|
-| `Dockerfile` | Multi-stage cargo-chef build, all binaries |
+| `Dockerfile` | Example Dockerfile extending protoclaw-core base image |
 | `Dockerfile.agent` | Mock-agent Docker workspace image |
 | `docker-compose.yml` | Protoclaw + socket-proxy + agent image build |
 | `protoclaw.yaml` | Agent, channel, tool, and supervisor config |
