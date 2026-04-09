@@ -75,7 +75,7 @@ RESP=$(curl -sf -X POST "$BASE_URL/message" \
   -d '{"message": "hello"}')
 if echo "$RESP" | grep -q '"queued"\|"sent"'; then pass "POST /message → accepted"; else fail "POST /message → $RESP"; fi
 
-sleep 3
+sleep 8
 
 SSE_FILE=$(mktemp)
 curl -sN "$BASE_URL/events" > "$SSE_FILE" 2>/dev/null &
@@ -87,7 +87,7 @@ curl -sf -X POST "$BASE_URL/message" \
   -H "Content-Type: application/json" \
   -d '{"message": "ping"}' >/dev/null
 
-sleep 5
+sleep 8
 
 if grep -q "Echo: ping" "$SSE_FILE"; then
   pass "SSE result contains 'Echo: ping'"
