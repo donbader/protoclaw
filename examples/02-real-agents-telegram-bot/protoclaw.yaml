@@ -70,6 +70,8 @@ channels-manager:
       binary: "@built-in/telegram-channel"
       enabled: "${TELEGRAM_ENABLED:false}"
       agent: "opencode"
+      options:
+        TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:}"
       ack:
         reaction: true
         reaction_emoji: "👀"
