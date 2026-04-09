@@ -79,8 +79,10 @@ impl Channel for DebugHttpChannel {
         if let Some(host) = params.options.get("HOST").and_then(|v| v.as_str()) {
             self.host = host.to_string();
         }
-        if let Some(port) = params.options.get("PORT").and_then(|v| v.as_str()).and_then(|s| s.parse().ok()) {
-            self.port = port;
+        if let Some(port) = params.options.get("PORT").and_then(|v| {
+            v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+        }) {
+            self.port = port as u16;
         }
         Ok(())
     }

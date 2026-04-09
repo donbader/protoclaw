@@ -32,3 +32,10 @@ COPY --from=builder /build/target/release/system-info /usr/local/bin/system-info
 COPY --from=builder /build/target/release/opencode-wrapper /usr/local/bin/opencode-wrapper
 WORKDIR /workspace
 ENTRYPOINT ["protoclaw"]
+
+# Stage 5: Mock-agent standalone (for Docker workspace mode)
+FROM debian:bookworm-slim AS mock-agent
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /build/target/release/mock-agent /usr/local/bin/mock-agent
+ENTRYPOINT ["mock-agent"]

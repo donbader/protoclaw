@@ -8,11 +8,6 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-if ! docker image inspect protoclaw-core >/dev/null 2>&1; then
-  printf "Building protoclaw-core image (first time)...\n"
-  (cd "$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)" && docker build -t protoclaw-core --target core .)
-fi
-
 DOCKER_MODE=false
 if [[ "${1:-}" == "--docker" ]]; then
   DOCKER_MODE=true
