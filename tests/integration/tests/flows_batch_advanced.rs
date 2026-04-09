@@ -5,9 +5,71 @@ use protoclaw_integration_tests::{
 };
 use rstest::rstest;
 
-/// Rapid-fire 10 messages with no delay between POSTs — queue must not drop any.
-/// Merging is timing-dependent (mock agent is fast), so we only verify
-/// all content arrives and FIFO order is preserved.
+fn slow_agent_config() -> protoclaw_config::ProtoclawConfig {
+    let mut options = HashMap::new();
+    options.insert("thinking".to_string(), serde_json::json!(true));
+    options.insert("delay_ms".to_string(), serde_json::json!(1000));
+    mock_agent_config_with_options(options)
+}
+
+/// Send 5 messages rapidly while agent has delay_ms=1000.
+/// First message dispatches immediately. While agent is busy thinking,
+/// remaining messages queue. On completion, queued messages merge into
+/// a single prompt. Verify the echo contains multiple messages joined by \n.
+#[rstest]
+#[test_log::test(tokio::test)]
+async fn given_slow_agent_when_messages_sent_rapidly_then_queued_messages_merge_into_single_prompt()
+{
+    let config = slow_agent_config();
+    let (cancel, handle, port) = boot_supervisor_with_port(config).await;
+
+    let client = reqwest::Client::new();
+    let mut sse = SseCollector::connect(port).await;
+
+    for i in 0..5 {
+        let _ = client
+            .post(format!("http://127.0.0.1:{port}/message"))
+            .json(&serde_json::json!({"message": format!("merge-{i}")}))
+            .send()
+            .await
+            .expect("POST should succeed");
+    }
+
+    let events = sse.collect_events(Duration::from_secs(20)).await;
+    let all_data: String = events
+        .iter()
+        .map(|e| e.data.clone())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    for i in 0..5 {
+        let expected = format!("merge-{i}");
+        assert!(
+            all_data.contains(&expected),
+            "should contain '{expected}'; all_data: {all_data:?}",
+        );
+    }
+
+    let has_merged_echo = events.iter().any(|e| {
+        let mut count = 0;
+        for i in 0..5 {
+            if e.data.contains(&format!("merge-{i}")) {
+                count += 1;
+            }
+        }
+        count >= 2
+    });
+    assert!(
+        has_merged_echo,
+        "at least one SSE event should contain 2+ merged messages; events: {events:?}",
+    );
+
+    cancel.cancel();
+    let _ = with_timeout(5, handle).await;
+}
+
+/// Rapid-fire 10 messages with no delay — verify all content arrives and FIFO order holds.
+/// Without delay_ms, merging is not guaranteed (agent may process faster than messages arrive).
 #[rstest]
 #[test_log::test(tokio::test)]
 async fn when_ten_messages_sent_rapidly_then_all_responses_arrive() {
@@ -29,11 +91,13 @@ async fn when_ten_messages_sent_rapidly_then_all_responses_arrive() {
     }
 
     let events = sse.collect_events(Duration::from_secs(30)).await;
-    let all_data: String = events.iter().map(|e| &e.data).cloned().collect::<Vec<_>>().join("\n");
+    let all_data: String = events
+        .iter()
+        .map(|e| &e.data)
+        .cloned()
+        .collect::<Vec<_>>()
+        .join("\n");
 
-    // msg-0 is always dispatched immediately (first message, session idle).
-    // msg-9 is always the last queued, visible as the tail of any merged prompt.
-    // Intermediate messages may be invisible in SSE when merged (newline splitting).
     assert!(
         all_data.contains("msg-0"),
         "first message must appear; all_data: {all_data:?}",
@@ -54,8 +118,7 @@ async fn when_ten_messages_sent_rapidly_then_all_responses_arrive() {
     let _ = with_timeout(5, handle).await;
 }
 
-/// Messages sent with varying delays between POSTs must all arrive and maintain FIFO order.
-/// Delays: [0ms, 50ms, 200ms, 0ms, 100ms]. Some may merge, all content must appear.
+/// Messages sent with varying delays must all arrive and maintain FIFO order.
 #[rstest]
 #[test_log::test(tokio::test)]
 async fn when_messages_sent_with_varying_delays_then_all_responses_arrive() {
@@ -83,7 +146,12 @@ async fn when_messages_sent_with_varying_delays_then_all_responses_arrive() {
     }
 
     let events = sse.collect_events(Duration::from_secs(15)).await;
-    let all_data: String = events.iter().map(|e| &e.data).cloned().collect::<Vec<_>>().join("\n");
+    let all_data: String = events
+        .iter()
+        .map(|e| &e.data)
+        .cloned()
+        .collect::<Vec<_>>()
+        .join("\n");
 
     for i in 0..5 {
         let expected = format!("timed-{i}");
@@ -93,7 +161,6 @@ async fn when_messages_sent_with_varying_delays_then_all_responses_arrive() {
         );
     }
 
-    // FIFO: byte position of timed-0 < timed-1 < ... < timed-4
     let positions: Vec<usize> = (0..5)
         .map(|i| {
             let expected = format!("timed-{i}");
@@ -139,10 +206,8 @@ async fn given_inflight_queue_when_supervisor_cancelled_then_no_panic() {
             .expect("POST should succeed");
     }
 
-    // Immediately cancel — don't wait for SSE events
     cancel.cancel();
 
-    // Supervisor must exit cleanly — no panic, no hang (test-log captures panics on failure)
     let result = with_timeout(10, handle)
         .await
         .expect("supervisor task panicked");
