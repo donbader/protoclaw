@@ -149,6 +149,22 @@ else
   fail "No merging detected: expected fewer than 10 agent turns, got $AGENT_TURNS"
 fi
 
+MERGED_REPLY=$(echo "$BATCH_OUTPUT" | awk '
+  /^data: / { event = event " " substr($0, 7); next }
+  /^$/ {
+    n = 0
+    for (i = 1; i <= 10; i++) if (event ~ "batch" i) n++
+    if (n >= 2) { print n; found = 1; exit }
+    event = ""
+  }
+  END { if (!found) print 0 }
+')
+if [ "$MERGED_REPLY" -ge 2 ] 2>/dev/null; then
+  pass "Single reply contains $MERGED_REPLY merged messages"
+else
+  fail "No single reply contains multiple batch messages"
+fi
+
 kill "$SSE_PID" 2>/dev/null || true
 wait "$SSE_PID" 2>/dev/null || true
 SSE_PID=""
