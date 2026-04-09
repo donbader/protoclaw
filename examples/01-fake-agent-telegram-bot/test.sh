@@ -170,6 +170,102 @@ wait "$SSE_PID" 2>/dev/null || true
 SSE_PID=""
 rm -f "$SSE_FILE"
 
+printf "Cancel endpoint\n"
+CANCEL_RESP=$(curl -sf -X POST "$BASE_URL/cancel")
+if echo "$CANCEL_RESP" | grep -q '"cancelled"'; then
+  pass "POST /cancel → cancelled"
+else
+  fail "POST /cancel → $CANCEL_RESP"
+fi
+
+printf "Permissions endpoints\n"
+PERM_STATUS=$(curl -sf -o /dev/null -w "%{http_code}" "$BASE_URL/permissions/pending")
+if [ "$PERM_STATUS" = "200" ]; then pass "GET /permissions/pending → 200"; else fail "GET /permissions/pending → $PERM_STATUS"; fi
+
+PERM_BODY=$(curl -sf "$BASE_URL/permissions/pending")
+if [ "$PERM_BODY" = "[]" ]; then
+  pass "No pending permissions initially"
+else
+  fail "Expected empty array, got: $PERM_BODY"
+fi
+
+PERM_RESPOND_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/permissions/nonexistent/respond" \
+  -H "Content-Type: application/json" \
+  -d '{"optionId": "allow"}')
+if [ "$PERM_RESPOND_STATUS" = "200" ]; then
+  pass "POST /permissions/{id}/respond → 200 (noop for unknown id)"
+else
+  fail "POST /permissions/{id}/respond → $PERM_RESPOND_STATUS"
+fi
+
+printf "Error cases\n"
+ERR_NO_BODY=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/message" \
+  -H "Content-Type: application/json")
+if [ "$ERR_NO_BODY" -ge 400 ] 2>/dev/null; then
+  pass "POST /message with no body → $ERR_NO_BODY"
+else
+  fail "POST /message with no body should fail, got $ERR_NO_BODY"
+fi
+
+ERR_EMPTY_JSON=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/message" \
+  -H "Content-Type: application/json" \
+  -d '{}')
+if [ "$ERR_EMPTY_JSON" -ge 400 ] 2>/dev/null; then
+  pass "POST /message with empty JSON → $ERR_EMPTY_JSON"
+else
+  fail "POST /message with empty JSON should fail, got $ERR_EMPTY_JSON"
+fi
+
+ERR_BAD_CT=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/message" \
+  -d 'not json')
+if [ "$ERR_BAD_CT" -ge 400 ] 2>/dev/null; then
+  pass "POST /message with wrong Content-Type → $ERR_BAD_CT"
+else
+  fail "POST /message with wrong Content-Type should fail, got $ERR_BAD_CT"
+fi
+
+sleep 8
+
+printf "Idle-then-burst\n"
+BURST_SSE=$(mktemp)
+curl -sN "$BASE_URL/events" > "$BURST_SSE" 2>/dev/null &
+SSE_PID=$!
+sleep 2
+
+for i in $(seq 1 5); do
+  curl -sf -X POST "$BASE_URL/message" \
+    -H "Content-Type: application/json" \
+    -d "{\"message\": \"burst$i\"}" >/dev/null
+done
+
+sleep 15
+
+BURST_OUTPUT=$(cat "$BURST_SSE")
+BURST_MISSING=""
+for i in $(seq 1 5); do
+  if ! echo "$BURST_OUTPUT" | grep -q "burst$i"; then
+    BURST_MISSING="$BURST_MISSING burst$i"
+  fi
+done
+
+if [ -z "$BURST_MISSING" ]; then
+  pass "All 5 burst messages appear in SSE stream"
+else
+  fail "Missing burst messages:$BURST_MISSING"
+fi
+
+BURST_TURNS=$(echo "$BURST_OUTPUT" | grep -c "Analyzing your message" || true)
+if [ "$BURST_TURNS" -lt 5 ]; then
+  pass "Burst messages merged: 5 sent, $BURST_TURNS agent turn(s)"
+else
+  fail "No burst merging: expected fewer than 5 agent turns, got $BURST_TURNS"
+fi
+
+kill "$SSE_PID" 2>/dev/null || true
+wait "$SSE_PID" 2>/dev/null || true
+SSE_PID=""
+rm -f "$BURST_SSE"
+
 if [ "$DOCKER_MODE" = true ]; then
   printf "\n--- Docker workspace tests ---\n"
   printf "Docker health\n"

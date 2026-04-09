@@ -37,7 +37,7 @@ data: Echo: hello
 ./test.sh
 ```
 
-Tests cover: health check, message acceptance, SSE streaming, thought events, and message merging (10 rapid messages → fewer agent turns).
+Tests cover: health check, message send/receive, SSE streaming, thought events, message merging (10 rapid → fewer turns), cancel endpoint, permissions endpoints, error cases (missing body, empty JSON, wrong Content-Type), and idle-then-burst merging.
 
 Docker workspace mode (spawns mock-agent in a separate container via bollard):
 
