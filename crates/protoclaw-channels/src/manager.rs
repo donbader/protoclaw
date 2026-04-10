@@ -132,6 +132,7 @@ impl ChannelsManager {
         Duration::from_secs(secs)
     }
 
+    #[tracing::instrument(skip(config, log_level), fields(channel_id = %channel_id), name = "channel_init_handshake")]
     async fn spawn_and_initialize(
         config: &ChannelConfig,
         channel_id: &ChannelId,

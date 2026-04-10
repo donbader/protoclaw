@@ -43,6 +43,7 @@ impl AggregatedToolServer {
         }
     }
 
+    #[tracing::instrument(skip(self), name = "aggregate_tool_list")]
     async fn aggregate_tool_list(&self) -> Vec<RmcpTool> {
         let mut tools = self.native_host.tool_list();
         for ext in self.external_servers.iter() {
@@ -601,5 +602,55 @@ mod tests {
         for h in &m.server_handles {
             h.abort();
         }
+    }
+
+    #[tokio::test]
+    async fn when_route_call_with_unknown_tool_then_error_contains_tool_name() {
+        let host = Arc::new(McpHost::new(vec![]));
+        let ext = Arc::new(vec![]);
+        let agg = AggregatedToolServer::new(host, ext);
+
+        let result = agg.route_call("my-missing-tool", None).await;
+        let err = result.unwrap_err();
+        let msg = err.message;
+        assert!(
+            msg.contains("my-missing-tool"),
+            "error message should contain the tool name, got: {msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn when_native_tool_exists_then_route_call_dispatches_to_native_not_external() {
+        let tools: Vec<Box<dyn Tool>> = vec![
+            Box::new(DummyTool { tool_name: "native-only".into() }),
+        ];
+        let host = Arc::new(McpHost::new(tools));
+        let ext = Arc::new(vec![]);
+        let agg = AggregatedToolServer::new(host, ext);
+
+        let result = agg.route_call("native-only", None).await;
+        assert!(result.is_ok(), "native tool should be found and dispatched");
+    }
+
+    #[tokio::test]
+    async fn when_no_external_servers_then_aggregate_list_equals_native_list() {
+        let tools: Vec<Box<dyn Tool>> = vec![
+            Box::new(DummyTool { tool_name: "alpha".into() }),
+            Box::new(DummyTool { tool_name: "beta".into() }),
+        ];
+        let host = Arc::new(McpHost::new(tools));
+        let native_list = host.tool_list();
+        let ext = Arc::new(vec![]);
+        let agg = AggregatedToolServer::new(host, ext);
+
+        let agg_list = agg.aggregate_tool_list().await;
+        assert_eq!(
+            agg_list.len(),
+            native_list.len(),
+            "aggregate list should equal native list when no external servers"
+        );
+        let agg_names: Vec<&str> = agg_list.iter().map(|t| t.name.as_ref()).collect();
+        let native_names: Vec<&str> = native_list.iter().map(|t| t.name.as_ref()).collect();
+        assert_eq!(agg_names, native_names);
     }
 }
