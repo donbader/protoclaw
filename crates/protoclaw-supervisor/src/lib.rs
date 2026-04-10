@@ -28,6 +28,7 @@ struct ManagerSlot {
     join_handle: Option<tokio::task::JoinHandle<Result<(), ManagerError>>>,
     backoff: ExponentialBackoff,
     crash_tracker: CrashTracker,
+    disabled: bool,
 }
 
 const MANAGER_ORDER: [&str; 3] = ["tools", "agents", "channels"];
@@ -115,12 +116,13 @@ impl Supervisor {
         for &name in &MANAGER_ORDER {
             let child_token = cancel.child_token();
             slots.push(ManagerSlot {
-                name: name.to_string(),
-                cancel_token: child_token,
-                join_handle: None,
-                backoff: ExponentialBackoff::default(),
-                crash_tracker: CrashTracker::new(max_restarts, restart_window),
-            });
+                            name: name.to_string(),
+                            cancel_token: child_token,
+                            join_handle: None,
+                            backoff: ExponentialBackoff::default(),
+                            crash_tracker: CrashTracker::new(max_restarts, restart_window),
+                            disabled: false,
+                        });
         }
 
         if let Err(e) = self.boot_managers(&mut slots).await {
@@ -276,8 +278,16 @@ impl Supervisor {
             if slot.crash_tracker.is_crash_loop() {
                 tracing::error!(
                     manager = %slot.name,
-                    "crash loop detected, not restarting"
+                    "crash loop detected, marking disabled"
                 );
+                slot.disabled = true;
+                if slot.name == "agents" || slot.name == "channels" {
+                    tracing::error!(
+                        manager = %slot.name,
+                        "critical manager crash loop — initiating shutdown"
+                    );
+                    root_cancel.cancel();
+                }
                 continue;
             }
 
@@ -491,12 +501,13 @@ mod tests {
         let mut slots = Vec::with_capacity(3);
         for &name in &MANAGER_ORDER {
             slots.push(ManagerSlot {
-                name: name.to_string(),
-                cancel_token: cancel.child_token(),
-                join_handle: None,
-                backoff: ExponentialBackoff::default(),
-                crash_tracker: CrashTracker::default(),
-            });
+                            name: name.to_string(),
+                            cancel_token: cancel.child_token(),
+                            join_handle: None,
+                            backoff: ExponentialBackoff::default(),
+                            crash_tracker: CrashTracker::default(),
+                            disabled: false,
+                        });
         }
 
         sup.boot_managers(&mut slots).await.unwrap();
@@ -530,12 +541,13 @@ mod tests {
                 Ok::<(), ManagerError>(())
             });
             slots.push(ManagerSlot {
-                name: name.to_string(),
-                cancel_token: token,
-                join_handle: Some(handle),
-                backoff: ExponentialBackoff::default(),
-                crash_tracker: CrashTracker::default(),
-            });
+                            name: name.to_string(),
+                            cancel_token: token,
+                            join_handle: Some(handle),
+                            backoff: ExponentialBackoff::default(),
+                            crash_tracker: CrashTracker::default(),
+                            disabled: false,
+                        });
         }
 
         sup.shutdown_ordered(&mut slots, per_manager_timeout).await;
@@ -559,12 +571,13 @@ mod tests {
                 Ok::<(), ManagerError>(())
             });
             slots.push(ManagerSlot {
-                name: name.to_string(),
-                cancel_token: token,
-                join_handle: Some(handle),
-                backoff: ExponentialBackoff::default(),
-                crash_tracker: CrashTracker::default(),
-            });
+                            name: name.to_string(),
+                            cancel_token: token,
+                            join_handle: Some(handle),
+                            backoff: ExponentialBackoff::default(),
+                            crash_tracker: CrashTracker::default(),
+                            disabled: false,
+                        });
         }
 
         let start = tokio::time::Instant::now();
@@ -585,12 +598,13 @@ mod tests {
             Ok::<(), ManagerError>(())
         });
         slots.push(ManagerSlot {
-            name: "stuck".to_string(),
-            cancel_token: token,
-            join_handle: Some(handle),
-            backoff: ExponentialBackoff::default(),
-            crash_tracker: CrashTracker::default(),
-        });
+                        name: "stuck".to_string(),
+                        cancel_token: token,
+                        join_handle: Some(handle),
+                        backoff: ExponentialBackoff::default(),
+                        crash_tracker: CrashTracker::default(),
+                        disabled: false,
+                    });
 
         let start = tokio::time::Instant::now();
         sup.shutdown_ordered(&mut slots, per_manager_timeout).await;
@@ -611,12 +625,13 @@ mod tests {
             Err::<(), ManagerError>(ManagerError::Internal("crash".into()))
         });
         slots.push(ManagerSlot {
-            name: "tools".to_string(),
-            cancel_token: token,
-            join_handle: Some(handle),
-            backoff: ExponentialBackoff::default(),
-            crash_tracker: CrashTracker::new(5, Duration::from_secs(60)),
-        });
+                        name: "tools".to_string(),
+                        cancel_token: token,
+                        join_handle: Some(handle),
+                        backoff: ExponentialBackoff::default(),
+                        crash_tracker: CrashTracker::new(5, Duration::from_secs(60)),
+                        disabled: false,
+                    });
 
         tokio::time::sleep(Duration::from_millis(50)).await;
 
@@ -652,6 +667,7 @@ mod tests {
             join_handle: Some(handle),
             backoff: ExponentialBackoff::default(),
             crash_tracker,
+            disabled: false,
         });
 
         tokio::time::sleep(Duration::from_millis(50)).await;
@@ -721,12 +737,13 @@ mod tests {
             Err::<(), ManagerError>(ManagerError::Internal("crash".into()))
         });
         slots.push(ManagerSlot {
-            name: "tools".to_string(),
-            cancel_token: token,
-            join_handle: Some(handle),
-            backoff: ExponentialBackoff::default(),
-            crash_tracker: CrashTracker::new(10, Duration::from_secs(60)),
-        });
+                        name: "tools".to_string(),
+                        cancel_token: token,
+                        join_handle: Some(handle),
+                        backoff: ExponentialBackoff::default(),
+                        crash_tracker: CrashTracker::new(10, Duration::from_secs(60)),
+                        disabled: false,
+                    });
 
         tokio::time::sleep(Duration::from_millis(50)).await;
         sup.check_and_restart_managers(&mut slots, &cancel).await;

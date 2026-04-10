@@ -12,6 +12,57 @@ use crate::formatting::{close_open_tags, escape_html, format_telegram_html};
 use crate::state::SharedState;
 use crate::turn::{ChatTurn, TurnPhase};
 
+const MAX_RETRY_ATTEMPTS: u32 = 3;
+const RETRY_BASE_DELAY_MS: u64 = 500;
+
+async fn retry_telegram_op<F, Fut, T>(
+    op_name: &str,
+    chat_id: i64,
+    f: F,
+) -> Result<T, teloxide::RequestError>
+where
+    F: Fn() -> Fut,
+    Fut: std::future::Future<Output = Result<T, teloxide::RequestError>>,
+{
+    let mut last_err = None;
+    for attempt in 0..MAX_RETRY_ATTEMPTS {
+        match f().await {
+            Ok(val) => return Ok(val),
+            Err(e) => {
+                let is_retryable = matches!(
+                    &e,
+                    teloxide::RequestError::RetryAfter(_) | teloxide::RequestError::Network(_)
+                );
+                if !is_retryable || attempt + 1 == MAX_RETRY_ATTEMPTS {
+                    tracing::warn!(
+                        op = op_name,
+                        chat_id,
+                        attempt = attempt + 1,
+                        error = %e,
+                        "telegram API call failed (final)"
+                    );
+                    return Err(e);
+                }
+                let delay = match &e {
+                    teloxide::RequestError::RetryAfter(seconds) => seconds.duration(),
+                    _ => std::time::Duration::from_millis(RETRY_BASE_DELAY_MS * 2u64.pow(attempt)),
+                };
+                tracing::debug!(
+                    op = op_name,
+                    chat_id,
+                    attempt = attempt + 1,
+                    delay_ms = delay.as_millis() as u64,
+                    error = %e,
+                    "telegram API call failed, retrying"
+                );
+                tokio::time::sleep(delay).await;
+                last_err = Some(e);
+            }
+        }
+    }
+    Err(last_err.expect("loop ran at least once"))
+}
+
 struct PendingFlush {
     response: Option<(String, i32)>,
     thought_collapse: Option<(i32, f32)>,
@@ -33,13 +84,16 @@ async fn send_flush(bot: &Bot, state: &Arc<SharedState>, chat_id: i64, flush: &P
             tracing::debug!(chat_id, msg_id, buf_len = text.len(), "flush: sending final edit before cleanup");
             let formatted = format_telegram_html(text);
             let chunks = split_message(&formatted, 4096);
-            if let Err(e) = bot
-                .edit_message_text(ChatId(chat_id), MessageId(msg_id), &chunks[0])
-                .parse_mode(ParseMode::Html)
-                .await
-            {
-                tracing::warn!(%e, chat_id, msg_id, "flush: final edit failed");
-            }
+            let chunk0 = chunks[0].clone();
+            let _ = retry_telegram_op("flush_final_edit", chat_id, || {
+                let chunk0 = chunk0.clone();
+                async move {
+                    bot.edit_message_text(ChatId(chat_id), MessageId(msg_id), &chunk0)
+                        .parse_mode(ParseMode::Html)
+                        .await
+                }
+            })
+            .await;
             for chunk in chunks.iter().skip(1) {
                 let _ = bot.send_message(ChatId(chat_id), chunk)
                     .parse_mode(ParseMode::Html)
@@ -229,20 +283,22 @@ pub async fn deliver_to_chat(
             let thought_text = format!("{emoji} {}", escape_html(&accumulated));
 
             if existing_thought_msg_id == 0 {
-                match bot.send_message(ChatId(chat_id), &thought_text)
-                    .parse_mode(ParseMode::Html)
-                    .await
-                {
-                    Ok(sent) => {
-                        let mut turns = state.turns.write().await;
-                        if let Some(turn) = turns.get_mut(&chat_id) {
-                            if let Some(track) = turn.thought.as_mut() {
-                                track.msg_id = sent.id.0;
-                            }
-                        }
+                let thought_text_clone = thought_text.clone();
+                if let Ok(sent) = retry_telegram_op("send_thought_message", chat_id, || {
+                    let thought_text_clone = thought_text_clone.clone();
+                    async move {
+                        bot.send_message(ChatId(chat_id), &thought_text_clone)
+                            .parse_mode(ParseMode::Html)
+                            .await
                     }
-                    Err(e) => {
-                        tracing::warn!(%e, "failed to send thinking message");
+                })
+                .await
+                {
+                    let mut turns = state.turns.write().await;
+                    if let Some(turn) = turns.get_mut(&chat_id) {
+                        if let Some(track) = turn.thought.as_mut() {
+                            track.msg_id = sent.id.0;
+                        }
                     }
                 }
             } else {
@@ -411,35 +467,40 @@ pub async fn deliver_to_chat(
                 if can_edit {
                     let formatted = close_open_tags(&format_telegram_html(&accumulated));
                     let chunks = split_message(&formatted, 4096);
-                    if let Err(e) = bot
-                        .edit_message_text(
-                            ChatId(chat_id),
-                            MessageId(existing_response_msg_id),
-                            &chunks[0],
-                        )
-                        .parse_mode(ParseMode::Html)
-                        .await
-                    {
-                        tracing::warn!(%e, chat_id, "failed to edit message chunk");
-                    }
+                    let chunk0 = chunks[0].clone();
+                    let _ = retry_telegram_op("edit_response_chunk", chat_id, || {
+                        let chunk0 = chunk0.clone();
+                        async move {
+                            bot.edit_message_text(
+                                ChatId(chat_id),
+                                MessageId(existing_response_msg_id),
+                                &chunk0,
+                            )
+                            .parse_mode(ParseMode::Html)
+                            .await
+                        }
+                    })
+                    .await;
                 }
             } else {
                 let formatted = close_open_tags(&format_telegram_html(&accumulated));
                 let chunks = split_message(&formatted, 4096);
-                match bot.send_message(ChatId(chat_id), &chunks[0])
-                    .parse_mode(ParseMode::Html)
-                    .await
-                {
-                    Ok(sent) => {
-                        let mut turns = state.turns.write().await;
-                        if let Some(turn) = turns.get_mut(&chat_id) {
-                            if let Some(track) = turn.response.as_mut() {
-                                track.msg_id = sent.id.0;
-                            }
-                        }
+                let chunk0 = chunks[0].clone();
+                if let Ok(sent) = retry_telegram_op("send_response_chunk", chat_id, || {
+                    let chunk0 = chunk0.clone();
+                    async move {
+                        bot.send_message(ChatId(chat_id), &chunk0)
+                            .parse_mode(ParseMode::Html)
+                            .await
                     }
-                    Err(e) => {
-                        tracing::warn!(%e, "failed to send message chunk");
+                })
+                .await
+                {
+                    let mut turns = state.turns.write().await;
+                    if let Some(turn) = turns.get_mut(&chat_id) {
+                        if let Some(track) = turn.response.as_mut() {
+                            track.msg_id = sent.id.0;
+                        }
                     }
                 }
             }
@@ -491,13 +552,19 @@ pub async fn deliver_to_chat(
                 if thought_msg_id != 0 {
                     let emoji = thought_emoji(state).await;
                     let collapse_text = format!("{emoji} Thought for {elapsed_secs:.1}s");
-                    if let Err(e) = bot
-                        .edit_message_text(ChatId(chat_id), MessageId(thought_msg_id), &collapse_text)
-                        .parse_mode(ParseMode::Html)
-                        .await
-                    {
-                        tracing::warn!(%e, chat_id, "failed to collapse thinking message");
-                    }
+                    let _ = retry_telegram_op("collapse_thought", chat_id, || {
+                        let collapse_text = collapse_text.clone();
+                        async move {
+                            bot.edit_message_text(
+                                ChatId(chat_id),
+                                MessageId(thought_msg_id),
+                                &collapse_text,
+                            )
+                            .parse_mode(ParseMode::Html)
+                            .await
+                        }
+                    })
+                    .await;
                 }
             }
 
@@ -537,13 +604,18 @@ pub async fn deliver_to_chat(
                     if !text.is_empty() && msg_id != 0 {
                         let formatted = format_telegram_html(&text);
                         let final_chunks = split_message(&formatted, 4096);
-                        if let Err(e) = bot_clone
-                            .edit_message_text(ChatId(chat_id), MessageId(msg_id), &final_chunks[0])
-                            .parse_mode(ParseMode::Html)
-                            .await
-                        {
-                            tracing::warn!(%e, chat_id, "failed to finalize message edit");
-                        }
+                        let chunk0 = final_chunks[0].clone();
+                        let _ = retry_telegram_op("finalize_message_edit", chat_id, || {
+                            let chunk0 = chunk0.clone();
+                            let bot_clone = bot_clone.clone();
+                            async move {
+                                bot_clone
+                                    .edit_message_text(ChatId(chat_id), MessageId(msg_id), &chunk0)
+                                    .parse_mode(ParseMode::Html)
+                                    .await
+                            }
+                        })
+                        .await;
                         for chunk in final_chunks.iter().skip(1) {
                             if let Err(e) = bot_clone.send_message(ChatId(chat_id), chunk)
                                 .parse_mode(ParseMode::Html)

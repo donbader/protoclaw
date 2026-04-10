@@ -158,11 +158,16 @@ impl AgentConnection {
                     let id = value["id"].as_u64().unwrap_or(0);
                     let mut pending = pending_for_reader.lock().await;
                     if let Some(tx) = pending.remove(&id) {
-                        let result = value
-                            .get("result")
-                            .cloned()
-                            .unwrap_or(serde_json::Value::Null);
-                        let _ = tx.send(result);
+                        if let Some(error) = value.get("error").cloned() {
+                            tracing::warn!(id, error = %error, "agent returned JSON-RPC error");
+                            let _ = tx.send(serde_json::json!({"__jsonrpc_error": error}));
+                        } else {
+                            let result = value
+                                .get("result")
+                                .cloned()
+                                .unwrap_or(serde_json::Value::Null);
+                            let _ = tx.send(result);
+                        }
                     }
                 } else if has_method {
                     let msg = if has_id {

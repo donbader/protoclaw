@@ -151,7 +151,10 @@ impl AgentsManager {
             .await
             .map_err(|e| AgentsError::SpawnFailed(format!("tools handle: {e}")))?;
 
-        let urls: Vec<McpServerUrl> = reply_rx.await.unwrap_or_default();
+        let urls: Vec<McpServerUrl> = reply_rx.await.unwrap_or_else(|_| {
+            tracing::warn!("tools handle dropped before providing MCP URLs — agent will start with no tools");
+            Vec::new()
+        });
 
         let mcp_servers: Vec<McpServerInfo> = urls
             .iter()
@@ -327,10 +330,26 @@ impl AgentsManager {
 
         {
             let completion_tx = self.completion_tx.clone();
+            let channels_tx = self.channels_sender.clone();
             let sk = session_key.clone();
             tokio::spawn(async move {
                 match response_rx.await {
-                    Ok(_response) => {
+                    Ok(response) => {
+                        // Check if the agent returned a JSON-RPC error
+                        if let Some(error) = response.get("__jsonrpc_error") {
+                            let msg = error["message"].as_str().unwrap_or("agent error");
+                            tracing::warn!(session_key = %sk, error = %error, "agent returned error for prompt");
+                            if let Some(sender) = &channels_tx {
+                                let error_content = serde_json::json!({
+                                    "error": msg,
+                                    "update": { "sessionUpdate": "result" }
+                                });
+                                let _ = sender.send(ChannelEvent::DeliverMessage {
+                                    session_key: sk.clone(),
+                                    content: error_content,
+                                }).await;
+                            }
+                        }
                         let _ = completion_tx.send(PromptCompletion {
                             session_key: sk,
                         }).await;
@@ -400,6 +419,21 @@ impl AgentsManager {
                     }
                     Err(e) => {
                         tracing::warn!(error = %e, raw_params = %params, seq, "session/update deserialization FAILED — update dropped");
+                        // Forward a synthetic error to the channel so the session doesn't hang
+                        if let Some(session_id) = params.get("sessionId").and_then(|v| v.as_str()) {
+                            if let Some(session_key) = self.slots[slot_idx].reverse_map.get(session_id).cloned() {
+                                if let Some(sender) = &self.channels_sender {
+                                    let error_content = serde_json::json!({
+                                        "error": format!("Agent sent malformed update: {e}"),
+                                        "update": { "sessionUpdate": "result" }
+                                    });
+                                    let _ = sender.send(ChannelEvent::DeliverMessage {
+                                        session_key,
+                                        content: error_content,
+                                    }).await;
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -431,7 +465,10 @@ impl AgentsManager {
         let options: Vec<PermissionOption> = params
             .get("options")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
-            .unwrap_or_default();
+            .unwrap_or_else(|| {
+                tracing::warn!(%request_id, "malformed permission options, using empty list");
+                Vec::new()
+            });
 
         tracing::info!(agent = %self.slots[slot_idx].name(), %request_id, %description, "permission requested");
 
@@ -529,7 +566,10 @@ impl AgentsManager {
             if !already_got_result {
                 let acp_session_id = self.slots.iter()
                     .find_map(|slot| slot.session_map.get(&completion.session_key).cloned())
-                    .unwrap_or_default();
+                    .unwrap_or_else(|| {
+                        tracing::warn!(session_key = %completion.session_key, "no acp_session_id in reverse_map for synthetic result");
+                        String::new()
+                    });
 
                 let synthetic_result = serde_json::json!({
                     "sessionId": acp_session_id,

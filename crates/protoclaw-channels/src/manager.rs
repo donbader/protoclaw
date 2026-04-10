@@ -311,7 +311,10 @@ impl ChannelsManager {
                     let agent_name = self.routing_table
                         .get(&session_key)
                         .map(|e| e.agent_name.clone())
-                        .unwrap_or_default();
+                        .unwrap_or_else(|| {
+                            tracing::warn!(session_key = %session_key, "no agent_name in routing table for SessionComplete");
+                            String::new()
+                        });
 
                     // Drain remaining queued messages and merge with the first
                     // so the agent receives one combined prompt instead of N separate turns.
@@ -512,10 +515,28 @@ impl ChannelsManager {
                             }
                             Ok(Err(e)) => {
                                 tracing::error!(channel = %channel_name, error = %e, "CreateSession failed");
+                                if let Some(conn) = &self.slots[slot_index].connection {
+                                    let error_params = serde_json::json!({
+                                        "sessionId": "",
+                                        "content": format!("⚠️ Failed to create session: {e}"),
+                                    });
+                                    if let Err(notify_err) = conn.send_notification("channel/deliverMessage", error_params).await {
+                                        tracing::warn!(channel = %channel_name, error = %notify_err, "failed to send session error to channel");
+                                    }
+                                }
                                 return None;
                             }
                             Err(_) => {
                                 tracing::error!(channel = %channel_name, "CreateSession reply dropped");
+                                if let Some(conn) = &self.slots[slot_index].connection {
+                                    let error_params = serde_json::json!({
+                                        "sessionId": "",
+                                        "content": "⚠️ Failed to create session: internal error (reply dropped)",
+                                    });
+                                    if let Err(notify_err) = conn.send_notification("channel/deliverMessage", error_params).await {
+                                        tracing::warn!(channel = %channel_name, error = %notify_err, "failed to send session error to channel");
+                                    }
+                                }
                                 return None;
                             }
                         }
@@ -576,7 +597,10 @@ impl ChannelsManager {
             let agent_name = self.routing_table
                 .get(session_key)
                 .map(|e| e.agent_name.clone())
-                .unwrap_or_default();
+                .unwrap_or_else(|| {
+                    tracing::warn!(session_key = %session_key, "no agent_name in routing table for flush_and_dispatch");
+                    String::new()
+                });
 
             let count = merged.matches('\n').count() + 1;
             if count > 1 {
