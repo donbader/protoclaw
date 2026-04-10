@@ -2,15 +2,15 @@ log_level: "info"
 log_format: "pretty"
 extensions_dir: "/usr/local/bin"
 
-agents-manager:
+agents_manager:
   acp_timeout_secs: 30
   shutdown_grace_ms: 100
 
-channels-manager:
+channels_manager:
   init_timeout_secs: 10
   exit_timeout_secs: 5
 
-tools-manager: {}
+tools_manager: {}
 
 supervisor:
   shutdown_timeout_secs: 30

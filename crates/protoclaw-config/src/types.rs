@@ -17,11 +17,11 @@ pub struct ProtoclawConfig {
     pub log_format: String,
     #[serde(default = "default_extensions_dir")]
     pub extensions_dir: String,
-    #[serde(rename = "agents-manager", default)]
+    #[serde(alias = "agents-manager", default)]
     pub agents_manager: AgentsManagerConfig,
-    #[serde(rename = "channels-manager", default)]
+    #[serde(alias = "channels-manager", default)]
     pub channels_manager: ChannelsManagerConfig,
-    #[serde(rename = "tools-manager", default)]
+    #[serde(alias = "tools-manager", default)]
     pub tools_manager: ToolsManagerConfig,
     #[serde(default)]
     pub supervisor: SupervisorConfig,
@@ -474,7 +474,7 @@ mod tests {
     #[test]
     fn when_agents_manager_has_agents_then_parses_named_map_with_workspace() {
         let yaml = r#"
-agents-manager:
+agents_manager:
   agents:
     opencode:
       workspace:
@@ -512,7 +512,7 @@ agents-manager:
     #[test]
     fn when_channel_config_parsed_then_name_comes_from_map_key() {
         let yaml = r#"
-channels-manager:
+channels_manager:
   channels:
     debug-http:
       binary: "debug-http"
@@ -572,7 +572,7 @@ channels-manager:
     #[test]
     fn when_channel_has_nested_ack_config_then_parses_correctly() {
         let yaml = r#"
-channels-manager:
+channels_manager:
   channels:
     telegram:
       binary: "telegram-channel"
@@ -593,7 +593,7 @@ channels-manager:
     #[test]
     fn when_tool_has_no_type_field_then_defaults_to_mcp() {
         let yaml = r#"
-tools-manager:
+tools_manager:
   tools:
     filesystem:
       binary: "mcp-server-filesystem"
@@ -611,7 +611,7 @@ tools-manager:
     #[test]
     fn when_tool_type_is_wasm_then_module_and_sandbox_parsed() {
         let yaml = r#"
-tools-manager:
+tools_manager:
   tools:
     my-tool:
       tool_type: "wasm"
@@ -709,7 +709,7 @@ options:
     #[test]
     fn when_multiple_agents_present_then_default_agent_name_returns_first_enabled() {
         let yaml = r#"
-agents-manager:
+agents_manager:
   agents:
     disabled-one:
       workspace:
@@ -730,6 +730,54 @@ agents-manager:
         let yaml = "";
         let config: ProtoclawConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(config.default_agent_name(), None);
+    }
+
+    #[test]
+    fn when_manager_keys_are_snake_case_then_parses_correctly() {
+        let yaml = r#"
+agents_manager:
+  agents:
+    default:
+      workspace:
+        type: local
+        binary: "opencode"
+channels_manager:
+  channels:
+    debug-http:
+      binary: "debug-http"
+tools_manager:
+  tools:
+    filesystem:
+      binary: "mcp-server-filesystem"
+"#;
+        let config: ProtoclawConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(config.agents_manager.agents.len(), 1);
+        assert_eq!(config.channels_manager.channels.len(), 1);
+        assert_eq!(config.tools_manager.tools.len(), 1);
+    }
+
+    #[test]
+    fn when_manager_keys_are_hyphenated_then_backward_compat_alias_parses_correctly() {
+        let yaml = r#"
+agents-manager:
+  agents:
+    default:
+      workspace:
+        type: local
+        binary: "opencode"
+channels-manager:
+  channels:
+    debug-http:
+      binary: "debug-http"
+tools-manager:
+  tools:
+    filesystem:
+      binary: "mcp-server-filesystem"
+"#;
+        let config: ProtoclawConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(config.agents_manager.agents.len(), 1);
+        assert_eq!(config.channels_manager.channels.len(), 1);
+        assert_eq!(config.tools_manager.tools.len(), 1);
     }
 
     #[test]
@@ -788,7 +836,7 @@ env:
 log_level: "info"
 extensions_dir: "/usr/local/bin"
 
-agents-manager:
+agents_manager:
   agents:
     opencode:
       workspace:
@@ -799,7 +847,7 @@ agents-manager:
       tools:
         - "system-info"
 
-channels-manager:
+channels_manager:
   debounce:
     enabled: true
     window_ms: 1000
@@ -813,7 +861,7 @@ channels-manager:
     debug-http:
       binary: "@built-in/debug-http"
 
-tools-manager:
+tools_manager:
   tools:
     system-info:
       binary: "@built-in/system-info"
@@ -888,7 +936,7 @@ supervisor:
     #[test]
     fn when_agent_has_per_agent_timeout_and_backoff_then_all_parsed() {
         let yaml = r#"
-agents-manager:
+agents_manager:
   agents:
     slow-agent:
       workspace:
@@ -916,7 +964,7 @@ agents-manager:
     #[test]
     fn when_channel_has_per_channel_timeout_and_backoff_then_all_parsed() {
         let yaml = r#"
-channels-manager:
+channels_manager:
   channels:
     flaky-channel:
       binary: "flaky"

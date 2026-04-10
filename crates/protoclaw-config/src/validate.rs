@@ -36,6 +36,8 @@ pub enum ValidationError {
     InvalidDockerHost { field: String, value: String },
     #[error("{field}: volume entry '{value}' missing ':' separator")]
     InvalidVolumeMount { field: String, value: String },
+    #[error("{field}: invalid hostname or IP '{value}'")]
+    InvalidToolsServerHost { field: String, value: String },
 }
 
 #[derive(Debug, Clone)]
@@ -77,16 +79,45 @@ fn binary_exists(binary: &str) -> bool {
     }
 }
 
+fn is_valid_host(host: &str) -> bool {
+    if host.is_empty() {
+        return false;
+    }
+    // Accept raw IP addresses (IPv4 and IPv6).
+    if host.parse::<std::net::IpAddr>().is_ok() {
+        return true;
+    }
+    // RFC 1123 hostname: total length ≤ 253, labels separated by '.', each label
+    // 1–63 chars, only alphanumerics and hyphens, no leading/trailing hyphen.
+    if host.len() > 253 {
+        return false;
+    }
+    host.split('.').all(|label| {
+        !label.is_empty()
+            && label.len() <= 63
+            && label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+            && !label.starts_with('-')
+            && !label.ends_with('-')
+    })
+}
+
 pub fn validate_config(config: &ProtoclawConfig) -> ValidationResult {
     let mut errors = Vec::new();
     let warnings = Vec::new();
+
+    if !is_valid_host(&config.tools_manager.tools_server_host) {
+        errors.push(ValidationError::InvalidToolsServerHost {
+            field: "tools_manager.tools_server_host".to_string(),
+            value: config.tools_manager.tools_server_host.clone(),
+        });
+    }
 
     for (name, agent) in &config.agents_manager.agents {
         match &agent.workspace {
             crate::WorkspaceConfig::Local(local) => {
                 if !binary_exists(&local.binary) {
                     errors.push(ValidationError::BinaryNotFound {
-                        field: format!("agents-manager.agents.{name}.workspace.binary"),
+                        field: format!("agents_manager.agents.{name}.workspace.binary"),
                         binary: local.binary.clone(),
                     });
                 }
@@ -100,7 +131,7 @@ pub fn validate_config(config: &ProtoclawConfig) -> ValidationResult {
                 if let Some(ref mem) = docker.memory_limit {
                     if let Err(e) = crate::parse_memory_limit(mem) {
                         errors.push(ValidationError::InvalidMemoryLimit {
-                            field: format!("agents-manager.agents.{name}.workspace.memory_limit"),
+                            field: format!("agents_manager.agents.{name}.workspace.memory_limit"),
                             value: mem.clone(),
                             reason: e.to_string(),
                         });
@@ -109,7 +140,7 @@ pub fn validate_config(config: &ProtoclawConfig) -> ValidationResult {
                 if let Some(ref cpu) = docker.cpu_limit {
                     if let Err(e) = crate::parse_cpu_limit(cpu) {
                         errors.push(ValidationError::InvalidCpuLimit {
-                            field: format!("agents-manager.agents.{name}.workspace.cpu_limit"),
+                            field: format!("agents_manager.agents.{name}.workspace.cpu_limit"),
                             value: cpu.clone(),
                             reason: e.to_string(),
                         });
@@ -118,7 +149,7 @@ pub fn validate_config(config: &ProtoclawConfig) -> ValidationResult {
                 if let Some(ref host) = docker.docker_host {
                     if !host.starts_with("unix://") && !host.starts_with("tcp://") {
                         errors.push(ValidationError::InvalidDockerHost {
-                            field: format!("agents-manager.agents.{name}.workspace.docker_host"),
+                            field: format!("agents_manager.agents.{name}.workspace.docker_host"),
                             value: host.clone(),
                         });
                     }
@@ -126,7 +157,7 @@ pub fn validate_config(config: &ProtoclawConfig) -> ValidationResult {
                 for vol in &docker.volumes {
                     if !vol.contains(':') {
                         errors.push(ValidationError::InvalidVolumeMount {
-                            field: format!("agents-manager.agents.{name}.workspace.volumes"),
+                            field: format!("agents_manager.agents.{name}.workspace.volumes"),
                             value: vol.clone(),
                         });
                     }
@@ -139,7 +170,7 @@ pub fn validate_config(config: &ProtoclawConfig) -> ValidationResult {
         if let Some(bin) = Some(&ch.binary) {
             if !binary_exists(bin) {
                 errors.push(ValidationError::BinaryNotFound {
-                    field: format!("channels-manager.channels.{name}.binary"),
+                    field: format!("channels_manager.channels.{name}.binary"),
                     binary: ch.binary.clone(),
                 });
             }
@@ -150,7 +181,7 @@ pub fn validate_config(config: &ProtoclawConfig) -> ValidationResult {
         if let Some(ref bin) = tool.binary {
             if !binary_exists(bin) {
                 errors.push(ValidationError::BinaryNotFound {
-                    field: format!("tools-manager.tools.{name}.binary"),
+                    field: format!("tools_manager.tools.{name}.binary"),
                     binary: bin.clone(),
                 });
             }
@@ -513,13 +544,71 @@ mod tests {
     }
 
     #[rstest]
+    #[case::ipv4_loopback("127.0.0.1")]
+    #[case::ipv4_any("0.0.0.0")]
+    #[case::ipv6_loopback("::1")]
+    #[case::localhost("localhost")]
+    #[case::fqdn("my-host.example.com")]
+    #[case::docker_service_name("protoclaw")]
+    #[case::internal_service("tools.internal")]
+    fn when_host_is_valid_then_is_valid_host_returns_true(#[case] host: &str) {
+        assert!(is_valid_host(host), "expected valid host: {:?}", host);
+    }
+
+    #[rstest]
+    #[case::with_space("not a hostname")]
+    #[case::empty("")]
+    #[case::at_sign("host@name")]
+    #[case::leading_hyphen("-invalid")]
+    #[case::trailing_hyphen("invalid-")]
+    #[case::with_slash("host/path")]
+    fn when_host_is_invalid_then_is_valid_host_returns_false(#[case] host: &str) {
+        assert!(!is_valid_host(host), "expected invalid host: {:?}", host);
+    }
+
+    #[test]
+    fn when_tools_server_host_is_invalid_then_validation_returns_error() {
+        let mut config = valid_config();
+        config.tools_manager.tools_server_host = "not a hostname".to_string();
+        let result = validate_config(&config);
+        let has_error = result.errors.iter().any(|e| {
+            matches!(
+                e,
+                ValidationError::InvalidToolsServerHost { field, value }
+                if field == "tools_manager.tools_server_host" && value == "not a hostname"
+            )
+        });
+        assert!(
+            has_error,
+            "expected InvalidToolsServerHost, got: {:?}",
+            result.errors
+        );
+    }
+
+    #[test]
+    fn when_tools_server_host_is_valid_then_validation_produces_no_host_error() {
+        let mut config = valid_config();
+        config.tools_manager.tools_server_host = "127.0.0.1".to_string();
+        let result = validate_config(&config);
+        let has_error = result
+            .errors
+            .iter()
+            .any(|e| matches!(e, ValidationError::InvalidToolsServerHost { .. }));
+        assert!(
+            !has_error,
+            "expected no InvalidToolsServerHost error, got: {:?}",
+            result.errors
+        );
+    }
+
+    #[rstest]
     #[case::binary_not_on_path(
         ValidationWarning::BinaryNotOnPath {
-            field: "agents-manager.agents.default.workspace.binary".into(),
+            field: "agents_manager.agents.default.workspace.binary".into(),
             binary: "mybin".into(),
             found_at: "/opt/mybin".into(),
         },
-        "agents-manager.agents.default.workspace.binary: binary 'mybin' found at /opt/mybin but not on PATH"
+        "agents_manager.agents.default.workspace.binary: binary 'mybin' found at /opt/mybin but not on PATH"
     )]
     fn when_validation_warning_displayed_then_message_matches_expected(
         #[case] warning: ValidationWarning,
@@ -531,10 +620,10 @@ mod tests {
     #[rstest]
     #[case::binary_not_found(
         ValidationError::BinaryNotFound {
-            field: "agents-manager.agents.x.workspace.binary".into(),
+            field: "agents_manager.agents.x.workspace.binary".into(),
             binary: "missing".into(),
         },
-        "agents-manager.agents.x.workspace.binary: binary 'missing' not found on PATH or as absolute path"
+        "agents_manager.agents.x.workspace.binary: binary 'missing' not found on PATH or as absolute path"
     )]
     #[case::working_dir_not_found(
         ValidationError::WorkingDirNotFound { path: std::path::PathBuf::from("/no/such/dir") },
@@ -542,33 +631,40 @@ mod tests {
     )]
     #[case::invalid_memory_limit(
         ValidationError::InvalidMemoryLimit {
-            field: "agents-manager.agents.x.workspace.memory_limit".into(),
+            field: "agents_manager.agents.x.workspace.memory_limit".into(),
             value: "bad".into(),
             reason: "unrecognised suffix".into(),
         },
-        "agents-manager.agents.x.workspace.memory_limit: invalid memory limit 'bad': unrecognised suffix"
+        "agents_manager.agents.x.workspace.memory_limit: invalid memory limit 'bad': unrecognised suffix"
     )]
     #[case::invalid_cpu_limit(
         ValidationError::InvalidCpuLimit {
-            field: "agents-manager.agents.x.workspace.cpu_limit".into(),
+            field: "agents_manager.agents.x.workspace.cpu_limit".into(),
             value: "notnum".into(),
             reason: "not a float".into(),
         },
-        "agents-manager.agents.x.workspace.cpu_limit: invalid cpu limit 'notnum': not a float"
+        "agents_manager.agents.x.workspace.cpu_limit: invalid cpu limit 'notnum': not a float"
     )]
     #[case::invalid_docker_host(
         ValidationError::InvalidDockerHost {
-            field: "agents-manager.agents.x.workspace.docker_host".into(),
+            field: "agents_manager.agents.x.workspace.docker_host".into(),
             value: "http://bad".into(),
         },
-        "agents-manager.agents.x.workspace.docker_host: invalid docker_host URI 'http://bad' (expected unix:// or tcp://)"
+        "agents_manager.agents.x.workspace.docker_host: invalid docker_host URI 'http://bad' (expected unix:// or tcp://)"
     )]
     #[case::invalid_volume_mount(
         ValidationError::InvalidVolumeMount {
-            field: "agents-manager.agents.x.workspace.volumes".into(),
+            field: "agents_manager.agents.x.workspace.volumes".into(),
             value: "nocolon".into(),
         },
-        "agents-manager.agents.x.workspace.volumes: volume entry 'nocolon' missing ':' separator"
+        "agents_manager.agents.x.workspace.volumes: volume entry 'nocolon' missing ':' separator"
+    )]
+    #[case::invalid_tools_server_host(
+        ValidationError::InvalidToolsServerHost {
+            field: "tools_manager.tools_server_host".into(),
+            value: "not a hostname".into(),
+        },
+        "tools_manager.tools_server_host: invalid hostname or IP 'not a hostname'"
     )]
     fn when_validation_error_displayed_then_message_matches_expected(
         #[case] error: ValidationError,

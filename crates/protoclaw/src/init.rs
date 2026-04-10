@@ -21,7 +21,7 @@ pub fn generate_config_yaml(agent_binary: &str) -> String {
         r#"# Protoclaw configuration
 # Docs: https://github.com/user/protoclaw
 
-agents-manager:
+agents_manager:
   agents:
     default:
       workspace:
@@ -31,7 +31,7 @@ agents-manager:
         - "acp"
 
 # Channel subprocesses
-channels-manager:
+channels_manager:
   channels:
     debug-http:
       binary: "protoclaw-debug-http"
@@ -40,7 +40,7 @@ channels-manager:
         - "3000"
 
 # MCP tool servers (uncomment to add)
-# tools-manager:
+# tools_manager:
 #   tools:
 #     filesystem:
 #       binary: "mcp-server-filesystem"
@@ -115,7 +115,7 @@ mod tests {
     #[test]
     fn when_generate_config_yaml_called_then_contains_agents_manager_and_supervisor_sections() {
         let yaml = generate_config_yaml("opencode");
-        assert!(yaml.contains("agents-manager:"));
+        assert!(yaml.contains("agents_manager:"));
         assert!(yaml.contains("supervisor:"));
     }
 

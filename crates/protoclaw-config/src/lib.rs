@@ -11,10 +11,7 @@ pub use resolve::*;
 pub use types::*;
 pub use validate::*;
 
-use figment::{
-    providers::{Env, Format},
-    Figment,
-};
+use figment::{providers::Format, Figment};
 
 impl ProtoclawConfig {
     pub fn load(config_path: Option<&str>) -> Result<Self, ConfigError> {
@@ -29,7 +26,6 @@ impl ProtoclawConfig {
 
         let config: Self = Figment::from(figment::providers::Yaml::string(DEFAULTS_YAML))
             .merge(subst_yaml::SubstYaml::file(path))
-            .merge(Env::prefixed("PROTOCLAW_").split("__"))
             .extract()
             .map_err(|e| ConfigError::LoadFailed {
                 path: path.to_string(),
@@ -45,7 +41,6 @@ mod tests {
     use super::*;
     use crate::WorkspaceConfig;
     use figment::Jail;
-    use rstest::rstest;
 
     #[test]
     fn when_valid_config_file_exists_then_loads_all_sections() {
@@ -53,7 +48,7 @@ mod tests {
             jail.create_file(
                 "protoclaw.yaml",
                 r#"
-agents-manager:
+agents_manager:
   agents:
     default:
       workspace:
@@ -62,12 +57,12 @@ agents-manager:
       args:
         - "--headless"
 
-channels-manager:
+channels_manager:
   channels:
     debug-http:
       binary: "protoclaw-debug-http"
 
-tools-manager:
+tools_manager:
   tools:
     filesystem:
       binary: "mcp-server-filesystem"
@@ -118,7 +113,7 @@ supervisor:
         Jail::expect_with(|jail| {
             jail.create_file(
                 "protoclaw.yaml",
-                "agents-manager:\n  agents:\n    default:\n      workspace:\n        type: local\n        binary: \"opencode\"\n",
+                "agents_manager:\n  agents:\n    default:\n      workspace:\n        type: local\n        binary: \"opencode\"\n",
             )?;
             let config = ProtoclawConfig::load(Some("protoclaw.yaml")).unwrap();
             assert_eq!(config.supervisor.shutdown_timeout_secs, 30);
@@ -134,7 +129,7 @@ supervisor:
         Jail::expect_with(|jail| {
             jail.create_file(
                 "protoclaw.yaml",
-                "agents-manager:\n  agents:\n    default:\n      workspace:\n        type: local\n        binary: \"opencode\"\n",
+                "agents_manager:\n  agents:\n    default:\n      workspace:\n        type: local\n        binary: \"opencode\"\n",
             )?;
             let config = ProtoclawConfig::load(Some("protoclaw.yaml")).unwrap();
             assert!(config.channels_manager.channels.is_empty());
@@ -147,24 +142,10 @@ supervisor:
         Jail::expect_with(|jail| {
             jail.create_file(
                 "protoclaw.yaml",
-                "agents-manager:\n  agents:\n    default:\n      workspace:\n        type: local\n        binary: \"opencode\"\n",
+                "agents_manager:\n  agents:\n    default:\n      workspace:\n        type: local\n        binary: \"opencode\"\n",
             )?;
             let config = ProtoclawConfig::load(Some("protoclaw.yaml")).unwrap();
             assert!(config.tools_manager.tools.is_empty());
-            Ok(())
-        });
-    }
-
-    #[test]
-    fn when_env_var_set_then_overrides_supervisor_shutdown_timeout() {
-        Jail::expect_with(|jail| {
-            jail.create_file(
-                "protoclaw.yaml",
-                "agents-manager:\n  agents:\n    default:\n      workspace:\n        type: local\n        binary: \"opencode\"\nsupervisor:\n  shutdown_timeout_secs: 30\n",
-            )?;
-            jail.set_env("PROTOCLAW_SUPERVISOR__SHUTDOWN_TIMEOUT_SECS", "60");
-            let config = ProtoclawConfig::load(Some("protoclaw.yaml")).unwrap();
-            assert_eq!(config.supervisor.shutdown_timeout_secs, 60);
             Ok(())
         });
     }
@@ -174,7 +155,7 @@ supervisor:
         Jail::expect_with(|jail| {
             jail.create_file(
                 "protoclaw.yaml",
-                "agents-manager:\n  agents:\n    default:\n      workspace:\n        type: local\n        binary: \"opencode\"\n      unknown_field: \"should be ignored\"\nsome_future_section:\n  key: \"value\"\n",
+                "agents_manager:\n  agents:\n    default:\n      workspace:\n        type: local\n        binary: \"opencode\"\n      unknown_field: \"should be ignored\"\nsome_future_section:\n  key: \"value\"\n",
             )?;
             let config = ProtoclawConfig::load(Some("protoclaw.yaml"));
             assert!(
@@ -191,7 +172,7 @@ supervisor:
         Jail::expect_with(|jail| {
             jail.create_file(
                 "protoclaw.yaml",
-                "agents-manager:\n  agents:\n    default:\n      workspace:\n        type: local\n        binary: \"opencode\"\n",
+                "agents_manager:\n  agents:\n    default:\n      workspace:\n        type: local\n        binary: \"opencode\"\n",
             )?;
             let config = ProtoclawConfig::load(Some("protoclaw.yaml")).unwrap();
             match &config.agents_manager.agents["default"].workspace {

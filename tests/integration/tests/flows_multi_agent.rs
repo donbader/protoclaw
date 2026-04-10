@@ -66,7 +66,7 @@ async fn given_two_agents_when_channel_routes_to_nonexistent_agent_then_no_echo_
     let events = sse.collect_events(Duration::from_secs(5)).await;
 
     // The message should NOT produce a successful echo from any agent.
-    // Current behavior: channels-manager logs a warning and the message is dropped.
+    // Current behavior: channels_manager logs a warning and the message is dropped.
     let saw_echo = events
         .iter()
         .any(|e| e.data.contains("agent-a:") || e.data.contains("agent-b:"));
