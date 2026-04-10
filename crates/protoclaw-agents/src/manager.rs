@@ -1319,4 +1319,57 @@ mod tests {
         m.shutdown_all().await;
         tools_task.abort();
     }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_fs_read_called_with_valid_path_then_completes_without_panic() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("test.txt");
+        std::fs::write(&file_path, "hello world").unwrap();
+
+        let cancel = CancellationToken::new();
+        let slot = AgentSlot::new("test-agent".into(), mock_agent_config(), &cancel);
+        let request = serde_json::json!({"id": 1, "method": "fs/read_text_file"});
+        let params = serde_json::json!({"path": file_path.to_str().unwrap()});
+
+        AgentsManager::handle_fs_read(&slot, &request, &params).await;
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_fs_read_called_with_nonexistent_path_then_completes_without_panic() {
+        let cancel = CancellationToken::new();
+        let slot = AgentSlot::new("test-agent".into(), mock_agent_config(), &cancel);
+        let request = serde_json::json!({"id": 2, "method": "fs/read_text_file"});
+        let params = serde_json::json!({"path": "/nonexistent/path/file.txt"});
+
+        AgentsManager::handle_fs_read(&slot, &request, &params).await;
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_fs_write_called_with_valid_path_then_file_written() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("output.txt");
+
+        let cancel = CancellationToken::new();
+        let slot = AgentSlot::new("test-agent".into(), mock_agent_config(), &cancel);
+        let request = serde_json::json!({"id": 3, "method": "fs/write_text_file"});
+        let params = serde_json::json!({"path": file_path.to_str().unwrap(), "content": "written content"});
+
+        AgentsManager::handle_fs_write(&slot, &request, &params).await;
+        let content = std::fs::read_to_string(&file_path).unwrap();
+        assert_eq!(content, "written content");
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_fs_write_called_with_invalid_path_then_completes_without_panic() {
+        let cancel = CancellationToken::new();
+        let slot = AgentSlot::new("test-agent".into(), mock_agent_config(), &cancel);
+        let request = serde_json::json!({"id": 4, "method": "fs/write_text_file"});
+        let params = serde_json::json!({"path": "/nonexistent/dir/file.txt", "content": "data"});
+
+        AgentsManager::handle_fs_write(&slot, &request, &params).await;
+    }
 }

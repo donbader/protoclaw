@@ -93,4 +93,24 @@ mod tests {
         let err = result.unwrap_err().to_string();
         assert!(err.contains("bad-server"), "error should contain server name: {err}");
     }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_spawn_called_with_no_binary_then_returns_error() {
+        let config = ToolConfig {
+            tool_type: "mcp".into(),
+            binary: None,
+            args: vec![],
+            enabled: true,
+            module: None,
+            description: String::new(),
+            input_schema: None,
+            sandbox: Default::default(),
+            options: HashMap::new(),
+        };
+        let result = ExternalMcpServer::spawn("no-binary", &config).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("no binary specified"), "error should mention missing binary: {err}");
+    }
 }

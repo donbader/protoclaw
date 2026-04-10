@@ -6,6 +6,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 static PROMPT_COUNT: AtomicUsize = AtomicUsize::new(0);
 static THINK_ENABLED: AtomicBool = AtomicBool::new(true);
 static AGENT_OPTIONS: OnceLock<AgentOptions> = OnceLock::new();
+static MCP_SERVER_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Debug)]
 struct AgentOptions {
@@ -14,6 +15,7 @@ struct AgentOptions {
     request_permission: bool,
     reject_load: bool,
     echo_prefix: String,
+    echo_mcp_count: bool,
 }
 
 impl Default for AgentOptions {
@@ -24,6 +26,7 @@ impl Default for AgentOptions {
             request_permission: false,
             reject_load: false,
             echo_prefix: "Echo".to_string(),
+            echo_mcp_count: false,
         }
     }
 }
@@ -40,6 +43,7 @@ impl AgentOptions {
                 .as_str()
                 .unwrap_or("Echo")
                 .to_string(),
+            echo_mcp_count: options["echo_mcp_count"].as_bool().unwrap_or(false),
         }
     }
 }
@@ -204,6 +208,9 @@ async fn handle_session_new<W: AsyncWrite + Unpin>(stdout: &mut W, id: Option<Va
         return String::new();
     }
 
+    let count = params["mcpServers"].as_array().map(|a| a.len()).unwrap_or(0);
+    MCP_SERVER_COUNT.store(count, Ordering::SeqCst);
+
     let sid = uuid::Uuid::new_v4().to_string();
     let resp = json!({
         "jsonrpc": "2.0",
@@ -274,6 +281,11 @@ async fn handle_session_prompt<W: AsyncWrite + Unpin>(
         .map(|o| o.echo_prefix.as_str())
         .unwrap_or("Echo");
 
+    let echo_mcp_count = AGENT_OPTIONS
+        .get()
+        .map(|o| o.echo_mcp_count)
+        .unwrap_or(false);
+
     let chunk1 = json!({
         "jsonrpc": "2.0",
         "method": "session/update",
@@ -288,6 +300,13 @@ async fn handle_session_prompt<W: AsyncWrite + Unpin>(
     });
     write_message(stdout, &chunk2).await;
 
+    let result_content = if echo_mcp_count {
+        let count = MCP_SERVER_COUNT.load(Ordering::SeqCst);
+        format!("{prefix}: {user_msg} [mcp:{count}]")
+    } else {
+        format!("{prefix}: {user_msg}")
+    };
+
     let result_notif = json!({
         "jsonrpc": "2.0",
         "method": "session/update",
@@ -295,7 +314,7 @@ async fn handle_session_prompt<W: AsyncWrite + Unpin>(
             "sessionId": session_id,
             "update": {
                 "sessionUpdate": "result",
-                "content": format!("{prefix}: {user_msg}")
+                "content": result_content
             }
         }
     });
