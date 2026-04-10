@@ -1,5 +1,6 @@
 # Stage 1: Chef base — install cargo-chef, cached across all builds
-FROM lukemathwalker/cargo-chef:latest-rust-1.91-bookworm AS chef
+# lukemathwalker/cargo-chef:latest-rust-1.91-bookworm
+FROM lukemathwalker/cargo-chef:latest-rust-1.91-bookworm@sha256:beee6a0e6a7fba23540109792737deca7686e3dca811a86ea074b22711cfea83 AS chef
 WORKDIR /build
 
 # Stage 2: Planner — generate recipe.json from workspace manifests
@@ -21,7 +22,8 @@ RUN cargo build --release \
     --bin opencode-wrapper
 
 # Stage 4: Core runtime — protoclaw + all channel binaries (base for examples)
-FROM debian:bookworm-slim AS core
+# debian:bookworm-slim
+FROM debian:bookworm-slim@sha256:4724b8cc51e33e398f0e2e15e18d5ec2851ff0c2280647e1310bc1642182655d AS core
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /build/target/release/protoclaw /usr/local/bin/protoclaw
@@ -34,7 +36,8 @@ WORKDIR /workspace
 ENTRYPOINT ["protoclaw"]
 
 # Stage 5: Mock-agent standalone (for Docker workspace mode)
-FROM debian:bookworm-slim AS mock-agent
+# debian:bookworm-slim
+FROM debian:bookworm-slim@sha256:4724b8cc51e33e398f0e2e15e18d5ec2851ff0c2280647e1310bc1642182655d AS mock-agent
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /build/target/release/mock-agent /usr/local/bin/mock-agent
