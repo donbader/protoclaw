@@ -47,3 +47,4 @@ Served over HTTP via rmcp's `StreamableHttpService` (stateful mode) on a random 
 - Failed external MCP servers and invalid WASM modules are logged and skipped, not fatal
 - `cmd_rx` uses `unwrap_or_else` fallback (creates dummy channel) unlike other managers — this is intentional because tools manager can run without external commands
 - `start()` skips MCP servers with `enabled = false` — no spawn attempt for disabled servers
+- `start()` is annotated with `#[tracing::instrument]` — do not remove it; it provides a root span for the entire tool startup sequence visible in distributed traces

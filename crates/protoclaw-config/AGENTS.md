@@ -30,7 +30,7 @@ pub struct ProtoclawConfig {
 
 Manager configs use named `HashMap`s — entity names are map keys (no `name` field in structs):
 - `AgentsManagerConfig { acp_timeout_secs: u64, shutdown_grace_ms: u64, agents: HashMap<String, AgentConfig> }`
-- `ChannelsManagerConfig { init_timeout_secs: u64, channels: HashMap<String, ChannelConfig> }`
+- `ChannelsManagerConfig { init_timeout_secs: u64, exit_timeout_secs: u64, channels: HashMap<String, ChannelConfig> }`
 - `ToolsManagerConfig { tools: HashMap<String, ToolConfig>, tools_server_host: String }`
 
 Per-entity override types:
@@ -39,12 +39,17 @@ Per-entity override types:
 - `AgentConfig.acp_timeout_secs: Option<u64>` — overrides manager-level default when set
 - `AgentConfig.workspace: WorkspaceConfig` — tagged enum, see below
 - `ChannelConfig.init_timeout_secs: Option<u64>` — overrides manager-level default when set
+- `ChannelConfig.exit_timeout_secs: Option<u64>` — graceful shutdown wait per channel; overrides manager-level `exit_timeout_secs` when set
 
 `WorkspaceConfig` — tagged enum (`#[serde(tag = "type")]`):
 - `WorkspaceConfig::Local(LocalWorkspaceConfig)` — `binary` (required), `working_dir` (optional), `env` (optional)
 - `WorkspaceConfig::Docker(DockerWorkspaceConfig)` — `image` (required), `entrypoint`, `volumes`, `env`, `memory_limit`, `cpu_limit`, `docker_host`, `network`, `pull_policy`
 
 `PullPolicy` — enum: `Always`, `IfNotPresent` (default), `Never`. Config-only; pull logic deferred to Docker runtime phase.
+
+## SubstYaml Env Substitution
+
+`SubstYaml` is a custom Figment provider that loads the YAML file and expands `${VAR}` or `${VAR:-default}` placeholders using environment variables. **Missing variables without a default value cause a hard error** — `SubstYaml` fails loudly rather than silently falling back to an empty string. This ensures misconfigured deployments are caught at startup.
 
 ## Loading Order
 
@@ -81,3 +86,4 @@ Returns `ValidationResult { errors, warnings }` — caller decides whether to ab
 - **Don't skip validation** — `validate_config()` catches runtime failures at boot time
 - **Don't hardcode defaults outside serde** — all defaults live in `defaults.yaml` or `#[serde(default = "...")]` functions in `types.rs`
 - **Don't add `name` fields to entity structs** — names come from HashMap keys (manager-hierarchy pattern)
+- **Don't use `${VAR}` without a default for optional config** — missing env vars fail loudly at load time; use `${VAR:-default}` if the value is optional

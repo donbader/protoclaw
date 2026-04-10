@@ -27,6 +27,11 @@ Manages the agent subprocess lifecycle and implements the ACP (Agent Client Prot
 | `fs/read_text_file` | agent→client | Agent requests file read |
 | `fs/write_text_file` | agent→client | Agent requests file write |
 | `_raw_response` | internal | Sentinel method to bypass framing — sends pre-built JSON-RPC response directly to agent stdin |
+| `__jsonrpc_error` | internal | Sentinel method used in `AgentConnection` reader task to forward ACP-level JSON-RPC errors from the agent back to the manager as typed `AcpError` variants |
+
+## Tracing Instrumentation
+
+`initialize_agent()` and `create_session()` are annotated with `#[tracing::instrument]`. This automatically creates spans for each call with the function arguments as fields, making it easy to trace individual agent handshakes and session creation in distributed traces.
 
 ## Multi-Session Model
 
@@ -67,5 +72,8 @@ The manager always uses `spawn_with_bridge()` in both `start()` and `handle_cras
 - Do not send `SessionComplete` from the streaming path (`handle_incoming`) — it races with the RPC response and can cause duplicate completions that skip queued messages.
 - Do not skip the `incoming_rx` drain in `handle_prompt_completion` — without it, `select!` can process the RPC response before all streaming events are forwarded, causing lost updates.
 - `_raw_response` is a hack — it sends pre-built JSON-RPC directly to stdin, bypassing normal request/response framing. Do not use it for new methods.
+- `__jsonrpc_error` is a read-side sentinel — the connection reader task uses it to forward errors without losing the error context. Do not repurpose it.
 - `cmd_rx.take().expect("cmd_rx must exist")` — consumed once at `run()` start. Never call `run()` twice.
 - Permission responses go through `_raw_response` because they're responses to agent-initiated requests, not client-initiated ones.
+- Use `unwrap_or_else(|| { tracing::warn!(...); Default::default() })` rather than bare `unwrap_or_default()` when falling back silently — the tracing call makes the fallback visible in logs.
+- Constructor uses `drain()` instead of `clone().into_iter()` when consuming maps to initialize session state — avoids unnecessary clones of large maps.

@@ -56,8 +56,8 @@ pub struct AgentsManager {
 }
 
 impl AgentsManager {
-    pub fn new(agents_manager_config: AgentsManagerConfig, tools_handle: ManagerHandle<ToolsCommand>) -> Self {
-        let configs: Vec<(String, AgentConfig)> = agents_manager_config.agents.clone().into_iter().collect();
+    pub fn new(mut agents_manager_config: AgentsManagerConfig, tools_handle: ManagerHandle<ToolsCommand>) -> Self {
+        let configs: Vec<(String, AgentConfig)> = agents_manager_config.agents.drain().collect();
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::channel(constants::CMD_CHANNEL_CAPACITY);
         let (incoming_tx, incoming_rx) = mpsc::channel::<SlotIncoming>(constants::EVENT_CHANNEL_CAPACITY);
         let (completion_tx, completion_rx) = mpsc::channel::<PromptCompletion>(constants::CMD_CHANNEL_CAPACITY);

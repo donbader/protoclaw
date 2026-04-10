@@ -70,6 +70,8 @@ The old architecture had a race: `finalize_previous_turn()` cleared `message_buf
 - Do NOT skip `is_different_turn()` check — without it, new prompt events corrupt the previous turn's state.
 - Do NOT bypass `can_edit_response()` for normal streaming — only late chunks (during `Finalizing` phase) skip the rate limit.
 - Do NOT call `cleanup()` without removing the turn from the `turns` map — the struct clears internal state but doesn't remove itself.
+- Do NOT call Telegram API methods directly in retry-sensitive paths — wrap with `retry_telegram_op()` which applies exponential backoff on rate-limit (429) and server-error (5xx) responses.
+- Do NOT use bare `.unwrap()` on Telegram API call results — use `.expect("descriptive reason")` so failures are identifiable in crash logs.
 
 ## telegram/ (9 files)
 
@@ -85,7 +87,21 @@ The old architecture had a race: `finalize_previous_turn()` cleared `message_buf
 | `peer.rs` | `PeerInfo` extraction from Telegram update context |
 | `state.rs` | Shared state: bot instance, session tracking, `turns` map |
 
-Bot token and thought emoji are received via `ChannelInitializeParams.options` in `on_initialize()`, not from environment variables.
+Bot token and thought emoji are received via `ChannelInitializeParams.options` in `on_initialize()`, not from environment variables. Additional configurable options (received via the same `options` map):
+
+| Option key | Default | Purpose |
+|------------|---------|---------|
+| `cooldown_ms` | 800 | Minimum ms between sending new Telegram messages in a turn |
+| `debounce_ms` | 400 | Debounce window for thought edits |
+| `finalization_delay_ms` | 200 | Wait after `result` before sending final edit (collects late chunks) |
+
+## Telegram Retry Helper
+
+`retry_telegram_op()` in `deliver.rs` wraps Telegram API calls with exponential backoff. It retries on:
+- HTTP 429 (Too Many Requests) — uses `retry_after` seconds from the Telegram response when available
+- HTTP 5xx (server errors) — fixed backoff
+
+Non-retryable errors (4xx other than 429, message not found, etc.) are returned immediately. All retry-worthy paths in `deliver.rs` use this helper — do not call Telegram API methods directly in the deliver path.
 
 ### HTML Parse Mode
 
