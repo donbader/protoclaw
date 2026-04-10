@@ -229,6 +229,129 @@ pub fn sdk_tool_config() -> protoclaw_config::ProtoclawConfig {
     }
 }
 
+/// Config with a mock-agent, debug-http channel, and a WASM echo tool registered as a wasm-type tool.
+///
+/// The echo WASM module is compiled from WAT at call time and written to a temporary file.
+/// WASM tools are loaded into the aggregated MCP HTTP server's native host (not as external
+/// MCP server processes), so they do NOT appear in the `mcpServers` array sent to the agent
+/// in `session/new`. This means `[mcp:0]` is the expected count for WASM-only configs.
+pub fn wasm_tool_config() -> protoclaw_config::ProtoclawConfig {
+    const ECHO_WAT: &str = r#"(module
+    (import "wasi_snapshot_preview1" "fd_read"
+        (func $fd_read (param i32 i32 i32 i32) (result i32)))
+    (import "wasi_snapshot_preview1" "fd_write"
+        (func $fd_write (param i32 i32 i32 i32) (result i32)))
+    (import "wasi_snapshot_preview1" "proc_exit"
+        (func $proc_exit (param i32)))
+    (memory (export "memory") 1)
+    (func (export "_start")
+        ;; Set up iovec at offset 100: buf ptr=200, buf len=256
+        (i32.store (i32.const 100) (i32.const 200))
+        (i32.store (i32.const 104) (i32.const 256))
+        ;; Read from stdin (fd 0)
+        (call $fd_read
+            (i32.const 0)   ;; fd: stdin
+            (i32.const 100) ;; iovs ptr
+            (i32.const 1)   ;; iovs len
+            (i32.const 96)  ;; nread ptr
+        )
+        drop
+        ;; Write to stdout (fd 1) using same buffer, nread bytes
+        (i32.store (i32.const 108) (i32.const 200))
+        (i32.store (i32.const 112) (i32.load (i32.const 96)))
+        (call $fd_write
+            (i32.const 1)   ;; fd: stdout
+            (i32.const 108) ;; iovs ptr
+            (i32.const 1)   ;; iovs len
+            (i32.const 96)  ;; nwritten ptr
+        )
+        drop
+    )
+)"#;
+
+    let wasm_bytes = wat::parse_str(ECHO_WAT).expect("echo WAT should compile to valid WASM");
+    let wasm_path = std::env::temp_dir().join("protoclaw-test-echo.wasm");
+    std::fs::write(&wasm_path, &wasm_bytes).expect("should be able to write WASM to temp dir");
+
+    let mut agents = HashMap::new();
+    agents.insert(
+        "default".to_string(),
+        protoclaw_config::AgentConfig {
+            workspace: protoclaw_config::WorkspaceConfig::Local(
+                protoclaw_config::LocalWorkspaceConfig {
+                    binary: mock_agent_path().to_string_lossy().to_string(),
+                    working_dir: None,
+                    env: HashMap::new(),
+                },
+            ),
+            args: vec![],
+            enabled: true,
+            tools: vec!["wasm-echo".into()],
+            acp_timeout_secs: None,
+            backoff: None,
+            crash_tracker: None,
+            options: HashMap::new(),
+        },
+    );
+
+    let mut channels = HashMap::new();
+    channels.insert(
+        "debug-http".to_string(),
+        protoclaw_config::ChannelConfig {
+            binary: debug_http_path().to_string_lossy().to_string(),
+            args: vec![],
+            enabled: true,
+            agent: "default".into(),
+            ack: Default::default(),
+            init_timeout_secs: None,
+            exit_timeout_secs: None,
+            backoff: None,
+            crash_tracker: None,
+            options: HashMap::new(),
+        },
+    );
+
+    let mut tools = HashMap::new();
+    tools.insert(
+        "wasm-echo".to_string(),
+        protoclaw_config::ToolConfig {
+            tool_type: "wasm".into(),
+            binary: None,
+            args: vec![],
+            enabled: true,
+            module: Some(wasm_path),
+            description: "Echo tool implemented as a WASM module".to_string(),
+            input_schema: None,
+            sandbox: Default::default(),
+            options: HashMap::new(),
+        },
+    );
+
+    protoclaw_config::ProtoclawConfig {
+        agents_manager: protoclaw_config::AgentsManagerConfig {
+            agents,
+            ..Default::default()
+        },
+        channels_manager: protoclaw_config::ChannelsManagerConfig {
+            channels,
+            ..Default::default()
+        },
+        tools_manager: protoclaw_config::ToolsManagerConfig {
+            tools,
+            ..Default::default()
+        },
+        supervisor: protoclaw_config::SupervisorConfig {
+            shutdown_timeout_secs: 5,
+            health_check_interval_secs: 1,
+            max_restarts: 3,
+            restart_window_secs: 60,
+        },
+        log_level: "info".into(),
+        log_format: "pretty".into(),
+        extensions_dir: "/usr/local/bin".into(),
+    }
+}
+
 /// Config with a mock-agent, debug-http channel, and 2 instances of sdk-test-tool registered as MCP tools.
 /// Both tools ("echo" and "echo-2") use the same sdk-test-tool binary but have distinct config names.
 pub fn multi_tool_config() -> protoclaw_config::ProtoclawConfig {

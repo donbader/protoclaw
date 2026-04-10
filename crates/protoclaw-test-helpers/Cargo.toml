@@ -20,6 +20,7 @@ futures-core = "0.3"
 tempfile = { workspace = true }
 test-log = { version = "0.2", features = ["trace"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+wat = "1"
 
 [dev-dependencies]
 rstest = { workspace = true }

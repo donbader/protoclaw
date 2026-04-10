@@ -2477,6 +2477,7 @@ dependencies = [
  "tokio-stream",
  "tokio-util",
  "tracing-subscriber",
+ "wat",
 ]
 
 [[package]]
