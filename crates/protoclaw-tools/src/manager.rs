@@ -10,6 +10,10 @@ use rmcp::model::{
     ServerCapabilities, ServerInfo, Tool as RmcpTool,
 };
 use rmcp::service::RequestContext;
+use rmcp::transport::streamable_http_server::{
+    StreamableHttpServerConfig, StreamableHttpService,
+    session::local::LocalSessionManager,
+};
 use rmcp::{ErrorData as McpError, RoleServer};
 use tokio_util::sync::CancellationToken;
 
@@ -194,6 +198,49 @@ impl Manager for ToolsManager {
         }
         let external_servers = Arc::new(external_servers);
         self.external_servers = Some(external_servers.clone());
+
+        let has_tools = !native_host.tool_list().is_empty() || !external_servers.is_empty();
+        if has_tools {
+            let ct = CancellationToken::new();
+            let native_host_clone = native_host.clone();
+            let external_servers_clone = external_servers.clone();
+            let config = StreamableHttpServerConfig::default()
+                .with_stateful_mode(false)
+                .with_json_response(true)
+                .with_cancellation_token(ct.clone());
+
+            let service: StreamableHttpService<AggregatedToolServer, LocalSessionManager> =
+                StreamableHttpService::new(
+                    move || Ok(AggregatedToolServer::new(
+                        native_host_clone.clone(),
+                        external_servers_clone.clone(),
+                    )),
+                    Default::default(),
+                    config,
+                );
+
+            let router = axum::Router::new().nest_service("/mcp", service);
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+                .await
+                .map_err(|e| ManagerError::Internal(format!("tools server bind: {e}")))?;
+            let port = listener.local_addr()
+                .map_err(|e| ManagerError::Internal(format!("tools server addr: {e}")))?
+                .port();
+
+            let handle = tokio::spawn(async move {
+                let _ = axum::serve(listener, router)
+                    .with_graceful_shutdown(async move { ct.cancelled_owned().await })
+                    .await;
+            });
+            self.server_handles.push(handle);
+
+            let url = format!("http://127.0.0.1:{port}/mcp");
+            tracing::info!(url = %url, "tools aggregated MCP server listening");
+
+            for (name, _) in &mcp_configs {
+                self.server_urls.push(McpServerUrl { name: name.clone(), url: url.clone() });
+            }
+        }
 
         tracing::info!(manager = self.name(), "manager started");
         Ok(())

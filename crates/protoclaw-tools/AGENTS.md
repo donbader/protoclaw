@@ -27,6 +27,8 @@ Implements rmcp's `ServerHandler` trait. Aggregates tools from all three sources
 - `list_tools()` — merges native host tools + external server tools
 - `call_tool()` — routes to native host first, then external servers by name match
 
+Served over HTTP via rmcp's `StreamableHttpService` (stateless, JSON response mode) on a random local port. The URL is registered in `server_urls` so `AgentsManager` can pass it to agents via `session/new` → `mcp_servers`. Each configured external MCP tool gets its own `McpServerUrl` entry pointing to the shared aggregated endpoint.
+
 ## WASM Sandbox Model
 
 - `WasmToolRunner` creates a shared `wasmtime::Engine` (compilation cache)
