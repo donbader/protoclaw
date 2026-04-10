@@ -8,7 +8,10 @@ pub fn content_to_string(content: &serde_json::Value) -> String {
     }
     match content {
         serde_json::Value::String(s) => s.clone(),
-        other => serde_json::to_string(other).unwrap_or_default(),
+        other => serde_json::to_string(other).unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "failed to serialize content value to string, using empty string");
+            String::default()
+        }),
     }
 }
 

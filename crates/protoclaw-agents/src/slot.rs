@@ -180,4 +180,52 @@ mod tests {
         parent.cancel();
         assert!(slot.cancel_token.is_cancelled());
     }
+
+    fn test_agent_config_with_crash_tracker(max_crashes: u32, window_secs: u64) -> AgentConfig {
+        AgentConfig {
+            workspace: protoclaw_config::WorkspaceConfig::Local(
+                protoclaw_config::LocalWorkspaceConfig {
+                    binary: "test-binary".to_string(),
+                    working_dir: None,
+                    env: HashMap::new(),
+                },
+            ),
+            args: vec![],
+            enabled: true,
+            tools: vec![],
+            acp_timeout_secs: None,
+            backoff: None,
+            crash_tracker: Some(protoclaw_config::CrashTrackerConfig {
+                max_crashes,
+                window_secs,
+            }),
+            options: HashMap::new(),
+        }
+    }
+
+    #[rstest]
+    fn when_crash_loop_detected_then_slot_can_be_disabled() {
+        let cancel = CancellationToken::new();
+        let mut slot = AgentSlot::new(
+            "loop-agent".into(),
+            test_agent_config_with_crash_tracker(2, 60),
+            &cancel,
+        );
+
+        // Before any crashes, not a crash loop
+        assert!(!slot.crash_tracker.is_crash_loop());
+        assert!(!slot.disabled);
+
+        // Record first crash — not yet at threshold (2 crashes required)
+        slot.crash_tracker.record_crash();
+        assert!(!slot.crash_tracker.is_crash_loop());
+
+        // Record second crash — reaches threshold, crash loop detected
+        slot.crash_tracker.record_crash();
+        assert!(slot.crash_tracker.is_crash_loop());
+
+        // Manager would set disabled = true when crash loop is detected
+        slot.disabled = true;
+        assert!(slot.disabled);
+    }
 }

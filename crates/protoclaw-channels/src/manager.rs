@@ -500,9 +500,17 @@ impl ChannelsManager {
                                 });
 
                                 if let Some(conn) = &self.slots[slot_index].connection {
+                                    let peer_info_json = serde_json::to_value(&send_msg.peer_info).unwrap_or_else(|e| {
+                                        tracing::warn!(
+                                            channel = %channel_name,
+                                            error = %e,
+                                            "failed to serialize peerInfo for session/created notification, using null"
+                                        );
+                                        serde_json::Value::default()
+                                    });
                                     let params = serde_json::json!({
                                         "sessionId": acp_session_id,
-                                        "peerInfo": serde_json::to_value(&send_msg.peer_info).unwrap_or_default(),
+                                        "peerInfo": peer_info_json,
                                     });
                                     if let Err(e) = conn.send_notification("channel/sessionCreated", params).await {
                                         tracing::warn!(

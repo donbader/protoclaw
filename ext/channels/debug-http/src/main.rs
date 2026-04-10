@@ -150,7 +150,10 @@ impl Channel for DebugHttpChannel {
                 request_id: req.request_id.clone(),
                 session_id: req.session_id,
                 description: req.description,
-                options: serde_json::to_value(&req.options).unwrap_or_default(),
+                options: serde_json::to_value(&req.options).unwrap_or_else(|e| {
+                    tracing::warn!(error = %e, request_id = %req.request_id, "failed to serialize permission options, using null");
+                    serde_json::Value::default()
+                }),
             });
 
         let rx = self.state

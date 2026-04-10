@@ -50,10 +50,14 @@ impl<C: Channel> ChannelHarness<C> {
                     }
                 }
                 Some(send_msg) = outbound_rx.recv() => {
+                    let params = serde_json::to_value(&send_msg).unwrap_or_else(|e| {
+                        tracing::warn!(error = %e, "failed to serialize channel/sendMessage params, using null");
+                        serde_json::Value::default()
+                    });
                     let notification = serde_json::json!({
                         "jsonrpc": "2.0",
                         "method": "channel/sendMessage",
-                        "params": serde_json::to_value(&send_msg).unwrap_or_default(),
+                        "params": params,
                     });
                     Self::write_line(&mut writer, &notification).await?;
                 }

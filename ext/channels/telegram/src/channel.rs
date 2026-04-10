@@ -54,14 +54,29 @@ impl TelegramChannel {
                 let reaction = ReactionType::Emoji {
                     emoji: cfg.reaction_emoji.clone(),
                 };
-                let _ = bot.set_message_reaction(ChatId(chat_id), MessageId(msg_id))
-                    .reaction(vec![reaction])
-                    .await;
+                let bot_clone = bot.clone();
+                let _ = crate::deliver::retry_telegram_op("ack_set_reaction", chat_id, || {
+                    let bot_clone = bot_clone.clone();
+                    let reaction = reaction.clone();
+                    async move {
+                        bot_clone.set_message_reaction(ChatId(chat_id), MessageId(msg_id))
+                            .reaction(vec![reaction])
+                            .await
+                    }
+                })
+                .await;
             }
         }
 
         if cfg.typing {
-            let _ = bot.send_chat_action(ChatId(chat_id), teloxide::types::ChatAction::Typing).await;
+            let bot_clone = bot.clone();
+            let _ = crate::deliver::retry_telegram_op("ack_send_typing", chat_id, || {
+                let bot_clone = bot_clone.clone();
+                async move {
+                    bot_clone.send_chat_action(ChatId(chat_id), teloxide::types::ChatAction::Typing).await
+                }
+            })
+            .await;
         }
     }
 
@@ -99,17 +114,32 @@ impl TelegramChannel {
 
         match cfg.reaction_lifecycle.as_str() {
             "remove" => {
-                let _ = bot.set_message_reaction(ChatId(chat_id), MessageId(msg_id))
-                    .reaction(Vec::<ReactionType>::new())
-                    .await;
+                let bot_clone = bot.clone();
+                let _ = crate::deliver::retry_telegram_op("ack_lifecycle_remove_reaction", chat_id, || {
+                    let bot_clone = bot_clone.clone();
+                    async move {
+                        bot_clone.set_message_reaction(ChatId(chat_id), MessageId(msg_id))
+                            .reaction(Vec::<ReactionType>::new())
+                            .await
+                    }
+                })
+                .await;
             }
             "replace_done" => {
                 let done_reaction = ReactionType::Emoji {
                     emoji: "✅".into(),
                 };
-                let _ = bot.set_message_reaction(ChatId(chat_id), MessageId(msg_id))
-                    .reaction(vec![done_reaction])
-                    .await;
+                let bot_clone = bot.clone();
+                let _ = crate::deliver::retry_telegram_op("ack_lifecycle_done_reaction", chat_id, || {
+                    let bot_clone = bot_clone.clone();
+                    let done_reaction = done_reaction.clone();
+                    async move {
+                        bot_clone.set_message_reaction(ChatId(chat_id), MessageId(msg_id))
+                            .reaction(vec![done_reaction])
+                            .await
+                    }
+                })
+                .await;
             }
             _ => {}
         }

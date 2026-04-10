@@ -77,15 +77,31 @@ async fn handle_callback_query(
         None => return Ok(()),
     };
 
-    let _ = bot.answer_callback_query(q.id.clone()).await;
+    let query_id = q.id.clone();
+    let bot_clone = bot.clone();
+    let _ = crate::deliver::retry_telegram_op("answer_callback_query", 0, || {
+        let bot_clone = bot_clone.clone();
+        let query_id = query_id.clone();
+        async move { bot_clone.answer_callback_query(query_id).await }
+    })
+    .await;
 
     if let Some((chat_id, msg_id)) = state.permission_messages.lock().await.get(request_id).copied()
     {
         let empty_kb = InlineKeyboardMarkup::new(Vec::<Vec<teloxide::types::InlineKeyboardButton>>::new());
-        let _ = bot
-            .edit_message_reply_markup(ChatId(chat_id), MessageId(msg_id))
-            .reply_markup(empty_kb)
-            .await;
+        let bot_clone2 = bot.clone();
+        let empty_kb_clone = empty_kb.clone();
+        let _ = crate::deliver::retry_telegram_op("clear_permission_keyboard", chat_id, || {
+            let bot_clone2 = bot_clone2.clone();
+            let empty_kb_clone = empty_kb_clone.clone();
+            async move {
+                bot_clone2
+                    .edit_message_reply_markup(ChatId(chat_id), MessageId(msg_id))
+                    .reply_markup(empty_kb_clone)
+                    .await
+            }
+        })
+        .await;
     }
 
     crate::permissions::process_callback(request_id, option_id, &state).await;

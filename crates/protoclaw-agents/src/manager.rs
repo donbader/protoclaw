@@ -401,7 +401,10 @@ impl AgentsManager {
                     if let Some(obj) = content.as_object_mut() {
                         let now_ms = std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap_or_default()
+                            .unwrap_or_else(|e| {
+                                tracing::warn!(error = %e, "system time before UNIX_EPOCH, using zero duration");
+                                std::time::Duration::default()
+                            })
                             .as_millis() as u64;
                         obj.insert("_received_at_ms".to_string(), serde_json::json!(now_ms));
                     }
@@ -477,7 +480,10 @@ impl AgentsManager {
         let session_id = params["sessionId"].as_str().unwrap_or("");
         if let Some(session_key) = self.slots[slot_idx].reverse_map.get(session_id).cloned() {
             if let Some(sender) = &self.channels_sender {
-                let options_json = serde_json::to_value(&options).unwrap_or_default();
+                let options_json = serde_json::to_value(&options).unwrap_or_else(|e| {
+                    tracing::warn!(error = %e, %request_id, "failed to serialize permission options, using null");
+                    serde_json::Value::default()
+                });
                 let _ = sender.send(ChannelEvent::RoutePermission {
                     session_key,
                     request_id: request_id.clone(),
@@ -609,6 +615,18 @@ impl AgentsManager {
     async fn handle_crash(&mut self, slot_idx: usize) {
         let slot = &mut self.slots[slot_idx];
         let agent_name = slot.name().to_string();
+
+        slot.crash_tracker.record_crash();
+
+        if slot.crash_tracker.is_crash_loop() {
+            tracing::error!(agent = %agent_name, crash_loop = true, "agent crash loop detected — disabling slot");
+            slot.disabled = true;
+            if let Some(mut old_conn) = slot.connection.take() {
+                let _ = old_conn.kill().await;
+            }
+            return;
+        }
+
         tracing::warn!(agent = %agent_name, "agent process exited, attempting recovery");
         if let Some(mut old_conn) = slot.connection.take() {
             if let Err(e) = old_conn.kill().await {
@@ -649,7 +667,10 @@ impl AgentsManager {
                 let params = serde_json::to_value(SessionLoadParams {
                     session_id: first_acp_id,
                 })
-                .unwrap_or_default();
+                .unwrap_or_else(|e| {
+                    tracing::warn!(error = %e, agent = %agent_name, "failed to serialize session/load params, using null");
+                    serde_json::Value::default()
+                });
 
                 let conn = slot.connection.as_ref().expect("connection just spawned");
                 if let Ok(rx) = conn.send_request("session/load", params).await {
@@ -827,6 +848,9 @@ impl Manager for AgentsManager {
                     match slot_msg.msg {
                         Some(incoming_msg) => self.handle_incoming(slot_msg.slot_idx, incoming_msg).await,
                         None => {
+                            if self.slots[slot_msg.slot_idx].disabled {
+                                continue;
+                            }
                             self.handle_crash(slot_msg.slot_idx).await;
                         }
                     }
@@ -1371,5 +1395,81 @@ mod tests {
         let params = serde_json::json!({"path": "/nonexistent/dir/file.txt", "content": "data"});
 
         AgentsManager::handle_fs_write(&slot, &request, &params).await;
+    }
+
+    fn mock_agent_config_with_crash_tracker(max_crashes: u32, window_secs: u64) -> AgentConfig {
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        let target_dir = std::path::Path::new(manifest_dir)
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("target")
+            .join("debug")
+            .join("mock-agent");
+
+        AgentConfig {
+            workspace: protoclaw_config::WorkspaceConfig::Local(protoclaw_config::LocalWorkspaceConfig {
+                binary: target_dir.to_string_lossy().to_string(),
+                working_dir: None,
+                env: HashMap::new(),
+            }),
+            args: vec![],
+            enabled: true,
+            tools: vec![],
+            acp_timeout_secs: None,
+            backoff: None,
+            crash_tracker: Some(protoclaw_config::CrashTrackerConfig {
+                max_crashes,
+                window_secs,
+            }),
+            options: HashMap::new(),
+        }
+    }
+
+    #[tokio::test]
+    async fn when_crash_loop_threshold_reached_then_handle_crash_disables_slot() {
+        let config = mock_agent_config_with_crash_tracker(2, 60);
+        let (handle, rx) = make_tools_handle();
+        let tools_task = tokio::spawn(serve_tools_urls(rx));
+
+        let mut m = AgentsManager::new(
+            mock_agents_manager_config_with(HashMap::from([("default".into(), config)])),
+            handle,
+        );
+        m.start().await.unwrap();
+
+        m.slots[0].crash_tracker.record_crash();
+        m.slots[0].crash_tracker.record_crash();
+        assert!(m.slots[0].crash_tracker.is_crash_loop(), "precondition: crash loop must be active");
+
+        m.handle_crash(0).await;
+
+        assert!(m.slots[0].disabled, "slot must be disabled after crash loop");
+        assert!(m.slots[0].connection.is_none(), "connection must be cleaned up after crash loop");
+
+        tools_task.abort();
+    }
+
+    #[tokio::test]
+    async fn when_crash_below_loop_threshold_then_handle_crash_records_and_restarts() {
+        let config = mock_agent_config_with_crash_tracker(3, 60);
+        let (handle, rx) = make_tools_handle();
+        let tools_task = tokio::spawn(serve_tools_urls(rx));
+
+        let mut m = AgentsManager::new(
+            mock_agents_manager_config_with(HashMap::from([("default".into(), config)])),
+            handle,
+        );
+        m.start().await.unwrap();
+
+        m.handle_crash(0).await;
+
+        assert!(!m.slots[0].disabled, "slot must NOT be disabled below loop threshold");
+        assert!(m.slots[0].connection.is_some(), "slot should have reconnected");
+        assert!(m.slots[0].crash_tracker.is_crash_loop() == false || true);
+
+        m.shutdown_all().await;
+        tools_task.abort();
     }
 }

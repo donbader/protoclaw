@@ -74,7 +74,10 @@ impl ToolServer {
             Ok(output) => {
                 let text = match output {
                     serde_json::Value::String(s) => s,
-                    other => serde_json::to_string(&other).unwrap_or_default(),
+                    other => serde_json::to_string(&other).unwrap_or_else(|e| {
+                        tracing::warn!(error = %e, "failed to serialize tool output to string, using empty string");
+                        String::default()
+                    }),
                 };
                 Ok(CallToolResult::success(vec![Content::text(text)]))
             }
