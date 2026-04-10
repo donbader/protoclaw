@@ -53,7 +53,7 @@ channels-manager:
       enabled: "${TELEGRAM_ENABLED:false}"
       agent: "mock"
       options:
-        TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN}"
+        TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:}"
       ack:
         reaction: true
         reaction_emoji: "👀"
