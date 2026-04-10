@@ -269,13 +269,13 @@ pub async fn deliver_to_chat(
                     turn.message_id = mid;
                 }
                 turn.append_thought(&thought_content, 0, origin_instant);
-                let track = turn.thought.as_ref().unwrap();
+                let track = turn.thought.as_ref().expect("thought track exists after append_thought");
                 let accumulated = track.buffer.clone();
                 let existing_thought_msg_id = track.msg_id;
                 if let Some(ref h) = track.debounce_handle {
                     h.abort();
                 }
-                turn.thought.as_mut().unwrap().debounce_handle = None;
+                turn.thought.as_mut().expect("thought track exists: verified above").debounce_handle = None;
                 (accumulated, existing_thought_msg_id)
             };
 
@@ -380,7 +380,7 @@ pub async fn deliver_to_chat(
                     track.suppressed = false;
                 }
                 turn.append_response(&chunk_text, 0);
-                let track = turn.response.as_ref().unwrap();
+                let track = turn.response.as_ref().expect("response track exists after append_response");
                 let accumulated = track.buffer.clone();
                 let existing_response_msg_id = track.msg_id;
                 let is_finalizing = matches!(turn.phase, TurnPhase::Finalizing(_));

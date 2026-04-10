@@ -151,6 +151,7 @@ impl Manager for ToolsManager {
         "tools"
     }
 
+    #[tracing::instrument(skip(self), name = "tools_manager_start")]
     async fn start(&mut self) -> Result<(), ManagerError> {
         let mut all_tools: Vec<Box<dyn Tool>> = std::mem::take(&mut self.native_tools);
 

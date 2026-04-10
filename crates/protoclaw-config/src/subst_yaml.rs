@@ -26,13 +26,8 @@ impl Provider for SubstYaml {
 
         let raw = std::fs::read_to_string(&self.0).map_err(|e| Error::from(e.to_string()))?;
 
-        let substituted = match subst::substitute(&raw, &subst::Env) {
-            Ok(s) => s,
-            Err(e) => {
-                tracing::warn!(error = %e, "env var interpolation failed, using raw values");
-                raw
-            }
-        };
+        let substituted = subst::substitute(&raw, &subst::Env)
+            .map_err(|e| Error::from(format!("env var substitution failed: {e}")))?;
 
         let mut value: serde_yaml::Value =
             serde_yaml::from_str(&substituted).map_err(|e| Error::from(e.to_string()))?;
@@ -144,6 +139,28 @@ mod tests {
             assert!(
                 result.is_ok(),
                 "missing file should produce empty data, not error"
+            );
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn when_env_var_missing_and_no_default_then_returns_error() {
+        figment::Jail::expect_with(|jail| {
+            jail.create_file(
+                "test.yaml",
+                "agent:\n  binary: \"${PROTOCLAW_MISSING_XYZ}\"\n",
+            )?;
+            let result: Result<serde_json::Value, _> =
+                Figment::new().merge(SubstYaml::file("test.yaml")).extract();
+            assert!(
+                result.is_err(),
+                "missing env var without default should fail"
+            );
+            let msg = result.unwrap_err().to_string();
+            assert!(
+                msg.contains("PROTOCLAW_MISSING_XYZ"),
+                "error should name the missing var: {msg}"
             );
             Ok(())
         });

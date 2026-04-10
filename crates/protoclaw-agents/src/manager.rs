@@ -106,6 +106,7 @@ impl AgentsManager {
         Duration::from_secs(secs)
     }
 
+    #[tracing::instrument(skip(slot), fields(agent = %slot.name()))]
     async fn initialize_agent(slot: &mut AgentSlot, acp_timeout: Duration) -> Result<(), AgentsError> {
         let conn = slot.connection.as_ref().ok_or(AgentsError::ConnectionClosed)?;
 
@@ -291,6 +292,7 @@ impl AgentsManager {
         Ok(())
     }
 
+    #[tracing::instrument(skip(self), fields(agent = %agent_name, session_key = %session_key))]
     async fn create_session(&mut self, agent_name: &str, session_key: SessionKey) -> Result<String, AgentsError> {
         let slot_idx = find_slot_by_name(&self.slots, agent_name)
             .ok_or_else(|| AgentsError::AgentNotFound(agent_name.to_string()))?;

@@ -654,6 +654,7 @@ impl Manager for ChannelsManager {
         "channels"
     }
 
+    #[tracing::instrument(skip(self), name = "channels_manager_start")]
     async fn start(&mut self) -> Result<(), ManagerError> {
         let parent_cancel = CancellationToken::new();
 

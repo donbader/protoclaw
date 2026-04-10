@@ -11,25 +11,31 @@ pub fn escape_html(s: &str) -> String {
 }
 
 static FENCED_CODE_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?s)```(\w*)\n?(.*?)```").unwrap());
+    LazyLock::new(|| Regex::new(r"(?s)```(\w*)\n?(.*?)```").expect("valid regex literal"));
 
-static INLINE_CODE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"`([^`]+)`").unwrap());
+static INLINE_CODE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"`([^`]+)`").expect("valid regex literal"));
 
 static BLOCKQUOTE_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?m)^(?:>\s?(.*)(?:\n|$))+").unwrap());
+    LazyLock::new(|| Regex::new(r"(?m)^(?:>\s?(.*)(?:\n|$))+").expect("valid regex literal"));
 
-static HEADER_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?m)^#{1,6}\s+(.+)$").unwrap());
+static HEADER_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?m)^#{1,6}\s+(.+)$").expect("valid regex literal"));
 
-static LINK_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[([^\]]+)\]\(([^)]+)\)").unwrap());
+static LINK_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\[([^\]]+)\]\(([^)]+)\)").expect("valid regex literal"));
 
-static BOLD_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\*\*(.+?)\*\*").unwrap());
+static BOLD_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\*\*(.+?)\*\*").expect("valid regex literal"));
 
-static STRIKE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"~~(.+?)~~").unwrap());
+static STRIKE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"~~(.+?)~~").expect("valid regex literal"));
 
 static ITALIC_UNDERSCORE_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\b_([^_]+?)_\b").unwrap());
+    LazyLock::new(|| Regex::new(r"\b_([^_]+?)_\b").expect("valid regex literal"));
 
-static ITALIC_STAR_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\*([^*]+?)\*").unwrap());
+static ITALIC_STAR_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\*([^*]+?)\*").expect("valid regex literal"));
 
 /// Convert markdown-ish agent output to Telegram-safe HTML.
 ///
