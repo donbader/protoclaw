@@ -119,7 +119,10 @@ mod tests {
                 channels: channel_map,
                 ..Default::default()
             },
-            tools_manager: ToolsManagerConfig { tools: tool_map },
+            tools_manager: ToolsManagerConfig {
+                tools: tool_map,
+                ..Default::default()
+            },
             supervisor: SupervisorConfig::default(),
         }
     }

@@ -112,10 +112,11 @@ pub struct ToolsManager {
     cmd_rx: Option<tokio::sync::mpsc::Receiver<ToolsCommand>>,
     native_host: Option<Arc<McpHost>>,
     external_servers: Option<Arc<Vec<ExternalMcpServer>>>,
+    tools_server_host: String,
 }
 
 impl ToolsManager {
-    pub fn new(tool_configs: HashMap<String, ToolConfig>) -> Self {
+    pub fn new(tool_configs: HashMap<String, ToolConfig>, tools_server_host: String) -> Self {
         Self {
             tool_configs,
             native_tools: Vec::new(),
@@ -124,6 +125,7 @@ impl ToolsManager {
             cmd_rx: None,
             native_host: None,
             external_servers: None,
+            tools_server_host,
         }
     }
 
@@ -220,7 +222,7 @@ impl Manager for ToolsManager {
                 );
 
             let router = axum::Router::new().nest_service("/mcp", service);
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            let listener = tokio::net::TcpListener::bind("0.0.0.0:0")
                 .await
                 .map_err(|e| ManagerError::Internal(format!("tools server bind: {e}")))?;
             let port = listener.local_addr()
@@ -234,7 +236,7 @@ impl Manager for ToolsManager {
             });
             self.server_handles.push(handle);
 
-            let url = format!("http://127.0.0.1:{port}/mcp");
+            let url = format!("http://{}:{port}/mcp", self.tools_server_host);
             tracing::info!(url = %url, "tools aggregated MCP server listening");
 
             for (name, _) in &mcp_configs {
@@ -324,26 +326,26 @@ mod tests {
 
     #[test]
     fn when_tools_manager_name_queried_then_returns_tools() {
-        let m = ToolsManager::new(HashMap::new());
+        let m = ToolsManager::new(HashMap::new(), "127.0.0.1".into());
         assert_eq!(m.name(), "tools");
     }
 
     #[tokio::test]
     async fn when_tools_manager_started_with_no_configs_then_server_url_registered() {
-        let mut m = ToolsManager::new(HashMap::new());
+        let mut m = ToolsManager::new(HashMap::new(), "127.0.0.1".into());
         assert!(m.start().await.is_ok());
         assert_eq!(m.server_urls().len(), 0);
     }
 
     #[tokio::test]
     async fn when_no_tool_configs_then_health_check_returns_healthy() {
-        let m = ToolsManager::new(HashMap::new());
+        let m = ToolsManager::new(HashMap::new(), "127.0.0.1".into());
         assert!(m.health_check().await);
     }
 
     #[tokio::test]
     async fn when_tools_manager_started_then_health_check_returns_healthy() {
-        let mut m = ToolsManager::new(HashMap::new());
+        let mut m = ToolsManager::new(HashMap::new(), "127.0.0.1".into());
         m.start().await.unwrap();
         assert!(m.health_check().await);
         for h in &m.server_handles {
@@ -353,7 +355,7 @@ mod tests {
 
     #[tokio::test]
     async fn when_cancel_token_fired_then_tools_manager_run_stops() {
-        let mut m = ToolsManager::new(HashMap::new());
+        let mut m = ToolsManager::new(HashMap::new(), "127.0.0.1".into());
         m.start().await.unwrap();
 
         let cancel = CancellationToken::new();
@@ -412,7 +414,7 @@ mod tests {
         let tools: Vec<Box<dyn Tool>> = vec![
             Box::new(DummyTool { tool_name: "native-1".into() }),
         ];
-        let mut m = ToolsManager::new(HashMap::new()).with_native_tools(tools);
+        let mut m = ToolsManager::new(HashMap::new(), "127.0.0.1".into()).with_native_tools(tools);
         m.start().await.unwrap();
 
         let host = m.native_host.as_ref().unwrap();
@@ -445,7 +447,7 @@ mod tests {
             options: HashMap::new(),
         })]);
 
-        let mut m = ToolsManager::new(tool_configs);
+        let mut m = ToolsManager::new(tool_configs, "127.0.0.1".into());
         m.start().await.unwrap();
 
         let host = m.native_host.as_ref().unwrap();
@@ -472,7 +474,7 @@ mod tests {
             options: HashMap::new(),
         })]);
 
-        let mut m = ToolsManager::new(tool_configs);
+        let mut m = ToolsManager::new(tool_configs, "127.0.0.1".into());
         let result = m.start().await;
         assert!(result.is_ok());
 
@@ -508,7 +510,7 @@ mod tests {
             options: HashMap::new(),
         })]);
 
-        let mut m = ToolsManager::new(tool_configs).with_native_tools(native_tools);
+        let mut m = ToolsManager::new(tool_configs, "127.0.0.1".into()).with_native_tools(native_tools);
         m.start().await.unwrap();
 
         let host = m.native_host.as_ref().unwrap();
@@ -525,7 +527,7 @@ mod tests {
 
     #[tokio::test]
     async fn when_get_mcp_urls_called_without_filter_then_returns_all_urls() {
-        let mut m = ToolsManager::new(HashMap::new());
+        let mut m = ToolsManager::new(HashMap::new(), "127.0.0.1".into());
         m.start().await.unwrap();
 
         m.server_urls.push(McpServerUrl { name: "tool-a".into(), url: "http://a".into() });
@@ -543,7 +545,7 @@ mod tests {
 
     #[tokio::test]
     async fn when_get_mcp_urls_called_with_filter_then_returns_matching_urls_only() {
-        let mut m = ToolsManager::new(HashMap::new());
+        let mut m = ToolsManager::new(HashMap::new(), "127.0.0.1".into());
         m.start().await.unwrap();
         m.server_urls.push(McpServerUrl { name: "system-info".into(), url: "http://si".into() });
         m.server_urls.push(McpServerUrl { name: "filesystem".into(), url: "http://fs".into() });
@@ -562,7 +564,7 @@ mod tests {
 
     #[tokio::test]
     async fn when_get_mcp_urls_filter_matches_nothing_then_returns_empty() {
-        let mut m = ToolsManager::new(HashMap::new());
+        let mut m = ToolsManager::new(HashMap::new(), "127.0.0.1".into());
         m.start().await.unwrap();
 
         let urls = m.server_urls.clone();
@@ -589,7 +591,7 @@ mod tests {
             sandbox: Default::default(),
             options: HashMap::new(),
         })]);
-        let mut m = ToolsManager::new(tool_configs);
+        let mut m = ToolsManager::new(tool_configs, "127.0.0.1".into());
         m.start().await.unwrap();
         let ext = m.external_servers.as_ref().unwrap();
         assert!(ext.is_empty(), "disabled MCP server should not be spawned");

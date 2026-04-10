@@ -323,7 +323,10 @@ fn create_manager(
 ) -> ManagerKind {
     match name {
         "tools" => {
-            let m = ToolsManager::new(config.tools_manager.tools.clone())
+            let m = ToolsManager::new(
+                    config.tools_manager.tools.clone(),
+                    config.tools_manager.tools_server_host.clone(),
+                )
                 .with_cmd_rx(tools_rx.expect("tools_rx required for tools manager"));
             ManagerKind::Tools(m)
         }

@@ -27,7 +27,7 @@ Implements rmcp's `ServerHandler` trait. Aggregates tools from all three sources
 - `list_tools()` — merges native host tools + external server tools
 - `call_tool()` — routes to native host first, then external servers by name match
 
-Served over HTTP via rmcp's `StreamableHttpService` (stateless, JSON response mode) on a random local port. The URL is registered in `server_urls` so `AgentsManager` can pass it to agents via `session/new` → `mcp_servers`. Each configured external MCP tool gets its own `McpServerUrl` entry pointing to the shared aggregated endpoint.
+Served over HTTP via rmcp's `StreamableHttpService` (stateless, JSON response mode) on a random port bound to `0.0.0.0`. The advertised URL uses `tools_server_host` from `ToolsManagerConfig` (default `127.0.0.1`; set to the container hostname in Docker deployments so agent containers can reach it). The URL is registered in `server_urls` so `AgentsManager` can pass it to agents via `session/new` → `mcp_servers`. Each configured external MCP tool gets its own `McpServerUrl` entry pointing to the shared aggregated endpoint.
 
 ## WASM Sandbox Model
 

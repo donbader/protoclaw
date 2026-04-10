@@ -98,10 +98,21 @@ impl Default for ChannelsManagerConfig {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ToolsManagerConfig {
     #[serde(default)]
     pub tools: HashMap<String, ToolConfig>,
+    #[serde(default = "default_tools_server_host")]
+    pub tools_server_host: String,
+}
+
+impl Default for ToolsManagerConfig {
+    fn default() -> Self {
+        Self {
+            tools: HashMap::new(),
+            tools_server_host: default_tools_server_host(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Default)]
@@ -337,6 +348,9 @@ fn default_reaction_emoji() -> String {
 }
 fn default_reaction_lifecycle() -> String {
     "remove".into()
+}
+fn default_tools_server_host() -> String {
+    "127.0.0.1".into()
 }
 fn default_tool_type() -> String {
     "mcp".into()

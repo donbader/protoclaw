@@ -31,7 +31,7 @@ pub struct ProtoclawConfig {
 Manager configs use named `HashMap`s — entity names are map keys (no `name` field in structs):
 - `AgentsManagerConfig { acp_timeout_secs: u64, shutdown_grace_ms: u64, agents: HashMap<String, AgentConfig> }`
 - `ChannelsManagerConfig { init_timeout_secs: u64, channels: HashMap<String, ChannelConfig> }`
-- `ToolsManagerConfig { tools: HashMap<String, ToolConfig> }`
+- `ToolsManagerConfig { tools: HashMap<String, ToolConfig>, tools_server_host: String }`
 
 Per-entity override types:
 - `BackoffConfig { base_delay_ms: u64, max_delay_secs: u64 }` — optional on `AgentConfig` and `ChannelConfig`

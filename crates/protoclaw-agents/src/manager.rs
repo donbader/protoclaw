@@ -157,7 +157,7 @@ impl AgentsManager {
             .iter()
             .map(|u| McpServerInfo {
                 name: u.name.clone(),
-                server_type: "sse".into(),
+                server_type: "http".into(),
                 url: u.url.clone(),
                 command: String::new(),
                 args: vec![],

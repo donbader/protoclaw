@@ -209,7 +209,10 @@ pub fn sdk_tool_config() -> protoclaw_config::ProtoclawConfig {
             channels,
             ..Default::default()
         },
-        tools_manager: protoclaw_config::ToolsManagerConfig { tools },
+        tools_manager: protoclaw_config::ToolsManagerConfig {
+            tools,
+            ..Default::default()
+        },
         supervisor: protoclaw_config::SupervisorConfig {
             shutdown_timeout_secs: 5,
             health_check_interval_secs: 1,
@@ -301,7 +304,10 @@ pub fn multi_tool_config() -> protoclaw_config::ProtoclawConfig {
             channels,
             ..Default::default()
         },
-        tools_manager: protoclaw_config::ToolsManagerConfig { tools },
+        tools_manager: protoclaw_config::ToolsManagerConfig {
+            tools,
+            ..Default::default()
+        },
         supervisor: protoclaw_config::SupervisorConfig {
             shutdown_timeout_secs: 5,
             health_check_interval_secs: 1,
@@ -381,7 +387,10 @@ pub fn invalid_tool_config() -> protoclaw_config::ProtoclawConfig {
             channels,
             ..Default::default()
         },
-        tools_manager: protoclaw_config::ToolsManagerConfig { tools },
+        tools_manager: protoclaw_config::ToolsManagerConfig {
+            tools,
+            ..Default::default()
+        },
         supervisor: protoclaw_config::SupervisorConfig {
             shutdown_timeout_secs: 5,
             health_check_interval_secs: 1,
