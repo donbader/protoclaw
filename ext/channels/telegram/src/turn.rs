@@ -53,10 +53,10 @@ impl ChatTurn {
         }
     }
 
-    pub fn can_edit_response(&mut self) -> bool {
+    pub fn can_edit_response(&mut self, cooldown: Duration) -> bool {
         match &mut self.response {
             Some(track) => {
-                if track.last_edit.elapsed() < Duration::from_secs(1) {
+                if track.last_edit.elapsed() < cooldown {
                     return false;
                 }
                 track.last_edit = Instant::now();
@@ -160,7 +160,7 @@ mod tests {
         let mut turn = ChatTurn::new("msg-1".to_string());
         turn.append_response("text", 100);
         // last_edit is Instant::now(), so within 1s cooldown
-        assert!(!turn.can_edit_response());
+        assert!(!turn.can_edit_response(Duration::from_millis(1000)));
     }
 
     #[rstest]
@@ -172,7 +172,7 @@ mod tests {
             buffer: "text".to_string(),
             last_edit: Instant::now() - Duration::from_secs(2),
         });
-        assert!(turn.can_edit_response());
+        assert!(turn.can_edit_response(Duration::from_millis(1000)));
     }
 
     #[rstest]

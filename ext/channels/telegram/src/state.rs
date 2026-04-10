@@ -15,6 +15,9 @@ pub struct SharedState {
     pub ack_config: RwLock<Option<ChannelAckConfig>>,
     pub turns: RwLock<HashMap<i64, ChatTurn>>,
     pub thought_emoji: RwLock<String>,
+    pub response_edit_cooldown_ms: RwLock<u64>,
+    pub thought_debounce_ms: RwLock<u64>,
+    pub finalization_delay_ms: RwLock<u64>,
 }
 
 impl SharedState {
@@ -28,6 +31,9 @@ impl SharedState {
             ack_config: RwLock::new(None),
             turns: RwLock::new(HashMap::new()),
             thought_emoji: RwLock::new("🧠".into()),
+            response_edit_cooldown_ms: RwLock::new(1000),
+            thought_debounce_ms: RwLock::new(400),
+            finalization_delay_ms: RwLock::new(200),
         }
     }
 }

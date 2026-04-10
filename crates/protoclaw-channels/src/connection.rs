@@ -237,6 +237,23 @@ impl ChannelConnection {
         Ok(())
     }
 
+    /// Gracefully shut down the channel subprocess.
+    ///
+    /// Aborting the writer task drops its stdin handle, which sends EOF to the subprocess.
+    /// Waits up to `timeout` for the child to exit; falls back to hard kill on timeout.
+    pub async fn graceful_shutdown(&mut self, timeout: std::time::Duration) -> Result<(), ChannelsError> {
+        self.writer_handle.abort();
+
+        match tokio::time::timeout(timeout, self.child.wait()).await {
+            Ok(Ok(_)) => {
+                self.reader_handle.abort();
+                self.stderr_handle.abort();
+                Ok(())
+            }
+            _ => self.kill().await,
+        }
+    }
+
     /// Get the channel ID.
     pub fn channel_id(&self) -> &ChannelId {
         &self.channel_id
@@ -271,6 +288,7 @@ mod tests {
             agent: "default".into(),
             ack: Default::default(),
             init_timeout_secs: None,
+            exit_timeout_secs: None,
             backoff: None,
             crash_tracker: None,
             options: HashMap::new(),
@@ -295,6 +313,7 @@ mod tests {
             agent: "default".into(),
             ack: Default::default(),
             init_timeout_secs: None,
+            exit_timeout_secs: None,
             backoff: None,
             crash_tracker: None,
             options: HashMap::new(),
@@ -351,6 +370,7 @@ mod tests {
             agent: "default".into(),
             ack: Default::default(),
             init_timeout_secs: None,
+            exit_timeout_secs: None,
             backoff: None,
             crash_tracker: None,
             options: HashMap::new(),

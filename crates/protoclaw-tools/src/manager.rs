@@ -206,6 +206,9 @@ impl Manager for ToolsManager {
             let ct = CancellationToken::new();
             let native_host_clone = native_host.clone();
             let external_servers_clone = external_servers.clone();
+            // stateful_mode = true: required so rmcp maintains per-session state across requests.
+            // Without it each HTTP request is treated as independent, breaking multi-turn tool
+            // conversations. The cancellation token ties server lifetime to the tools manager.
             let config = StreamableHttpServerConfig::default()
                 .with_stateful_mode(true)
                 .with_cancellation_token(ct.clone());

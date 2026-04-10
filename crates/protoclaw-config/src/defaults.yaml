@@ -8,6 +8,7 @@ agents-manager:
 
 channels-manager:
   init_timeout_secs: 10
+  exit_timeout_secs: 5
 
 tools-manager: {}
 

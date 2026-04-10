@@ -135,6 +135,15 @@ impl Channel for TelegramChannel {
         if let Some(emoji) = params.options.get("TELEGRAM_THOUGHT_EMOJI").and_then(|v| v.as_str()) {
             *self.state.thought_emoji.write().await = emoji.to_string();
         }
+        if let Some(v) = params.options.get("TELEGRAM_RESPONSE_EDIT_COOLDOWN_MS").and_then(|v| v.as_u64()) {
+            *self.state.response_edit_cooldown_ms.write().await = v;
+        }
+        if let Some(v) = params.options.get("TELEGRAM_THOUGHT_DEBOUNCE_MS").and_then(|v| v.as_u64()) {
+            *self.state.thought_debounce_ms.write().await = v;
+        }
+        if let Some(v) = params.options.get("TELEGRAM_FINALIZATION_DELAY_MS").and_then(|v| v.as_u64()) {
+            *self.state.finalization_delay_ms.write().await = v;
+        }
         let token = params.options.get("TELEGRAM_BOT_TOKEN")
             .and_then(|v| v.as_str())
             .ok_or_else(|| ChannelSdkError::Protocol(

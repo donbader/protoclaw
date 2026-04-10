@@ -85,6 +85,8 @@ impl Default for AgentsManagerConfig {
 pub struct ChannelsManagerConfig {
     #[serde(default = "default_init_timeout_secs")]
     pub init_timeout_secs: u64,
+    #[serde(default = "default_exit_timeout_secs")]
+    pub exit_timeout_secs: u64,
     #[serde(default)]
     pub channels: HashMap<String, ChannelConfig>,
 }
@@ -93,6 +95,7 @@ impl Default for ChannelsManagerConfig {
     fn default() -> Self {
         Self {
             init_timeout_secs: default_init_timeout_secs(),
+            exit_timeout_secs: default_exit_timeout_secs(),
             channels: HashMap::new(),
         }
     }
@@ -211,6 +214,8 @@ pub struct ChannelConfig {
     pub ack: AckConfig,
     #[serde(default)]
     pub init_timeout_secs: Option<u64>,
+    #[serde(default)]
+    pub exit_timeout_secs: Option<u64>,
     #[serde(default)]
     pub backoff: Option<BackoffConfig>,
     #[serde(default)]
@@ -381,6 +386,9 @@ fn default_acp_timeout_secs() -> u64 {
 }
 fn default_init_timeout_secs() -> u64 {
     10
+}
+fn default_exit_timeout_secs() -> u64 {
+    5
 }
 fn default_shutdown_grace_ms() -> u64 {
     100
@@ -654,6 +662,7 @@ tools-manager:
         assert_eq!(config.agents_manager.acp_timeout_secs, 30);
         assert_eq!(config.agents_manager.shutdown_grace_ms, 100);
         assert_eq!(config.channels_manager.init_timeout_secs, 10);
+        assert_eq!(config.channels_manager.exit_timeout_secs, 5);
     }
 
     #[test]
@@ -872,6 +881,7 @@ supervisor:
     fn when_channels_manager_config_defaulted_then_has_expected_timeout() {
         let config = ChannelsManagerConfig::default();
         assert_eq!(config.init_timeout_secs, 10);
+        assert_eq!(config.exit_timeout_secs, 5);
         assert!(config.channels.is_empty());
     }
 
@@ -932,6 +942,7 @@ channels-manager:
         let yaml = "binary: \"debug-http\"";
         let config: ChannelConfig = serde_yaml::from_str(yaml).unwrap();
         assert!(config.init_timeout_secs.is_none());
+        assert!(config.exit_timeout_secs.is_none());
         assert!(config.backoff.is_none());
         assert!(config.crash_tracker.is_none());
     }

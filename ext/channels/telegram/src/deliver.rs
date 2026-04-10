@@ -249,7 +249,8 @@ pub async fn deliver_to_chat(
                 let bot_clone = bot.clone();
                 let state_clone = Arc::clone(state);
                 let handle = tokio::spawn(async move {
-                    tokio::time::sleep(Duration::from_millis(400)).await;
+                    let debounce_ms = *state_clone.thought_debounce_ms.read().await;
+                    tokio::time::sleep(Duration::from_millis(debounce_ms)).await;
                     let (accumulated, thought_msg_id) = {
                         let turns = state_clone.turns.read().await;
                         match turns.get(&chat_id) {
@@ -356,7 +357,8 @@ pub async fn deliver_to_chat(
                 let bot_clone = bot.clone();
                 let state_clone = Arc::clone(state);
                 let new_handle = tokio::spawn(async move {
-                    tokio::time::sleep(Duration::from_millis(200)).await;
+                    let delay_ms = *state_clone.finalization_delay_ms.read().await;
+                    tokio::time::sleep(Duration::from_millis(delay_ms)).await;
                     let final_data = {
                         let mut turns = state_clone.turns.write().await;
                         turns.get_mut(&chat_id).and_then(|t| t.take_response_for_finalize())
@@ -399,10 +401,11 @@ pub async fn deliver_to_chat(
 
             if existing_response_msg_id != 0 {
                 let can_edit = {
+                    let cooldown = Duration::from_millis(*state.response_edit_cooldown_ms.read().await);
                     let mut turns = state.turns.write().await;
                     turns
                         .get_mut(&chat_id)
-                        .map(|t| t.can_edit_response())
+                        .map(|t| t.can_edit_response(cooldown))
                         .unwrap_or(false)
                 };
                 if can_edit {
@@ -523,7 +526,8 @@ pub async fn deliver_to_chat(
             let bot_clone = bot.clone();
             let state_clone = Arc::clone(state);
             let handle = tokio::spawn(async move {
-                tokio::time::sleep(Duration::from_millis(200)).await;
+                let delay_ms = *state_clone.finalization_delay_ms.read().await;
+                tokio::time::sleep(Duration::from_millis(delay_ms)).await;
                 let final_data = {
                     let mut turns = state_clone.turns.write().await;
                     turns.get_mut(&chat_id).and_then(|t| t.take_response_for_finalize())

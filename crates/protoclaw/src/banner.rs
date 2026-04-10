@@ -82,6 +82,7 @@ mod tests {
                     agent: "default".into(),
                     ack: Default::default(),
                     init_timeout_secs: None,
+                    exit_timeout_secs: None,
                     backoff: None,
                     crash_tracker: None,
                     options: HashMap::new(),

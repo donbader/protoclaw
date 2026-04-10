@@ -27,7 +27,11 @@ Implements rmcp's `ServerHandler` trait. Aggregates tools from all three sources
 - `list_tools()` — merges native host tools + external server tools
 - `call_tool()` — routes to native host first, then external servers by name match
 
-Served over HTTP via rmcp's `StreamableHttpService` (stateless, JSON response mode) on a random port bound to `0.0.0.0`. The advertised URL uses `tools_server_host` from `ToolsManagerConfig` (default `127.0.0.1`; set to the container hostname in Docker deployments so agent containers can reach it). The URL is registered in `server_urls` so `AgentsManager` can pass it to agents via `session/new` → `mcp_servers`. Each configured external MCP tool gets its own `McpServerUrl` entry pointing to the shared aggregated endpoint.
+Served over HTTP via rmcp's `StreamableHttpService` (stateful mode) on a random port bound to `0.0.0.0`. The advertised URL uses `tools_server_host` from `ToolsManagerConfig` (default `127.0.0.1`; set to the container hostname in Docker deployments so agent containers can reach it). The URL is registered in `server_urls` so `AgentsManager` can pass it to agents via `session/new` → `mcp_servers`. Each configured external MCP tool gets its own `McpServerUrl` entry pointing to the shared aggregated endpoint.
+
+**StreamableHttpServerConfig requirements:**
+- `stateful_mode = true` is mandatory — without it, rmcp treats each HTTP request as independent, breaking multi-turn tool conversations that rely on session state
+- `cancellation_token` ties the MCP server lifecycle to the tools manager's cancel signal for clean shutdown
 
 ## WASM Sandbox Model
 
