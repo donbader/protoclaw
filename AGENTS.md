@@ -183,3 +183,8 @@ When making code changes that affect any of the following, update the relevant A
 - Crate dependency changes (new edges in the dependency graph)
 
 Check which AGENTS.md files exist in the affected directories and their parents. Update all that document the changed area. If unsure, update the root AGENTS.md at minimum.
+
+## v5.1 Changes
+
+- v5.1 milestone (Tech Debt & Hardening, phases 45-54) complete
+- rstest/BDD test conventions enforced workspace-wide (all new and migrated tests use `#[rstest]`, `when_*`/`given_*` naming)

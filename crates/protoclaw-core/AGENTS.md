@@ -50,3 +50,7 @@ Do not change defaults without updating tests in `backoff.rs`.
 ## SessionKey Format
 
 `"{channel_name}:{kind}:{peer_id}"` — used as routing key in both agents and channels managers. Defined in `protoclaw-sdk-types`, re-exported here.
+
+## v5.1 Changes
+
+- `CrashTracker` enhancements: `is_crash_loop()` method to query crash loop state, `record_crash()` method for explicit crash recording

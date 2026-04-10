@@ -179,3 +179,9 @@ let outbound_msg = tester.outbound_rx.try_recv();
 ```
 
 See `ext/channels/telegram/` and `ext/channels/debug-http/` for full working examples.
+
+## v5.1 Changes
+
+- `retry_telegram_op()` applied to all send paths in `deliver.rs` — zero bare `let _ = bot.*` calls remain
+- Bare `.unwrap()` on Telegram API results replaced with `.expect("descriptive reason")` throughout
+- Configurable duration options (`cooldown_ms`, `debounce_ms`, `finalization_delay_ms`) received via `ChannelInitializeParams.options`

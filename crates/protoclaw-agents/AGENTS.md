@@ -77,3 +77,10 @@ The manager always uses `spawn_with_bridge()` in both `start()` and `handle_cras
 - Permission responses go through `_raw_response` because they're responses to agent-initiated requests, not client-initiated ones.
 - Use `unwrap_or_else(|| { tracing::warn!(...); Default::default() })` rather than bare `unwrap_or_default()` when falling back silently — the tracing call makes the fallback visible in logs.
 - Constructor uses `drain()` instead of `clone().into_iter()` when consuming maps to initialize session state — avoids unnecessary clones of large maps.
+
+## v5.1 Changes
+
+- ACP error responses forwarded to channels as error `DeliverMessage` (not silently dropped)
+- `#[tracing::instrument]` added to `initialize_agent()` and `create_session()`
+- `unwrap_or_default()` → `unwrap_or_else(|| { tracing::warn!(...); Default::default() })` on silent fallback paths
+- `CrashTracker` per agent slot; `disabled` flag set on crash loop to stop respawn

@@ -87,3 +87,12 @@ Returns `ValidationResult { errors, warnings }` — caller decides whether to ab
 - **Don't hardcode defaults outside serde** — all defaults live in `defaults.yaml` or `#[serde(default = "...")]` functions in `types.rs`
 - **Don't add `name` fields to entity structs** — names come from HashMap keys (manager-hierarchy pattern)
 - **Don't use `${VAR}` without a default for optional config** — missing env vars fail loudly at load time; use `${VAR:-default}` if the value is optional
+
+## v5.1 Changes
+
+- Snake_case key normalization: `agents-manager` → `agents_manager` via serde alias (and similarly for `channels-manager`, `tools-manager`)
+- Figment env var override layer removed from default loading path
+- Hostname/IP validation for `tools_server_host` (`InvalidToolsServerHost` error variant)
+- New duration config fields: `exit_timeout_secs`, `turn_timeout_secs`, `rate_limit_delay_secs`
+- `serde_yaml` replaced with `serde_yaml` 0.10 (yaml_serde) for YAML deserialization
+- `SubstYaml` fails loudly on missing env vars (no silent empty-string fallback)

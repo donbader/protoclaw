@@ -90,3 +90,10 @@ Key type: `SessionKey` (`"{channel}:{kind}:{peer_id}"`) is the queue key.
 - `cmd_rx.take().expect("cmd_rx must exist")` — same consumed-once pattern as agents
 - `start()` skips channels with `enabled = false` — no slot is created for disabled channels
 - Use `unwrap_or_else(|| { tracing::warn!(...); Default::default() })` rather than bare `unwrap_or_default()` when falling back silently — makes silent fallbacks visible in logs
+
+## v5.1 Changes
+
+- Session creation errors forwarded to channels as error `channel/deliverMessage` (not silently dropped)
+- `#[tracing::instrument]` added to `start()` and `spawn_and_initialize()`
+- `unwrap_or_default()` → `unwrap_or_else(|| { tracing::warn!(...); Default::default() })` on silent fallback paths
+- `CrashTracker` per channel slot; `disabled` flag set on crash loop to stop respawn
