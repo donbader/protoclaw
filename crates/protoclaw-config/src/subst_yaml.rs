@@ -25,12 +25,17 @@ impl Provider for SubstYaml {
         }
 
         let raw = std::fs::read_to_string(&self.0).map_err(|e| Error::from(e.to_string()))?;
-        let mut value: serde_yaml::Value =
-            serde_yaml::from_str(&raw).map_err(|e| Error::from(e.to_string()))?;
 
-        if let Err(e) = subst::yaml::substitute_string_values(&mut value, &subst::Env) {
-            tracing::warn!(error = %e, "env var interpolation failed, using raw values");
-        }
+        let substituted = match subst::substitute(&raw, &subst::Env) {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::warn!(error = %e, "env var interpolation failed, using raw values");
+                raw
+            }
+        };
+
+        let mut value: serde_yaml::Value =
+            serde_yaml::from_str(&substituted).map_err(|e| Error::from(e.to_string()))?;
 
         coerce_substituted_strings(&mut value);
 

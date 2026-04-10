@@ -39,6 +39,6 @@ protoclaw-test-helpers = { path = "crates/protoclaw-test-helpers" }
 wasmtime = "42"
 wasmtime-wasi = "42"
 rstest = "0.23"
-serde_yaml = "0.9"
-subst = { version = "0.3", features = ["toml", "yaml"] }
+serde_yaml = { package = "yaml_serde", version = "0.10" }
+subst = "0.3"
 bollard = "0.18"
