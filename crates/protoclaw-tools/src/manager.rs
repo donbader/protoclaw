@@ -207,8 +207,7 @@ impl Manager for ToolsManager {
             let native_host_clone = native_host.clone();
             let external_servers_clone = external_servers.clone();
             let config = StreamableHttpServerConfig::default()
-                .with_stateful_mode(false)
-                .with_json_response(true)
+                .with_stateful_mode(true)
                 .with_cancellation_token(ct.clone());
 
             let service: StreamableHttpService<AggregatedToolServer, LocalSessionManager> =

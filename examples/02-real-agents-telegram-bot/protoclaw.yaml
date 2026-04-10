@@ -79,6 +79,7 @@ channels-manager:
         reaction_lifecycle: "remove"
 
 tools-manager:
+  tools_server_host: "protoclaw"
   tools:
     system-info:
       binary: "@built-in/system-info"

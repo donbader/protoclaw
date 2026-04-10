@@ -30,7 +30,6 @@ services:
       - PORT=8080
       - HOST=0.0.0.0
       - DOCKER_HOST=tcp://socket-proxy:2375
-      - PROTOCLAW_TOOLS_MANAGER__TOOLS_SERVER_HOST=protoclaw
     env_file:
       - .env
     networks:
