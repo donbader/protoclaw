@@ -115,7 +115,10 @@ impl Supervisor {
         result
     }
 
-    pub async fn run_with_cancel(mut self, cancel: CancellationToken) -> Result<(), SupervisorError> {
+    pub async fn run_with_cancel(
+        mut self,
+        cancel: CancellationToken,
+    ) -> Result<(), SupervisorError> {
         let per_manager_timeout =
             Duration::from_secs(self.config.supervisor.shutdown_timeout_secs / 3);
         let health_interval_secs = self.config.supervisor.health_check_interval_secs;
@@ -712,11 +715,7 @@ mod tests {
         crash_tracker.record_crash();
         crash_tracker.record_crash();
 
-        let lifecycle = SlotLifecycle::new(
-            &cancel,
-            ExponentialBackoff::default(),
-            crash_tracker,
-        );
+        let lifecycle = SlotLifecycle::new(&cancel, ExponentialBackoff::default(), crash_tracker);
         slots.push(ManagerSlot {
             name: "tools".to_string(),
             join_handle: Some(handle),

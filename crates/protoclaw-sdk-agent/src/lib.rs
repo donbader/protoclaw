@@ -16,7 +16,9 @@ mod tests {
     async fn when_generic_adapter_on_initialize_result_called_then_passthrough() {
         let adapter = GenericAcpAdapter;
         let input = serde_json::json!({"protocolVersion": 1, "capabilities": {}});
-        let output = AgentAdapter::on_initialize_result(&adapter, input.clone()).await.unwrap();
+        let output = AgentAdapter::on_initialize_result(&adapter, input.clone())
+            .await
+            .unwrap();
         assert_eq!(input, output);
     }
 
@@ -24,7 +26,9 @@ mod tests {
     async fn when_generic_adapter_on_session_new_result_called_then_passthrough() {
         let adapter = GenericAcpAdapter;
         let input = serde_json::json!({"sessionId": "sess-42"});
-        let output = AgentAdapter::on_session_new_result(&adapter, input.clone()).await.unwrap();
+        let output = AgentAdapter::on_session_new_result(&adapter, input.clone())
+            .await
+            .unwrap();
         assert_eq!(input, output);
     }
 
@@ -37,7 +41,9 @@ mod tests {
     async fn when_generic_adapter_on_initialize_params_called_then_passthrough() {
         let adapter = GenericAcpAdapter;
         let input = serde_json::json!({"protocolVersion": 1});
-        let output = AgentAdapter::on_initialize_params(&adapter, input.clone()).await.unwrap();
+        let output = AgentAdapter::on_initialize_params(&adapter, input.clone())
+            .await
+            .unwrap();
         assert_eq!(input, output);
     }
 
@@ -45,7 +51,9 @@ mod tests {
     async fn when_generic_adapter_on_session_new_params_called_then_passthrough() {
         let adapter = GenericAcpAdapter;
         let input = serde_json::json!({"sessionId": null});
-        let output = AgentAdapter::on_session_new_params(&adapter, input.clone()).await.unwrap();
+        let output = AgentAdapter::on_session_new_params(&adapter, input.clone())
+            .await
+            .unwrap();
         assert_eq!(input, output);
     }
 
@@ -64,7 +72,9 @@ mod tests {
     async fn when_generic_adapter_on_session_update_called_then_passthrough() {
         let adapter = GenericAcpAdapter;
         let input = serde_json::json!({"sessionId": "s1", "type": "agent_message_chunk", "content": "hello"});
-        let output = AgentAdapter::on_session_update(&adapter, input.clone()).await.unwrap();
+        let output = AgentAdapter::on_session_update(&adapter, input.clone())
+            .await
+            .unwrap();
         assert_eq!(input, output);
     }
 
@@ -72,7 +82,9 @@ mod tests {
     async fn when_generic_adapter_on_permission_request_called_then_passthrough() {
         let adapter = GenericAcpAdapter;
         let input = serde_json::json!({"requestId": "r1", "description": "Allow?"});
-        let output = AgentAdapter::on_permission_request(&adapter, input.clone()).await.unwrap();
+        let output = AgentAdapter::on_permission_request(&adapter, input.clone())
+            .await
+            .unwrap();
         assert_eq!(input, output);
     }
 
