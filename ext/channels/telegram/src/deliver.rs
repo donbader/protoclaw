@@ -10,7 +10,7 @@ use tokio::time::Instant;
 
 use crate::formatting::{close_open_tags, escape_html, format_telegram_html};
 use crate::state::SharedState;
-use crate::turn::{ChatTurn, TurnPhase};
+use crate::turn::{ChatTurn, ToolCallTrack, TurnPhase};
 
 const MAX_RETRY_ATTEMPTS: u32 = 3;
 const RETRY_BASE_DELAY_MS: u64 = 500;
@@ -690,6 +690,84 @@ pub async fn deliver_to_chat(
                 turn.begin_finalizing(handle);
             }
 
+            Ok(())
+        }
+
+        ContentKind::ToolCall { name, tool_call_id, .. } => {
+            let display_name = if name.is_empty() { "tool" } else { &name };
+            let text = format!("🔧 <code>{}</code>…", escape_html(display_name));
+
+            let mut turns = state.turns.write().await;
+            let mid = message_id.unwrap_or("").to_string();
+            let turn = turns.entry(chat_id).or_insert_with(|| ChatTurn::new(mid.clone()));
+            if !mid.is_empty() {
+                turn.message_id = mid;
+            }
+
+            if let Some(track) = turn.thought.as_mut() {
+                track.suppressed = false;
+            }
+
+            drop(turns);
+
+            if let Ok(sent) = retry_telegram_op("send_tool_call", chat_id, || {
+                let text = text.clone();
+                async move {
+                    bot.send_message(ChatId(chat_id), &text)
+                        .parse_mode(ParseMode::Html)
+                        .await
+                }
+            })
+            .await
+            {
+                if !tool_call_id.is_empty() {
+                    let mut turns = state.turns.write().await;
+                    if let Some(turn) = turns.get_mut(&chat_id) {
+                        turn.tool_calls.insert(tool_call_id, ToolCallTrack {
+                            msg_id: sent.id.0,
+                            name: name.to_string(),
+                        });
+                    }
+                }
+            }
+            Ok(())
+        }
+
+        ContentKind::ToolCallUpdate { name, tool_call_id, status, .. } => {
+            let (tracked_msg_id, tracked_name) = {
+                let turns = state.turns.read().await;
+                turns.get(&chat_id).and_then(|turn| {
+                    turn.tool_calls.get(&tool_call_id).map(|t| (t.msg_id, t.name.clone()))
+                }).unwrap_or((0, String::new()))
+            };
+
+            let display_name = if !name.is_empty() {
+                name.clone()
+            } else if !tracked_name.is_empty() {
+                tracked_name
+            } else {
+                "tool".to_string()
+            };
+
+            let emoji = match status.as_str() {
+                "completed" => "✅",
+                "failed" => "❌",
+                "in_progress" => "⏳",
+                _ => "🔧",
+            };
+            let text = format!("{emoji} <code>{}</code>", escape_html(&display_name));
+
+            if tracked_msg_id != 0 {
+                let _ = retry_telegram_op("edit_tool_call_update", chat_id, || {
+                    let text = text.clone();
+                    async move {
+                        bot.edit_message_text(ChatId(chat_id), MessageId(tracked_msg_id), &text)
+                            .parse_mode(ParseMode::Html)
+                            .await
+                    }
+                })
+                .await;
+            }
             Ok(())
         }
 

@@ -114,10 +114,27 @@ impl ThoughtContent {
 #[derive(Debug, Clone, PartialEq)]
 pub enum ContentKind {
     Thought(ThoughtContent),
-    MessageChunk { text: String },
-    Result { text: String },
-    UserMessageChunk { text: String },
+    MessageChunk {
+        text: String,
+    },
+    Result {
+        text: String,
+    },
+    UserMessageChunk {
+        text: String,
+    },
     UsageUpdate,
+    ToolCall {
+        name: String,
+        tool_call_id: String,
+        input: Option<serde_json::Value>,
+    },
+    ToolCallUpdate {
+        name: String,
+        tool_call_id: String,
+        status: String,
+        output: Option<String>,
+    },
     Unknown,
 }
 
@@ -154,6 +171,51 @@ impl ContentKind {
                 text: extract_content_text(update),
             },
             "usage_update" => ContentKind::UsageUpdate,
+            "tool_call" => {
+                let tool_call_id = update
+                    .get("toolCallId")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let name = update
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let input = update.get("input").cloned();
+                ContentKind::ToolCall {
+                    name,
+                    tool_call_id,
+                    input,
+                }
+            }
+            "tool_call_update" => {
+                let tool_call_id = update
+                    .get("toolCallId")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let name = update
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let status = update
+                    .get("status")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let output = update
+                    .get("output")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                ContentKind::ToolCallUpdate {
+                    name,
+                    tool_call_id,
+                    status,
+                    output,
+                }
+            }
             _ => ContentKind::Unknown,
         }
     }
@@ -566,6 +628,106 @@ mod tests {
     fn when_content_has_no_update_key_then_returns_unknown() {
         let content = serde_json::json!({"text": "plain message"});
         assert_eq!(ContentKind::from_content(&content), ContentKind::Unknown);
+    }
+
+    #[rstest]
+    fn when_content_is_tool_call_then_returns_tool_call() {
+        let content = serde_json::json!({
+            "update": {
+                "sessionUpdate": "tool_call",
+                "toolCallId": "tc-1",
+                "name": "read_file",
+                "input": {"path": "/tmp/foo.txt"}
+            }
+        });
+        let kind = ContentKind::from_content(&content);
+        match kind {
+            ContentKind::ToolCall {
+                name,
+                tool_call_id,
+                input,
+            } => {
+                assert_eq!(name, "read_file");
+                assert_eq!(tool_call_id, "tc-1");
+                assert!(input.is_some());
+            }
+            other => panic!("expected ToolCall, got {:?}", other),
+        }
+    }
+
+    #[rstest]
+    fn when_content_is_tool_call_without_optional_fields_then_returns_tool_call_with_defaults() {
+        let content = serde_json::json!({
+            "update": {
+                "sessionUpdate": "tool_call"
+            }
+        });
+        let kind = ContentKind::from_content(&content);
+        match kind {
+            ContentKind::ToolCall {
+                name,
+                tool_call_id,
+                input,
+            } => {
+                assert_eq!(name, "");
+                assert_eq!(tool_call_id, "");
+                assert!(input.is_none());
+            }
+            other => panic!("expected ToolCall, got {:?}", other),
+        }
+    }
+
+    #[rstest]
+    fn when_content_is_tool_call_update_then_returns_tool_call_update() {
+        let content = serde_json::json!({
+            "update": {
+                "sessionUpdate": "tool_call_update",
+                "toolCallId": "tc-1",
+                "name": "read_file",
+                "status": "completed",
+                "output": "file contents here"
+            }
+        });
+        let kind = ContentKind::from_content(&content);
+        match kind {
+            ContentKind::ToolCallUpdate {
+                name,
+                tool_call_id,
+                status,
+                output,
+            } => {
+                assert_eq!(name, "read_file");
+                assert_eq!(tool_call_id, "tc-1");
+                assert_eq!(status, "completed");
+                assert_eq!(output.as_deref(), Some("file contents here"));
+            }
+            other => panic!("expected ToolCallUpdate, got {:?}", other),
+        }
+    }
+
+    #[rstest]
+    fn when_content_is_tool_call_update_without_optional_fields_then_returns_defaults() {
+        let content = serde_json::json!({
+            "update": {
+                "sessionUpdate": "tool_call_update",
+                "toolCallId": "tc-2"
+            }
+        });
+        let kind = ContentKind::from_content(&content);
+        match kind {
+            ContentKind::ToolCallUpdate {
+                name,
+                tool_call_id,
+                status,
+                output,
+            } => {
+                assert_eq!(tool_call_id, "tc-2");
+                assert_eq!(name, "");
+                assert_eq!(status, "");
+                assert!(output.is_none());
+            }
+            other => panic!("expected ToolCallUpdate, got {:?}", other),
+        }
     }
 
     #[rstest]

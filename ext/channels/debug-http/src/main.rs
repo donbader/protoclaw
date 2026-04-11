@@ -129,6 +129,23 @@ impl Channel for DebugHttpChannel {
                 event_type: None,
                 data: text,
             },
+            ContentKind::ToolCall { name, tool_call_id, input } => SsePayload {
+                event_type: Some("tool_call".into()),
+                data: serde_json::json!({
+                    "toolCallId": tool_call_id,
+                    "name": name,
+                    "input": input,
+                }).to_string(),
+            },
+            ContentKind::ToolCallUpdate { name, tool_call_id, status, output } => SsePayload {
+                event_type: Some("tool_call_update".into()),
+                data: serde_json::json!({
+                    "toolCallId": tool_call_id,
+                    "name": name,
+                    "status": status,
+                    "output": output,
+                }).to_string(),
+            },
             _ => {
                 let content_str = content_to_string(&msg.content);
                 SsePayload { event_type: None, data: content_str }
@@ -489,5 +506,55 @@ mod tests {
 
         let pending = state.pending_permissions.read().await;
         assert!(pending.is_empty());
+    }
+
+    #[tokio::test]
+    async fn tool_call_broadcasts_as_named_event() {
+        let state = make_shared_state();
+        let mut rx = state.event_tx.subscribe();
+        let mut ch = DebugHttpChannel { state: state.clone(), host: "127.0.0.1".to_string(), port: 0 };
+        let msg = DeliverMessage {
+            session_id: "s1".into(),
+            content: serde_json::json!({
+                "update": {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tc-1",
+                    "name": "read_file",
+                    "input": {"path": "/tmp/foo.txt"}
+                }
+            }),
+        };
+        ch.deliver_message(msg).await.unwrap();
+        let received = rx.try_recv().expect("should have received broadcast");
+        assert_eq!(received.event_type.as_deref(), Some("tool_call"));
+        let data: serde_json::Value = serde_json::from_str(&received.data).expect("data should be JSON");
+        assert_eq!(data["name"], "read_file");
+        assert_eq!(data["toolCallId"], "tc-1");
+    }
+
+    #[tokio::test]
+    async fn tool_call_update_broadcasts_as_named_event() {
+        let state = make_shared_state();
+        let mut rx = state.event_tx.subscribe();
+        let mut ch = DebugHttpChannel { state: state.clone(), host: "127.0.0.1".to_string(), port: 0 };
+        let msg = DeliverMessage {
+            session_id: "s1".into(),
+            content: serde_json::json!({
+                "update": {
+                    "sessionUpdate": "tool_call_update",
+                    "toolCallId": "tc-1",
+                    "name": "read_file",
+                    "status": "completed",
+                    "output": "file contents"
+                }
+            }),
+        };
+        ch.deliver_message(msg).await.unwrap();
+        let received = rx.try_recv().expect("should have received broadcast");
+        assert_eq!(received.event_type.as_deref(), Some("tool_call_update"));
+        let data: serde_json::Value = serde_json::from_str(&received.data).expect("data should be JSON");
+        assert_eq!(data["name"], "read_file");
+        assert_eq!(data["status"], "completed");
+        assert_eq!(data["toolCallId"], "tc-1");
     }
 }

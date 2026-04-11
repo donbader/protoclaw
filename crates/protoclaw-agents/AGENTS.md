@@ -66,6 +66,15 @@ When an agent finishes processing a prompt, two signals arrive:
 
 The manager always uses `spawn_with_bridge()` in both `start()` and `handle_crash()`. This eliminates the two-hop latency that previously caused premature `SessionComplete` — the old design had a `spawn_incoming_bridge()` task forwarding from the connection's internal channel to the manager's channel, and events could be stuck in the bridge queue when `try_recv()` drained `incoming_rx`.
 
+## Tool Event Normalization
+
+`normalize_tool_event_fields()` runs on `tool_call` and `tool_call_update` events before forwarding to channels. It translates agent-specific wire quirks into the canonical format that `ContentKind` expects:
+
+- `title` → `name` (if `name` is absent)
+- `rawOutput.output` → `output` (if `output` is absent, `tool_call_update` only)
+
+This keeps `ContentKind` in `protoclaw-sdk-types` agent-agnostic — it only reads `name` and `output`. Agent-specific field mappings stay in the agents crate.
+
 ## Anti-Patterns (this crate)
 
 - Do not reintroduce `spawn_incoming_bridge()` or any intermediate forwarding channel between `AgentConnection` and the manager's `incoming_rx` — the two-hop latency causes premature `SessionComplete` when `try_recv()` sees an empty channel while events are still in the bridge queue.

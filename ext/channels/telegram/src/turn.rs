@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::time::Duration;
 use tokio::task::JoinHandle;
 use tokio::time::Instant;
@@ -16,6 +17,11 @@ pub struct ResponseTrack {
     pub last_edit: Instant,
 }
 
+pub struct ToolCallTrack {
+    pub msg_id: i32,
+    pub name: String,
+}
+
 pub enum TurnPhase {
     Active,
     Finalizing(JoinHandle<()>),
@@ -26,6 +32,7 @@ pub struct ChatTurn {
     pub phase: TurnPhase,
     pub thought: Option<ThoughtTrack>,
     pub response: Option<ResponseTrack>,
+    pub tool_calls: HashMap<String, ToolCallTrack>,
 }
 
 impl ChatTurn {
@@ -35,6 +42,7 @@ impl ChatTurn {
             phase: TurnPhase::Active,
             thought: None,
             response: None,
+            tool_calls: HashMap::new(),
         }
     }
 
@@ -117,6 +125,7 @@ impl ChatTurn {
         }
         self.thought = None;
         self.response = None;
+        self.tool_calls.clear();
         self.phase = TurnPhase::Active;
     }
 }

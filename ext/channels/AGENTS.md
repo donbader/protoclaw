@@ -27,11 +27,13 @@ Both channels use `ContentKind::from_content(&msg.content)` from `protoclaw-sdk-
 - `ContentKind::Thought(thought)` — thought content from the agent's reasoning process
 - `ContentKind::UserMessageChunk { text }` — user's message echoed back (includes merged prompt text)
 - `ContentKind::MessageChunk { text }` / `ContentKind::Result { text }` — agent response chunks and final result
+- `ContentKind::ToolCall { name, tool_call_id, input }` — agent started a tool call
+- `ContentKind::ToolCallUpdate { name, tool_call_id, status, output }` — tool call status change (in_progress, completed, failed)
 - `ContentKind::UsageUpdate` / `ContentKind::Unknown` — silently ignored
 
-**debug-http:** Emits thoughts as named SSE event `"thought"` and user message chunks as named SSE event `"user_message_chunk"` via `SsePayload` struct. Regular messages use default SSE data events. SSE clients filter by event type.
+**debug-http:** Emits thoughts as named SSE event `"thought"`, tool calls as `"tool_call"`, tool call updates as `"tool_call_update"`, and user message chunks as `"user_message_chunk"` via `SsePayload` struct. Tool call SSE data is JSON with `toolCallId`, `name`, `input`/`status`/`output` fields. Regular messages use default SSE data events. SSE clients filter by event type.
 
-**telegram:** Streams thoughts as 🧠-prefixed messages with debounced edits (400ms internal timer). On `"result"`, collapses to "🧠 Thought for Xs" (timing only, no content). Emoji prefix configurable via `thought_emoji` option in `ChannelInitializeParams.options` (default: 🧠). Thinking state tracked inside `ChatTurn.thought` (see below).
+**telegram:** Streams thoughts as 🧠-prefixed messages with debounced edits (400ms internal timer). On `"result"`, collapses to "🧠 Thought for Xs" (timing only, no content). Tool calls render as separate 🔧-prefixed messages showing the tool name; tool call updates edit the original message in-place with status emoji (⏳ in_progress, ✅ completed, ❌ failed). Tool call state tracked in `ChatTurn.tool_calls: HashMap<String, ToolCallTrack>`. Emoji prefix configurable via `thought_emoji` option in `ChannelInitializeParams.options` (default: 🧠). Thinking state tracked inside `ChatTurn.thought` (see below).
 
 ## ChatTurn State Machine (telegram)
 
@@ -41,9 +43,10 @@ All per-chat streaming state is encapsulated in a single `ChatTurn` struct per c
 
 | Type | Purpose |
 |------|---------|
-| `ChatTurn` | One agent turn per chat. Owns `message_id`, `phase`, `thought`, `response`. |
+| `ChatTurn` | One agent turn per chat. Owns `message_id`, `phase`, `thought`, `response`, `tool_calls`. |
 | `ThoughtTrack` | Telegram message ID, buffer, debounce handle, timing, suppression flag. |
 | `ResponseTrack` | Telegram message ID, buffer, last-edit timestamp (rate limiting). |
+| `ToolCallTrack` | Telegram message ID + tool name for edit-in-place status updates. |
 | `TurnPhase` | `Active` (streaming) or `Finalizing(JoinHandle<()>)` (waiting for late chunks). |
 
 ### Lifecycle

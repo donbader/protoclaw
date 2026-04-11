@@ -395,8 +395,6 @@ impl AgentsManager {
 
                     let is_result = matches!(event.update, SessionUpdateType::Result { .. });
 
-                    // Stamp wall-clock receive time so channels can measure
-                    // thought duration from agent emission, not display time.
                     let mut content = params;
                     if let Some(obj) = content.as_object_mut() {
                         let now_ms = std::time::SystemTime::now()
@@ -408,6 +406,8 @@ impl AgentsManager {
                             .as_millis() as u64;
                         obj.insert("_received_at_ms".to_string(), serde_json::json!(now_ms));
                     }
+
+                    normalize_tool_event_fields(&mut content, update_type);
 
                     if let Some(session_key) = self.slots[slot_idx].reverse_map.get(&event.session_id).cloned() {
                         if let Some(sender) = &self.channels_sender {
@@ -871,6 +871,28 @@ impl Manager for AgentsManager {
             return self.agent_configs.iter().all(|(_, c)| !c.enabled);
         }
         enabled_slots.iter().all(|s| s.connection.is_some())
+    }
+}
+
+fn normalize_tool_event_fields(content: &mut serde_json::Value, update_type: &str) {
+    if update_type != "tool_call" && update_type != "tool_call_update" {
+        return;
+    }
+    let update = match content.get_mut("update").and_then(|u| u.as_object_mut()) {
+        Some(u) => u,
+        None => return,
+    };
+
+    if !update.contains_key("name") {
+        if let Some(title) = update.remove("title") {
+            update.insert("name".to_string(), title);
+        }
+    }
+
+    if update_type == "tool_call_update" && !update.contains_key("output") {
+        if let Some(raw) = update.get("rawOutput").and_then(|r| r.get("output")).cloned() {
+            update.insert("output".to_string(), raw);
+        }
     }
 }
 
@@ -1471,5 +1493,75 @@ mod tests {
 
         m.shutdown_all().await;
         tools_task.abort();
+    }
+
+    #[rstest]
+    fn when_tool_call_has_title_but_no_name_then_title_promoted_to_name() {
+        let mut content = serde_json::json!({
+            "update": {
+                "sessionUpdate": "tool_call",
+                "title": "system-info_system-info",
+                "toolCallId": "tc-1"
+            }
+        });
+        normalize_tool_event_fields(&mut content, "tool_call");
+        assert_eq!(content["update"]["name"], "system-info_system-info");
+        assert!(content["update"].get("title").is_none());
+    }
+
+    #[rstest]
+    fn when_tool_call_already_has_name_then_title_not_overwritten() {
+        let mut content = serde_json::json!({
+            "update": {
+                "sessionUpdate": "tool_call",
+                "name": "read_file",
+                "title": "Read File Tool",
+                "toolCallId": "tc-1"
+            }
+        });
+        normalize_tool_event_fields(&mut content, "tool_call");
+        assert_eq!(content["update"]["name"], "read_file");
+    }
+
+    #[rstest]
+    fn when_tool_call_update_has_raw_output_but_no_output_then_raw_output_promoted() {
+        let mut content = serde_json::json!({
+            "update": {
+                "sessionUpdate": "tool_call_update",
+                "toolCallId": "tc-1",
+                "status": "completed",
+                "rawOutput": {"output": "file contents here", "metadata": {}}
+            }
+        });
+        normalize_tool_event_fields(&mut content, "tool_call_update");
+        assert_eq!(content["update"]["output"], "file contents here");
+    }
+
+    #[rstest]
+    fn when_tool_call_update_already_has_output_then_raw_output_not_overwritten() {
+        let mut content = serde_json::json!({
+            "update": {
+                "sessionUpdate": "tool_call_update",
+                "toolCallId": "tc-1",
+                "status": "completed",
+                "output": "direct output",
+                "rawOutput": {"output": "raw output"}
+            }
+        });
+        normalize_tool_event_fields(&mut content, "tool_call_update");
+        assert_eq!(content["update"]["output"], "direct output");
+    }
+
+    #[rstest]
+    fn when_non_tool_event_then_normalization_is_noop() {
+        let mut content = serde_json::json!({
+            "update": {
+                "sessionUpdate": "agent_message_chunk",
+                "title": "should not be touched"
+            }
+        });
+        let original = content.clone();
+        normalize_tool_event_fields(&mut content, "agent_message_chunk");
+        assert_eq!(content, original);
     }
 }
