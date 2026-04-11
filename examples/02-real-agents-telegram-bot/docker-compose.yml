@@ -36,8 +36,10 @@ services:
       - protoclaw-internal
       - protoclaw-external
     depends_on:
-      - socket-proxy
-      - opencode-agent-image
+      socket-proxy:
+        condition: service_started
+      opencode-agent-image:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   opencode-agent-image:
@@ -46,8 +48,8 @@ services:
       dockerfile: examples/02-real-agents-telegram-bot/Dockerfile
       target: opencode-agent
     image: protoclaw-opencode-agent:latest
-    profiles:
-      - build-only
+    entrypoint: ["true"]
+    restart: "no"
 
 networks:
   protoclaw-internal:
