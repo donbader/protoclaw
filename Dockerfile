@@ -13,32 +13,23 @@ FROM chef AS builder
 COPY --from=planner /build/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json
 COPY . .
+RUN cargo build --release --bin protoclaw
 RUN cargo build --release \
-    --bin protoclaw \
     --bin telegram-channel \
     --bin debug-http \
     --bin mock-agent \
     --bin system-info \
     --bin opencode-wrapper
 
-# Stage 4: Core runtime — protoclaw + all channel binaries (base for examples)
-# debian:bookworm-slim
-FROM debian:bookworm-slim@sha256:4724b8cc51e33e398f0e2e15e18d5ec2851ff0c2280647e1310bc1642182655d AS core
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates && rm -rf /var/lib/apt/lists/*
+# Stage 4: Core runtime — protoclaw only (distroless, no shell)
+# TODO: Pin distroless image by digest — Phase 74 will add reproducible pinning
+FROM gcr.io/distroless/cc-debian12:nonroot AS core
 COPY --from=builder /build/target/release/protoclaw /usr/local/bin/protoclaw
-COPY --from=builder /build/target/release/debug-http /usr/local/bin/debug-http
-COPY --from=builder /build/target/release/telegram-channel /usr/local/bin/telegram-channel
-COPY --from=builder /build/target/release/mock-agent /usr/local/bin/mock-agent
-COPY --from=builder /build/target/release/system-info /usr/local/bin/system-info
-COPY --from=builder /build/target/release/opencode-wrapper /usr/local/bin/opencode-wrapper
 WORKDIR /workspace
 ENTRYPOINT ["protoclaw"]
 
 # Stage 5: Mock-agent standalone (for Docker workspace mode)
-# debian:bookworm-slim
-FROM debian:bookworm-slim@sha256:4724b8cc51e33e398f0e2e15e18d5ec2851ff0c2280647e1310bc1642182655d AS mock-agent
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates && rm -rf /var/lib/apt/lists/*
+# TODO: Pin distroless image by digest — Phase 74 will add reproducible pinning
+FROM gcr.io/distroless/cc-debian12:nonroot AS mock-agent
 COPY --from=builder /build/target/release/mock-agent /usr/local/bin/mock-agent
 ENTRYPOINT ["mock-agent"]
