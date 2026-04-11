@@ -149,109 +149,18 @@ impl Manager for ToolsManager {
 
     #[tracing::instrument(skip(self), name = "tools_manager_start")]
     async fn start(&mut self) -> Result<(), ManagerError> {
-        let mut all_tools: Vec<Box<dyn DynTool>> = std::mem::take(&mut self.native_tools);
+        let wasm_configs = self.enabled_tool_configs(protoclaw_config::ToolType::Wasm);
+        let mcp_configs = self.enabled_tool_configs(protoclaw_config::ToolType::Mcp);
 
-        let wasm_configs: Vec<(String, ToolConfig)> = self
-            .tool_configs
-            .iter()
-            .filter(|(_, c)| c.tool_type == protoclaw_config::ToolType::Wasm && c.enabled)
-            .map(|(n, c)| (n.clone(), c.clone()))
-            .collect();
-
-        if !wasm_configs.is_empty() {
-            let wasm_runner = Arc::new(
-                WasmToolRunner::new()
-                    .map_err(|e| ManagerError::Internal(format!("wasm runner: {e}")))?,
-            );
-
-            for (name, wasm_config) in &wasm_configs {
-                match WasmTool::new(name.clone(), wasm_config.clone(), wasm_runner.clone()) {
-                    Ok(tool) => {
-                        tracing::info!(name = %DynTool::name(&tool), "loaded WASM tool");
-                        all_tools.push(Box::new(tool));
-                    }
-                    Err(e) => {
-                        tracing::warn!(name = %name, error = %e, "failed to load WASM tool, skipping");
-                    }
-                }
-            }
-        }
-
+        let all_tools = self.load_all_tools(&wasm_configs)?;
         let native_host = Arc::new(McpHost::new(all_tools));
         self.native_host = Some(native_host.clone());
 
-        let mut external_servers = Vec::new();
-        let mcp_configs: Vec<(String, ToolConfig)> = self
-            .tool_configs
-            .iter()
-            .filter(|(_, c)| c.tool_type == protoclaw_config::ToolType::Mcp && c.enabled)
-            .map(|(n, c)| (n.clone(), c.clone()))
-            .collect();
-
-        for (name, config) in &mcp_configs {
-            match ExternalMcpServer::spawn(name, config).await {
-                Ok(server) => {
-                    tracing::info!(name = %name, "spawned external MCP server");
-                    external_servers.push(server);
-                }
-                Err(e) => {
-                    tracing::warn!(name = %name, error = %e, "failed to spawn external MCP server, skipping");
-                }
-            }
-        }
-        let external_servers = Arc::new(external_servers);
+        let external_servers = Arc::new(self.spawn_external_servers(&mcp_configs).await);
         self.external_servers = Some(external_servers.clone());
 
-        let has_tools = !native_host.tool_list().is_empty() || !external_servers.is_empty();
-        if has_tools {
-            let ct = CancellationToken::new();
-            let native_host_clone = native_host.clone();
-            let external_servers_clone = external_servers.clone();
-            // stateful_mode = true: required so rmcp maintains per-session state across requests.
-            // Without it each HTTP request is treated as independent, breaking multi-turn tool
-            // conversations. The cancellation token ties server lifetime to the tools manager.
-            let config = StreamableHttpServerConfig::default()
-                .with_stateful_mode(true)
-                .with_cancellation_token(ct.clone());
-
-            let service: StreamableHttpService<AggregatedToolServer, LocalSessionManager> =
-                StreamableHttpService::new(
-                    move || {
-                        Ok(AggregatedToolServer::new(
-                            native_host_clone.clone(),
-                            external_servers_clone.clone(),
-                        ))
-                    },
-                    Default::default(),
-                    config,
-                );
-
-            let router = axum::Router::new().nest_service("/mcp", service);
-            let listener = tokio::net::TcpListener::bind("0.0.0.0:0")
-                .await
-                .map_err(|e| ManagerError::Internal(format!("tools server bind: {e}")))?;
-            let port = listener
-                .local_addr()
-                .map_err(|e| ManagerError::Internal(format!("tools server addr: {e}")))?
-                .port();
-
-            let handle = tokio::spawn(async move {
-                let _ = axum::serve(listener, router)
-                    .with_graceful_shutdown(async move { ct.cancelled_owned().await })
-                    .await;
-            });
-            self.server_handles.push(handle);
-
-            let url = format!("http://{}:{port}/mcp", self.tools_server_host);
-            tracing::info!(url = %url, "tools aggregated MCP server listening");
-
-            for (name, _) in &mcp_configs {
-                self.server_urls.push(McpServerUrl {
-                    name: name.clone(),
-                    url: url.clone(),
-                });
-            }
-        }
+        self.start_aggregated_server_if_needed(&native_host, &external_servers, &mcp_configs)
+            .await?;
 
         tracing::info!(manager = self.name(), "manager started");
         Ok(())
@@ -300,6 +209,134 @@ impl Manager for ToolsManager {
 
     async fn health_check(&self) -> bool {
         !self.server_urls.is_empty() || self.tool_configs.is_empty()
+    }
+}
+
+impl ToolsManager {
+    fn enabled_tool_configs(
+        &self,
+        tool_type: protoclaw_config::ToolType,
+    ) -> Vec<(String, ToolConfig)> {
+        self.tool_configs
+            .iter()
+            .filter(|(_, config)| config.tool_type == tool_type && config.enabled)
+            .map(|(name, config)| (name.clone(), config.clone()))
+            .collect()
+    }
+
+    fn load_all_tools(
+        &mut self,
+        wasm_configs: &[(String, ToolConfig)],
+    ) -> Result<Vec<Box<dyn DynTool>>, ManagerError> {
+        let mut all_tools: Vec<Box<dyn DynTool>> = std::mem::take(&mut self.native_tools);
+        if wasm_configs.is_empty() {
+            return Ok(all_tools);
+        }
+
+        let wasm_runner = Arc::new(
+            WasmToolRunner::new()
+                .map_err(|e| ManagerError::Internal(format!("wasm runner: {e}")))?,
+        );
+
+        for (name, wasm_config) in wasm_configs {
+            match WasmTool::new(name.clone(), wasm_config.clone(), wasm_runner.clone()) {
+                Ok(tool) => {
+                    tracing::info!(name = %DynTool::name(&tool), "loaded WASM tool");
+                    all_tools.push(Box::new(tool));
+                }
+                Err(e) => {
+                    tracing::warn!(name = %name, error = %e, "failed to load WASM tool, skipping");
+                }
+            }
+        }
+
+        Ok(all_tools)
+    }
+
+    async fn spawn_external_servers(
+        &self,
+        mcp_configs: &[(String, ToolConfig)],
+    ) -> Vec<ExternalMcpServer> {
+        let mut external_servers = Vec::new();
+        for (name, config) in mcp_configs {
+            match ExternalMcpServer::spawn(name, config).await {
+                Ok(server) => {
+                    tracing::info!(name = %name, "spawned external MCP server");
+                    external_servers.push(server);
+                }
+                Err(e) => {
+                    tracing::warn!(name = %name, error = %e, "failed to spawn external MCP server, skipping");
+                }
+            }
+        }
+        external_servers
+    }
+
+    async fn start_aggregated_server_if_needed(
+        &mut self,
+        native_host: &Arc<McpHost>,
+        external_servers: &Arc<Vec<ExternalMcpServer>>,
+        mcp_configs: &[(String, ToolConfig)],
+    ) -> Result<(), ManagerError> {
+        let has_tools = !native_host.tool_list().is_empty() || !external_servers.is_empty();
+        if !has_tools {
+            return Ok(());
+        }
+
+        let (handle, url) = self
+            .spawn_aggregated_server(native_host.clone(), external_servers.clone())
+            .await?;
+        self.server_handles.push(handle);
+        tracing::info!(url = %url, "tools aggregated MCP server listening");
+
+        for (name, _) in mcp_configs {
+            self.server_urls.push(McpServerUrl {
+                name: name.clone(),
+                url: url.clone(),
+            });
+        }
+
+        Ok(())
+    }
+
+    async fn spawn_aggregated_server(
+        &self,
+        native_host: Arc<McpHost>,
+        external_servers: Arc<Vec<ExternalMcpServer>>,
+    ) -> Result<(tokio::task::JoinHandle<()>, String), ManagerError> {
+        let ct = CancellationToken::new();
+        let config = StreamableHttpServerConfig::default()
+            .with_stateful_mode(true)
+            .with_cancellation_token(ct.clone());
+
+        let service: StreamableHttpService<AggregatedToolServer, LocalSessionManager> =
+            StreamableHttpService::new(
+                move || {
+                    Ok(AggregatedToolServer::new(
+                        native_host.clone(),
+                        external_servers.clone(),
+                    ))
+                },
+                Default::default(),
+                config,
+            );
+
+        let router = axum::Router::new().nest_service("/mcp", service);
+        let listener = tokio::net::TcpListener::bind("0.0.0.0:0")
+            .await
+            .map_err(|e| ManagerError::Internal(format!("tools server bind: {e}")))?;
+        let port = listener
+            .local_addr()
+            .map_err(|e| ManagerError::Internal(format!("tools server addr: {e}")))?
+            .port();
+
+        let handle = tokio::spawn(async move {
+            let _ = axum::serve(listener, router)
+                .with_graceful_shutdown(async move { ct.cancelled_owned().await })
+                .await;
+        });
+        let url = format!("http://{}:{port}/mcp", self.tools_server_host);
+        Ok((handle, url))
     }
 }
 

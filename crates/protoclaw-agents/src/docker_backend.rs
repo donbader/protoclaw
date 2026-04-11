@@ -30,54 +30,40 @@ pub struct DockerBackend {
 }
 
 impl DockerBackend {
-    /// Spawn a new Docker container from the given config and return a ready `DockerBackend`.
-    ///
-    /// Performs image pull (gated by `PullPolicy`), container creation, start, and stream attach.
-    pub async fn spawn(
-        config: &DockerWorkspaceConfig,
-        agent_name: &str,
-        args: &[String],
-    ) -> Result<Self, AgentsError> {
-        // 1. Build Docker client
-        let docker = match &config.docker_host {
+    fn connect(config: &DockerWorkspaceConfig) -> Result<Docker, AgentsError> {
+        match &config.docker_host {
             Some(host) => Docker::connect_with_http(host, 120, bollard::API_DEFAULT_VERSION)
-                .map_err(|e| AgentsError::DockerError(e.to_string()))?,
+                .map_err(|e| AgentsError::DockerError(e.to_string())),
             None => Docker::connect_with_local_defaults()
-                .map_err(|e| AgentsError::DockerError(e.to_string()))?,
-        };
+                .map_err(|e| AgentsError::DockerError(e.to_string())),
+        }
+    }
 
-        // 2. Image pull gated on PullPolicy
-        pull_image_if_needed(&docker, &config.image, &config.pull_policy).await?;
-
-        // 3. Build container name and config
-        let cname = container_name(agent_name);
-        let labels = container_labels(agent_name);
-        let host_config = build_host_config(config)?;
-
+    fn build_container_config(
+        config: &DockerWorkspaceConfig,
+        args: &[String],
+        labels: HashMap<String, String>,
+        host_config: HostConfig,
+    ) -> Config<String> {
         let env: Vec<String> = config
             .env
             .iter()
             .map(|(k, v)| format!("{}={}", k, v))
             .collect();
 
-        let entrypoint: Option<Vec<String>> = config.entrypoint.as_ref().map(|ep| vec![ep.clone()]);
+        let entrypoint = config.entrypoint.as_ref().map(|ep| vec![ep.clone()]);
 
-        let cmd: Option<Vec<String>> = if args.is_empty() {
-            None
-        } else {
-            Some(args.to_vec())
-        };
+        let cmd = (!args.is_empty()).then(|| args.to_vec());
 
-        let networking_config: Option<NetworkingConfig<String>> =
-            config.network.as_ref().map(|net| {
-                let mut endpoints = HashMap::new();
-                endpoints.insert(net.clone(), EndpointSettings::default());
-                NetworkingConfig {
-                    endpoints_config: endpoints,
-                }
-            });
+        let networking_config = config.network.as_ref().map(|net| {
+            let mut endpoints = HashMap::new();
+            endpoints.insert(net.clone(), EndpointSettings::default());
+            NetworkingConfig {
+                endpoints_config: endpoints,
+            }
+        });
 
-        let container_config = Config {
+        Config {
             image: Some(config.image.clone()),
             hostname: None,
             attach_stdin: Some(true),
@@ -92,11 +78,16 @@ impl DockerBackend {
             host_config: Some(host_config),
             networking_config,
             ..Default::default()
-        };
+        }
+    }
 
-        // 4. Create container
+    async fn create_and_start_container(
+        docker: &Docker,
+        container_name: &str,
+        container_config: Config<String>,
+    ) -> Result<String, AgentsError> {
         let create_opts = CreateContainerOptions {
-            name: cname.as_str(),
+            name: container_name,
             platform: None,
         };
         let created = docker
@@ -105,16 +96,21 @@ impl DockerBackend {
             .map_err(|e| AgentsError::DockerError(e.to_string()))?;
 
         let container_id = created.id;
-        info!(container_id = %container_id, container_name = %cname, "Created Docker container");
+        info!(container_id = %container_id, container_name = %container_name, "Created Docker container");
 
-        // 5. Start container
         docker
             .start_container(&container_id, None::<StartContainerOptions<String>>)
             .await
             .map_err(|e| AgentsError::DockerError(e.to_string()))?;
         info!(container_id = %container_id, "Started Docker container");
 
-        // 6. Attach with stdin+stdout+stderr
+        Ok(container_id)
+    }
+
+    async fn attach_container_streams(
+        docker: &Docker,
+        container_id: &str,
+    ) -> Result<AttachedStreams, AgentsError> {
         let attach_opts = AttachContainerOptions::<String> {
             stdin: Some(true),
             stdout: Some(true),
@@ -124,17 +120,13 @@ impl DockerBackend {
             detach_keys: None,
         };
         let attach = docker
-            .attach_container(&container_id, Some(attach_opts))
+            .attach_container(container_id, Some(attach_opts))
             .await
             .map_err(|e| AgentsError::DockerError(e.to_string()))?;
 
-        // 7. Demux bollard's multiplexed output stream into separate stdout/stderr pipes
         let (stdout_write, stdout_read) = tokio::io::duplex(64 * 1024);
         let (stderr_write, stderr_read) = tokio::io::duplex(64 * 1024);
 
-        // Wrap bollard's `input` (Pin<Box<dyn AsyncWrite + Send>>, not Unpin) in a task that
-        // receives from a channel and writes to it. This lets us expose a regular mpsc-backed
-        // AsyncWrite that IS Unpin.
         let (stdin_tx, mut stdin_rx) = tokio::io::duplex(64 * 1024);
         let mut bollard_stdin = attach.input;
         tokio::spawn(async move {
@@ -152,7 +144,6 @@ impl DockerBackend {
             }
         });
 
-        // Demux task: reads LogOutput, routes stdout/stderr to the appropriate DuplexStream
         let alive_flag = Arc::new(AtomicBool::new(true));
         let alive_for_demux = Arc::clone(&alive_flag);
         let mut output_stream = attach.output;
@@ -172,7 +163,7 @@ impl DockerBackend {
                             break;
                         }
                     }
-                    Ok(_) => {} // StdIn / Console — ignore
+                    Ok(_) => {}
                     Err(e) => {
                         warn!(error = %e, "Docker attach stream error");
                         break;
@@ -182,22 +173,49 @@ impl DockerBackend {
             alive_for_demux.store(false, Ordering::SeqCst);
         });
 
-        // 8. Return the ready backend
+        Ok(AttachedStreams {
+            alive_flag,
+            stdin: Box::new(stdin_tx),
+            stdout: Box::new(stdout_read),
+            stderr: Box::new(stderr_read),
+        })
+    }
+
+    /// Spawn a new Docker container from the given config and return a ready `DockerBackend`.
+    ///
+    /// Performs image pull (gated by `PullPolicy`), container creation, start, and stream attach.
+    pub async fn spawn(
+        config: &DockerWorkspaceConfig,
+        agent_name: &str,
+        args: &[String],
+    ) -> Result<Self, AgentsError> {
+        let docker = Self::connect(config)?;
+        pull_image_if_needed(&docker, &config.image, &config.pull_policy).await?;
+
+        let cname = container_name(agent_name);
+        let labels = container_labels(agent_name);
+        let host_config = build_host_config(config)?;
+        let container_config = Self::build_container_config(config, args, labels, host_config);
+        let container_id =
+            Self::create_and_start_container(&docker, &cname, container_config).await?;
+        let attached = Self::attach_container_streams(&docker, &container_id).await?;
+
         Ok(DockerBackend {
             docker,
             container_id: Some(container_id),
-            alive: alive_flag,
-            stdin: Mutex::new(Some(
-                Box::new(stdin_tx) as Box<dyn AsyncWrite + Unpin + Send>
-            )),
-            stdout: Mutex::new(Some(
-                Box::new(stdout_read) as Box<dyn AsyncRead + Unpin + Send>
-            )),
-            stderr: Mutex::new(Some(
-                Box::new(stderr_read) as Box<dyn AsyncRead + Unpin + Send>
-            )),
+            alive: attached.alive_flag,
+            stdin: Mutex::new(Some(attached.stdin)),
+            stdout: Mutex::new(Some(attached.stdout)),
+            stderr: Mutex::new(Some(attached.stderr)),
         })
     }
+}
+
+struct AttachedStreams {
+    alive_flag: Arc<AtomicBool>,
+    stdin: Box<dyn AsyncWrite + Unpin + Send>,
+    stdout: Box<dyn AsyncRead + Unpin + Send>,
+    stderr: Box<dyn AsyncRead + Unpin + Send>,
 }
 
 /// Pull `image` according to `policy`. Returns `Err(ImagePullFailed)` on any pull error.

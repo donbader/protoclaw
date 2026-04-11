@@ -101,92 +101,115 @@ fn is_valid_host(host: &str) -> bool {
     })
 }
 
-pub fn validate_config(config: &ProtoclawConfig) -> ValidationResult {
-    let mut errors = Vec::new();
-    let warnings = Vec::new();
-
+fn validate_tools_server_host(config: &ProtoclawConfig, errors: &mut Vec<ValidationError>) {
     if !is_valid_host(&config.tools_manager.tools_server_host) {
         errors.push(ValidationError::InvalidToolsServerHost {
             field: "tools_manager.tools_server_host".to_string(),
             value: config.tools_manager.tools_server_host.clone(),
         });
     }
+}
 
+fn validate_local_agent(
+    name: &str,
+    local: &crate::LocalWorkspaceConfig,
+    errors: &mut Vec<ValidationError>,
+) {
+    if !binary_exists(&local.binary) {
+        errors.push(ValidationError::BinaryNotFound {
+            field: format!("agents_manager.agents.{name}.workspace.binary"),
+            binary: local.binary.clone(),
+        });
+    }
+    if let Some(path) = &local.working_dir {
+        if !path.exists() {
+            errors.push(ValidationError::WorkingDirNotFound { path: path.clone() });
+        }
+    }
+}
+
+fn validate_docker_agent(
+    name: &str,
+    docker: &crate::DockerWorkspaceConfig,
+    errors: &mut Vec<ValidationError>,
+) {
+    if let Some(mem) = &docker.memory_limit {
+        if let Err(e) = crate::parse_memory_limit(mem) {
+            errors.push(ValidationError::InvalidMemoryLimit {
+                field: format!("agents_manager.agents.{name}.workspace.memory_limit"),
+                value: mem.clone(),
+                reason: e.to_string(),
+            });
+        }
+    }
+    if let Some(cpu) = &docker.cpu_limit {
+        if let Err(e) = crate::parse_cpu_limit(cpu) {
+            errors.push(ValidationError::InvalidCpuLimit {
+                field: format!("agents_manager.agents.{name}.workspace.cpu_limit"),
+                value: cpu.clone(),
+                reason: e.to_string(),
+            });
+        }
+    }
+    if let Some(host) = &docker.docker_host {
+        if !host.starts_with("unix://") && !host.starts_with("tcp://") {
+            errors.push(ValidationError::InvalidDockerHost {
+                field: format!("agents_manager.agents.{name}.workspace.docker_host"),
+                value: host.clone(),
+            });
+        }
+    }
+    for volume in &docker.volumes {
+        if !volume.contains(':') {
+            errors.push(ValidationError::InvalidVolumeMount {
+                field: format!("agents_manager.agents.{name}.workspace.volumes"),
+                value: volume.clone(),
+            });
+        }
+    }
+}
+
+fn validate_agents(config: &ProtoclawConfig, errors: &mut Vec<ValidationError>) {
     for (name, agent) in &config.agents_manager.agents {
         match &agent.workspace {
-            crate::WorkspaceConfig::Local(local) => {
-                if !binary_exists(&local.binary) {
-                    errors.push(ValidationError::BinaryNotFound {
-                        field: format!("agents_manager.agents.{name}.workspace.binary"),
-                        binary: local.binary.clone(),
-                    });
-                }
-                if let Some(path) = &local.working_dir {
-                    if !path.exists() {
-                        errors.push(ValidationError::WorkingDirNotFound { path: path.clone() });
-                    }
-                }
-            }
-            crate::WorkspaceConfig::Docker(docker) => {
-                if let Some(ref mem) = docker.memory_limit {
-                    if let Err(e) = crate::parse_memory_limit(mem) {
-                        errors.push(ValidationError::InvalidMemoryLimit {
-                            field: format!("agents_manager.agents.{name}.workspace.memory_limit"),
-                            value: mem.clone(),
-                            reason: e.to_string(),
-                        });
-                    }
-                }
-                if let Some(ref cpu) = docker.cpu_limit {
-                    if let Err(e) = crate::parse_cpu_limit(cpu) {
-                        errors.push(ValidationError::InvalidCpuLimit {
-                            field: format!("agents_manager.agents.{name}.workspace.cpu_limit"),
-                            value: cpu.clone(),
-                            reason: e.to_string(),
-                        });
-                    }
-                }
-                if let Some(ref host) = docker.docker_host {
-                    if !host.starts_with("unix://") && !host.starts_with("tcp://") {
-                        errors.push(ValidationError::InvalidDockerHost {
-                            field: format!("agents_manager.agents.{name}.workspace.docker_host"),
-                            value: host.clone(),
-                        });
-                    }
-                }
-                for vol in &docker.volumes {
-                    if !vol.contains(':') {
-                        errors.push(ValidationError::InvalidVolumeMount {
-                            field: format!("agents_manager.agents.{name}.workspace.volumes"),
-                            value: vol.clone(),
-                        });
-                    }
-                }
-            }
+            crate::WorkspaceConfig::Local(local) => validate_local_agent(name, local, errors),
+            crate::WorkspaceConfig::Docker(docker) => validate_docker_agent(name, docker, errors),
         }
     }
+}
 
-    for (name, ch) in &config.channels_manager.channels {
-        if let Some(bin) = Some(&ch.binary) {
-            if !binary_exists(bin) {
-                errors.push(ValidationError::BinaryNotFound {
-                    field: format!("channels_manager.channels.{name}.binary"),
-                    binary: ch.binary.clone(),
-                });
-            }
+fn validate_channel_binaries(config: &ProtoclawConfig, errors: &mut Vec<ValidationError>) {
+    for (name, channel) in &config.channels_manager.channels {
+        if !binary_exists(&channel.binary) {
+            errors.push(ValidationError::BinaryNotFound {
+                field: format!("channels_manager.channels.{name}.binary"),
+                binary: channel.binary.clone(),
+            });
         }
     }
+}
 
+fn validate_tool_binaries(config: &ProtoclawConfig, errors: &mut Vec<ValidationError>) {
     for (name, tool) in &config.tools_manager.tools {
-        if let Some(ref bin) = tool.binary {
-            if !binary_exists(bin) {
+        if let Some(binary) = &tool.binary {
+            if !binary_exists(binary) {
                 errors.push(ValidationError::BinaryNotFound {
                     field: format!("tools_manager.tools.{name}.binary"),
-                    binary: bin.clone(),
+                    binary: binary.clone(),
                 });
             }
         }
     }
+}
+
+pub fn validate_config(config: &ProtoclawConfig) -> ValidationResult {
+    let mut errors = Vec::new();
+    let warnings = Vec::new();
+
+    validate_tools_server_host(config, &mut errors);
+    validate_agents(config, &mut errors);
+    validate_channel_binaries(config, &mut errors);
+    validate_tool_binaries(config, &mut errors);
 
     ValidationResult { errors, warnings }
 }

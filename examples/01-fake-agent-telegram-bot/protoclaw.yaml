@@ -25,7 +25,7 @@ agents_manager:
       enabled: false
       workspace:
         type: docker
-        image: "ghcr.io/donbader/protoclaw-mock-agent:latest"
+        image: "protoclaw-mock-agent:latest"
         docker_host: "tcp://socket-proxy:2375"
         network: "protoclaw-internal"
       options:

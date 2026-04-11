@@ -290,6 +290,126 @@ impl ChannelsManager {
         false
     }
 
+    async fn handle_deliver_message(
+        &mut self,
+        session_key: SessionKey,
+        content: serde_json::Value,
+    ) {
+        if let Some(entry) = self.routing_table.get(&session_key) {
+            let slot = &self.slots[entry.slot_index];
+
+            if !self.acked_sessions.contains(&session_key) {
+                self.acked_sessions.insert(session_key.clone());
+                if let Some(conn) = &slot.connection {
+                    let lifecycle_params = serde_json::json!({
+                        "sessionId": entry.acp_session_id,
+                        "action": "response_started",
+                    });
+                    let _ = conn
+                        .send_notification("channel/ackLifecycle", lifecycle_params)
+                        .await;
+                }
+            }
+
+            if let Some(conn) = &slot.connection {
+                let params = serde_json::json!({
+                    "sessionId": entry.acp_session_id,
+                    "content": content,
+                });
+                if let Err(e) = conn
+                    .send_notification("channel/deliverMessage", params)
+                    .await
+                {
+                    tracing::warn!(
+                        channel = %slot.name,
+                        session_key = %session_key,
+                        error = %e,
+                        "failed to deliver agent update"
+                    );
+                }
+            }
+        } else {
+            tracing::warn!(session_key = %session_key, "no routing entry for agent update");
+        }
+    }
+
+    async fn handle_session_complete(&mut self, session_key: SessionKey) {
+        if let Some(next_msg) = self.queue.mark_idle(&session_key) {
+            let agent_name = self.routing_table
+                .get(&session_key)
+                .map(|e| e.agent_name.clone())
+                .unwrap_or_else(|| {
+                    tracing::warn!(session_key = %session_key, "no agent_name in routing table for SessionComplete");
+                    String::new()
+                });
+
+            // Drain remaining queued messages and merge with the first
+            // so the agent receives one combined prompt instead of N separate turns.
+            let remaining = self.queue.drain_queued(&session_key);
+            let merged = if remaining.is_empty() {
+                next_msg
+            } else {
+                let mut parts = vec![next_msg];
+                parts.extend(remaining);
+                let count = parts.len();
+                let merged = parts.join("\n");
+                tracing::info!(
+                    session_key = %session_key,
+                    merged_count = count,
+                    "merged queued messages into single prompt"
+                );
+                merged
+            };
+
+            self.send_ack_to_channel(&session_key).await;
+            self.dispatch_to_agent(&session_key, &merged, &agent_name)
+                .await;
+        }
+    }
+
+    async fn route_permission_event(
+        &self,
+        session_key: &SessionKey,
+        request_id: &str,
+        description: String,
+        options: serde_json::Value,
+    ) {
+        if let Some(entry) = self.routing_table.get(session_key) {
+            let slot = &self.slots[entry.slot_index];
+            if let Some(conn) = &slot.connection {
+                let params = serde_json::json!({
+                    "requestId": request_id,
+                    "sessionId": entry.acp_session_id,
+                    "description": description,
+                    "options": options,
+                });
+                if let Err(e) = conn
+                    .send_notification("channel/requestPermission", params)
+                    .await
+                {
+                    tracing::warn!(
+                        channel = %slot.name,
+                        session_key = %session_key,
+                        error = %e,
+                        "failed to route permission from agent"
+                    );
+                }
+            }
+        } else {
+            tracing::warn!(session_key = %session_key, request_id = %request_id, "no routing entry for permission");
+        }
+    }
+
+    fn log_ack_message_event(
+        &self,
+        session_key: &SessionKey,
+        channel_name: &str,
+        peer_id: &str,
+        message_id: &Option<String>,
+    ) {
+        tracing::debug!(session_key = %session_key, channel = %channel_name, peer = %peer_id, message_id = ?message_id, "ack message event received");
+    }
+
     /// Handle a ChannelEvent from AgentsManager (outbound: agent → channel).
     async fn handle_channel_event(&mut self, event: ChannelEvent) {
         match event {
@@ -297,75 +417,10 @@ impl ChannelsManager {
                 session_key,
                 content,
             } => {
-                if let Some(entry) = self.routing_table.get(&session_key) {
-                    let slot = &self.slots[entry.slot_index];
-
-                    if !self.acked_sessions.contains(&session_key) {
-                        self.acked_sessions.insert(session_key.clone());
-                        if let Some(conn) = &slot.connection {
-                            let lifecycle_params = serde_json::json!({
-                                "sessionId": entry.acp_session_id,
-                                "action": "response_started",
-                            });
-                            let _ = conn
-                                .send_notification("channel/ackLifecycle", lifecycle_params)
-                                .await;
-                        }
-                    }
-
-                    if let Some(conn) = &slot.connection {
-                        let params = serde_json::json!({
-                            "sessionId": entry.acp_session_id,
-                            "content": content,
-                        });
-                        if let Err(e) = conn
-                            .send_notification("channel/deliverMessage", params)
-                            .await
-                        {
-                            tracing::warn!(
-                                channel = %slot.name,
-                                session_key = %session_key,
-                                error = %e,
-                                "failed to deliver agent update"
-                            );
-                        }
-                    }
-                } else {
-                    tracing::warn!(session_key = %session_key, "no routing entry for agent update");
-                }
+                self.handle_deliver_message(session_key, content).await;
             }
             ChannelEvent::SessionComplete { session_key } => {
-                if let Some(next_msg) = self.queue.mark_idle(&session_key) {
-                    let agent_name = self.routing_table
-                        .get(&session_key)
-                        .map(|e| e.agent_name.clone())
-                        .unwrap_or_else(|| {
-                            tracing::warn!(session_key = %session_key, "no agent_name in routing table for SessionComplete");
-                            String::new()
-                        });
-
-                    // Drain remaining queued messages and merge with the first
-                    // so the agent receives one combined prompt instead of N separate turns.
-                    let remaining = self.queue.drain_queued(&session_key);
-                    let merged = if remaining.is_empty() {
-                        next_msg
-                    } else {
-                        let mut parts = vec![next_msg];
-                        parts.extend(remaining);
-                        let count = parts.len();
-                        let merged = parts.join("\n");
-                        tracing::info!(
-                            session_key = %session_key,
-                            merged_count = count,
-                            "merged queued messages into single prompt"
-                        );
-                        merged
-                    };
-
-                    self.send_ack_to_channel(&session_key).await;
-                    self.dispatch_to_agent(&session_key, &merged, &agent_name)
-                        .await;
-                }
+                self.handle_session_complete(session_key).await;
             }
             ChannelEvent::RoutePermission {
                 session_key,
@@ -373,30 +428,8 @@ impl ChannelsManager {
                 description,
                 options,
             } => {
-                if let Some(entry) = self.routing_table.get(&session_key) {
-                    let slot = &self.slots[entry.slot_index];
-                    if let Some(conn) = &slot.connection {
-                        let params = serde_json::json!({
-                            "requestId": request_id,
-                            "sessionId": entry.acp_session_id,
-                            "description": description,
-                            "options": options,
-                        });
-                        if let Err(e) = conn
-                            .send_notification("channel/requestPermission", params)
-                            .await
-                        {
-                            tracing::warn!(
-                                channel = %slot.name,
-                                session_key = %session_key,
-                                error = %e,
-                                "failed to route permission from agent"
-                            );
-                        }
-                    }
-                } else {
-                    tracing::warn!(session_key = %session_key, request_id = %request_id, "no routing entry for permission");
-                }
+                self.route_permission_event(&session_key, &request_id, description, options)
+                    .await;
             }
             ChannelEvent::AckMessage {
                 session_key,
@@ -404,8 +437,89 @@ impl ChannelsManager {
                 peer_id,
                 message_id,
             } => {
-                tracing::debug!(session_key = %session_key, channel = %channel_name, peer = %peer_id, message_id = ?message_id, "ack message event received");
+                self.log_ack_message_event(&session_key, &channel_name, &peer_id, &message_id);
             }
+        }
+    }
+
+    fn parse_channel_message(&self, msg: &IncomingChannelMessage) -> (String, serde_json::Value) {
+        let value = match msg {
+            IncomingChannelMessage::ChannelRequest(v)
+            | IncomingChannelMessage::ChannelNotification(v) => v.clone(),
+        };
+        let method = value["method"].as_str().unwrap_or("").to_string();
+        let params = value
+            .get("params")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+
+        (method, params)
+    }
+
+    fn build_session_key(send_msg: &ChannelSendMessage) -> SessionKey {
+        SessionKey::new(
+            &send_msg.peer_info.channel_name,
+            &send_msg.peer_info.kind,
+            &send_msg.peer_info.peer_id,
+        )
+    }
+
+    fn agents_handle_for_collection(
+        &self,
+        channel_name: &str,
+    ) -> Option<ManagerHandle<AgentsCommand>> {
+        match &self.agents_handle {
+            Some(handle) => Some(handle.clone()),
+            None => {
+                tracing::warn!(channel = %channel_name, "no agents handle, cannot route message");
+                None
+            }
+        }
+    }
+
+    async fn collect_send_message(
+        &mut self,
+        slot_index: usize,
+        params: serde_json::Value,
+        channel_name: &str,
+    ) -> Option<SessionKey> {
+        let send_msg = match serde_json::from_value::<ChannelSendMessage>(params) {
+            Ok(send_msg) => send_msg,
+            Err(_) => {
+                tracing::warn!(channel = %channel_name, "failed to parse channel/sendMessage params");
+                return None;
+            }
+        };
+
+        let session_key = Self::build_session_key(&send_msg);
+        let agents_handle = self.agents_handle_for_collection(channel_name)?;
+        let agent_name = self.agent_name_for_channel(slot_index).to_string();
+
+        let session_ready = self
+            .ensure_session_created(
+                slot_index,
+                &session_key,
+                &send_msg,
+                &agents_handle,
+                &agent_name,
+            )
+            .await;
+        if !session_ready {
+            return None;
+        }
+
+        let content = send_msg.content;
+        if self.queue.is_active(&session_key) {
+            self.queue.push(&session_key, content);
+            tracing::debug!(
+                channel = %channel_name,
+                session_key = %session_key,
+                "message queued (session busy)"
+            );
+            None
+        } else {
+            self.queue.push_only(&session_key, content);
+            Some(session_key)
         }
     }
 
@@ -496,6 +610,138 @@ impl ChannelsManager {
         }
     }
 
+    /// Ensure a session exists for the given session key, creating it via AgentsManager if needed.
+    /// Returns false if session creation failed (caller should abort message processing).
+    async fn ensure_session_created(
+        &mut self,
+        slot_index: usize,
+        session_key: &SessionKey,
+        send_msg: &ChannelSendMessage,
+        agents_handle: &ManagerHandle<AgentsCommand>,
+        agent_name: &str,
+    ) -> bool {
+        if self.routing_table.contains_key(session_key) {
+            return true;
+        }
+        let channel_name = self.slots[slot_index].name.clone();
+        let channel_id = self.slots[slot_index].channel_id.clone();
+
+        let (reply_tx, reply_rx) = oneshot::channel();
+        if let Err(e) = agents_handle
+            .send(AgentsCommand::CreateSession {
+                agent_name: agent_name.to_string(),
+                session_key: session_key.clone(),
+                reply: reply_tx,
+            })
+            .await
+        {
+            tracing::error!(channel = %channel_name, error = %e, "failed to send CreateSession");
+            return false;
+        }
+
+        match reply_rx.await {
+            Ok(Ok(acp_session_id)) => {
+                tracing::info!(
+                    channel = %channel_name,
+                    session_key = %session_key,
+                    acp_session_id = %acp_session_id,
+                    "session created"
+                );
+                self.routing_table.insert(
+                    session_key.clone(),
+                    RoutingEntry {
+                        _channel_id: channel_id,
+                        acp_session_id: acp_session_id.clone(),
+                        slot_index,
+                        agent_name: agent_name.to_string(),
+                    },
+                );
+
+                if let Some(conn) = &self.slots[slot_index].connection {
+                    let peer_info_json = serde_json::to_value(&send_msg.peer_info).unwrap_or_else(|e| {
+                        tracing::warn!(
+                            channel = %channel_name,
+                            error = %e,
+                            "failed to serialize peerInfo for session/created notification, using null"
+                        );
+                        serde_json::Value::default()
+                    });
+                    let params = serde_json::json!({
+                        "sessionId": acp_session_id,
+                        "peerInfo": peer_info_json,
+                    });
+                    if let Err(e) = conn
+                        .send_notification("channel/sessionCreated", params)
+                        .await
+                    {
+                        tracing::warn!(
+                            channel = %channel_name,
+                            error = %e,
+                            "failed to notify channel of session creation"
+                        );
+                    }
+                }
+                true
+            }
+            Ok(Err(e)) => {
+                tracing::error!(channel = %channel_name, error = %e, "CreateSession failed");
+                if let Some(conn) = &self.slots[slot_index].connection {
+                    let error_params = serde_json::json!({
+                        "sessionId": "",
+                        "content": format!("⚠️ Failed to create session: {e}"),
+                    });
+                    if let Err(notify_err) = conn
+                        .send_notification("channel/deliverMessage", error_params)
+                        .await
+                    {
+                        tracing::warn!(channel = %channel_name, error = %notify_err, "failed to send session error to channel");
+                    }
+                }
+                false
+            }
+            Err(_) => {
+                tracing::error!(channel = %channel_name, "CreateSession reply dropped");
+                if let Some(conn) = &self.slots[slot_index].connection {
+                    let error_params = serde_json::json!({
+                        "sessionId": "",
+                        "content": "⚠️ Failed to create session: internal error (reply dropped)",
+                    });
+                    if let Err(notify_err) = conn
+                        .send_notification("channel/deliverMessage", error_params)
+                        .await
+                    {
+                        tracing::warn!(channel = %channel_name, error = %notify_err, "failed to send session error to channel");
+                    }
+                }
+                false
+            }
+        }
+    }
+
+    /// Forward a channel/respondPermission message to the agents manager.
+    async fn handle_respond_permission(&self, params: serde_json::Value, channel_name: &str) {
+        if let Ok(resp) = serde_json::from_value::<ChannelRespondPermission>(params) {
+            if let Some(agents_handle) = &self.agents_handle {
+                if let Err(e) = agents_handle
+                    .send(AgentsCommand::RespondPermission {
+                        request_id: resp.request_id.clone(),
+                        option_id: resp.option_id,
+                    })
+                    .await
+                {
+                    tracing::warn!(
+                        channel = %channel_name,
+                        request_id = %resp.request_id,
+                        error = %e,
+                        "failed to forward permission response"
+                    );
+                }
+            }
+        } else {
+            tracing::warn!(channel = %channel_name, "failed to parse channel/respondPermission params");
+        }
+    }
+
     /// Collect an incoming channel message into the session queue without dispatching.
     /// Returns the session key if the message was collected (for later flush).
     async fn collect_channel_message(
@@ -504,169 +750,15 @@ impl ChannelsManager {
         msg: IncomingChannelMessage,
     ) -> Option<SessionKey> {
         let channel_name = self.slots[slot_index].name.clone();
-        let channel_id = self.slots[slot_index].channel_id.clone();
+        let (method, params) = self.parse_channel_message(&msg);
 
-        let value = match &msg {
-            IncomingChannelMessage::ChannelRequest(v)
-            | IncomingChannelMessage::ChannelNotification(v) => v.clone(),
-        };
-
-        let method = value["method"].as_str().unwrap_or("");
-        let params = value
-            .get("params")
-            .cloned()
-            .unwrap_or(serde_json::Value::Null);
-
-        match method {
+        match method.as_str() {
             "channel/sendMessage" => {
-                if let Ok(send_msg) = serde_json::from_value::<ChannelSendMessage>(params) {
-                    let session_key = SessionKey::new(
-                        &send_msg.peer_info.channel_name,
-                        &send_msg.peer_info.kind,
-                        &send_msg.peer_info.peer_id,
-                    );
-
-                    let agents_handle = match &self.agents_handle {
-                        Some(h) => h.clone(),
-                        None => {
-                            tracing::warn!(channel = %channel_name, "no agents handle, cannot route message");
-                            return None;
-                        }
-                    };
-
-                    let agent_name = self.agent_name_for_channel(slot_index).to_string();
-
-                    if !self.routing_table.contains_key(&session_key) {
-                        let (reply_tx, reply_rx) = oneshot::channel();
-                        if let Err(e) = agents_handle
-                            .send(AgentsCommand::CreateSession {
-                                agent_name: agent_name.clone(),
-                                session_key: session_key.clone(),
-                                reply: reply_tx,
-                            })
-                            .await
-                        {
-                            tracing::error!(channel = %channel_name, error = %e, "failed to send CreateSession");
-                            return None;
-                        }
-
-                        match reply_rx.await {
-                            Ok(Ok(acp_session_id)) => {
-                                tracing::info!(
-                                    channel = %channel_name,
-                                    session_key = %session_key,
-                                    acp_session_id = %acp_session_id,
-                                    "session created"
-                                );
-                                self.routing_table.insert(
-                                    session_key.clone(),
-                                    RoutingEntry {
-                                        _channel_id: channel_id.clone(),
-                                        acp_session_id: acp_session_id.clone(),
-                                        slot_index,
-                                        agent_name: agent_name.clone(),
-                                    },
-                                );
-
-                                if let Some(conn) = &self.slots[slot_index].connection {
-                                    let peer_info_json = serde_json::to_value(&send_msg.peer_info).unwrap_or_else(|e| {
-                                        tracing::warn!(
-                                            channel = %channel_name,
-                                            error = %e,
-                                            "failed to serialize peerInfo for session/created notification, using null"
-                                        );
-                                        serde_json::Value::default()
-                                    });
-                                    let params = serde_json::json!({
-                                        "sessionId": acp_session_id,
-                                        "peerInfo": peer_info_json,
-                                    });
-                                    if let Err(e) = conn
-                                        .send_notification("channel/sessionCreated", params)
-                                        .await
-                                    {
-                                        tracing::warn!(
-                                            channel = %channel_name,
-                                            error = %e,
-                                            "failed to notify channel of session creation"
-                                        );
-                                    }
-                                }
-                            }
-                            Ok(Err(e)) => {
-                                tracing::error!(channel = %channel_name, error = %e, "CreateSession failed");
-                                if let Some(conn) = &self.slots[slot_index].connection {
-                                    let error_params = serde_json::json!({
-                                        "sessionId": "",
-                                        "content": format!("⚠️ Failed to create session: {e}"),
-                                    });
-                                    if let Err(notify_err) = conn
-                                        .send_notification("channel/deliverMessage", error_params)
-                                        .await
-                                    {
-                                        tracing::warn!(channel = %channel_name, error = %notify_err, "failed to send session error to channel");
-                                    }
-                                }
-                                return None;
-                            }
-                            Err(_) => {
-                                tracing::error!(channel = %channel_name, "CreateSession reply dropped");
-                                if let Some(conn) = &self.slots[slot_index].connection {
-                                    let error_params = serde_json::json!({
-                                        "sessionId": "",
-                                        "content": "⚠️ Failed to create session: internal error (reply dropped)",
-                                    });
-                                    if let Err(notify_err) = conn
-                                        .send_notification("channel/deliverMessage", error_params)
-                                        .await
-                                    {
-                                        tracing::warn!(channel = %channel_name, error = %notify_err, "failed to send session error to channel");
-                                    }
-                                }
-                                return None;
-                            }
-                        }
-                    }
-
-                    let content = send_msg.content.clone();
-                    if self.queue.is_active(&session_key) {
-                        self.queue.push(&session_key, content);
-                        tracing::debug!(
-                            channel = %channel_name,
-                            session_key = %session_key,
-                            "message queued (session busy)"
-                        );
-                        None
-                    } else {
-                        self.queue.push_only(&session_key, content);
-                        Some(session_key)
-                    }
-                } else {
-                    tracing::warn!(channel = %channel_name, "failed to parse channel/sendMessage params");
-                    None
-                }
+                self.collect_send_message(slot_index, params, &channel_name)
+                    .await
             }
             "channel/respondPermission" => {
-                if let Ok(resp) = serde_json::from_value::<ChannelRespondPermission>(params) {
-                    if let Some(agents_handle) = &self.agents_handle {
-                        if let Err(e) = agents_handle
-                            .send(AgentsCommand::RespondPermission {
-                                request_id: resp.request_id.clone(),
-                                option_id: resp.option_id,
-                            })
-                            .await
-                        {
-                            tracing::warn!(
-                                channel = %channel_name,
-                                request_id = %resp.request_id,
-                                error = %e,
-                                "failed to forward permission response"
-                            );
-                        }
-                    }
-                } else {
-                    tracing::warn!(channel = %channel_name, "failed to parse channel/respondPermission params");
-                }
+                self.handle_respond_permission(params, &channel_name).await;
                 None
             }
             _ => {
@@ -740,6 +832,75 @@ impl ChannelsManager {
         }
         results
     }
+
+    fn build_slot_lifecycle(
+        &self,
+        config: &ChannelConfig,
+        parent_cancel: &CancellationToken,
+    ) -> SlotLifecycle {
+        let backoff = match &config.backoff {
+            Some(cfg) => ExponentialBackoff::new(
+                Duration::from_millis(cfg.base_delay_ms),
+                Duration::from_secs(cfg.max_delay_secs),
+            ),
+            None => ExponentialBackoff::default(),
+        };
+        let crash_tracker = match &config.crash_tracker {
+            Some(cfg) => CrashTracker::new(cfg.max_crashes, Duration::from_secs(cfg.window_secs)),
+            None => CrashTracker::default(),
+        };
+        SlotLifecycle::new(parent_cancel, backoff, crash_tracker)
+    }
+
+    async fn start_channel_slot(
+        &self,
+        name: &str,
+        config: &ChannelConfig,
+        parent_cancel: &CancellationToken,
+    ) -> ChannelSlot {
+        let channel_id = ChannelId::from(name);
+        let init_timeout = self.resolve_init_timeout(config);
+        let lifecycle = self.build_slot_lifecycle(config, parent_cancel);
+
+        match Self::spawn_and_initialize(
+            config,
+            &channel_id,
+            init_timeout,
+            self.log_level.as_deref(),
+        )
+        .await
+        {
+            Ok((conn, caps)) => {
+                tracing::info!(
+                    channel = %name,
+                    streaming = caps.streaming,
+                    rich_text = caps.rich_text,
+                    "channel initialized"
+                );
+                ChannelSlot {
+                    name: name.to_string(),
+                    config: config.clone(),
+                    connection: Some(conn),
+                    channel_id,
+                    lifecycle,
+                }
+            }
+            Err(e) => {
+                tracing::error!(
+                    channel = %name,
+                    error = %e,
+                    "failed to initialize channel, continuing without it"
+                );
+                ChannelSlot {
+                    name: name.to_string(),
+                    config: config.clone(),
+                    connection: None,
+                    channel_id,
+                    lifecycle,
+                }
+            }
+        }
+    }
 }
 
 impl Manager for ChannelsManager {
@@ -758,62 +919,8 @@ impl Manager for ChannelsManager {
                 tracing::info!(channel = %name, "channel disabled, skipping");
                 continue;
             }
-            let channel_id = ChannelId::from(name.as_str());
-
-            let init_timeout = self.resolve_init_timeout(config);
-            let backoff = match &config.backoff {
-                Some(cfg) => ExponentialBackoff::new(
-                    Duration::from_millis(cfg.base_delay_ms),
-                    Duration::from_secs(cfg.max_delay_secs),
-                ),
-                None => ExponentialBackoff::default(),
-            };
-            let crash_tracker = match &config.crash_tracker {
-                Some(cfg) => {
-                    CrashTracker::new(cfg.max_crashes, Duration::from_secs(cfg.window_secs))
-                }
-                None => CrashTracker::default(),
-            };
-            let lifecycle = SlotLifecycle::new(&parent_cancel, backoff, crash_tracker);
-
-            match Self::spawn_and_initialize(
-                config,
-                &channel_id,
-                init_timeout,
-                self.log_level.as_deref(),
-            )
-            .await
-            {
-                Ok((conn, caps)) => {
-                    tracing::info!(
-                        channel = %name,
-                        streaming = caps.streaming,
-                        rich_text = caps.rich_text,
-                        "channel initialized"
-                    );
-                    self.slots.push(ChannelSlot {
-                        name: name.clone(),
-                        config: config.clone(),
-                        connection: Some(conn),
-                        channel_id,
-                        lifecycle,
-                    });
-                }
-                Err(e) => {
-                    tracing::error!(
-                        channel = %name,
-                        error = %e,
-                        "failed to initialize channel, continuing without it"
-                    );
-                    self.slots.push(ChannelSlot {
-                        name: name.clone(),
-                        config: config.clone(),
-                        connection: None,
-                        channel_id,
-                        lifecycle,
-                    });
-                }
-            }
+            let slot = self.start_channel_slot(name, config, &parent_cancel).await;
+            self.slots.push(slot);
         }
 
         tracing::info!(
@@ -1005,7 +1112,11 @@ mod tests {
             config: test_channel_config("true", true, "default"),
             connection: None,
             channel_id: ChannelId::from("test"),
-            lifecycle: SlotLifecycle::new(&parent, ExponentialBackoff::default(), CrashTracker::default()),
+            lifecycle: SlotLifecycle::new(
+                &parent,
+                ExponentialBackoff::default(),
+                CrashTracker::default(),
+            ),
         };
 
         slot.lifecycle.crash_tracker.record_crash();
@@ -1163,7 +1274,11 @@ mod tests {
             config: test_channel_config("telegram-channel", true, "opencode"),
             connection: None,
             channel_id: ChannelId::from("telegram"),
-            lifecycle: SlotLifecycle::new(&CancellationToken::new(), ExponentialBackoff::default(), CrashTracker::default()),
+            lifecycle: SlotLifecycle::new(
+                &CancellationToken::new(),
+                ExponentialBackoff::default(),
+                CrashTracker::default(),
+            ),
         });
         assert_eq!(m.agent_name_for_channel(0), "opencode");
     }
@@ -1185,7 +1300,11 @@ mod tests {
             config: test_channel_config("debug-http", true, "default"),
             connection: None,
             channel_id: ChannelId::from("debug-http"),
-            lifecycle: SlotLifecycle::new(&CancellationToken::new(), ExponentialBackoff::default(), CrashTracker::default()),
+            lifecycle: SlotLifecycle::new(
+                &CancellationToken::new(),
+                ExponentialBackoff::default(),
+                CrashTracker::default(),
+            ),
         });
         assert_eq!(m.agent_name_for_channel(0), "default");
     }
@@ -1235,7 +1354,11 @@ mod tests {
             config: test_channel_config("telegram-channel", true, "default"),
             connection: None,
             channel_id: ChannelId::from("telegram"),
-            lifecycle: SlotLifecycle::new(&CancellationToken::new(), ExponentialBackoff::default(), CrashTracker::default()),
+            lifecycle: SlotLifecycle::new(
+                &CancellationToken::new(),
+                ExponentialBackoff::default(),
+                CrashTracker::default(),
+            ),
         });
         let key = SessionKey::new("telegram", "direct", "alice");
         m.routing_table.insert(

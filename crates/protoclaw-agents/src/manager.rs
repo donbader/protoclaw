@@ -436,7 +436,6 @@ impl AgentsManager {
         let value = match &msg {
             IncomingMessage::AgentNotification(v) | IncomingMessage::AgentRequest(v) => v.clone(),
         };
-
         let method = value["method"].as_str().unwrap_or("");
         let params = value
             .get("params")
@@ -445,81 +444,7 @@ impl AgentsManager {
 
         match method {
             "session/update" => {
-                let seq = self.update_seq.fetch_add(1, Ordering::Relaxed);
-                tracing::debug!(raw_params = %params, seq, "session/update received — attempting deser");
-                match serde_json::from_value::<SessionUpdateEvent>(params.clone()) {
-                    Ok(event) => {
-                        let update_type = match &event.update {
-                            SessionUpdateType::AgentThoughtChunk { .. } => "agent_thought_chunk",
-                            SessionUpdateType::AgentMessageChunk { .. } => "agent_message_chunk",
-                            SessionUpdateType::Result { .. } => "result",
-                            SessionUpdateType::ToolCall { .. } => "tool_call",
-                            SessionUpdateType::ToolCallUpdate { .. } => "tool_call_update",
-                            SessionUpdateType::Plan { .. } => "plan",
-                            SessionUpdateType::UsageUpdate { .. } => "usage_update",
-                            SessionUpdateType::UserMessageChunk { .. } => "user_message_chunk",
-                            _ => "other",
-                        };
-                        tracing::debug!(agent = %self.slots[slot_idx].name(), session_id = %event.session_id, update_type, seq, "session update routed");
-
-                        let is_result = matches!(event.update, SessionUpdateType::Result { .. });
-
-                        let mut content = params;
-                        if let Some(obj) = content.as_object_mut() {
-                            let now_ms = std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap_or_else(|e| {
-                                tracing::warn!(error = %e, "system time before UNIX_EPOCH, using zero duration");
-                                std::time::Duration::default()
-                            })
-                            .as_millis() as u64;
-                            obj.insert("_received_at_ms".to_string(), serde_json::json!(now_ms));
-                        }
-
-                        normalize_tool_event_fields(&mut content, update_type);
-
-                        if let Some(session_key) = self.slots[slot_idx]
-                            .reverse_map
-                            .get(&event.session_id)
-                            .cloned()
-                        {
-                            if let Some(sender) = &self.channels_sender {
-                                let _ = sender
-                                    .send(ChannelEvent::DeliverMessage {
-                                        session_key: session_key.clone(),
-                                        content,
-                                    })
-                                    .await;
-
-                                if is_result {
-                                    self.streaming_completed.insert(session_key);
-                                }
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        tracing::warn!(error = %e, raw_params = %params, seq, "session/update deserialization FAILED — update dropped");
-                        // Forward a synthetic error to the channel so the session doesn't hang
-                        if let Some(session_id) = params.get("sessionId").and_then(|v| v.as_str()) {
-                            if let Some(session_key) =
-                                self.slots[slot_idx].reverse_map.get(session_id).cloned()
-                            {
-                                if let Some(sender) = &self.channels_sender {
-                                    let error_content = serde_json::json!({
-                                        "error": format!("Agent sent malformed update: {e}"),
-                                        "update": { "sessionUpdate": "result" }
-                                    });
-                                    let _ = sender
-                                        .send(ChannelEvent::DeliverMessage {
-                                            session_key,
-                                            content: error_content,
-                                        })
-                                        .await;
-                                }
-                            }
-                        }
-                    }
-                }
+                self.handle_session_update(slot_idx, params).await;
             }
             "session/request_permission" => {
                 self.handle_permission_request(slot_idx, &value, &params)
@@ -539,6 +464,114 @@ impl AgentsManager {
                     "Method not found",
                 )
                 .await;
+            }
+        }
+    }
+
+    fn session_update_type_name(update: &SessionUpdateType) -> &'static str {
+        match update {
+            SessionUpdateType::AgentThoughtChunk { .. } => "agent_thought_chunk",
+            SessionUpdateType::AgentMessageChunk { .. } => "agent_message_chunk",
+            SessionUpdateType::Result { .. } => "result",
+            SessionUpdateType::ToolCall { .. } => "tool_call",
+            SessionUpdateType::ToolCallUpdate { .. } => "tool_call_update",
+            SessionUpdateType::Plan { .. } => "plan",
+            SessionUpdateType::UsageUpdate { .. } => "usage_update",
+            SessionUpdateType::UserMessageChunk { .. } => "user_message_chunk",
+            _ => "other",
+        }
+    }
+
+    fn add_received_timestamp(content: &mut serde_json::Value) {
+        if let Some(obj) = content.as_object_mut() {
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_else(|e| {
+                    tracing::warn!(error = %e, "system time before UNIX_EPOCH, using zero duration");
+                    std::time::Duration::default()
+                })
+                .as_millis() as u64;
+            obj.insert("_received_at_ms".to_string(), serde_json::json!(now_ms));
+        }
+    }
+
+    async fn forward_session_update(
+        &mut self,
+        slot_idx: usize,
+        event: SessionUpdateEvent,
+        mut content: serde_json::Value,
+        seq: u64,
+    ) {
+        let update_type = Self::session_update_type_name(&event.update);
+        tracing::debug!(agent = %self.slots[slot_idx].name(), session_id = %event.session_id, update_type, seq, "session update routed");
+
+        let is_result = matches!(event.update, SessionUpdateType::Result { .. });
+        Self::add_received_timestamp(&mut content);
+        normalize_tool_event_fields(&mut content, update_type);
+
+        if let Some(session_key) = self.slots[slot_idx]
+            .reverse_map
+            .get(&event.session_id)
+            .cloned()
+        {
+            if let Some(sender) = &self.channels_sender {
+                let _ = sender
+                    .send(ChannelEvent::DeliverMessage {
+                        session_key: session_key.clone(),
+                        content,
+                    })
+                    .await;
+
+                if is_result {
+                    self.streaming_completed.insert(session_key);
+                }
+            }
+        }
+    }
+
+    async fn forward_malformed_update_error(
+        &self,
+        slot_idx: usize,
+        params: &serde_json::Value,
+        error: &serde_json::Error,
+        seq: u64,
+    ) {
+        tracing::warn!(error = %error, raw_params = %params, seq, "session/update deserialization FAILED — update dropped");
+
+        let Some(session_id) = params.get("sessionId").and_then(|v| v.as_str()) else {
+            return;
+        };
+        let Some(session_key) = self.slots[slot_idx].reverse_map.get(session_id).cloned() else {
+            return;
+        };
+        let Some(sender) = &self.channels_sender else {
+            return;
+        };
+
+        let error_content = serde_json::json!({
+            "error": format!("Agent sent malformed update: {error}"),
+            "update": { "sessionUpdate": "result" }
+        });
+        let _ = sender
+            .send(ChannelEvent::DeliverMessage {
+                session_key,
+                content: error_content,
+            })
+            .await;
+    }
+
+    async fn handle_session_update(&mut self, slot_idx: usize, params: serde_json::Value) {
+        let seq = self.update_seq.fetch_add(1, Ordering::Relaxed);
+        tracing::debug!(raw_params = %params, seq, "session/update received — attempting deser");
+
+        match serde_json::from_value::<SessionUpdateEvent>(params.clone()) {
+            Ok(event) => {
+                self.forward_session_update(slot_idx, event, params, seq)
+                    .await
+            }
+            Err(error) => {
+                self.forward_malformed_update_error(slot_idx, &params, &error, seq)
+                    .await;
             }
         }
     }
@@ -727,16 +760,27 @@ impl AgentsManager {
     }
 
     async fn handle_crash(&mut self, slot_idx: usize) {
-        let slot = &mut self.slots[slot_idx];
-        let agent_name = slot.name().to_string();
+        let agent_name = self.slots[slot_idx].name().to_string();
+        if !self.prepare_restart(slot_idx, &agent_name).await {
+            return;
+        }
 
+        if !self.respawn_and_initialize(slot_idx, &agent_name).await {
+            return;
+        }
+
+        self.restore_or_start_session(slot_idx, &agent_name).await;
+    }
+
+    async fn prepare_restart(&mut self, slot_idx: usize, agent_name: &str) -> bool {
+        let slot = &mut self.slots[slot_idx];
         match slot.lifecycle.record_crash_and_check() {
             CrashAction::Disabled => {
                 tracing::error!(agent = %agent_name, crash_loop = true, "agent crash loop detected — disabling slot");
                 if let Some(mut old_conn) = slot.connection.take() {
                     let _ = old_conn.kill().await;
                 }
-                return;
+                false
             }
             CrashAction::RestartAfter(delay) => {
                 tracing::warn!(agent = %agent_name, "agent process exited, attempting recovery");
@@ -747,69 +791,100 @@ impl AgentsManager {
                 }
                 tracing::info!(agent = %agent_name, delay_ms = delay.as_millis(), "waiting before restart");
                 tokio::time::sleep(delay).await;
+                true
             }
         }
+    }
 
-        match AgentConnection::spawn_with_bridge(
-            &slot.config,
-            &agent_name,
+    async fn respawn_and_initialize(&mut self, slot_idx: usize, agent_name: &str) -> bool {
+        let incoming_tx = self.incoming_tx.clone();
+        let log_level = self.log_level.clone();
+        let config = self.slots[slot_idx].config.clone();
+
+        let conn = match AgentConnection::spawn_with_bridge(
+            &config,
+            agent_name,
             slot_idx,
-            self.incoming_tx.clone(),
-            self.log_level.as_deref(),
+            incoming_tx,
+            log_level.as_deref(),
         )
         .await
         {
-            Ok(conn) => {
-                slot.connection = Some(conn);
-            }
+            Ok(conn) => conn,
             Err(e) => {
                 tracing::error!(agent = %agent_name, error = %e, "failed to respawn agent");
-                return;
+                return false;
             }
-        }
+        };
 
-        let acp_timeout = Self::acp_timeout_for(&slot.config, &self.manager_config);
-
+        let acp_timeout = Self::acp_timeout_for(&config, &self.manager_config);
+        let slot = &mut self.slots[slot_idx];
+        slot.connection = Some(conn);
         if let Err(e) = Self::initialize_agent(slot, acp_timeout).await {
             tracing::error!(agent = %agent_name, error = %e, "failed to re-initialize agent");
             slot.connection = None;
-            return;
+            return false;
         }
 
+        true
+    }
+
+    async fn try_restore_session(
+        &mut self,
+        slot_idx: usize,
+        agent_name: &str,
+        acp_timeout: Duration,
+    ) -> bool {
+        let slot = &mut self.slots[slot_idx];
         let supports_load = slot
             .agent_capabilities
             .as_ref()
             .and_then(|c| c.load_session)
             .unwrap_or(false);
-
-        if supports_load {
-            if let Some(first_acp_id) = slot.session_map.values().next().cloned() {
-                let params = serde_json::to_value(SessionLoadParams {
-                    session_id: first_acp_id,
-                })
-                .unwrap_or_else(|e| {
-                    tracing::warn!(error = %e, agent = %agent_name, "failed to serialize session/load params, using null");
-                    serde_json::Value::default()
-                });
-
-                let conn = slot.connection.as_ref().expect("connection just spawned");
-                if let Ok(rx) = conn.send_request("session/load", params).await {
-                    match tokio::time::timeout(acp_timeout, rx).await {
-                        Ok(Ok(resp)) => {
-                            if resp.get("sessionId").is_some() {
-                                tracing::info!(agent = %agent_name, "session restored via session/load");
-                                slot.lifecycle.backoff.reset();
-                                return;
-                            }
-                        }
-                        _ => {
-                            tracing::warn!(agent = %agent_name, "session/load failed, starting fresh session");
-                        }
-                    }
-                }
-            }
+        if !supports_load {
+            return false;
         }
 
+        let Some(first_acp_id) = slot.session_map.values().next().cloned() else {
+            return false;
+        };
+        let params = serde_json::to_value(SessionLoadParams {
+            session_id: first_acp_id,
+        })
+        .unwrap_or_else(|e| {
+            tracing::warn!(error = %e, agent = %agent_name, "failed to serialize session/load params, using null");
+            serde_json::Value::default()
+        });
+
+        let conn = slot.connection.as_ref().expect("connection just spawned");
+        let Ok(rx) = conn.send_request("session/load", params).await else {
+            tracing::warn!(agent = %agent_name, "session/load failed, starting fresh session");
+            return false;
+        };
+
+        match tokio::time::timeout(acp_timeout, rx).await {
+            Ok(Ok(resp)) if resp.get("sessionId").is_some() => {
+                tracing::info!(agent = %agent_name, "session restored via session/load");
+                slot.lifecycle.backoff.reset();
+                true
+            }
+            _ => {
+                tracing::warn!(agent = %agent_name, "session/load failed, starting fresh session");
+                false
+            }
+        }
+    }
+
+    async fn restore_or_start_session(&mut self, slot_idx: usize, agent_name: &str) {
+        let acp_timeout = Self::acp_timeout_for(&self.slots[slot_idx].config, &self.manager_config);
+        if self
+            .try_restore_session(slot_idx, agent_name, acp_timeout)
+            .await
+        {
+            return;
+        }
+
+        let slot = &mut self.slots[slot_idx];
         match Self::start_session(slot, &self.tools_handle, acp_timeout).await {
             Ok(_session_id) => {
                 slot.lifecycle.backoff.reset();
@@ -899,6 +974,44 @@ impl AgentsManager {
             }
         }
     }
+
+    async fn build_started_slot(
+        &self,
+        name: &str,
+        config: &AgentConfig,
+    ) -> Result<AgentSlot, ManagerError> {
+        let mut slot = AgentSlot::new(name.to_string(), config.clone(), &self.parent_cancel);
+        let slot_idx = self.slots.len();
+        let conn = AgentConnection::spawn_with_bridge(
+            config,
+            name,
+            slot_idx,
+            self.incoming_tx.clone(),
+            self.log_level.as_deref(),
+        )
+        .await
+        .map_err(|e| ManagerError::Internal(format!("{name}: {e}")))?;
+        slot.connection = Some(conn);
+
+        let acp_timeout = Self::acp_timeout_for(config, &self.manager_config);
+        Self::initialize_agent(&mut slot, acp_timeout)
+            .await
+            .map_err(|e| ManagerError::Internal(format!("{name}: {e}")))?;
+
+        let session_id = Self::start_session(&mut slot, &self.tools_handle, acp_timeout)
+            .await
+            .map_err(|e| ManagerError::Internal(format!("{name}: {e}")))?;
+
+        Self::register_default_session(&mut slot, name, session_id);
+        Ok(slot)
+    }
+
+    fn register_default_session(slot: &mut AgentSlot, name: &str, session_id: String) {
+        let default_key = SessionKey::new(name, "default", "default");
+        slot.session_map
+            .insert(default_key.clone(), session_id.clone());
+        slot.reverse_map.insert(session_id, default_key);
+    }
 }
 
 impl Manager for AgentsManager {
@@ -917,35 +1030,7 @@ impl Manager for AgentsManager {
                 continue;
             }
 
-            let mut slot = AgentSlot::new(name.clone(), config.clone(), &self.parent_cancel);
-
-            let conn = AgentConnection::spawn_with_bridge(
-                config,
-                name,
-                self.slots.len(),
-                self.incoming_tx.clone(),
-                self.log_level.as_deref(),
-            )
-            .await
-            .map_err(|e| ManagerError::Internal(format!("{name}: {e}")))?;
-
-            slot.connection = Some(conn);
-
-            let acp_timeout = Self::acp_timeout_for(config, &self.manager_config);
-
-            Self::initialize_agent(&mut slot, acp_timeout)
-                .await
-                .map_err(|e| ManagerError::Internal(format!("{name}: {e}")))?;
-
-            let session_id = Self::start_session(&mut slot, &self.tools_handle, acp_timeout)
-                .await
-                .map_err(|e| ManagerError::Internal(format!("{name}: {e}")))?;
-
-            let default_key = SessionKey::new(name, "default", "default");
-            slot.session_map
-                .insert(default_key.clone(), session_id.clone());
-            slot.reverse_map.insert(session_id, default_key);
-
+            let slot = self.build_started_slot(name, config).await?;
             self.slots.push(slot);
         }
 
@@ -999,7 +1084,11 @@ impl Manager for AgentsManager {
     }
 
     async fn health_check(&self) -> bool {
-        let enabled_slots: Vec<_> = self.slots.iter().filter(|s| !s.lifecycle.disabled).collect();
+        let enabled_slots: Vec<_> = self
+            .slots
+            .iter()
+            .filter(|s| !s.lifecycle.disabled)
+            .collect();
         if enabled_slots.is_empty() {
             return self.agent_configs.iter().all(|(_, c)| !c.enabled);
         }
