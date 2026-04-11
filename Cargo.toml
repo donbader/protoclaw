@@ -40,7 +40,7 @@ protoclaw-sdk-tool = { path = "crates/protoclaw-sdk-tool", version = "0.1.0" }
 protoclaw-sdk-agent = { path = "crates/protoclaw-sdk-agent", version = "0.1.0" }
 protoclaw-test-helpers = { path = "crates/protoclaw-test-helpers" }
 wasmtime = "42"
-wasmtime-wasi = "42"
+wasmtime-wasi = "43"
 rstest = "0.23"
 serde_yaml = { package = "yaml_serde", version = "0.10" }
 subst = "0.3"
