@@ -1,0 +1,27 @@
+[workspace]
+# release-plz respects publish = false in Cargo.toml automatically,
+# so non-SDK crates (all marked publish = false) are skipped.
+# Defaults enabled below apply to the 4 SDK crates that will be released.
+
+changelog_update = true
+semver_check = true
+git_release_enable = true
+git_tag_enable = true
+
+# Publish in dependency order: sdk-types first (no SDK deps),
+# then the crates that depend on it.
+[[package]]
+name = "protoclaw-sdk-types"
+publish = true
+
+[[package]]
+name = "protoclaw-sdk-agent"
+publish = true
+
+[[package]]
+name = "protoclaw-sdk-channel"
+publish = true
+
+[[package]]
+name = "protoclaw-sdk-tool"
+publish = true
