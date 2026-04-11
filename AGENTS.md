@@ -5,7 +5,7 @@ Infrastructure sidecar connecting AI agents to channels (Telegram, Slack) and to
 ## Structure
 
 ```
-protoclaw-rust/
+protoclaw/
 ├── crates/                         # Core workspace crates (12 total)
 │   ├── protoclaw/                  # Binary: CLI + Supervisor (entry point)
 │   ├── protoclaw-core/             # Shared: Manager trait, backoff, crash tracker, message types
