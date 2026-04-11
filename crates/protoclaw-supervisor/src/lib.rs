@@ -2,7 +2,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use protoclaw_config::{ProtoclawConfig, resolve_binary_path};
-use protoclaw_core::{CrashTracker, ExponentialBackoff, Manager, ManagerError, ManagerHandle};
+use protoclaw_core::{
+    CrashAction, CrashTracker, ExponentialBackoff, Manager, ManagerError, ManagerHandle,
+    SlotLifecycle,
+};
 use tokio_util::sync::CancellationToken;
 
 use protoclaw_agents::{AgentsCommand, AgentsManager};
@@ -34,11 +37,8 @@ pub struct Supervisor {
 
 struct ManagerSlot {
     name: String,
-    cancel_token: CancellationToken,
     join_handle: Option<tokio::task::JoinHandle<Result<(), ManagerError>>>,
-    backoff: ExponentialBackoff,
-    crash_tracker: CrashTracker,
-    disabled: bool,
+    lifecycle: SlotLifecycle,
 }
 
 const MANAGER_ORDER: [&str; 3] = ["tools", "agents", "channels"];
@@ -124,14 +124,14 @@ impl Supervisor {
 
         let mut slots = Vec::with_capacity(3);
         for &name in &MANAGER_ORDER {
-            let child_token = cancel.child_token();
             slots.push(ManagerSlot {
                 name: name.to_string(),
-                cancel_token: child_token,
                 join_handle: None,
-                backoff: ExponentialBackoff::default(),
-                crash_tracker: CrashTracker::new(max_restarts, restart_window),
-                disabled: false,
+                lifecycle: SlotLifecycle::new(
+                    &cancel,
+                    ExponentialBackoff::default(),
+                    CrashTracker::new(max_restarts, restart_window),
+                ),
             });
         }
 
@@ -233,7 +233,7 @@ impl Supervisor {
                 }
             }
 
-            let token = slot.cancel_token.clone();
+            let token = slot.lifecycle.cancel_token.clone();
             let handle = tokio::spawn(async move { manager.run(token).await });
             slot.join_handle = Some(handle);
 
@@ -245,7 +245,7 @@ impl Supervisor {
     async fn shutdown_ordered(&self, slots: &mut [ManagerSlot], per_manager_timeout: Duration) {
         for slot in slots.iter_mut().rev() {
             tracing::info!(manager = %slot.name, "shutting down");
-            slot.cancel_token.cancel();
+            slot.lifecycle.cancel_token.cancel();
 
             if let Some(handle) = slot.join_handle.take() {
                 match tokio::time::timeout(per_manager_timeout, handle).await {
@@ -294,27 +294,26 @@ impl Supervisor {
                 }
             }
 
-            slot.crash_tracker.record_crash();
-
-            if slot.crash_tracker.is_crash_loop() {
-                tracing::error!(
-                    manager = %slot.name,
-                    "crash loop detected, marking disabled"
-                );
-                slot.disabled = true;
-                if slot.name == "agents" || slot.name == "channels" {
+            match slot.lifecycle.record_crash_and_check() {
+                CrashAction::Disabled => {
                     tracing::error!(
                         manager = %slot.name,
-                        "critical manager crash loop — initiating shutdown"
+                        "crash loop detected, marking disabled"
                     );
-                    root_cancel.cancel();
+                    if slot.name == "agents" || slot.name == "channels" {
+                        tracing::error!(
+                            manager = %slot.name,
+                            "critical manager crash loop — initiating shutdown"
+                        );
+                        root_cancel.cancel();
+                    }
+                    continue;
                 }
-                continue;
+                CrashAction::RestartAfter(delay) => {
+                    tracing::info!(manager = %slot.name, delay_ms = delay.as_millis(), "restarting after backoff");
+                    tokio::time::sleep(delay).await;
+                }
             }
-
-            let delay = slot.backoff.next_delay();
-            tracing::info!(manager = %slot.name, delay_ms = delay.as_millis(), "restarting after backoff");
-            tokio::time::sleep(delay).await;
 
             let tools_tx = self.tools_tx.clone().unwrap_or_else(|| {
                 let (tx, _) = tokio::sync::mpsc::channel::<ToolsCommand>(
@@ -345,8 +344,8 @@ impl Supervisor {
                 continue;
             }
 
-            slot.cancel_token = root_cancel.child_token();
-            let token = slot.cancel_token.clone();
+            slot.lifecycle.cancel_token = root_cancel.child_token();
+            let token = slot.lifecycle.cancel_token.clone();
             let handle = tokio::spawn(async move { manager.run(token).await });
             slot.join_handle = Some(handle);
 
@@ -547,11 +546,12 @@ mod tests {
         for &name in &MANAGER_ORDER {
             slots.push(ManagerSlot {
                 name: name.to_string(),
-                cancel_token: cancel.child_token(),
                 join_handle: None,
-                backoff: ExponentialBackoff::default(),
-                crash_tracker: CrashTracker::default(),
-                disabled: false,
+                lifecycle: SlotLifecycle::new(
+                    &cancel,
+                    ExponentialBackoff::default(),
+                    CrashTracker::default(),
+                ),
             });
         }
 
@@ -576,10 +576,14 @@ mod tests {
 
         let mut slots = Vec::with_capacity(3);
         for &name in &MANAGER_ORDER {
-            let token = cancel.child_token();
+            let lifecycle = SlotLifecycle::new(
+                &cancel,
+                ExponentialBackoff::default(),
+                CrashTracker::default(),
+            );
             let order = shutdown_order.clone();
             let n = name.to_string();
-            let t = token.clone();
+            let t = lifecycle.cancel_token.clone();
             let handle = tokio::spawn(async move {
                 t.cancelled().await;
                 order.lock().unwrap().push(n);
@@ -587,11 +591,8 @@ mod tests {
             });
             slots.push(ManagerSlot {
                 name: name.to_string(),
-                cancel_token: token,
                 join_handle: Some(handle),
-                backoff: ExponentialBackoff::default(),
-                crash_tracker: CrashTracker::default(),
-                disabled: false,
+                lifecycle,
             });
         }
 
@@ -609,19 +610,20 @@ mod tests {
 
         let mut slots = Vec::with_capacity(3);
         for &name in &MANAGER_ORDER {
-            let token = cancel.child_token();
-            let t = token.clone();
+            let lifecycle = SlotLifecycle::new(
+                &cancel,
+                ExponentialBackoff::default(),
+                CrashTracker::default(),
+            );
+            let t = lifecycle.cancel_token.clone();
             let handle = tokio::spawn(async move {
                 t.cancelled().await;
                 Ok::<(), ManagerError>(())
             });
             slots.push(ManagerSlot {
                 name: name.to_string(),
-                cancel_token: token,
                 join_handle: Some(handle),
-                backoff: ExponentialBackoff::default(),
-                crash_tracker: CrashTracker::default(),
-                disabled: false,
+                lifecycle,
             });
         }
 
@@ -637,18 +639,18 @@ mod tests {
         let per_manager_timeout = Duration::from_millis(50);
 
         let mut slots = Vec::with_capacity(1);
-        let token = cancel.child_token();
         let handle = tokio::spawn(async move {
             tokio::time::sleep(Duration::from_secs(60)).await;
             Ok::<(), ManagerError>(())
         });
         slots.push(ManagerSlot {
             name: "stuck".to_string(),
-            cancel_token: token,
             join_handle: Some(handle),
-            backoff: ExponentialBackoff::default(),
-            crash_tracker: CrashTracker::default(),
-            disabled: false,
+            lifecycle: SlotLifecycle::new(
+                &cancel,
+                ExponentialBackoff::default(),
+                CrashTracker::default(),
+            ),
         });
 
         let start = tokio::time::Instant::now();
@@ -665,18 +667,18 @@ mod tests {
         let mut sup = Supervisor::new(config);
 
         let mut slots = Vec::with_capacity(1);
-        let token = cancel.child_token();
         let handle =
             tokio::spawn(
                 async move { Err::<(), ManagerError>(ManagerError::Internal("crash".into())) },
             );
         slots.push(ManagerSlot {
             name: "tools".to_string(),
-            cancel_token: token,
             join_handle: Some(handle),
-            backoff: ExponentialBackoff::default(),
-            crash_tracker: CrashTracker::new(5, Duration::from_secs(60)),
-            disabled: false,
+            lifecycle: SlotLifecycle::new(
+                &cancel,
+                ExponentialBackoff::default(),
+                CrashTracker::new(5, Duration::from_secs(60)),
+            ),
         });
 
         tokio::time::sleep(Duration::from_millis(50)).await;
@@ -687,7 +689,7 @@ mod tests {
             slots[0].join_handle.is_some(),
             "manager should be restarted"
         );
-        assert_eq!(slots[0].backoff.attempts(), 1);
+        assert_eq!(slots[0].lifecycle.backoff.attempts(), 1);
 
         cancel.cancel();
         if let Some(h) = slots[0].join_handle.take() {
@@ -701,7 +703,6 @@ mod tests {
         let mut sup = Supervisor::new(test_config());
 
         let mut slots = Vec::with_capacity(1);
-        let token = cancel.child_token();
         let handle =
             tokio::spawn(
                 async move { Err::<(), ManagerError>(ManagerError::Internal("crash".into())) },
@@ -711,13 +712,15 @@ mod tests {
         crash_tracker.record_crash();
         crash_tracker.record_crash();
 
+        let lifecycle = SlotLifecycle::new(
+            &cancel,
+            ExponentialBackoff::default(),
+            crash_tracker,
+        );
         slots.push(ManagerSlot {
             name: "tools".to_string(),
-            cancel_token: token,
             join_handle: Some(handle),
-            backoff: ExponentialBackoff::default(),
-            crash_tracker,
-            disabled: false,
+            lifecycle,
         });
 
         tokio::time::sleep(Duration::from_millis(50)).await;
@@ -792,21 +795,21 @@ mod tests {
         let mut sup = Supervisor::new(test_config());
 
         let mut slots = Vec::with_capacity(1);
-        let token = cancel.child_token();
         let handle =
             tokio::spawn(async { Err::<(), ManagerError>(ManagerError::Internal("crash".into())) });
         slots.push(ManagerSlot {
             name: "tools".to_string(),
-            cancel_token: token,
             join_handle: Some(handle),
-            backoff: ExponentialBackoff::default(),
-            crash_tracker: CrashTracker::new(10, Duration::from_secs(60)),
-            disabled: false,
+            lifecycle: SlotLifecycle::new(
+                &cancel,
+                ExponentialBackoff::default(),
+                CrashTracker::new(10, Duration::from_secs(60)),
+            ),
         });
 
         tokio::time::sleep(Duration::from_millis(50)).await;
         sup.check_and_restart_managers(&mut slots, &cancel).await;
-        assert_eq!(slots[0].backoff.attempts(), 1);
+        assert_eq!(slots[0].lifecycle.backoff.attempts(), 1);
 
         cancel.cancel();
         if let Some(h) = slots[0].join_handle.take() {
@@ -817,13 +820,13 @@ mod tests {
             Err::<(), ManagerError>(ManagerError::Internal("crash2".into()))
         });
         slots[0].join_handle = Some(handle2);
-        slots[0].cancel_token = CancellationToken::new();
+        slots[0].lifecycle.cancel_token = CancellationToken::new();
 
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         let cancel2 = CancellationToken::new();
         sup.check_and_restart_managers(&mut slots, &cancel2).await;
-        assert_eq!(slots[0].backoff.attempts(), 2);
+        assert_eq!(slots[0].lifecycle.backoff.attempts(), 2);
 
         cancel2.cancel();
         if let Some(h) = slots[0].join_handle.take() {

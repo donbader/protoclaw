@@ -4,8 +4,8 @@ use std::time::Duration;
 use protoclaw_config::ChannelConfig;
 use protoclaw_core::types::ChannelId;
 use protoclaw_core::{
-    AgentsCommand, CrashTracker, ExponentialBackoff, Manager, ManagerError, ManagerHandle,
-    SessionKey, constants,
+    AgentsCommand, CrashAction, CrashTracker, ExponentialBackoff, Manager, ManagerError,
+    ManagerHandle, SessionKey, SlotLifecycle, constants,
 };
 use protoclaw_sdk_types::{ChannelAckConfig, ChannelEvent, PermissionOption};
 use tokio::sync::{mpsc, oneshot};
@@ -43,16 +43,12 @@ struct RoutingEntry {
     agent_name: String,
 }
 
-/// Per-channel state: connection, config, crash recovery.
 struct ChannelSlot {
     name: String,
     config: ChannelConfig,
     connection: Option<ChannelConnection>,
     channel_id: ChannelId,
-    cancel_token: CancellationToken,
-    backoff: ExponentialBackoff,
-    crash_tracker: CrashTracker,
-    disabled: bool,
+    lifecycle: SlotLifecycle,
 }
 
 /// Manages channel subprocesses with crash isolation and session-keyed routing.
@@ -177,25 +173,24 @@ impl ChannelsManager {
         let slot = &mut self.slots[slot_index];
         let channel_name = &slot.name;
 
-        slot.crash_tracker.record_crash();
-
-        if slot.crash_tracker.is_crash_loop() {
-            tracing::error!(
-                channel = %channel_name,
-                "channel in crash loop, disabling"
-            );
-            slot.connection = None;
-            slot.disabled = true;
-            return;
+        match slot.lifecycle.record_crash_and_check() {
+            CrashAction::Disabled => {
+                tracing::error!(
+                    channel = %channel_name,
+                    "channel in crash loop, disabling"
+                );
+                slot.connection = None;
+                return;
+            }
+            CrashAction::RestartAfter(delay) => {
+                tracing::warn!(
+                    channel = %channel_name,
+                    delay_ms = delay.as_millis(),
+                    "channel crashed, respawning after backoff"
+                );
+                tokio::time::sleep(delay).await;
+            }
         }
-
-        let delay = slot.backoff.next_delay();
-        tracing::warn!(
-            channel = %channel_name,
-            delay_ms = delay.as_millis(),
-            "channel crashed, respawning after backoff"
-        );
-        tokio::time::sleep(delay).await;
 
         match Self::spawn_and_initialize(
             &slot.config,
@@ -213,7 +208,7 @@ impl ChannelsManager {
                     "channel recovered"
                 );
                 slot.connection = Some(conn);
-                slot.backoff.reset();
+                slot.lifecycle.backoff.reset();
             }
             Err(e) => {
                 tracing::error!(
@@ -715,7 +710,7 @@ impl ChannelsManager {
     async fn shutdown_all(&mut self) {
         let timeout = Duration::from_secs(self.exit_timeout_secs);
         for slot in &mut self.slots {
-            slot.cancel_token.cancel();
+            slot.lifecycle.cancel_token.cancel();
             if let Some(mut conn) = slot.connection.take() {
                 if let Err(e) = conn.graceful_shutdown(timeout).await {
                     tracing::warn!(channel = %slot.name, error = %e, "graceful shutdown failed, process may linger");
@@ -729,7 +724,7 @@ impl ChannelsManager {
     async fn poll_channels(&mut self) -> Vec<(usize, Option<IncomingChannelMessage>)> {
         let mut results = Vec::new();
         for (i, slot) in self.slots.iter_mut().enumerate() {
-            if slot.disabled {
+            if slot.lifecycle.disabled {
                 continue;
             }
             if let Some(conn) = &mut slot.connection {
@@ -764,7 +759,6 @@ impl Manager for ChannelsManager {
                 continue;
             }
             let channel_id = ChannelId::from(name.as_str());
-            let cancel_token = parent_cancel.child_token();
 
             let init_timeout = self.resolve_init_timeout(config);
             let backoff = match &config.backoff {
@@ -780,6 +774,7 @@ impl Manager for ChannelsManager {
                 }
                 None => CrashTracker::default(),
             };
+            let lifecycle = SlotLifecycle::new(&parent_cancel, backoff, crash_tracker);
 
             match Self::spawn_and_initialize(
                 config,
@@ -801,10 +796,7 @@ impl Manager for ChannelsManager {
                         config: config.clone(),
                         connection: Some(conn),
                         channel_id,
-                        cancel_token,
-                        backoff,
-                        crash_tracker,
-                        disabled: false,
+                        lifecycle,
                     });
                 }
                 Err(e) => {
@@ -818,10 +810,7 @@ impl Manager for ChannelsManager {
                         config: config.clone(),
                         connection: None,
                         channel_id,
-                        cancel_token,
-                        backoff,
-                        crash_tracker,
-                        disabled: false,
+                        lifecycle,
                     });
                 }
             }
@@ -904,7 +893,7 @@ impl Manager for ChannelsManager {
     async fn health_check(&self) -> bool {
         self.slots
             .iter()
-            .any(|s| s.connection.is_some() && !s.disabled)
+            .any(|s| s.connection.is_some() && !s.lifecycle.disabled)
     }
 }
 
@@ -1010,21 +999,19 @@ mod tests {
 
     #[tokio::test]
     async fn when_one_channel_crashes_then_other_channels_unaffected() {
+        let parent = CancellationToken::new();
         let mut slot = ChannelSlot {
             name: "test".into(),
             config: test_channel_config("true", true, "default"),
             connection: None,
             channel_id: ChannelId::from("test"),
-            cancel_token: CancellationToken::new(),
-            backoff: ExponentialBackoff::default(),
-            crash_tracker: CrashTracker::default(),
-            disabled: false,
+            lifecycle: SlotLifecycle::new(&parent, ExponentialBackoff::default(), CrashTracker::default()),
         };
 
-        slot.crash_tracker.record_crash();
-        slot.crash_tracker.record_crash();
-        assert!(!slot.crash_tracker.is_crash_loop());
-        assert!(!slot.disabled);
+        slot.lifecycle.crash_tracker.record_crash();
+        slot.lifecycle.crash_tracker.record_crash();
+        assert!(!slot.lifecycle.crash_tracker.is_crash_loop());
+        assert!(!slot.lifecycle.disabled);
     }
 
     #[tokio::test]
@@ -1042,11 +1029,11 @@ mod tests {
         m.start().await.unwrap();
         let slot = &mut m.slots[0];
         for _ in 0..5 {
-            slot.crash_tracker.record_crash();
+            slot.lifecycle.crash_tracker.record_crash();
         }
 
         m.handle_channel_crash(0).await;
-        assert!(m.slots[0].disabled);
+        assert!(m.slots[0].lifecycle.disabled);
         assert!(m.slots[0].connection.is_none());
     }
 
@@ -1176,10 +1163,7 @@ mod tests {
             config: test_channel_config("telegram-channel", true, "opencode"),
             connection: None,
             channel_id: ChannelId::from("telegram"),
-            cancel_token: CancellationToken::new(),
-            backoff: ExponentialBackoff::default(),
-            crash_tracker: CrashTracker::default(),
-            disabled: false,
+            lifecycle: SlotLifecycle::new(&CancellationToken::new(), ExponentialBackoff::default(), CrashTracker::default()),
         });
         assert_eq!(m.agent_name_for_channel(0), "opencode");
     }
@@ -1201,10 +1185,7 @@ mod tests {
             config: test_channel_config("debug-http", true, "default"),
             connection: None,
             channel_id: ChannelId::from("debug-http"),
-            cancel_token: CancellationToken::new(),
-            backoff: ExponentialBackoff::default(),
-            crash_tracker: CrashTracker::default(),
-            disabled: false,
+            lifecycle: SlotLifecycle::new(&CancellationToken::new(), ExponentialBackoff::default(), CrashTracker::default()),
         });
         assert_eq!(m.agent_name_for_channel(0), "default");
     }
@@ -1254,10 +1235,7 @@ mod tests {
             config: test_channel_config("telegram-channel", true, "default"),
             connection: None,
             channel_id: ChannelId::from("telegram"),
-            cancel_token: CancellationToken::new(),
-            backoff: ExponentialBackoff::default(),
-            crash_tracker: CrashTracker::default(),
-            disabled: false,
+            lifecycle: SlotLifecycle::new(&CancellationToken::new(), ExponentialBackoff::default(), CrashTracker::default()),
         });
         let key = SessionKey::new("telegram", "direct", "alice");
         m.routing_table.insert(

@@ -12,8 +12,8 @@ use crate::acp_types::{
 use crate::slot::{AgentSlot, find_slot_by_name};
 use protoclaw_config::{AgentConfig, AgentsManagerConfig, WorkspaceConfig};
 use protoclaw_core::{
-    AgentStatusInfo, AgentsCommand, Manager, ManagerError, ManagerHandle, McpServerUrl,
-    PendingPermissionInfo, SessionKey, ToolsCommand, constants,
+    AgentStatusInfo, AgentsCommand, CrashAction, Manager, ManagerError, ManagerHandle,
+    McpServerUrl, PendingPermissionInfo, SessionKey, ToolsCommand, constants,
 };
 use protoclaw_sdk_agent::{DynAgentAdapter, GenericAcpAdapter};
 use protoclaw_sdk_types::{ChannelEvent, PermissionOption};
@@ -23,11 +23,11 @@ use tokio_util::sync::CancellationToken;
 use crate::connection::{AgentConnection, IncomingMessage};
 use crate::error::AgentsError;
 
-pub struct PendingPermission {
+pub(crate) struct PendingPermission {
     pub request: serde_json::Value,
     pub description: String,
     pub options: Vec<PermissionOption>,
-    pub received_at: std::time::Instant,
+    pub _received_at: std::time::Instant,
 }
 
 pub(crate) struct SlotIncoming {
@@ -586,7 +586,7 @@ impl AgentsManager {
                 request: request.clone(),
                 description,
                 options,
-                received_at: std::time::Instant::now(),
+                _received_at: std::time::Instant::now(),
             },
         );
     }
@@ -730,27 +730,25 @@ impl AgentsManager {
         let slot = &mut self.slots[slot_idx];
         let agent_name = slot.name().to_string();
 
-        slot.crash_tracker.record_crash();
-
-        if slot.crash_tracker.is_crash_loop() {
-            tracing::error!(agent = %agent_name, crash_loop = true, "agent crash loop detected — disabling slot");
-            slot.disabled = true;
-            if let Some(mut old_conn) = slot.connection.take() {
-                let _ = old_conn.kill().await;
+        match slot.lifecycle.record_crash_and_check() {
+            CrashAction::Disabled => {
+                tracing::error!(agent = %agent_name, crash_loop = true, "agent crash loop detected — disabling slot");
+                if let Some(mut old_conn) = slot.connection.take() {
+                    let _ = old_conn.kill().await;
+                }
+                return;
             }
-            return;
-        }
-
-        tracing::warn!(agent = %agent_name, "agent process exited, attempting recovery");
-        if let Some(mut old_conn) = slot.connection.take() {
-            if let Err(e) = old_conn.kill().await {
-                tracing::debug!(agent = %agent_name, error = %e, "failed to clean up old connection (may already be dead)");
+            CrashAction::RestartAfter(delay) => {
+                tracing::warn!(agent = %agent_name, "agent process exited, attempting recovery");
+                if let Some(mut old_conn) = slot.connection.take() {
+                    if let Err(e) = old_conn.kill().await {
+                        tracing::debug!(agent = %agent_name, error = %e, "failed to clean up old connection (may already be dead)");
+                    }
+                }
+                tracing::info!(agent = %agent_name, delay_ms = delay.as_millis(), "waiting before restart");
+                tokio::time::sleep(delay).await;
             }
         }
-
-        let delay = slot.backoff.next_delay();
-        tracing::info!(agent = %agent_name, delay_ms = delay.as_millis(), "waiting before restart");
-        tokio::time::sleep(delay).await;
 
         match AgentConnection::spawn_with_bridge(
             &slot.config,
@@ -800,7 +798,7 @@ impl AgentsManager {
                         Ok(Ok(resp)) => {
                             if resp.get("sessionId").is_some() {
                                 tracing::info!(agent = %agent_name, "session restored via session/load");
-                                slot.backoff.reset();
+                                slot.lifecycle.backoff.reset();
                                 return;
                             }
                         }
@@ -814,7 +812,7 @@ impl AgentsManager {
 
         match Self::start_session(slot, &self.tools_handle, acp_timeout).await {
             Ok(_session_id) => {
-                slot.backoff.reset();
+                slot.lifecycle.backoff.reset();
                 tracing::info!(agent = %agent_name, "agent recovered successfully");
             }
             Err(e) => {
@@ -983,7 +981,7 @@ impl Manager for AgentsManager {
                     match slot_msg.msg {
                         Some(incoming_msg) => self.handle_incoming(slot_msg.slot_idx, incoming_msg).await,
                         None => {
-                            if self.slots[slot_msg.slot_idx].disabled {
+                            if self.slots[slot_msg.slot_idx].lifecycle.disabled {
                                 continue;
                             }
                             self.handle_crash(slot_msg.slot_idx).await;
@@ -1001,7 +999,7 @@ impl Manager for AgentsManager {
     }
 
     async fn health_check(&self) -> bool {
-        let enabled_slots: Vec<_> = self.slots.iter().filter(|s| !s.disabled).collect();
+        let enabled_slots: Vec<_> = self.slots.iter().filter(|s| !s.lifecycle.disabled).collect();
         if enabled_slots.is_empty() {
             return self.agent_configs.iter().all(|(_, c)| !c.enabled);
         }
@@ -1703,17 +1701,17 @@ mod tests {
         );
         m.start().await.unwrap();
 
-        m.slots[0].crash_tracker.record_crash();
-        m.slots[0].crash_tracker.record_crash();
+        m.slots[0].lifecycle.crash_tracker.record_crash();
+        m.slots[0].lifecycle.crash_tracker.record_crash();
         assert!(
-            m.slots[0].crash_tracker.is_crash_loop(),
+            m.slots[0].lifecycle.crash_tracker.is_crash_loop(),
             "precondition: crash loop must be active"
         );
 
         m.handle_crash(0).await;
 
         assert!(
-            m.slots[0].disabled,
+            m.slots[0].lifecycle.disabled,
             "slot must be disabled after crash loop"
         );
         assert!(
@@ -1739,14 +1737,14 @@ mod tests {
         m.handle_crash(0).await;
 
         assert!(
-            !m.slots[0].disabled,
+            !m.slots[0].lifecycle.disabled,
             "slot must NOT be disabled below loop threshold"
         );
         assert!(
             m.slots[0].connection.is_some(),
             "slot should have reconnected"
         );
-        assert!(m.slots[0].crash_tracker.is_crash_loop() == false || true);
+        assert!(m.slots[0].lifecycle.crash_tracker.is_crash_loop() == false || true);
 
         m.shutdown_all().await;
         tools_task.abort();

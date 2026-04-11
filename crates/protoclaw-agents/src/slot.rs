@@ -2,29 +2,22 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use protoclaw_config::AgentConfig;
-use protoclaw_core::{CrashTracker, ExponentialBackoff, SessionKey};
+use protoclaw_core::{CrashTracker, ExponentialBackoff, SessionKey, SlotLifecycle};
 use tokio_util::sync::CancellationToken;
 
-use crate::PendingPermission;
 use crate::acp_types::InitializeResult;
 use crate::connection::AgentConnection;
+use crate::PendingPermission;
 
-/// Per-agent state: connection, config, crash recovery, session routing.
-/// Mirrors ChannelSlot pattern from ChannelsManager.
 pub struct AgentSlot {
-    pub name: String,
-    pub config: AgentConfig,
-    pub connection: Option<AgentConnection>,
-    pub cancel_token: CancellationToken,
-    pub backoff: ExponentialBackoff,
-    pub crash_tracker: CrashTracker,
-    pub disabled: bool,
-    pub agent_capabilities: Option<InitializeResult>,
-    /// Maps channel+peer identity → ACP session ID (per-agent, not shared).
-    pub session_map: HashMap<SessionKey, String>,
-    /// Reverse: ACP session ID → SessionKey (per-agent).
-    pub reverse_map: HashMap<String, SessionKey>,
-    pub pending_permissions: HashMap<String, PendingPermission>,
+    pub(crate) name: String,
+    pub(crate) config: AgentConfig,
+    pub(crate) connection: Option<AgentConnection>,
+    pub(crate) lifecycle: SlotLifecycle,
+    pub(crate) agent_capabilities: Option<InitializeResult>,
+    pub(crate) session_map: HashMap<SessionKey, String>,
+    pub(crate) reverse_map: HashMap<String, SessionKey>,
+    pub(crate) pending_permissions: HashMap<String, PendingPermission>,
 }
 
 impl AgentSlot {
@@ -41,14 +34,13 @@ impl AgentSlot {
             Some(cfg) => CrashTracker::new(cfg.max_crashes, Duration::from_secs(cfg.window_secs)),
             None => CrashTracker::default(),
         };
+        let mut lifecycle = SlotLifecycle::new(parent_cancel, backoff, crash_tracker);
+        lifecycle.disabled = disabled;
         Self {
             name,
             config,
             connection: None,
-            cancel_token: parent_cancel.child_token(),
-            backoff,
-            crash_tracker,
-            disabled,
+            lifecycle,
             agent_capabilities: None,
             session_map: HashMap::new(),
             reverse_map: HashMap::new(),
@@ -97,7 +89,7 @@ mod tests {
 
         assert_eq!(slot.name(), "test-agent");
         assert!(slot.connection.is_none());
-        assert!(!slot.disabled);
+        assert!(!slot.lifecycle.disabled);
         assert!(slot.agent_capabilities.is_none());
         assert!(slot.session_map.is_empty());
         assert!(slot.reverse_map.is_empty());
@@ -109,7 +101,7 @@ mod tests {
         let cancel = CancellationToken::new();
         let slot = AgentSlot::new("disabled-agent".into(), test_agent_config(false), &cancel);
 
-        assert!(slot.disabled);
+        assert!(slot.lifecycle.disabled);
         assert_eq!(slot.name(), "disabled-agent");
     }
 
@@ -176,9 +168,9 @@ mod tests {
         let parent = CancellationToken::new();
         let slot = AgentSlot::new("agent".into(), test_agent_config(true), &parent);
 
-        assert!(!slot.cancel_token.is_cancelled());
+        assert!(!slot.lifecycle.cancel_token.is_cancelled());
         parent.cancel();
-        assert!(slot.cancel_token.is_cancelled());
+        assert!(slot.lifecycle.cancel_token.is_cancelled());
     }
 
     fn test_agent_config_with_crash_tracker(max_crashes: u32, window_secs: u64) -> AgentConfig {
@@ -212,20 +204,16 @@ mod tests {
             &cancel,
         );
 
-        // Before any crashes, not a crash loop
-        assert!(!slot.crash_tracker.is_crash_loop());
-        assert!(!slot.disabled);
+        assert!(!slot.lifecycle.crash_tracker.is_crash_loop());
+        assert!(!slot.lifecycle.disabled);
 
-        // Record first crash — not yet at threshold (2 crashes required)
-        slot.crash_tracker.record_crash();
-        assert!(!slot.crash_tracker.is_crash_loop());
+        slot.lifecycle.crash_tracker.record_crash();
+        assert!(!slot.lifecycle.crash_tracker.is_crash_loop());
 
-        // Record second crash — reaches threshold, crash loop detected
-        slot.crash_tracker.record_crash();
-        assert!(slot.crash_tracker.is_crash_loop());
+        slot.lifecycle.crash_tracker.record_crash();
+        assert!(slot.lifecycle.crash_tracker.is_crash_loop());
 
-        // Manager would set disabled = true when crash loop is detected
-        slot.disabled = true;
-        assert!(slot.disabled);
+        slot.lifecycle.disabled = true;
+        assert!(slot.lifecycle.disabled);
     }
 }
