@@ -27,7 +27,7 @@ jobs:
           key: ${{ runner.os }}-coverage-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-coverage-
       - name: Build required binaries
-        run: cargo build --bin mock-agent --bin debug-http --bin sdk-test-tool --bin sdk-test-channel
+        run: cargo build --locked --bin mock-agent --bin debug-http --bin sdk-test-tool --bin sdk-test-channel
       - name: Run tests with coverage
         run: cargo llvm-cov --no-report --workspace --exclude protoclaw-test-helpers
       - name: Generate LCOV report

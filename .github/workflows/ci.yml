@@ -25,13 +25,42 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
       - name: Build required binaries
-        run: cargo build --bin mock-agent --bin debug-http --bin sdk-test-tool --bin sdk-test-channel
+        run: cargo build --locked --bin mock-agent --bin debug-http --bin sdk-test-tool --bin sdk-test-channel
       - name: Run tests
-        run: cargo test --workspace
+        run: cargo test --locked --workspace
       - name: Clippy
-        run: cargo clippy --workspace -- -D warnings
+        run: cargo clippy --locked --workspace -- -D warnings
       - name: Fmt check
         run: cargo fmt --all -- --check
+
+  msrv:
+    name: MSRV (1.85)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install MSRV toolchain
+        run: rustup toolchain install 1.85 --no-self-update --profile minimal
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/
+          key: ${{ runner.os }}-msrv-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-msrv-
+      - name: Check MSRV
+        run: cargo +1.85 check --locked --workspace
+
+  audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@cargo-audit
+      - name: Run audit
+        run: cargo audit
 
   validate-examples:
     runs-on: ubuntu-latest
@@ -68,6 +97,6 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
       - name: Build test binaries
-        run: cargo build --bin mock-agent --bin debug-http
+        run: cargo build --locked --bin mock-agent --bin debug-http
       - name: Run Docker integration tests
-        run: cargo test -p protoclaw-integration-tests -- --ignored --test-threads=1
+        run: cargo test --locked -p protoclaw-integration-tests -- --ignored --test-threads=1
