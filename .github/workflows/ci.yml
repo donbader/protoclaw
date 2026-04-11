@@ -25,7 +25,7 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
       - name: Build required binaries
-        run: cargo build --bin mock-agent --bin debug-http
+        run: cargo build --bin mock-agent --bin debug-http --bin sdk-test-tool --bin sdk-test-channel
       - name: Run tests
         run: cargo test --workspace
       - name: Clippy
