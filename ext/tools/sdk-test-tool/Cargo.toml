@@ -10,7 +10,6 @@ name = "sdk-test-tool"
 path = "src/main.rs"
 
 [dependencies]
-async-trait = "0.1"
 protoclaw-sdk-tool = { workspace = true }
 serde_json = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

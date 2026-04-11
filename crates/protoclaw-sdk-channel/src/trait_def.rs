@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use protoclaw_sdk_types::{
     ChannelCapabilities, ChannelInitializeParams, ChannelRequestPermission, ChannelSendMessage,
     DeliverMessage, PermissionResponse, SessionCreated,
@@ -7,7 +6,7 @@ use tokio::sync::mpsc;
 
 use crate::error::ChannelSdkError;
 
-#[async_trait]
+#[allow(async_fn_in_trait)]
 pub trait Channel: Send + 'static {
     fn capabilities(&self) -> ChannelCapabilities;
 
@@ -53,7 +52,6 @@ mod tests {
 
     struct MockChannel;
 
-    #[async_trait]
     impl Channel for MockChannel {
         fn capabilities(&self) -> ChannelCapabilities {
             ChannelCapabilities {

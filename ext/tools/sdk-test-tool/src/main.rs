@@ -1,9 +1,7 @@
-use async_trait::async_trait;
 use protoclaw_sdk_tool::{Tool, ToolSdkError, ToolServer};
 
 struct EchoTool;
 
-#[async_trait]
 impl Tool for EchoTool {
     fn name(&self) -> &str {
         "echo"

@@ -2,20 +2,21 @@ pub mod adapter;
 pub mod error;
 pub mod generic;
 
-pub use adapter::AgentAdapter;
+pub use adapter::{AgentAdapter, DynAgentAdapter};
 pub use error::AgentSdkError;
 pub use generic::GenericAcpAdapter;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use adapter::AgentAdapter;
     use rstest::rstest;
 
     #[tokio::test]
     async fn when_generic_adapter_on_initialize_result_called_then_passthrough() {
         let adapter = GenericAcpAdapter;
         let input = serde_json::json!({"protocolVersion": 1, "capabilities": {}});
-        let output = adapter.on_initialize_result(input.clone()).await.unwrap();
+        let output = AgentAdapter::on_initialize_result(&adapter, input.clone()).await.unwrap();
         assert_eq!(input, output);
     }
 
@@ -23,20 +24,20 @@ mod tests {
     async fn when_generic_adapter_on_session_new_result_called_then_passthrough() {
         let adapter = GenericAcpAdapter;
         let input = serde_json::json!({"sessionId": "sess-42"});
-        let output = adapter.on_session_new_result(input.clone()).await.unwrap();
+        let output = AgentAdapter::on_session_new_result(&adapter, input.clone()).await.unwrap();
         assert_eq!(input, output);
     }
 
     #[test]
-    fn when_generic_adapter_cast_to_trait_object_then_compiles() {
-        let _adapter: Box<dyn AgentAdapter> = Box::new(GenericAcpAdapter);
+    fn when_generic_adapter_cast_to_dyn_trait_object_then_compiles() {
+        let _adapter: Box<dyn DynAgentAdapter> = Box::new(GenericAcpAdapter);
     }
 
     #[tokio::test]
     async fn when_generic_adapter_on_initialize_params_called_then_passthrough() {
         let adapter = GenericAcpAdapter;
         let input = serde_json::json!({"protocolVersion": 1});
-        let output = adapter.on_initialize_params(input.clone()).await.unwrap();
+        let output = AgentAdapter::on_initialize_params(&adapter, input.clone()).await.unwrap();
         assert_eq!(input, output);
     }
 
@@ -44,7 +45,7 @@ mod tests {
     async fn when_generic_adapter_on_session_new_params_called_then_passthrough() {
         let adapter = GenericAcpAdapter;
         let input = serde_json::json!({"sessionId": null});
-        let output = adapter.on_session_new_params(input.clone()).await.unwrap();
+        let output = AgentAdapter::on_session_new_params(&adapter, input.clone()).await.unwrap();
         assert_eq!(input, output);
     }
 
@@ -53,8 +54,7 @@ mod tests {
         let adapter = GenericAcpAdapter;
         let input =
             serde_json::json!({"sessionId": "s1", "message": {"role": "user", "content": "hi"}});
-        let output = adapter
-            .on_session_prompt_params(input.clone())
+        let output = AgentAdapter::on_session_prompt_params(&adapter, input.clone())
             .await
             .unwrap();
         assert_eq!(input, output);
@@ -64,7 +64,7 @@ mod tests {
     async fn when_generic_adapter_on_session_update_called_then_passthrough() {
         let adapter = GenericAcpAdapter;
         let input = serde_json::json!({"sessionId": "s1", "type": "agent_message_chunk", "content": "hello"});
-        let output = adapter.on_session_update(input.clone()).await.unwrap();
+        let output = AgentAdapter::on_session_update(&adapter, input.clone()).await.unwrap();
         assert_eq!(input, output);
     }
 
@@ -72,7 +72,7 @@ mod tests {
     async fn when_generic_adapter_on_permission_request_called_then_passthrough() {
         let adapter = GenericAcpAdapter;
         let input = serde_json::json!({"requestId": "r1", "description": "Allow?"});
-        let output = adapter.on_permission_request(input.clone()).await.unwrap();
+        let output = AgentAdapter::on_permission_request(&adapter, input.clone()).await.unwrap();
         assert_eq!(input, output);
     }
 

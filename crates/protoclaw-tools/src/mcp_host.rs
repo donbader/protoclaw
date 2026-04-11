@@ -1,4 +1,7 @@
-use protoclaw_sdk_tool::{Tool, ToolServer};
+use protoclaw_sdk_tool::{DynTool, ToolServer};
+
+#[cfg(test)]
+use protoclaw_sdk_tool::Tool;
 use rmcp::ErrorData as McpError;
 use rmcp::model::{CallToolResult, Tool as RmcpTool};
 
@@ -11,7 +14,7 @@ pub struct McpHost {
 }
 
 impl McpHost {
-    pub fn new(tools: Vec<Box<dyn Tool>>) -> Self {
+    pub fn new(tools: Vec<Box<dyn DynTool>>) -> Self {
         Self {
             server: ToolServer::new(tools),
         }
@@ -33,13 +36,11 @@ impl McpHost {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use async_trait::async_trait;
     use protoclaw_sdk_tool::ToolSdkError;
     use rstest::rstest;
 
     struct EchoTool;
 
-    #[async_trait]
     impl Tool for EchoTool {
         fn name(&self) -> &str {
             "echo"
@@ -66,7 +67,7 @@ mod tests {
 
     #[test]
     fn when_mcp_host_created_with_tools_then_tool_list_contains_them() {
-        let tools: Vec<Box<dyn Tool>> = vec![Box::new(EchoTool)];
+        let tools: Vec<Box<dyn DynTool>> = vec![Box::new(EchoTool)];
         let host = McpHost::new(tools);
         let list = host.tool_list();
         assert_eq!(list.len(), 1);
@@ -75,7 +76,7 @@ mod tests {
 
     #[tokio::test]
     async fn when_known_tool_dispatched_via_mcp_host_then_returns_result() {
-        let tools: Vec<Box<dyn Tool>> = vec![Box::new(EchoTool)];
+        let tools: Vec<Box<dyn DynTool>> = vec![Box::new(EchoTool)];
         let host = McpHost::new(tools);
 
         let mut args = serde_json::Map::new();

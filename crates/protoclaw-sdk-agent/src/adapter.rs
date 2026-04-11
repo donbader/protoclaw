@@ -1,54 +1,149 @@
+use std::future::Future;
+use std::pin::Pin;
+
 use crate::error::AgentSdkError;
-use async_trait::async_trait;
 
-#[async_trait]
+/// Per-method hooks for ACP lifecycle. Implement this trait to intercept and transform
+/// ACP messages between the supervisor and agent subprocess.
+///
+/// All methods have default passthrough implementations — override only the hooks you need.
 pub trait AgentAdapter: Send + Sync + 'static {
-    async fn on_initialize_params(
+    fn on_initialize_params(
         &self,
         params: serde_json::Value,
-    ) -> Result<serde_json::Value, AgentSdkError> {
-        Ok(params)
+    ) -> impl Future<Output = Result<serde_json::Value, AgentSdkError>> + Send {
+        async move { Ok(params) }
     }
 
-    async fn on_initialize_result(
+    fn on_initialize_result(
         &self,
         result: serde_json::Value,
-    ) -> Result<serde_json::Value, AgentSdkError> {
-        Ok(result)
+    ) -> impl Future<Output = Result<serde_json::Value, AgentSdkError>> + Send {
+        async move { Ok(result) }
     }
 
-    async fn on_session_new_params(
+    fn on_session_new_params(
         &self,
         params: serde_json::Value,
-    ) -> Result<serde_json::Value, AgentSdkError> {
-        Ok(params)
+    ) -> impl Future<Output = Result<serde_json::Value, AgentSdkError>> + Send {
+        async move { Ok(params) }
     }
 
-    async fn on_session_new_result(
+    fn on_session_new_result(
         &self,
         result: serde_json::Value,
-    ) -> Result<serde_json::Value, AgentSdkError> {
-        Ok(result)
+    ) -> impl Future<Output = Result<serde_json::Value, AgentSdkError>> + Send {
+        async move { Ok(result) }
     }
 
-    async fn on_session_prompt_params(
+    fn on_session_prompt_params(
         &self,
         params: serde_json::Value,
-    ) -> Result<serde_json::Value, AgentSdkError> {
-        Ok(params)
+    ) -> impl Future<Output = Result<serde_json::Value, AgentSdkError>> + Send {
+        async move { Ok(params) }
     }
 
-    async fn on_session_update(
+    fn on_session_update(
         &self,
         event: serde_json::Value,
-    ) -> Result<serde_json::Value, AgentSdkError> {
-        Ok(event)
+    ) -> impl Future<Output = Result<serde_json::Value, AgentSdkError>> + Send {
+        async move { Ok(event) }
     }
 
-    async fn on_permission_request(
+    fn on_permission_request(
         &self,
         request: serde_json::Value,
-    ) -> Result<serde_json::Value, AgentSdkError> {
-        Ok(request)
+    ) -> impl Future<Output = Result<serde_json::Value, AgentSdkError>> + Send {
+        async move { Ok(request) }
+    }
+}
+
+/// Dyn-compatible alias for [`AgentAdapter`]. Use `Box<dyn DynAgentAdapter>` for runtime dispatch.
+/// Implementors write `impl AgentAdapter for X`; the blanket impl provides `DynAgentAdapter` automatically.
+pub trait DynAgentAdapter: Send + Sync + 'static {
+    fn on_initialize_params<'a>(
+        &'a self,
+        params: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>>;
+
+    fn on_initialize_result<'a>(
+        &'a self,
+        result: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>>;
+
+    fn on_session_new_params<'a>(
+        &'a self,
+        params: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>>;
+
+    fn on_session_new_result<'a>(
+        &'a self,
+        result: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>>;
+
+    fn on_session_prompt_params<'a>(
+        &'a self,
+        params: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>>;
+
+    fn on_session_update<'a>(
+        &'a self,
+        event: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>>;
+
+    fn on_permission_request<'a>(
+        &'a self,
+        request: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>>;
+}
+
+impl<T: AgentAdapter> DynAgentAdapter for T {
+    fn on_initialize_params<'a>(
+        &'a self,
+        params: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>> {
+        Box::pin(AgentAdapter::on_initialize_params(self, params))
+    }
+
+    fn on_initialize_result<'a>(
+        &'a self,
+        result: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>> {
+        Box::pin(AgentAdapter::on_initialize_result(self, result))
+    }
+
+    fn on_session_new_params<'a>(
+        &'a self,
+        params: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>> {
+        Box::pin(AgentAdapter::on_session_new_params(self, params))
+    }
+
+    fn on_session_new_result<'a>(
+        &'a self,
+        result: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>> {
+        Box::pin(AgentAdapter::on_session_new_result(self, result))
+    }
+
+    fn on_session_prompt_params<'a>(
+        &'a self,
+        params: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>> {
+        Box::pin(AgentAdapter::on_session_prompt_params(self, params))
+    }
+
+    fn on_session_update<'a>(
+        &'a self,
+        event: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>> {
+        Box::pin(AgentAdapter::on_session_update(self, event))
+    }
+
+    fn on_permission_request<'a>(
+        &'a self,
+        request: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>> {
+        Box::pin(AgentAdapter::on_permission_request(self, request))
     }
 }

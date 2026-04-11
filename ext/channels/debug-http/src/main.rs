@@ -1,7 +1,6 @@
 use std::convert::Infallible;
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use axum::Router;
 use axum::extract::{Path, State};
 use axum::response::sse::{Event, KeepAlive, Sse};
@@ -63,7 +62,6 @@ struct DebugHttpChannel {
     port: u16,
 }
 
-#[async_trait]
 impl Channel for DebugHttpChannel {
     fn capabilities(&self) -> ChannelCapabilities {
         ChannelCapabilities {

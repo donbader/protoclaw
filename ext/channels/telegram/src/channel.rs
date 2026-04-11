@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use protoclaw_sdk_channel::{Channel, ChannelCapabilities, ChannelSdkError, ChannelSendMessage};
 use protoclaw_sdk_types::{
     AckLifecycleNotification, AckNotification, ChannelInitializeParams, ChannelRequestPermission,
@@ -163,7 +162,6 @@ impl TelegramChannel {
     }
 }
 
-#[async_trait]
 impl Channel for TelegramChannel {
     fn capabilities(&self) -> ChannelCapabilities {
         ChannelCapabilities {

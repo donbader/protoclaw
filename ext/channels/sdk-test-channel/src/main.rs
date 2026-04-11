@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use protoclaw_sdk_channel::{
     Channel, ChannelCapabilities, ChannelHarness, ChannelSdkError, ChannelSendMessage,
     DeliverMessage, PeerInfo,
@@ -10,7 +9,6 @@ struct SdkTestChannel {
     outbound: Option<mpsc::Sender<ChannelSendMessage>>,
 }
 
-#[async_trait]
 impl Channel for SdkTestChannel {
     fn capabilities(&self) -> ChannelCapabilities {
         ChannelCapabilities {

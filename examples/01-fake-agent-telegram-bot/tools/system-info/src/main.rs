@@ -1,9 +1,7 @@
-use async_trait::async_trait;
 use protoclaw_sdk_tool::{Tool, ToolSdkError, ToolServer};
 
 struct SystemInfoTool;
 
-#[async_trait]
 impl Tool for SystemInfoTool {
     fn name(&self) -> &str {
         "system-info"

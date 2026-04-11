@@ -15,7 +15,7 @@ use protoclaw_core::{
     AgentStatusInfo, AgentsCommand, Manager, ManagerError, ManagerHandle, McpServerUrl,
     PendingPermissionInfo, SessionKey, ToolsCommand, constants,
 };
-use protoclaw_sdk_agent::{AgentAdapter, GenericAcpAdapter};
+use protoclaw_sdk_agent::{DynAgentAdapter, GenericAcpAdapter};
 use protoclaw_sdk_types::{ChannelEvent, PermissionOption};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
@@ -47,7 +47,7 @@ pub struct AgentsManager {
     cmd_rx: Option<tokio::sync::mpsc::Receiver<AgentsCommand>>,
     cmd_tx: tokio::sync::mpsc::Sender<AgentsCommand>,
     channels_sender: Option<mpsc::Sender<ChannelEvent>>,
-    adapter: Box<dyn AgentAdapter>,
+    adapter: Box<dyn DynAgentAdapter>,
     parent_cancel: CancellationToken,
     incoming_tx: mpsc::Sender<SlotIncoming>,
     incoming_rx: Option<mpsc::Receiver<SlotIncoming>>,
@@ -94,7 +94,7 @@ impl AgentsManager {
         self
     }
 
-    pub fn with_adapter(mut self, adapter: Box<dyn AgentAdapter>) -> Self {
+    pub fn with_adapter(mut self, adapter: Box<dyn DynAgentAdapter>) -> Self {
         self.adapter = adapter;
         self
     }

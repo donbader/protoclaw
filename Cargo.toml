@@ -16,7 +16,7 @@ protoclaw-tools = { path = "crates/protoclaw-tools" }
 protoclaw-core = { path = "crates/protoclaw-core" }
 protoclaw-config = { path = "crates/protoclaw-config" }
 protoclaw-supervisor = { path = "crates/protoclaw-supervisor" }
-tokio = { version = "1.50", features = ["full"] }
+tokio = { version = "1.50", default-features = false }
 tokio-util = { version = "0.7", features = ["codec"] }
 futures = "0.3"
 serde = { version = "1", features = ["derive"] }
@@ -34,10 +34,10 @@ tempfile = "3"
 axum = "0.8"
 tokio-stream = { version = "0.1", features = ["sync"] }
 protoclaw-channels = { path = "crates/protoclaw-channels" }
-protoclaw-sdk-types = { path = "crates/protoclaw-sdk-types", version = "0.1.0" }
-protoclaw-sdk-channel = { path = "crates/protoclaw-sdk-channel", version = "0.1.0" }
-protoclaw-sdk-tool = { path = "crates/protoclaw-sdk-tool", version = "0.1.0" }
-protoclaw-sdk-agent = { path = "crates/protoclaw-sdk-agent", version = "0.1.0" }
+protoclaw-sdk-types = { path = "crates/protoclaw-sdk-types", version = "0.2.0" }
+protoclaw-sdk-channel = { path = "crates/protoclaw-sdk-channel", version = "0.2.0" }
+protoclaw-sdk-tool = { path = "crates/protoclaw-sdk-tool", version = "0.2.0" }
+protoclaw-sdk-agent = { path = "crates/protoclaw-sdk-agent", version = "0.2.0" }
 protoclaw-test-helpers = { path = "crates/protoclaw-test-helpers" }
 wasmtime = "43"
 wasmtime-wasi = "43"

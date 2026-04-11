@@ -157,7 +157,6 @@ impl<C: Channel> ChannelHarness<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use async_trait::async_trait;
     use protoclaw_sdk_types::{ChannelCapabilities, PermissionResponse};
     use rstest::rstest;
     use std::sync::{Arc, Mutex};
@@ -182,7 +181,6 @@ mod tests {
         }
     }
 
-    #[async_trait]
     impl Channel for TestChannel {
         fn capabilities(&self) -> ChannelCapabilities {
             ChannelCapabilities {

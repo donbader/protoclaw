@@ -1,6 +1,6 @@
 [package]
 name = "protoclaw-sdk-channel"
-version = "0.1.0"
+version = "0.2.0"
 description = "Channel SDK for protoclaw — build messaging channel integrations"
 edition.workspace = true
 rust-version.workspace = true
@@ -15,8 +15,7 @@ categories = ["network-programming"]
 protoclaw-sdk-types = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-tokio = { workspace = true }
-async-trait = "0.1"
+tokio = { workspace = true, default-features = false, features = ["io-util", "macros", "rt-multi-thread", "sync"] }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 

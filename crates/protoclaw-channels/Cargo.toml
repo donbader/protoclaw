@@ -11,7 +11,7 @@ protoclaw-config = { workspace = true }
 protoclaw-sdk-types = { workspace = true }
 protoclaw-jsonrpc = { workspace = true }
 axum = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, default-features = false, features = ["io-util", "macros", "net", "process", "rt", "rt-multi-thread", "sync", "time"] }
 tokio-stream = { workspace = true }
 tokio-util = { workspace = true }
 futures = { workspace = true }

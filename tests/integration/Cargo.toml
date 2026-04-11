@@ -9,7 +9,7 @@ rust-version.workspace = true
 protoclaw-supervisor = { workspace = true }
 protoclaw-config = { workspace = true }
 protoclaw-test-helpers = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "sync", "time"] }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 reqwest = { version = "0.12", features = ["json", "stream"] }

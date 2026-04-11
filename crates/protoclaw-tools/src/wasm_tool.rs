@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use protoclaw_config::ToolConfig;
 use protoclaw_sdk_tool::{Tool, ToolSdkError};
 
@@ -33,7 +32,6 @@ impl WasmTool {
     }
 }
 
-#[async_trait]
 impl Tool for WasmTool {
     fn name(&self) -> &str {
         &self.name

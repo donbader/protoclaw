@@ -9,16 +9,16 @@ use rmcp::model::{
 use rmcp::service::RequestContext;
 use rmcp::{ErrorData as McpError, RoleServer};
 
-use crate::trait_def::Tool;
+use crate::trait_def::DynTool;
 
 pub struct ToolServer {
-    tools: HashMap<String, Box<dyn Tool>>,
+    tools: HashMap<String, Box<dyn DynTool>>,
     server_info: ServerInfo,
 }
 
 impl ToolServer {
-    pub fn new(tools: Vec<Box<dyn Tool>>) -> Self {
-        let map: HashMap<String, Box<dyn Tool>> = tools
+    pub fn new(tools: Vec<Box<dyn DynTool>>) -> Self {
+        let map: HashMap<String, Box<dyn DynTool>> = tools
             .into_iter()
             .map(|t| (t.name().to_string(), t))
             .collect();
@@ -114,12 +114,11 @@ impl ServerHandler for ToolServer {
 mod tests {
     use super::*;
     use crate::error::ToolSdkError;
-    use async_trait::async_trait;
+    use crate::trait_def::Tool;
     use rstest::rstest;
 
     struct EchoTool;
 
-    #[async_trait]
     impl Tool for EchoTool {
         fn name(&self) -> &str {
             "echo"
@@ -144,7 +143,6 @@ mod tests {
 
     struct FailTool;
 
-    #[async_trait]
     impl Tool for FailTool {
         fn name(&self) -> &str {
             "fail"
@@ -165,14 +163,14 @@ mod tests {
 
     #[test]
     fn when_tool_server_constructed_with_tools_then_tools_registered() {
-        let tools: Vec<Box<dyn Tool>> = vec![Box::new(EchoTool)];
+        let tools: Vec<Box<dyn DynTool>> = vec![Box::new(EchoTool)];
         let server = ToolServer::new(tools);
         assert_eq!(server.tools.len(), 1);
     }
 
     #[test]
     fn when_tool_list_built_then_contains_all_registered_tools_with_metadata() {
-        let tools: Vec<Box<dyn Tool>> = vec![Box::new(EchoTool), Box::new(FailTool)];
+        let tools: Vec<Box<dyn DynTool>> = vec![Box::new(EchoTool), Box::new(FailTool)];
         let server = ToolServer::new(tools);
         let list = server.build_tool_list();
         assert_eq!(list.len(), 2);
@@ -185,7 +183,7 @@ mod tests {
 
     #[tokio::test]
     async fn when_known_tool_dispatched_then_returns_successful_result() {
-        let tools: Vec<Box<dyn Tool>> = vec![Box::new(EchoTool)];
+        let tools: Vec<Box<dyn DynTool>> = vec![Box::new(EchoTool)];
         let server = ToolServer::new(tools);
 
         let mut args = serde_json::Map::new();
@@ -198,7 +196,7 @@ mod tests {
 
     #[tokio::test]
     async fn when_unknown_tool_dispatched_then_returns_invalid_params_error() {
-        let tools: Vec<Box<dyn Tool>> = vec![Box::new(EchoTool)];
+        let tools: Vec<Box<dyn DynTool>> = vec![Box::new(EchoTool)];
         let server = ToolServer::new(tools);
 
         let result = server.dispatch_tool("nonexistent", None).await;
@@ -207,7 +205,7 @@ mod tests {
 
     #[tokio::test]
     async fn when_tool_execute_returns_error_then_dispatch_returns_error_result() {
-        let tools: Vec<Box<dyn Tool>> = vec![Box::new(FailTool)];
+        let tools: Vec<Box<dyn DynTool>> = vec![Box::new(FailTool)];
         let server = ToolServer::new(tools);
 
         let result = server.dispatch_tool("fail", None).await.unwrap();
@@ -223,10 +221,11 @@ mod tests {
 
     #[test]
     fn when_tool_impl_created_then_name_description_and_schema_accessible() {
+        use crate::trait_def::Tool;
         let tool = EchoTool;
-        assert_eq!(tool.name(), "echo");
-        assert_eq!(tool.description(), "Echoes input back");
-        let schema = tool.input_schema();
+        assert_eq!(Tool::name(&tool), "echo");
+        assert_eq!(Tool::description(&tool), "Echoes input back");
+        let schema = Tool::input_schema(&tool);
         assert!(schema.is_object());
     }
 }

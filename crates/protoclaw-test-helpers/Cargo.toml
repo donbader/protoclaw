@@ -9,7 +9,7 @@ publish = false
 protoclaw-config = { workspace = true }
 protoclaw-core = { workspace = true }
 protoclaw-supervisor = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "sync", "time"] }
 tokio-util = { workspace = true }
 tokio-stream = { workspace = true }
 serde_json = { workspace = true }

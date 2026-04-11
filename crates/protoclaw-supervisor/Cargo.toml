@@ -11,7 +11,7 @@ protoclaw-config = { path = "../protoclaw-config" }
 protoclaw-agents = { path = "../protoclaw-agents" }
 protoclaw-channels = { workspace = true }
 protoclaw-tools = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-util = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }

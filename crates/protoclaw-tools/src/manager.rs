@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use protoclaw_config::ToolConfig;
 use protoclaw_core::{Manager, ManagerError, McpServerUrl, ToolsCommand};
-use protoclaw_sdk_tool::Tool;
+use protoclaw_sdk_tool::DynTool;
 use rmcp::handler::server::ServerHandler;
 use rmcp::model::{
     CallToolRequestParams, CallToolResult, Implementation, ListToolsResult, PaginatedRequestParams,
@@ -102,7 +102,7 @@ impl ServerHandler for AggregatedToolServer {
 
 pub struct ToolsManager {
     tool_configs: HashMap<String, ToolConfig>,
-    native_tools: Vec<Box<dyn Tool>>,
+    native_tools: Vec<Box<dyn DynTool>>,
     server_urls: Vec<McpServerUrl>,
     server_handles: Vec<tokio::task::JoinHandle<()>>,
     cmd_rx: Option<tokio::sync::mpsc::Receiver<ToolsCommand>>,
@@ -130,7 +130,7 @@ impl ToolsManager {
         self
     }
 
-    pub fn with_native_tools(mut self, tools: Vec<Box<dyn Tool>>) -> Self {
+    pub fn with_native_tools(mut self, tools: Vec<Box<dyn DynTool>>) -> Self {
         self.native_tools = tools;
         self
     }
@@ -149,7 +149,7 @@ impl Manager for ToolsManager {
 
     #[tracing::instrument(skip(self), name = "tools_manager_start")]
     async fn start(&mut self) -> Result<(), ManagerError> {
-        let mut all_tools: Vec<Box<dyn Tool>> = std::mem::take(&mut self.native_tools);
+        let mut all_tools: Vec<Box<dyn DynTool>> = std::mem::take(&mut self.native_tools);
 
         let wasm_configs: Vec<(String, ToolConfig)> = self
             .tool_configs
@@ -167,7 +167,7 @@ impl Manager for ToolsManager {
             for (name, wasm_config) in &wasm_configs {
                 match WasmTool::new(name.clone(), wasm_config.clone(), wasm_runner.clone()) {
                     Ok(tool) => {
-                        tracing::info!(name = %tool.name(), "loaded WASM tool");
+                        tracing::info!(name = %DynTool::name(&tool), "loaded WASM tool");
                         all_tools.push(Box::new(tool));
                     }
                     Err(e) => {
@@ -306,15 +306,13 @@ impl Manager for ToolsManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use async_trait::async_trait;
-    use protoclaw_sdk_tool::ToolSdkError;
+    use protoclaw_sdk_tool::{Tool, ToolSdkError};
     use rstest::rstest;
 
     struct DummyTool {
         tool_name: String,
     }
 
-    #[async_trait]
     impl Tool for DummyTool {
         fn name(&self) -> &str {
             &self.tool_name
@@ -380,7 +378,7 @@ mod tests {
 
     #[tokio::test]
     async fn when_native_tools_registered_then_aggregate_list_contains_them() {
-        let tools: Vec<Box<dyn Tool>> = vec![
+        let tools: Vec<Box<dyn DynTool>> = vec![
             Box::new(DummyTool {
                 tool_name: "tool-a".into(),
             }),
@@ -401,7 +399,7 @@ mod tests {
 
     #[tokio::test]
     async fn when_known_tool_called_via_aggregated_server_then_returns_result() {
-        let tools: Vec<Box<dyn Tool>> = vec![Box::new(DummyTool {
+        let tools: Vec<Box<dyn DynTool>> = vec![Box::new(DummyTool {
             tool_name: "my-tool".into(),
         })];
         let host = Arc::new(McpHost::new(tools));
@@ -424,7 +422,7 @@ mod tests {
 
     #[tokio::test]
     async fn when_manager_given_native_tools_then_they_appear_in_host_tool_list() {
-        let tools: Vec<Box<dyn Tool>> = vec![Box::new(DummyTool {
+        let tools: Vec<Box<dyn DynTool>> = vec![Box::new(DummyTool {
             tool_name: "native-1".into(),
         })];
         let mut m = ToolsManager::new(HashMap::new(), "127.0.0.1".into()).with_native_tools(tools);
@@ -514,7 +512,7 @@ mod tests {
         let bytes = wat::parse_str(wat).unwrap();
         std::fs::write(&wasm_path, &bytes).unwrap();
 
-        let native_tools: Vec<Box<dyn Tool>> = vec![Box::new(DummyTool {
+        let native_tools: Vec<Box<dyn DynTool>> = vec![Box::new(DummyTool {
             tool_name: "native-1".into(),
         })];
         let tool_configs = HashMap::from([(
@@ -667,7 +665,7 @@ mod tests {
 
     #[tokio::test]
     async fn when_native_tool_exists_then_route_call_dispatches_to_native_not_external() {
-        let tools: Vec<Box<dyn Tool>> = vec![Box::new(DummyTool {
+        let tools: Vec<Box<dyn DynTool>> = vec![Box::new(DummyTool {
             tool_name: "native-only".into(),
         })];
         let host = Arc::new(McpHost::new(tools));
@@ -680,7 +678,7 @@ mod tests {
 
     #[tokio::test]
     async fn when_no_external_servers_then_aggregate_list_equals_native_list() {
-        let tools: Vec<Box<dyn Tool>> = vec![
+        let tools: Vec<Box<dyn DynTool>> = vec![
             Box::new(DummyTool {
                 tool_name: "alpha".into(),
             }),

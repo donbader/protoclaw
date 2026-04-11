@@ -11,7 +11,7 @@ protoclaw-config = { workspace = true }
 protoclaw-jsonrpc = { workspace = true }
 protoclaw-sdk-agent = { workspace = true }
 protoclaw-sdk-types = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, default-features = false, features = ["fs", "io-util", "macros", "net", "process", "rt", "rt-multi-thread", "sync", "time"] }
 tokio-util = { workspace = true }
 futures = { workspace = true }
 tracing = { workspace = true }

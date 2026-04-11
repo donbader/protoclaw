@@ -10,8 +10,7 @@ name = "sdk-test-channel"
 path = "src/main.rs"
 
 [dependencies]
-async-trait = "0.1"
 protoclaw-sdk-channel = { workspace = true }
 protoclaw-sdk-types = { workspace = true }
 serde_json = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync"] }

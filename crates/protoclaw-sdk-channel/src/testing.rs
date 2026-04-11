@@ -72,7 +72,6 @@ impl<C: Channel> ChannelTester<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use async_trait::async_trait;
     use rstest::rstest;
     use std::sync::{Arc, Mutex};
 
@@ -95,7 +94,6 @@ mod tests {
         }
     }
 
-    #[async_trait]
     impl Channel for MockTestChannel {
         fn capabilities(&self) -> ChannelCapabilities {
             ChannelCapabilities {
