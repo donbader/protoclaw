@@ -103,7 +103,7 @@ async fn when_disabled_tool_configured_then_supervisor_boots_normally() {
     config.tools_manager.tools.insert(
         "disabled-tool".to_string(),
         protoclaw_config::ToolConfig {
-            tool_type: "mcp".into(),
+            tool_type: protoclaw_config::ToolType::Mcp,
             binary: Some("/nonexistent/disabled-tool-xyz".into()),
             args: vec![],
             enabled: false,

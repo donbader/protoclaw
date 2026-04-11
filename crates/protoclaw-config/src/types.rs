@@ -5,6 +5,19 @@ use std::path::PathBuf;
 /// Embedded defaults YAML — loaded as base layer in Figment.
 pub const DEFAULTS_YAML: &str = include_str!("defaults.yaml");
 
+/// Output format for tracing/log output.
+///
+/// `pretty` is the default and suitable for development. `json` emits
+/// structured JSON lines, which is preferable in production environments
+/// where log aggregators (e.g., Datadog, CloudWatch) ingest structured output.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum LogFormat {
+    #[default]
+    Pretty,
+    Json,
+}
+
 /// Top-level protoclaw configuration.
 ///
 /// Loaded from layered providers: defaults → YAML file → environment variables.
@@ -13,8 +26,8 @@ pub const DEFAULTS_YAML: &str = include_str!("defaults.yaml");
 pub struct ProtoclawConfig {
     #[serde(default = "default_log_level")]
     pub log_level: String,
-    #[serde(default = "default_log_format")]
-    pub log_format: String,
+    #[serde(default)]
+    pub log_format: LogFormat,
     #[serde(default = "default_extensions_dir")]
     pub extensions_dir: String,
     #[serde(alias = "agents-manager", default)]
@@ -44,10 +57,20 @@ impl Default for BackoffConfig {
     }
 }
 
+/// Per-subprocess crash recovery limits.
+///
+/// Controls how many times an individual agent or channel subprocess may crash
+/// within a rolling time window before the crash recovery loop gives up and
+/// lets the manager propagate the failure upward to the Supervisor.
+///
+/// This is distinct from `SupervisorConfig.max_restarts` / `restart_window_secs`,
+/// which govern manager-level restart attempts by the Supervisor itself.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct CrashTrackerConfig {
+    /// Maximum number of subprocess crashes allowed within `window_secs`.
     #[serde(default = "default_crash_max")]
     pub max_crashes: u32,
+    /// Rolling window in seconds over which crashes are counted.
     #[serde(default = "default_crash_window_secs")]
     pub window_secs: u64,
 }
@@ -224,6 +247,27 @@ pub struct ChannelConfig {
     pub options: HashMap<String, serde_json::Value>,
 }
 
+/// What happens to the reaction emoji after the agent finishes responding.
+///
+/// - `remove`: the reaction is deleted once the response is sent
+/// - `replace_done`: the in-progress reaction is swapped for a "done" checkmark emoji
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ReactionLifecycle {
+    #[default]
+    Remove,
+    ReplaceDone,
+}
+
+impl std::fmt::Display for ReactionLifecycle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ReactionLifecycle::Remove => write!(f, "remove"),
+            ReactionLifecycle::ReplaceDone => write!(f, "replace_done"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AckConfig {
     #[serde(default)]
@@ -232,8 +276,8 @@ pub struct AckConfig {
     pub typing: bool,
     #[serde(default = "default_reaction_emoji")]
     pub reaction_emoji: String,
-    #[serde(default = "default_reaction_lifecycle")]
-    pub reaction_lifecycle: String,
+    #[serde(default)]
+    pub reaction_lifecycle: ReactionLifecycle,
 }
 
 impl Default for AckConfig {
@@ -242,7 +286,7 @@ impl Default for AckConfig {
             reaction: false,
             typing: false,
             reaction_emoji: default_reaction_emoji(),
-            reaction_lifecycle: default_reaction_lifecycle(),
+            reaction_lifecycle: ReactionLifecycle::default(),
         }
     }
 }
@@ -253,15 +297,27 @@ impl From<AckConfig> for protoclaw_sdk_types::ChannelAckConfig {
             reaction: ack.reaction,
             typing: ack.typing,
             reaction_emoji: ack.reaction_emoji,
-            reaction_lifecycle: ack.reaction_lifecycle,
+            reaction_lifecycle: ack.reaction_lifecycle.to_string(),
         }
     }
 }
 
+/// Whether a tool is served by an external MCP server process or a local WASM module.
+///
+/// - `mcp`: spawn an external binary and communicate over JSON-RPC/stdio
+/// - `wasm`: load a `.wasm` module and execute in the built-in sandboxed runner
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ToolType {
+    #[default]
+    Mcp,
+    Wasm,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ToolConfig {
-    #[serde(default = "default_tool_type")]
-    pub tool_type: String,
+    #[serde(default)]
+    pub tool_type: ToolType,
     #[serde(default)]
     pub binary: Option<String>,
     #[serde(default)]
@@ -300,14 +356,24 @@ pub struct PreopenedDir {
     pub readonly: bool,
 }
 
+/// Supervisor-level manager restart limits.
+///
+/// Controls how many times the Supervisor will restart a *manager* (ToolsManager,
+/// AgentsManager, or ChannelsManager) if it exits unexpectedly, within a rolling
+/// time window.
+///
+/// This is distinct from `CrashTrackerConfig`, which limits restarts of individual
+/// agent or channel *subprocesses* within a manager's crash recovery loop.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct SupervisorConfig {
     #[serde(default = "default_shutdown_timeout")]
     pub shutdown_timeout_secs: u64,
     #[serde(default = "default_health_interval")]
     pub health_check_interval_secs: u64,
+    /// Maximum number of manager restart attempts within `restart_window_secs`.
     #[serde(default = "default_max_restarts")]
     pub max_restarts: u32,
+    /// Rolling window in seconds over which manager crash attempts are counted.
     #[serde(default = "default_restart_window")]
     pub restart_window_secs: u64,
 }
@@ -336,9 +402,6 @@ where
 fn default_log_level() -> String {
     "info".into()
 }
-fn default_log_format() -> String {
-    "pretty".into()
-}
 fn default_extensions_dir() -> String {
     "/usr/local/bin".into()
 }
@@ -351,14 +414,8 @@ fn default_agent() -> String {
 fn default_reaction_emoji() -> String {
     "👀".into()
 }
-fn default_reaction_lifecycle() -> String {
-    "remove".into()
-}
 fn default_tools_server_host() -> String {
     "127.0.0.1".into()
-}
-fn default_tool_type() -> String {
-    "mcp".into()
 }
 fn default_fuel_limit() -> u64 {
     1_000_000
@@ -556,7 +613,7 @@ channels_manager:
         assert!(!ack.reaction);
         assert!(!ack.typing);
         assert_eq!(ack.reaction_emoji, "👀");
-        assert_eq!(ack.reaction_lifecycle, "remove");
+        assert_eq!(ack.reaction_lifecycle, ReactionLifecycle::Remove);
     }
 
     #[test]
@@ -566,7 +623,7 @@ channels_manager:
         assert!(config.reaction);
         assert!(config.typing);
         assert_eq!(config.reaction_emoji, "⏳");
-        assert_eq!(config.reaction_lifecycle, "replace_done");
+        assert_eq!(config.reaction_lifecycle, ReactionLifecycle::ReplaceDone);
     }
 
     #[test]
@@ -603,7 +660,7 @@ tools_manager:
 "#;
         let config: ProtoclawConfig = serde_yaml::from_str(yaml).unwrap();
         let fs = &config.tools_manager.tools["filesystem"];
-        assert_eq!(fs.tool_type, "mcp");
+        assert_eq!(fs.tool_type, ToolType::Mcp);
         assert_eq!(fs.binary, Some("mcp-server-filesystem".into()));
         assert!(fs.enabled);
     }
@@ -624,7 +681,7 @@ tools_manager:
 "#;
         let config: ProtoclawConfig = serde_yaml::from_str(yaml).unwrap();
         let t = &config.tools_manager.tools["my-tool"];
-        assert_eq!(t.tool_type, "wasm");
+        assert_eq!(t.tool_type, ToolType::Wasm);
         assert_eq!(t.module, Some(PathBuf::from("/path/to/tool.wasm")));
         assert_eq!(t.description, "A test tool");
         assert_eq!(t.sandbox.fuel_limit, 500_000);
@@ -642,21 +699,21 @@ tools_manager:
     fn when_no_log_format_set_then_defaults_to_pretty() {
         let yaml = "";
         let config: ProtoclawConfig = serde_yaml::from_str(yaml).unwrap();
-        assert_eq!(config.log_format, "pretty");
+        assert_eq!(config.log_format, LogFormat::Pretty);
     }
 
     #[test]
     fn when_log_format_in_yaml_then_uses_provided_value() {
         let yaml = "log_format: \"json\"";
         let config: ProtoclawConfig = serde_yaml::from_str(yaml).unwrap();
-        assert_eq!(config.log_format, "json");
+        assert_eq!(config.log_format, LogFormat::Json);
     }
 
     #[test]
     fn when_parsing_defaults_yaml_then_all_expected_values_present() {
         let config: ProtoclawConfig = serde_yaml::from_str(DEFAULTS_YAML).unwrap();
         assert_eq!(config.log_level, "info");
-        assert_eq!(config.log_format, "pretty");
+        assert_eq!(config.log_format, LogFormat::Pretty);
         assert_eq!(config.extensions_dir, "/usr/local/bin");
         assert_eq!(config.supervisor.shutdown_timeout_secs, 30);
         assert_eq!(config.agents_manager.acp_timeout_secs, 30);

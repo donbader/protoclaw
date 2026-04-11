@@ -154,7 +154,7 @@ impl Manager for ToolsManager {
         let wasm_configs: Vec<(String, ToolConfig)> = self
             .tool_configs
             .iter()
-            .filter(|(_, c)| c.tool_type == "wasm" && c.enabled)
+            .filter(|(_, c)| c.tool_type == protoclaw_config::ToolType::Wasm && c.enabled)
             .map(|(n, c)| (n.clone(), c.clone()))
             .collect();
 
@@ -184,7 +184,7 @@ impl Manager for ToolsManager {
         let mcp_configs: Vec<(String, ToolConfig)> = self
             .tool_configs
             .iter()
-            .filter(|(_, c)| c.tool_type == "mcp" && c.enabled)
+            .filter(|(_, c)| c.tool_type == protoclaw_config::ToolType::Mcp && c.enabled)
             .map(|(n, c)| (n.clone(), c.clone()))
             .collect();
 
@@ -449,7 +449,7 @@ mod tests {
         let tool_configs = HashMap::from([(
             "wasm-tool-1".to_string(),
             ToolConfig {
-                tool_type: "wasm".into(),
+                tool_type: protoclaw_config::ToolType::Wasm,
                 binary: None,
                 args: vec![],
                 enabled: true,
@@ -479,7 +479,7 @@ mod tests {
         let tool_configs = HashMap::from([(
             "bad-tool".to_string(),
             ToolConfig {
-                tool_type: "wasm".into(),
+                tool_type: protoclaw_config::ToolType::Wasm,
                 binary: None,
                 args: vec![],
                 enabled: true,
@@ -518,7 +518,7 @@ mod tests {
         let tool_configs = HashMap::from([(
             "wasm-1".to_string(),
             ToolConfig {
-                tool_type: "wasm".into(),
+                tool_type: protoclaw_config::ToolType::Wasm,
                 binary: None,
                 args: vec![],
                 enabled: true,
@@ -628,7 +628,7 @@ mod tests {
         let tool_configs = HashMap::from([(
             "disabled-tool".to_string(),
             ToolConfig {
-                tool_type: "mcp".into(),
+                tool_type: protoclaw_config::ToolType::Mcp,
                 binary: Some("nonexistent-binary-xyz-99999".into()),
                 args: vec![],
                 enabled: false,

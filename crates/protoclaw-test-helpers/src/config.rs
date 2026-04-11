@@ -66,7 +66,7 @@ pub fn mock_agent_config_with_options(
             restart_window_secs: 60,
         },
         log_level: "info".into(),
-        log_format: "pretty".into(),
+        log_format: protoclaw_config::LogFormat::Pretty,
         extensions_dir: "/usr/local/bin".into(),
     }
 }
@@ -143,7 +143,7 @@ pub fn sdk_channel_config() -> protoclaw_config::ProtoclawConfig {
             restart_window_secs: 60,
         },
         log_level: "info".into(),
-        log_format: "pretty".into(),
+        log_format: protoclaw_config::LogFormat::Pretty,
         extensions_dir: "/usr/local/bin".into(),
     }
 }
@@ -192,7 +192,7 @@ pub fn sdk_tool_config() -> protoclaw_config::ProtoclawConfig {
     tools.insert(
         "echo".to_string(),
         protoclaw_config::ToolConfig {
-            tool_type: "mcp".into(),
+            tool_type: protoclaw_config::ToolType::Mcp,
             binary: Some(sdk_test_tool_path().to_string_lossy().to_string()),
             args: vec![],
             enabled: true,
@@ -224,7 +224,7 @@ pub fn sdk_tool_config() -> protoclaw_config::ProtoclawConfig {
             restart_window_secs: 60,
         },
         log_level: "info".into(),
-        log_format: "pretty".into(),
+        log_format: protoclaw_config::LogFormat::Pretty,
         extensions_dir: "/usr/local/bin".into(),
     }
 }
@@ -315,7 +315,7 @@ pub fn wasm_tool_config() -> protoclaw_config::ProtoclawConfig {
     tools.insert(
         "wasm-echo".to_string(),
         protoclaw_config::ToolConfig {
-            tool_type: "wasm".into(),
+            tool_type: protoclaw_config::ToolType::Wasm,
             binary: None,
             args: vec![],
             enabled: true,
@@ -347,7 +347,7 @@ pub fn wasm_tool_config() -> protoclaw_config::ProtoclawConfig {
             restart_window_secs: 60,
         },
         log_level: "info".into(),
-        log_format: "pretty".into(),
+        log_format: protoclaw_config::LogFormat::Pretty,
         extensions_dir: "/usr/local/bin".into(),
     }
 }
@@ -397,7 +397,7 @@ pub fn multi_tool_config() -> protoclaw_config::ProtoclawConfig {
     tools.insert(
         "echo".to_string(),
         protoclaw_config::ToolConfig {
-            tool_type: "mcp".into(),
+            tool_type: protoclaw_config::ToolType::Mcp,
             binary: Some(sdk_test_tool_path().to_string_lossy().to_string()),
             args: vec![],
             enabled: true,
@@ -411,7 +411,7 @@ pub fn multi_tool_config() -> protoclaw_config::ProtoclawConfig {
     tools.insert(
         "echo-2".to_string(),
         protoclaw_config::ToolConfig {
-            tool_type: "mcp".into(),
+            tool_type: protoclaw_config::ToolType::Mcp,
             binary: Some(sdk_test_tool_path().to_string_lossy().to_string()),
             args: vec![],
             enabled: true,
@@ -443,7 +443,7 @@ pub fn multi_tool_config() -> protoclaw_config::ProtoclawConfig {
             restart_window_secs: 60,
         },
         log_level: "info".into(),
-        log_format: "pretty".into(),
+        log_format: protoclaw_config::LogFormat::Pretty,
         extensions_dir: "/usr/local/bin".into(),
     }
 }
@@ -495,7 +495,7 @@ pub fn invalid_tool_config() -> protoclaw_config::ProtoclawConfig {
     tools.insert(
         "bad-tool".to_string(),
         protoclaw_config::ToolConfig {
-            tool_type: "mcp".into(),
+            tool_type: protoclaw_config::ToolType::Mcp,
             binary: Some("/nonexistent/tool-binary-xyz-99999".into()),
             args: vec![],
             enabled: true,
@@ -527,7 +527,7 @@ pub fn invalid_tool_config() -> protoclaw_config::ProtoclawConfig {
             restart_window_secs: 60,
         },
         log_level: "info".into(),
-        log_format: "pretty".into(),
+        log_format: protoclaw_config::LogFormat::Pretty,
         extensions_dir: "/usr/local/bin".into(),
     }
 }
@@ -604,7 +604,7 @@ pub fn docker_agent_config_with_options(
             restart_window_secs: 60,
         },
         log_level: "info".into(),
-        log_format: "pretty".into(),
+        log_format: protoclaw_config::LogFormat::Pretty,
         extensions_dir: "/usr/local/bin".into(),
     }
 }
@@ -766,7 +766,7 @@ mod tests {
     fn when_sdk_tool_config_called_then_echo_tool_is_mcp_type_with_correct_binary() {
         let cfg = sdk_tool_config();
         let tool = cfg.tools_manager.tools.get("echo").expect("echo tool");
-        assert_eq!(tool.tool_type, "mcp");
+        assert_eq!(tool.tool_type, protoclaw_config::ToolType::Mcp);
         let binary = tool.binary.as_deref().expect("binary should be set");
         assert!(binary.contains("sdk-test-tool"), "binary: {binary}");
         assert!(tool.enabled);
@@ -839,7 +839,7 @@ mod tests {
         let binary = tool.binary.as_deref().expect("binary should be set");
         assert_eq!(binary, "/nonexistent/tool-binary-xyz-99999");
         assert!(tool.enabled);
-        assert_eq!(tool.tool_type, "mcp");
+        assert_eq!(tool.tool_type, protoclaw_config::ToolType::Mcp);
     }
 
     #[rstest]

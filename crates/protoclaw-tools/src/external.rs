@@ -77,7 +77,7 @@ mod tests {
     #[tokio::test]
     async fn when_external_mcp_server_spawned_with_nonexistent_binary_then_returns_error() {
         let config = ToolConfig {
-            tool_type: "mcp".into(),
+            tool_type: protoclaw_config::ToolType::Mcp,
             binary: Some("/nonexistent/binary/path".into()),
             args: vec![],
             enabled: true,
@@ -100,7 +100,7 @@ mod tests {
     #[tokio::test]
     async fn when_spawn_called_with_no_binary_then_returns_error() {
         let config = ToolConfig {
-            tool_type: "mcp".into(),
+            tool_type: protoclaw_config::ToolType::Mcp,
             binary: None,
             args: vec![],
             enabled: true,

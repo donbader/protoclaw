@@ -6,19 +6,19 @@ mod cli;
 mod init;
 mod status;
 
-fn init_tracing(log_level: &str, log_format: &str) {
+fn init_tracing(log_level: &str, log_format: &protoclaw_config::LogFormat) {
     use tracing_subscriber::prelude::*;
     use tracing_subscriber::{EnvFilter, Registry, fmt};
 
     let filter = EnvFilter::new(log_level);
     match log_format {
-        "json" => {
+        protoclaw_config::LogFormat::Json => {
             Registry::default()
                 .with(filter)
                 .with(fmt::layer().json())
                 .init();
         }
-        _ => {
+        protoclaw_config::LogFormat::Pretty => {
             Registry::default().with(filter).with(fmt::layer()).init();
         }
     }

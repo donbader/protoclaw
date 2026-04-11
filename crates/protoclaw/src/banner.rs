@@ -95,7 +95,7 @@ mod tests {
             tool_map.insert(
                 name.to_string(),
                 ToolConfig {
-                    tool_type: "mcp".into(),
+                    tool_type: protoclaw_config::ToolType::Mcp,
                     binary: Some(binary.to_string()),
                     args: vec![],
                     enabled: true,
@@ -110,7 +110,7 @@ mod tests {
 
         ProtoclawConfig {
             log_level: "info".into(),
-            log_format: "pretty".into(),
+            log_format: protoclaw_config::LogFormat::Pretty,
             extensions_dir: "/usr/local/bin".into(),
             agents_manager: AgentsManagerConfig {
                 agents,

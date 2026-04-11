@@ -1278,13 +1278,13 @@ mod tests {
             reaction: true,
             typing: true,
             reaction_emoji: "🤔".to_string(),
-            reaction_lifecycle: "per_message".to_string(),
+            reaction_lifecycle: protoclaw_config::ReactionLifecycle::ReplaceDone,
         };
         let channel_ack: ChannelAckConfig = config_ack.into();
         assert_eq!(channel_ack.reaction, true);
         assert_eq!(channel_ack.typing, true);
         assert_eq!(channel_ack.reaction_emoji, "🤔");
-        assert_eq!(channel_ack.reaction_lifecycle, "per_message");
+        assert_eq!(channel_ack.reaction_lifecycle, "replace_done");
     }
 
     #[rstest]

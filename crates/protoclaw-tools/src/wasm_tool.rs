@@ -75,7 +75,7 @@ mod tests {
 
     fn make_config(path: PathBuf) -> ToolConfig {
         ToolConfig {
-            tool_type: "wasm".into(),
+            tool_type: protoclaw_config::ToolType::Wasm,
             binary: None,
             args: vec![],
             enabled: true,

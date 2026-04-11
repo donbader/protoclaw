@@ -157,7 +157,7 @@ fn build_two_agent_config(channel_routes_to: &str) -> protoclaw_config::Protocla
             restart_window_secs: 60,
         },
         log_level: "info".into(),
-        log_format: "pretty".into(),
+        log_format: protoclaw_config::LogFormat::Pretty,
         extensions_dir: "/usr/local/bin".into(),
     }
 }

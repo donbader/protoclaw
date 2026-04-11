@@ -196,8 +196,8 @@ mod tests {
     use super::*;
     use crate::{
         AgentConfig, AgentsManagerConfig, ChannelConfig, ChannelsManagerConfig,
-        DockerWorkspaceConfig, LocalWorkspaceConfig, PullPolicy, SupervisorConfig,
-        ToolsManagerConfig, WorkspaceConfig,
+        DockerWorkspaceConfig, LocalWorkspaceConfig, LogFormat, PullPolicy, SupervisorConfig,
+        ToolType, ToolsManagerConfig, WorkspaceConfig,
     };
     use rstest::rstest;
     use std::collections::HashMap;
@@ -224,7 +224,7 @@ mod tests {
         );
         ProtoclawConfig {
             log_level: "info".into(),
-            log_format: "pretty".into(),
+            log_format: LogFormat::Pretty,
             extensions_dir: "/usr/local/bin".into(),
             agents_manager: AgentsManagerConfig {
                 acp_timeout_secs: 30,
@@ -335,7 +335,7 @@ mod tests {
         config.tools_manager.tools.insert(
             "fs".to_string(),
             crate::ToolConfig {
-                tool_type: "mcp".into(),
+                tool_type: ToolType::Mcp,
                 binary: Some("nonexistent-xyz-99999".into()),
                 args: vec![],
                 enabled: true,

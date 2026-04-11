@@ -150,7 +150,7 @@ fn build_dual_channel_config() -> protoclaw_config::ProtoclawConfig {
             restart_window_secs: 60,
         },
         log_level: "info".into(),
-        log_format: "pretty".into(),
+        log_format: protoclaw_config::LogFormat::Pretty,
         extensions_dir: "/usr/local/bin".into(),
     }
 }
