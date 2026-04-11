@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use protoclaw_integration_tests::{
-    boot_supervisor_with_port, mock_agent_config, with_timeout, SseCollector,
+    SseCollector, boot_supervisor_with_port, mock_agent_config, with_timeout,
 };
 use rstest::rstest;
 
@@ -45,8 +45,5 @@ async fn given_inflight_message_when_shutdown_signalled_then_response_delivered_
     let result = with_timeout(10, handle)
         .await
         .expect("supervisor task panicked");
-    assert!(
-        result.is_ok(),
-        "supervisor should exit cleanly: {result:?}"
-    );
+    assert!(result.is_ok(), "supervisor should exit cleanly: {result:?}");
 }

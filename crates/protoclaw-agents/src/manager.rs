@@ -1,5 +1,5 @@
-use std::collections::HashSet;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
@@ -9,9 +9,12 @@ use crate::acp_types::{
     SessionCancelParams, SessionLoadParams, SessionNewParams, SessionPromptParams,
     SessionUpdateEvent, SessionUpdateType,
 };
-use crate::slot::{find_slot_by_name, AgentSlot};
+use crate::slot::{AgentSlot, find_slot_by_name};
 use protoclaw_config::{AgentConfig, AgentsManagerConfig, WorkspaceConfig};
-use protoclaw_core::{constants, AgentStatusInfo, AgentsCommand, Manager, ManagerError, ManagerHandle, McpServerUrl, PendingPermissionInfo, SessionKey, ToolsCommand};
+use protoclaw_core::{
+    AgentStatusInfo, AgentsCommand, Manager, ManagerError, ManagerHandle, McpServerUrl,
+    PendingPermissionInfo, SessionKey, ToolsCommand, constants,
+};
 use protoclaw_sdk_agent::{AgentAdapter, GenericAcpAdapter};
 use protoclaw_sdk_types::{ChannelEvent, PermissionOption};
 use tokio::sync::{mpsc, oneshot};
@@ -56,11 +59,16 @@ pub struct AgentsManager {
 }
 
 impl AgentsManager {
-    pub fn new(mut agents_manager_config: AgentsManagerConfig, tools_handle: ManagerHandle<ToolsCommand>) -> Self {
+    pub fn new(
+        mut agents_manager_config: AgentsManagerConfig,
+        tools_handle: ManagerHandle<ToolsCommand>,
+    ) -> Self {
         let configs: Vec<(String, AgentConfig)> = agents_manager_config.agents.drain().collect();
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::channel(constants::CMD_CHANNEL_CAPACITY);
-        let (incoming_tx, incoming_rx) = mpsc::channel::<SlotIncoming>(constants::EVENT_CHANNEL_CAPACITY);
-        let (completion_tx, completion_rx) = mpsc::channel::<PromptCompletion>(constants::CMD_CHANNEL_CAPACITY);
+        let (incoming_tx, incoming_rx) =
+            mpsc::channel::<SlotIncoming>(constants::EVENT_CHANNEL_CAPACITY);
+        let (completion_tx, completion_rx) =
+            mpsc::channel::<PromptCompletion>(constants::CMD_CHANNEL_CAPACITY);
         Self {
             agent_configs: configs,
             manager_config: agents_manager_config,
@@ -101,14 +109,25 @@ impl AgentsManager {
     }
 
     /// Resolve ACP timeout for a specific agent, falling back to manager default.
-    fn acp_timeout_for(agent_config: &AgentConfig, manager_config: &AgentsManagerConfig) -> Duration {
-        let secs = agent_config.acp_timeout_secs.unwrap_or(manager_config.acp_timeout_secs);
+    fn acp_timeout_for(
+        agent_config: &AgentConfig,
+        manager_config: &AgentsManagerConfig,
+    ) -> Duration {
+        let secs = agent_config
+            .acp_timeout_secs
+            .unwrap_or(manager_config.acp_timeout_secs);
         Duration::from_secs(secs)
     }
 
     #[tracing::instrument(skip(slot), fields(agent = %slot.name()))]
-    async fn initialize_agent(slot: &mut AgentSlot, acp_timeout: Duration) -> Result<(), AgentsError> {
-        let conn = slot.connection.as_ref().ok_or(AgentsError::ConnectionClosed)?;
+    async fn initialize_agent(
+        slot: &mut AgentSlot,
+        acp_timeout: Duration,
+    ) -> Result<(), AgentsError> {
+        let conn = slot
+            .connection
+            .as_ref()
+            .ok_or(AgentsError::ConnectionClosed)?;
 
         let options = if slot.config.options.is_empty() {
             None
@@ -140,7 +159,11 @@ impl AgentsManager {
         Ok(())
     }
 
-    async fn start_session(slot: &mut AgentSlot, tools_handle: &ManagerHandle<ToolsCommand>, acp_timeout: Duration) -> Result<String, AgentsError> {
+    async fn start_session(
+        slot: &mut AgentSlot,
+        tools_handle: &ManagerHandle<ToolsCommand>,
+        acp_timeout: Duration,
+    ) -> Result<String, AgentsError> {
         let (reply_tx, reply_rx) = oneshot::channel();
         let tool_names = if slot.config.tools.is_empty() {
             None
@@ -148,12 +171,17 @@ impl AgentsManager {
             Some(slot.config.tools.clone())
         };
         tools_handle
-            .send(ToolsCommand::GetMcpUrls { tool_names, reply: reply_tx })
+            .send(ToolsCommand::GetMcpUrls {
+                tool_names,
+                reply: reply_tx,
+            })
             .await
             .map_err(|e| AgentsError::SpawnFailed(format!("tools handle: {e}")))?;
 
         let urls: Vec<McpServerUrl> = reply_rx.await.unwrap_or_else(|_| {
-            tracing::warn!("tools handle dropped before providing MCP URLs — agent will start with no tools");
+            tracing::warn!(
+                "tools handle dropped before providing MCP URLs — agent will start with no tools"
+            );
             Vec::new()
         });
 
@@ -179,7 +207,10 @@ impl AgentsManager {
             mcp_servers,
         })?;
 
-        let conn = slot.connection.as_ref().ok_or(AgentsError::ConnectionClosed)?;
+        let conn = slot
+            .connection
+            .as_ref()
+            .ok_or(AgentsError::ConnectionClosed)?;
         let rx = conn.send_request("session/new", params).await?;
         let resp = tokio::time::timeout(acp_timeout, rx)
             .await
@@ -266,12 +297,23 @@ impl AgentsManager {
                     .collect();
                 let _ = reply.send(statuses);
             }
-            AgentsCommand::CreateSession { agent_name, session_key, reply } => {
+            AgentsCommand::CreateSession {
+                agent_name,
+                session_key,
+                reply,
+            } => {
                 let result = self.create_session(&agent_name, session_key).await;
                 let _ = reply.send(result.map_err(|e| e.to_string()));
             }
-            AgentsCommand::PromptSession { agent_name, session_key, message, reply } => {
-                let result = self.prompt_session(&agent_name, &session_key, &message).await;
+            AgentsCommand::PromptSession {
+                agent_name,
+                session_key,
+                message,
+                reply,
+            } => {
+                let result = self
+                    .prompt_session(&agent_name, &session_key, &message)
+                    .await;
                 let _ = reply.send(result.map_err(|e| e.to_string()));
             }
         }
@@ -279,8 +321,14 @@ impl AgentsManager {
     }
 
     async fn send_prompt_to_slot(slot: &AgentSlot, message: &str) -> Result<(), AgentsError> {
-        let conn = slot.connection.as_ref().ok_or(AgentsError::ConnectionClosed)?;
-        let acp_id = slot.session_map.values().next()
+        let conn = slot
+            .connection
+            .as_ref()
+            .ok_or(AgentsError::ConnectionClosed)?;
+        let acp_id = slot
+            .session_map
+            .values()
+            .next()
             .ok_or(AgentsError::ConnectionClosed)?;
 
         let params = serde_json::to_value(SessionPromptParams {
@@ -293,7 +341,11 @@ impl AgentsManager {
     }
 
     #[tracing::instrument(skip(self), fields(agent = %agent_name, session_key = %session_key))]
-    async fn create_session(&mut self, agent_name: &str, session_key: SessionKey) -> Result<String, AgentsError> {
+    async fn create_session(
+        &mut self,
+        agent_name: &str,
+        session_key: SessionKey,
+    ) -> Result<String, AgentsError> {
         let slot_idx = find_slot_by_name(&self.slots, agent_name)
             .ok_or_else(|| AgentsError::AgentNotFound(agent_name.to_string()))?;
 
@@ -303,25 +355,37 @@ impl AgentsManager {
         }
 
         let acp_timeout = Self::acp_timeout_for(&self.slots[slot_idx].config, &self.manager_config);
-        let acp_session_id = Self::start_session(&mut self.slots[slot_idx], &self.tools_handle, acp_timeout).await?;
+        let acp_session_id =
+            Self::start_session(&mut self.slots[slot_idx], &self.tools_handle, acp_timeout).await?;
 
         let slot = &mut self.slots[slot_idx];
-        slot.session_map.insert(session_key.clone(), acp_session_id.clone());
+        slot.session_map
+            .insert(session_key.clone(), acp_session_id.clone());
         slot.reverse_map.insert(acp_session_id.clone(), session_key);
 
         tracing::info!(agent = %agent_name, session_key = %acp_session_id, "multi-session created");
         Ok(acp_session_id)
     }
 
-    async fn prompt_session(&self, agent_name: &str, session_key: &SessionKey, message: &str) -> Result<(), AgentsError> {
+    async fn prompt_session(
+        &self,
+        agent_name: &str,
+        session_key: &SessionKey,
+        message: &str,
+    ) -> Result<(), AgentsError> {
         let slot_idx = find_slot_by_name(&self.slots, agent_name)
             .ok_or_else(|| AgentsError::AgentNotFound(agent_name.to_string()))?;
 
         let slot = &self.slots[slot_idx];
-        let acp_session_id = slot.session_map.get(session_key)
+        let acp_session_id = slot
+            .session_map
+            .get(session_key)
             .ok_or(AgentsError::ConnectionClosed)?;
 
-        let conn = slot.connection.as_ref().ok_or(AgentsError::ConnectionClosed)?;
+        let conn = slot
+            .connection
+            .as_ref()
+            .ok_or(AgentsError::ConnectionClosed)?;
 
         let params = serde_json::to_value(SessionPromptParams {
             session_id: acp_session_id.clone(),
@@ -346,15 +410,17 @@ impl AgentsManager {
                                     "error": msg,
                                     "update": { "sessionUpdate": "result" }
                                 });
-                                let _ = sender.send(ChannelEvent::DeliverMessage {
-                                    session_key: sk.clone(),
-                                    content: error_content,
-                                }).await;
+                                let _ = sender
+                                    .send(ChannelEvent::DeliverMessage {
+                                        session_key: sk.clone(),
+                                        content: error_content,
+                                    })
+                                    .await;
                             }
                         }
-                        let _ = completion_tx.send(PromptCompletion {
-                            session_key: sk,
-                        }).await;
+                        let _ = completion_tx
+                            .send(PromptCompletion { session_key: sk })
+                            .await;
                     }
                     Err(_) => {
                         tracing::warn!(session_key = %sk, "prompt response channel dropped");
@@ -372,7 +438,10 @@ impl AgentsManager {
         };
 
         let method = value["method"].as_str().unwrap_or("");
-        let params = value.get("params").cloned().unwrap_or(serde_json::Value::Null);
+        let params = value
+            .get("params")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
 
         match method {
             "session/update" => {
@@ -380,62 +449,72 @@ impl AgentsManager {
                 tracing::debug!(raw_params = %params, seq, "session/update received — attempting deser");
                 match serde_json::from_value::<SessionUpdateEvent>(params.clone()) {
                     Ok(event) => {
-                    let update_type = match &event.update {
-                        SessionUpdateType::AgentThoughtChunk { .. } => "agent_thought_chunk",
-                        SessionUpdateType::AgentMessageChunk { .. } => "agent_message_chunk",
-                        SessionUpdateType::Result { .. } => "result",
-                        SessionUpdateType::ToolCall { .. } => "tool_call",
-                        SessionUpdateType::ToolCallUpdate { .. } => "tool_call_update",
-                        SessionUpdateType::Plan { .. } => "plan",
-                        SessionUpdateType::UsageUpdate { .. } => "usage_update",
-                        SessionUpdateType::UserMessageChunk { .. } => "user_message_chunk",
-                        _ => "other",
-                    };
-                    tracing::debug!(agent = %self.slots[slot_idx].name(), session_id = %event.session_id, update_type, seq, "session update routed");
+                        let update_type = match &event.update {
+                            SessionUpdateType::AgentThoughtChunk { .. } => "agent_thought_chunk",
+                            SessionUpdateType::AgentMessageChunk { .. } => "agent_message_chunk",
+                            SessionUpdateType::Result { .. } => "result",
+                            SessionUpdateType::ToolCall { .. } => "tool_call",
+                            SessionUpdateType::ToolCallUpdate { .. } => "tool_call_update",
+                            SessionUpdateType::Plan { .. } => "plan",
+                            SessionUpdateType::UsageUpdate { .. } => "usage_update",
+                            SessionUpdateType::UserMessageChunk { .. } => "user_message_chunk",
+                            _ => "other",
+                        };
+                        tracing::debug!(agent = %self.slots[slot_idx].name(), session_id = %event.session_id, update_type, seq, "session update routed");
 
-                    let is_result = matches!(event.update, SessionUpdateType::Result { .. });
+                        let is_result = matches!(event.update, SessionUpdateType::Result { .. });
 
-                    let mut content = params;
-                    if let Some(obj) = content.as_object_mut() {
-                        let now_ms = std::time::SystemTime::now()
+                        let mut content = params;
+                        if let Some(obj) = content.as_object_mut() {
+                            let now_ms = std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
                             .unwrap_or_else(|e| {
                                 tracing::warn!(error = %e, "system time before UNIX_EPOCH, using zero duration");
                                 std::time::Duration::default()
                             })
                             .as_millis() as u64;
-                        obj.insert("_received_at_ms".to_string(), serde_json::json!(now_ms));
-                    }
+                            obj.insert("_received_at_ms".to_string(), serde_json::json!(now_ms));
+                        }
 
-                    normalize_tool_event_fields(&mut content, update_type);
+                        normalize_tool_event_fields(&mut content, update_type);
 
-                    if let Some(session_key) = self.slots[slot_idx].reverse_map.get(&event.session_id).cloned() {
-                        if let Some(sender) = &self.channels_sender {
-                            let _ = sender.send(ChannelEvent::DeliverMessage {
-                                session_key: session_key.clone(),
-                                content,
-                            }).await;
+                        if let Some(session_key) = self.slots[slot_idx]
+                            .reverse_map
+                            .get(&event.session_id)
+                            .cloned()
+                        {
+                            if let Some(sender) = &self.channels_sender {
+                                let _ = sender
+                                    .send(ChannelEvent::DeliverMessage {
+                                        session_key: session_key.clone(),
+                                        content,
+                                    })
+                                    .await;
 
-                            if is_result {
-                                self.streaming_completed.insert(session_key);
+                                if is_result {
+                                    self.streaming_completed.insert(session_key);
+                                }
                             }
                         }
-                    }
                     }
                     Err(e) => {
                         tracing::warn!(error = %e, raw_params = %params, seq, "session/update deserialization FAILED — update dropped");
                         // Forward a synthetic error to the channel so the session doesn't hang
                         if let Some(session_id) = params.get("sessionId").and_then(|v| v.as_str()) {
-                            if let Some(session_key) = self.slots[slot_idx].reverse_map.get(session_id).cloned() {
+                            if let Some(session_key) =
+                                self.slots[slot_idx].reverse_map.get(session_id).cloned()
+                            {
                                 if let Some(sender) = &self.channels_sender {
                                     let error_content = serde_json::json!({
                                         "error": format!("Agent sent malformed update: {e}"),
                                         "update": { "sessionUpdate": "result" }
                                     });
-                                    let _ = sender.send(ChannelEvent::DeliverMessage {
-                                        session_key,
-                                        content: error_content,
-                                    }).await;
+                                    let _ = sender
+                                        .send(ChannelEvent::DeliverMessage {
+                                            session_key,
+                                            content: error_content,
+                                        })
+                                        .await;
                                 }
                             }
                         }
@@ -443,7 +522,8 @@ impl AgentsManager {
                 }
             }
             "session/request_permission" => {
-                self.handle_permission_request(slot_idx, &value, &params).await;
+                self.handle_permission_request(slot_idx, &value, &params)
+                    .await;
             }
             "fs/read_text_file" => {
                 Self::handle_fs_read(&self.slots[slot_idx], &value, &params).await;
@@ -452,20 +532,25 @@ impl AgentsManager {
                 Self::handle_fs_write(&self.slots[slot_idx], &value, &params).await;
             }
             _ => {
-                Self::send_error_response(&self.slots[slot_idx], &value, -32601, "Method not found").await;
+                Self::send_error_response(
+                    &self.slots[slot_idx],
+                    &value,
+                    -32601,
+                    "Method not found",
+                )
+                .await;
             }
         }
     }
 
-    async fn handle_permission_request(&mut self, slot_idx: usize, request: &serde_json::Value, params: &serde_json::Value) {
-        let request_id = params["requestId"]
-            .as_str()
-            .unwrap_or("")
-            .to_string();
-        let description = params["description"]
-            .as_str()
-            .unwrap_or("")
-            .to_string();
+    async fn handle_permission_request(
+        &mut self,
+        slot_idx: usize,
+        request: &serde_json::Value,
+        params: &serde_json::Value,
+    ) {
+        let request_id = params["requestId"].as_str().unwrap_or("").to_string();
+        let description = params["description"].as_str().unwrap_or("").to_string();
 
         let options: Vec<PermissionOption> = params
             .get("options")
@@ -484,12 +569,14 @@ impl AgentsManager {
                     tracing::warn!(error = %e, %request_id, "failed to serialize permission options, using null");
                     serde_json::Value::default()
                 });
-                let _ = sender.send(ChannelEvent::RoutePermission {
-                    session_key,
-                    request_id: request_id.clone(),
-                    description: description.clone(),
-                    options: options_json,
-                }).await;
+                let _ = sender
+                    .send(ChannelEvent::RoutePermission {
+                        session_key,
+                        request_id: request_id.clone(),
+                        description: description.clone(),
+                        options: options_json,
+                    })
+                    .await;
             }
         }
 
@@ -504,11 +591,20 @@ impl AgentsManager {
         );
     }
 
-    async fn handle_fs_read(slot: &AgentSlot, request: &serde_json::Value, params: &serde_json::Value) {
+    async fn handle_fs_read(
+        slot: &AgentSlot,
+        request: &serde_json::Value,
+        params: &serde_json::Value,
+    ) {
         let path = params["path"].as_str().unwrap_or("");
         match tokio::fs::read_to_string(path).await {
             Ok(content) => {
-                Self::send_success_response(slot, request, serde_json::json!({ "content": content })).await;
+                Self::send_success_response(
+                    slot,
+                    request,
+                    serde_json::json!({ "content": content }),
+                )
+                .await;
             }
             Err(e) => {
                 Self::send_error_response(slot, request, -32000, &e.to_string()).await;
@@ -516,7 +612,11 @@ impl AgentsManager {
         }
     }
 
-    async fn handle_fs_write(slot: &AgentSlot, request: &serde_json::Value, params: &serde_json::Value) {
+    async fn handle_fs_write(
+        slot: &AgentSlot,
+        request: &serde_json::Value,
+        params: &serde_json::Value,
+    ) {
         let path = params["path"].as_str().unwrap_or("");
         let content = params["content"].as_str().unwrap_or("");
         match tokio::fs::write(path, content).await {
@@ -529,7 +629,11 @@ impl AgentsManager {
         }
     }
 
-    async fn send_success_response(slot: &AgentSlot, request: &serde_json::Value, result: serde_json::Value) {
+    async fn send_success_response(
+        slot: &AgentSlot,
+        request: &serde_json::Value,
+        result: serde_json::Value,
+    ) {
         if let Some(conn) = slot.connection.as_ref() {
             let resp = serde_json::json!({
                 "jsonrpc": "2.0",
@@ -540,7 +644,12 @@ impl AgentsManager {
         }
     }
 
-    async fn send_error_response(slot: &AgentSlot, request: &serde_json::Value, code: i64, message: &str) {
+    async fn send_error_response(
+        slot: &AgentSlot,
+        request: &serde_json::Value,
+        code: i64,
+        message: &str,
+    ) {
         if let Some(conn) = slot.connection.as_ref() {
             let resp = serde_json::json!({
                 "jsonrpc": "2.0",
@@ -585,15 +694,19 @@ impl AgentsManager {
                         "sessionUpdate": "result",
                     }
                 });
-                let _ = sender.send(ChannelEvent::DeliverMessage {
-                    session_key: completion.session_key.clone(),
-                    content: synthetic_result,
-                }).await;
+                let _ = sender
+                    .send(ChannelEvent::DeliverMessage {
+                        session_key: completion.session_key.clone(),
+                        content: synthetic_result,
+                    })
+                    .await;
             }
 
-            let _ = sender.send(ChannelEvent::SessionComplete {
-                session_key: completion.session_key,
-            }).await;
+            let _ = sender
+                .send(ChannelEvent::SessionComplete {
+                    session_key: completion.session_key,
+                })
+                .await;
         }
     }
 
@@ -604,7 +717,8 @@ impl AgentsManager {
                     let params = serde_json::json!({ "sessionId": acp_id });
                     let _ = conn.send_notification("session/close", params).await;
                 }
-                tokio::time::sleep(Duration::from_millis(self.manager_config.shutdown_grace_ms)).await;
+                tokio::time::sleep(Duration::from_millis(self.manager_config.shutdown_grace_ms))
+                    .await;
             }
             if let Some(mut conn) = slot.connection.take() {
                 let _ = conn.kill().await;
@@ -638,7 +752,15 @@ impl AgentsManager {
         tracing::info!(agent = %agent_name, delay_ms = delay.as_millis(), "waiting before restart");
         tokio::time::sleep(delay).await;
 
-        match AgentConnection::spawn_with_bridge(&slot.config, &agent_name, slot_idx, self.incoming_tx.clone(), self.log_level.as_deref()).await {
+        match AgentConnection::spawn_with_bridge(
+            &slot.config,
+            &agent_name,
+            slot_idx,
+            self.incoming_tx.clone(),
+            self.log_level.as_deref(),
+        )
+        .await
+        {
             Ok(conn) => {
                 slot.connection = Some(conn);
             }
@@ -710,7 +832,9 @@ impl AgentsManager {
     /// method never propagates failures so that `start()` is not blocked by
     /// stale-container cleanup.
     async fn cleanup_stale_containers(&self) {
-        use bollard::container::{ListContainersOptions, RemoveContainerOptions, StopContainerOptions};
+        use bollard::container::{
+            ListContainersOptions, RemoveContainerOptions, StopContainerOptions,
+        };
 
         for (name, config) in &self.agent_configs {
             let docker_config = match &config.workspace {
@@ -719,11 +843,9 @@ impl AgentsManager {
             };
 
             let docker = match &docker_config.docker_host {
-                Some(host) => bollard::Docker::connect_with_http(
-                    host,
-                    120,
-                    bollard::API_DEFAULT_VERSION,
-                ),
+                Some(host) => {
+                    bollard::Docker::connect_with_http(host, 120, bollard::API_DEFAULT_VERSION)
+                }
                 None => bollard::Docker::connect_with_local_defaults(),
             };
             let docker = match docker {
@@ -735,7 +857,10 @@ impl AgentsManager {
             };
 
             let mut filters = HashMap::new();
-            filters.insert("label".to_string(), vec!["protoclaw.managed=true".to_string()]);
+            filters.insert(
+                "label".to_string(),
+                vec!["protoclaw.managed=true".to_string()],
+            );
             let opts = ListContainersOptions {
                 all: true,
                 filters,
@@ -764,7 +889,10 @@ impl AgentsManager {
                 if let Err(e) = docker
                     .remove_container(
                         &id,
-                        Some(RemoveContainerOptions { force: true, ..Default::default() }),
+                        Some(RemoveContainerOptions {
+                            force: true,
+                            ..Default::default()
+                        }),
                     )
                     .await
                 {
@@ -793,9 +921,15 @@ impl Manager for AgentsManager {
 
             let mut slot = AgentSlot::new(name.clone(), config.clone(), &self.parent_cancel);
 
-            let conn = AgentConnection::spawn_with_bridge(config, name, self.slots.len(), self.incoming_tx.clone(), self.log_level.as_deref())
-                .await
-                .map_err(|e| ManagerError::Internal(format!("{name}: {e}")))?;
+            let conn = AgentConnection::spawn_with_bridge(
+                config,
+                name,
+                self.slots.len(),
+                self.incoming_tx.clone(),
+                self.log_level.as_deref(),
+            )
+            .await
+            .map_err(|e| ManagerError::Internal(format!("{name}: {e}")))?;
 
             slot.connection = Some(conn);
 
@@ -810,7 +944,8 @@ impl Manager for AgentsManager {
                 .map_err(|e| ManagerError::Internal(format!("{name}: {e}")))?;
 
             let default_key = SessionKey::new(name, "default", "default");
-            slot.session_map.insert(default_key.clone(), session_id.clone());
+            slot.session_map
+                .insert(default_key.clone(), session_id.clone());
             slot.reverse_map.insert(session_id, default_key);
 
             self.slots.push(slot);
@@ -890,7 +1025,11 @@ fn normalize_tool_event_fields(content: &mut serde_json::Value, update_type: &st
     }
 
     if update_type == "tool_call_update" && !update.contains_key("output") {
-        if let Some(raw) = update.get("rawOutput").and_then(|r| r.get("output")).cloned() {
+        if let Some(raw) = update
+            .get("rawOutput")
+            .and_then(|r| r.get("output"))
+            .cloned()
+        {
             update.insert("output".to_string(), raw);
         }
     }
@@ -914,11 +1053,13 @@ mod tests {
             .join("mock-agent");
 
         AgentConfig {
-            workspace: protoclaw_config::WorkspaceConfig::Local(protoclaw_config::LocalWorkspaceConfig {
-                binary: target_dir.to_string_lossy().to_string(),
-                working_dir: None,
-                env: HashMap::new(),
-            }),
+            workspace: protoclaw_config::WorkspaceConfig::Local(
+                protoclaw_config::LocalWorkspaceConfig {
+                    binary: target_dir.to_string_lossy().to_string(),
+                    working_dir: None,
+                    env: HashMap::new(),
+                },
+            ),
             args: vec![],
             enabled: true,
             tools: vec![],
@@ -936,14 +1077,19 @@ mod tests {
         }
     }
 
-    fn mock_agents_manager_config_with(agents: HashMap<String, AgentConfig>) -> AgentsManagerConfig {
+    fn mock_agents_manager_config_with(
+        agents: HashMap<String, AgentConfig>,
+    ) -> AgentsManagerConfig {
         AgentsManagerConfig {
             agents,
             ..Default::default()
         }
     }
 
-    fn make_tools_handle() -> (ManagerHandle<ToolsCommand>, tokio::sync::mpsc::Receiver<ToolsCommand>) {
+    fn make_tools_handle() -> (
+        ManagerHandle<ToolsCommand>,
+        tokio::sync::mpsc::Receiver<ToolsCommand>,
+    ) {
         let (tx, rx) = tokio::sync::mpsc::channel(16);
         (ManagerHandle::new(tx), rx)
     }
@@ -951,7 +1097,10 @@ mod tests {
     async fn serve_tools_urls(mut rx: tokio::sync::mpsc::Receiver<ToolsCommand>) {
         while let Some(cmd) = rx.recv().await {
             match cmd {
-                ToolsCommand::GetMcpUrls { tool_names: _, reply } => {
+                ToolsCommand::GetMcpUrls {
+                    tool_names: _,
+                    reply,
+                } => {
                     let _ = reply.send(vec![]);
                 }
                 ToolsCommand::Shutdown => break,
@@ -977,7 +1126,14 @@ mod tests {
         assert_eq!(m.slots.len(), 1);
         assert!(m.slots[0].connection.is_some());
         assert!(m.slots[0].agent_capabilities.is_some());
-        assert_eq!(m.slots[0].agent_capabilities.as_ref().unwrap().protocol_version, 1);
+        assert_eq!(
+            m.slots[0]
+                .agent_capabilities
+                .as_ref()
+                .unwrap()
+                .protocol_version,
+            1
+        );
 
         m.shutdown_all().await;
         tools_task.abort();
@@ -1015,7 +1171,10 @@ mod tests {
         let mut config = mock_agent_config();
         config.enabled = false;
         let (handle, _rx) = make_tools_handle();
-        let m = AgentsManager::new(mock_agents_manager_config_with(HashMap::from([("default".into(), config)])), handle);
+        let m = AgentsManager::new(
+            mock_agents_manager_config_with(HashMap::from([("default".into(), config)])),
+            handle,
+        );
         assert!(m.health_check().await);
     }
 
@@ -1039,12 +1198,17 @@ mod tests {
     #[tokio::test]
     async fn when_agent_crashes_then_handle_crash_reconnects() {
         let mut config = mock_agent_config();
-        config.options.insert("exit_after".into(), serde_json::json!(1));
+        config
+            .options
+            .insert("exit_after".into(), serde_json::json!(1));
 
         let (handle, rx) = make_tools_handle();
         let tools_task = tokio::spawn(serve_tools_urls(rx));
 
-        let mut m = AgentsManager::new(mock_agents_manager_config_with(HashMap::from([("default".into(), config)])), handle);
+        let mut m = AgentsManager::new(
+            mock_agents_manager_config_with(HashMap::from([("default".into(), config)])),
+            handle,
+        );
         m.start().await.unwrap();
 
         let _ = AgentsManager::send_prompt_to_slot(&m.slots[0], "trigger-crash").await;
@@ -1064,14 +1228,14 @@ mod tests {
         let mut m = AgentsManager::new(mock_agents_manager_config(), handle);
 
         let mut slot = AgentSlot::new("default".into(), mock_agent_config(), &m.parent_cancel);
-        slot.session_map.insert(
-            SessionKey::new("test", "local", "dev"),
-            "acp-1".to_string(),
-        );
+        slot.session_map
+            .insert(SessionKey::new("test", "local", "dev"), "acp-1".to_string());
         m.slots.push(slot);
 
         let (reply_tx, reply_rx) = oneshot::channel();
-        let done = m.handle_command(AgentsCommand::GetStatus { reply: reply_tx }).await;
+        let done = m
+            .handle_command(AgentsCommand::GetStatus { reply: reply_tx })
+            .await;
         assert!(!done);
 
         let statuses = reply_rx.await.expect("should receive status");
@@ -1086,7 +1250,9 @@ mod tests {
         let (handle, _rx) = make_tools_handle();
         let mut m = AgentsManager::new(mock_agents_manager_config_with(HashMap::new()), handle);
 
-        let result = m.create_session("nonexistent", SessionKey::new("ch", "k", "p")).await;
+        let result = m
+            .create_session("nonexistent", SessionKey::new("ch", "k", "p"))
+            .await;
         assert!(matches!(result, Err(AgentsError::AgentNotFound(_))));
     }
 
@@ -1105,8 +1271,10 @@ mod tests {
         let mut slot = AgentSlot::new("test-agent".into(), mock_agent_config(), &cancel);
         let session_key = SessionKey::new("debug-http", "local", "dev");
         let acp_session_id = "acp-sess-1".to_string();
-        slot.session_map.insert(session_key.clone(), acp_session_id.clone());
-        slot.reverse_map.insert(acp_session_id.clone(), session_key.clone());
+        slot.session_map
+            .insert(session_key.clone(), acp_session_id.clone());
+        slot.reverse_map
+            .insert(acp_session_id.clone(), session_key.clone());
         m.slots.push(slot);
 
         let result_notification = IncomingMessage::AgentNotification(serde_json::json!({
@@ -1133,8 +1301,14 @@ mod tests {
             }
         }
         assert!(got_deliver, "must send DeliverMessage for result content");
-        assert!(!got_complete, "streaming path must NOT send SessionComplete");
-        assert!(m.streaming_completed.contains(&session_key), "must set streaming_completed flag");
+        assert!(
+            !got_complete,
+            "streaming path must NOT send SessionComplete"
+        );
+        assert!(
+            m.streaming_completed.contains(&session_key),
+            "must set streaming_completed flag"
+        );
     }
 
     #[tokio::test]
@@ -1150,8 +1324,10 @@ mod tests {
         let mut slot = AgentSlot::new("test-agent".into(), mock_agent_config(), &cancel);
         let session_key = SessionKey::new("debug-http", "local", "dev");
         let acp_session_id = "acp-sess-1".to_string();
-        slot.session_map.insert(session_key.clone(), acp_session_id.clone());
-        slot.reverse_map.insert(acp_session_id.clone(), session_key.clone());
+        slot.session_map
+            .insert(session_key.clone(), acp_session_id.clone());
+        slot.reverse_map
+            .insert(acp_session_id.clone(), session_key.clone());
         m.slots.push(slot);
 
         let chunk_notification = IncomingMessage::AgentNotification(serde_json::json!({
@@ -1191,8 +1367,10 @@ mod tests {
         let mut slot = AgentSlot::new("test-agent".into(), mock_agent_config(), &cancel);
         let session_key = SessionKey::new("telegram", "direct", "user1");
         let acp_session_id = "acp-sess-1".to_string();
-        slot.session_map.insert(session_key.clone(), acp_session_id.clone());
-        slot.reverse_map.insert(acp_session_id.clone(), session_key.clone());
+        slot.session_map
+            .insert(session_key.clone(), acp_session_id.clone());
+        slot.reverse_map
+            .insert(acp_session_id.clone(), session_key.clone());
         m.slots.push(slot);
 
         let (_incoming_tx, mut incoming_rx) = mpsc::channel::<SlotIncoming>(16);
@@ -1200,22 +1378,35 @@ mod tests {
         let completion = PromptCompletion {
             session_key: session_key.clone(),
         };
-        m.handle_prompt_completion(completion, &mut incoming_rx).await;
+        m.handle_prompt_completion(completion, &mut incoming_rx)
+            .await;
 
         let mut events = Vec::new();
         while let Ok(event) = channels_rx.try_recv() {
             events.push(event);
         }
 
-        assert!(events.len() >= 2, "expected DeliverMessage + SessionComplete, got {} events", events.len());
+        assert!(
+            events.len() >= 2,
+            "expected DeliverMessage + SessionComplete, got {} events",
+            events.len()
+        );
 
         match &events[0] {
-            ChannelEvent::DeliverMessage { session_key: sk, content } => {
+            ChannelEvent::DeliverMessage {
+                session_key: sk,
+                content,
+            } => {
                 assert_eq!(sk, &session_key);
-                let update_type = content.get("update")
+                let update_type = content
+                    .get("update")
                     .and_then(|u| u.get("sessionUpdate"))
                     .and_then(|t| t.as_str());
-                assert_eq!(update_type, Some("result"), "synthetic DeliverMessage must have sessionUpdate: result");
+                assert_eq!(
+                    update_type,
+                    Some("result"),
+                    "synthetic DeliverMessage must have sessionUpdate: result"
+                );
             }
             other => panic!("expected DeliverMessage as first event, got {:?}", other),
         }
@@ -1240,8 +1431,10 @@ mod tests {
         let mut slot = AgentSlot::new("test-agent".into(), mock_agent_config(), &cancel);
         let session_key = SessionKey::new("telegram", "direct", "user1");
         let acp_session_id = "acp-sess-1".to_string();
-        slot.session_map.insert(session_key.clone(), acp_session_id.clone());
-        slot.reverse_map.insert(acp_session_id.clone(), session_key.clone());
+        slot.session_map
+            .insert(session_key.clone(), acp_session_id.clone());
+        slot.reverse_map
+            .insert(acp_session_id.clone(), session_key.clone());
         m.slots.push(slot);
 
         m.streaming_completed.insert(session_key.clone());
@@ -1250,19 +1443,28 @@ mod tests {
         let completion = PromptCompletion {
             session_key: session_key.clone(),
         };
-        m.handle_prompt_completion(completion, &mut incoming_rx).await;
+        m.handle_prompt_completion(completion, &mut incoming_rx)
+            .await;
 
         let mut events = Vec::new();
         while let Ok(event) = channels_rx.try_recv() {
             events.push(event);
         }
 
-        assert_eq!(events.len(), 1, "expected only SessionComplete, got {} events", events.len());
+        assert_eq!(
+            events.len(),
+            1,
+            "expected only SessionComplete, got {} events",
+            events.len()
+        );
         assert!(
             matches!(&events[0], ChannelEvent::SessionComplete { session_key: sk } if sk == &session_key),
             "expected SessionComplete only"
         );
-        assert!(!m.streaming_completed.contains(&session_key), "flag must be cleared");
+        assert!(
+            !m.streaming_completed.contains(&session_key),
+            "flag must be cleared"
+        );
     }
 
     #[tokio::test]
@@ -1271,14 +1473,21 @@ mod tests {
         config.enabled = false;
 
         let (handle, _rx) = make_tools_handle();
-        let mut m = AgentsManager::new(mock_agents_manager_config_with(HashMap::from([("default".into(), config)])), handle);
+        let mut m = AgentsManager::new(
+            mock_agents_manager_config_with(HashMap::from([("default".into(), config)])),
+            handle,
+        );
         let result = m.start().await;
         assert!(result.is_ok());
-        assert!(m.slots.is_empty(), "disabled agent should not create a slot");
+        assert!(
+            m.slots.is_empty(),
+            "disabled agent should not create a slot"
+        );
     }
 
     #[tokio::test]
-    async fn when_completion_fires_with_pending_events_then_all_delivered_before_session_complete() {
+    async fn when_completion_fires_with_pending_events_then_all_delivered_before_session_complete()
+    {
         // When completion fires with pending streaming events in incoming_rx,
         // all events must be forwarded as DeliverMessage BEFORE SessionComplete.
         let (handle, _rx) = make_tools_handle();
@@ -1291,8 +1500,10 @@ mod tests {
         let mut slot = AgentSlot::new("test-agent".into(), mock_agent_config(), &cancel);
         let session_key = SessionKey::new("telegram", "direct", "user1");
         let acp_session_id = "acp-sess-1".to_string();
-        slot.session_map.insert(session_key.clone(), acp_session_id.clone());
-        slot.reverse_map.insert(acp_session_id.clone(), session_key.clone());
+        slot.session_map
+            .insert(session_key.clone(), acp_session_id.clone());
+        slot.reverse_map
+            .insert(acp_session_id.clone(), session_key.clone());
         m.slots.push(slot);
 
         let (incoming_tx, mut incoming_rx) = mpsc::channel::<SlotIncoming>(16);
@@ -1314,11 +1525,26 @@ mod tests {
                 "update": { "sessionUpdate": "result" }
             }
         }));
-        incoming_tx.send(SlotIncoming { slot_idx: 0, msg: Some(chunk1) }).await.unwrap();
-        incoming_tx.send(SlotIncoming { slot_idx: 0, msg: Some(result_event) }).await.unwrap();
+        incoming_tx
+            .send(SlotIncoming {
+                slot_idx: 0,
+                msg: Some(chunk1),
+            })
+            .await
+            .unwrap();
+        incoming_tx
+            .send(SlotIncoming {
+                slot_idx: 0,
+                msg: Some(result_event),
+            })
+            .await
+            .unwrap();
 
-        let completion = PromptCompletion { session_key: session_key.clone() };
-        m.handle_prompt_completion(completion, &mut incoming_rx).await;
+        let completion = PromptCompletion {
+            session_key: session_key.clone(),
+        };
+        m.handle_prompt_completion(completion, &mut incoming_rx)
+            .await;
 
         let mut events = Vec::new();
         while let Ok(event) = channels_rx.try_recv() {
@@ -1326,17 +1552,30 @@ mod tests {
         }
 
         // chunk DeliverMessage + result DeliverMessage + SessionComplete = 3 events
-        assert!(events.len() >= 3, "expected chunk + result + SessionComplete, got {} events", events.len());
+        assert!(
+            events.len() >= 3,
+            "expected chunk + result + SessionComplete, got {} events",
+            events.len()
+        );
 
-        let deliver_count = events.iter().filter(|e| matches!(e, ChannelEvent::DeliverMessage { .. })).count();
-        assert!(deliver_count >= 2, "expected at least 2 DeliverMessages (chunk + result), got {deliver_count}");
+        let deliver_count = events
+            .iter()
+            .filter(|e| matches!(e, ChannelEvent::DeliverMessage { .. }))
+            .count();
+        assert!(
+            deliver_count >= 2,
+            "expected at least 2 DeliverMessages (chunk + result), got {deliver_count}"
+        );
 
         assert!(
             matches!(events.last(), Some(ChannelEvent::SessionComplete { .. })),
             "SessionComplete must be the LAST event"
         );
 
-        assert!(!m.streaming_completed.contains(&session_key), "flag must be cleared");
+        assert!(
+            !m.streaming_completed.contains(&session_key),
+            "flag must be cleared"
+        );
     }
 
     #[tokio::test]
@@ -1401,7 +1640,8 @@ mod tests {
         let cancel = CancellationToken::new();
         let slot = AgentSlot::new("test-agent".into(), mock_agent_config(), &cancel);
         let request = serde_json::json!({"id": 3, "method": "fs/write_text_file"});
-        let params = serde_json::json!({"path": file_path.to_str().unwrap(), "content": "written content"});
+        let params =
+            serde_json::json!({"path": file_path.to_str().unwrap(), "content": "written content"});
 
         AgentsManager::handle_fs_write(&slot, &request, &params).await;
         let content = std::fs::read_to_string(&file_path).unwrap();
@@ -1431,11 +1671,13 @@ mod tests {
             .join("mock-agent");
 
         AgentConfig {
-            workspace: protoclaw_config::WorkspaceConfig::Local(protoclaw_config::LocalWorkspaceConfig {
-                binary: target_dir.to_string_lossy().to_string(),
-                working_dir: None,
-                env: HashMap::new(),
-            }),
+            workspace: protoclaw_config::WorkspaceConfig::Local(
+                protoclaw_config::LocalWorkspaceConfig {
+                    binary: target_dir.to_string_lossy().to_string(),
+                    working_dir: None,
+                    env: HashMap::new(),
+                },
+            ),
             args: vec![],
             enabled: true,
             tools: vec![],
@@ -1463,12 +1705,21 @@ mod tests {
 
         m.slots[0].crash_tracker.record_crash();
         m.slots[0].crash_tracker.record_crash();
-        assert!(m.slots[0].crash_tracker.is_crash_loop(), "precondition: crash loop must be active");
+        assert!(
+            m.slots[0].crash_tracker.is_crash_loop(),
+            "precondition: crash loop must be active"
+        );
 
         m.handle_crash(0).await;
 
-        assert!(m.slots[0].disabled, "slot must be disabled after crash loop");
-        assert!(m.slots[0].connection.is_none(), "connection must be cleaned up after crash loop");
+        assert!(
+            m.slots[0].disabled,
+            "slot must be disabled after crash loop"
+        );
+        assert!(
+            m.slots[0].connection.is_none(),
+            "connection must be cleaned up after crash loop"
+        );
 
         tools_task.abort();
     }
@@ -1487,8 +1738,14 @@ mod tests {
 
         m.handle_crash(0).await;
 
-        assert!(!m.slots[0].disabled, "slot must NOT be disabled below loop threshold");
-        assert!(m.slots[0].connection.is_some(), "slot should have reconnected");
+        assert!(
+            !m.slots[0].disabled,
+            "slot must NOT be disabled below loop threshold"
+        );
+        assert!(
+            m.slots[0].connection.is_some(),
+            "slot should have reconnected"
+        );
         assert!(m.slots[0].crash_tracker.is_crash_loop() == false || true);
 
         m.shutdown_all().await;

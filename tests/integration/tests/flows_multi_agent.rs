@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use protoclaw_integration_tests::{
-    boot_supervisor_with_port, debug_http_path, mock_agent_path, with_timeout, SseCollector,
+    SseCollector, boot_supervisor_with_port, debug_http_path, mock_agent_path, with_timeout,
 };
 use rstest::rstest;
 
@@ -87,11 +87,13 @@ fn build_two_agent_config(channel_routes_to: &str) -> protoclaw_config::Protocla
     agents.insert(
         "agent-a".to_string(),
         protoclaw_config::AgentConfig {
-            workspace: protoclaw_config::WorkspaceConfig::Local(protoclaw_config::LocalWorkspaceConfig {
-                binary: mock_agent_path().to_string_lossy().to_string(),
-                working_dir: None,
-                env: HashMap::new(),
-            }),
+            workspace: protoclaw_config::WorkspaceConfig::Local(
+                protoclaw_config::LocalWorkspaceConfig {
+                    binary: mock_agent_path().to_string_lossy().to_string(),
+                    working_dir: None,
+                    env: HashMap::new(),
+                },
+            ),
             args: vec![],
             enabled: true,
             tools: vec![],
@@ -104,11 +106,13 @@ fn build_two_agent_config(channel_routes_to: &str) -> protoclaw_config::Protocla
     agents.insert(
         "agent-b".to_string(),
         protoclaw_config::AgentConfig {
-            workspace: protoclaw_config::WorkspaceConfig::Local(protoclaw_config::LocalWorkspaceConfig {
-                binary: mock_agent_path().to_string_lossy().to_string(),
-                working_dir: None,
-                env: HashMap::new(),
-            }),
+            workspace: protoclaw_config::WorkspaceConfig::Local(
+                protoclaw_config::LocalWorkspaceConfig {
+                    binary: mock_agent_path().to_string_lossy().to_string(),
+                    working_dir: None,
+                    env: HashMap::new(),
+                },
+            ),
             args: vec![],
             enabled: true,
             tools: vec![],

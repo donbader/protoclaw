@@ -10,7 +10,11 @@ pub fn format_status_output(health: &serde_json::Value) -> String {
                 let name = agent["name"].as_str().unwrap_or("unknown");
                 let connected = agent["connected"].as_bool().unwrap_or(false);
                 let sessions = agent["session_count"].as_u64().unwrap_or(0);
-                let status = if connected { "connected" } else { "disconnected" };
+                let status = if connected {
+                    "connected"
+                } else {
+                    "disconnected"
+                };
                 out.push_str(&format!("  - {} ({}", name, status));
                 if connected {
                     out.push_str(&format!(", {} sessions", sessions));
@@ -20,7 +24,14 @@ pub fn format_status_output(health: &serde_json::Value) -> String {
         }
     } else if let Some(agent) = health.get("agent") {
         let connected = agent["connected"].as_bool().unwrap_or(false);
-        out.push_str(&format!("Agent:       {}\n", if connected { "connected" } else { "disconnected" }));
+        out.push_str(&format!(
+            "Agent:       {}\n",
+            if connected {
+                "connected"
+            } else {
+                "disconnected"
+            }
+        ));
         if let Some(sid) = agent["session_id"].as_str() {
             out.push_str(&format!("  Session:   {}\n", sid));
         }
@@ -52,7 +63,9 @@ pub fn format_status_output(health: &serde_json::Value) -> String {
 pub async fn run_status(port: u16) -> anyhow::Result<()> {
     let url = format!("http://127.0.0.1:{}/health", port);
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(protoclaw_core::constants::STATUS_HTTP_TIMEOUT_SECS))
+        .timeout(std::time::Duration::from_secs(
+            protoclaw_core::constants::STATUS_HTTP_TIMEOUT_SECS,
+        ))
         .build()?;
 
     let resp = client
@@ -100,7 +113,10 @@ mod tests {
             "mcp_servers": []
         });
         let output = format_status_output(&health);
-        assert!(output.contains("disconnected"), "should say 'disconnected' when not connected");
+        assert!(
+            output.contains("disconnected"),
+            "should say 'disconnected' when not connected"
+        );
     }
 
     #[test]
@@ -112,7 +128,10 @@ mod tests {
             "mcp_servers": ["fs"]
         });
         let output = format_status_output(&health);
-        assert!(output.contains("(none)"), "empty channels should show '(none)'");
+        assert!(
+            output.contains("(none)"),
+            "empty channels should show '(none)'"
+        );
     }
 
     #[test]
@@ -124,7 +143,10 @@ mod tests {
             "mcp_servers": []
         });
         let output = format_status_output(&health);
-        assert!(output.contains("(none)"), "empty mcp_servers should show '(none)'");
+        assert!(
+            output.contains("(none)"),
+            "empty mcp_servers should show '(none)'"
+        );
     }
 
     #[test]
@@ -142,7 +164,10 @@ mod tests {
         assert!(output.contains("opencode"), "should contain agent name");
         assert!(output.contains("connected"), "should show connected status");
         assert!(output.contains("3 sessions"), "should show session count");
-        assert!(output.contains("claude-code"), "should contain second agent");
+        assert!(
+            output.contains("claude-code"),
+            "should contain second agent"
+        );
         assert!(output.contains("disconnected"), "should show disconnected");
     }
 
@@ -154,7 +179,10 @@ mod tests {
             "mcp_servers": []
         });
         let output = format_status_output(&health);
-        assert!(output.contains("(none)"), "empty agents should show '(none)'");
+        assert!(
+            output.contains("(none)"),
+            "empty agents should show '(none)'"
+        );
     }
 
     #[test]
@@ -172,6 +200,9 @@ mod tests {
     #[tokio::test]
     async fn when_run_status_called_with_unreachable_port_then_returns_error() {
         let result = run_status(19999).await;
-        assert!(result.is_err(), "run_status with unreachable port should return Err");
+        assert!(
+            result.is_err(),
+            "run_status with unreachable port should return Err"
+        );
     }
 }

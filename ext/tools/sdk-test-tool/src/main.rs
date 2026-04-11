@@ -28,10 +28,7 @@ impl Tool for EchoTool {
     }
 
     async fn execute(&self, input: serde_json::Value) -> Result<serde_json::Value, ToolSdkError> {
-        let message = input
-            .get("message")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let message = input.get("message").and_then(|v| v.as_str()).unwrap_or("");
         Ok(serde_json::json!({ "echo": message }))
     }
 }

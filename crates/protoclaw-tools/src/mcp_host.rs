@@ -1,6 +1,6 @@
 use protoclaw_sdk_tool::{Tool, ToolServer};
-use rmcp::model::{CallToolResult, Tool as RmcpTool};
 use rmcp::ErrorData as McpError;
+use rmcp::model::{CallToolResult, Tool as RmcpTool};
 
 /// In-process MCP host wrapping a ToolServer.
 ///
@@ -41,12 +41,19 @@ mod tests {
 
     #[async_trait]
     impl Tool for EchoTool {
-        fn name(&self) -> &str { "echo" }
-        fn description(&self) -> &str { "Echoes input" }
+        fn name(&self) -> &str {
+            "echo"
+        }
+        fn description(&self) -> &str {
+            "Echoes input"
+        }
         fn input_schema(&self) -> serde_json::Value {
             serde_json::json!({"type": "object", "properties": {"msg": {"type": "string"}}})
         }
-        async fn execute(&self, input: serde_json::Value) -> Result<serde_json::Value, ToolSdkError> {
+        async fn execute(
+            &self,
+            input: serde_json::Value,
+        ) -> Result<serde_json::Value, ToolSdkError> {
             Ok(input)
         }
     }

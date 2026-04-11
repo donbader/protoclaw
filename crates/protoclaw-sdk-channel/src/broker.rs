@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use protoclaw_sdk_types::PermissionResponse;
+use std::collections::HashMap;
 use tokio::sync::oneshot;
 
 /// Registry-only helper for managing permission request/response oneshot channels.

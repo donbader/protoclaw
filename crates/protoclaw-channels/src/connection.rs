@@ -1,13 +1,13 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use futures::StreamExt;
 use protoclaw_config::ChannelConfig;
 use protoclaw_core::types::ChannelId;
 use protoclaw_jsonrpc::NdJsonCodec;
 use tokio::process::{Child, Command};
-use tokio::sync::{mpsc, oneshot, Mutex};
+use tokio::sync::{Mutex, mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tokio_util::codec::{FramedRead, FramedWrite};
 
@@ -59,7 +59,11 @@ impl ChannelConnection {
     /// Spawn a channel subprocess with piped stdin/stdout/stderr.
     ///
     /// Creates reader + writer + stderr tasks using NdJsonCodec framing.
-    pub fn spawn(config: &ChannelConfig, channel_id: ChannelId, log_level: Option<&str>) -> Result<Self, ChannelsError> {
+    pub fn spawn(
+        config: &ChannelConfig,
+        channel_id: ChannelId,
+        log_level: Option<&str>,
+    ) -> Result<Self, ChannelsError> {
         let mut cmd = Command::new(&config.binary);
         cmd.args(&config.args)
             .stdin(std::process::Stdio::piped())
@@ -79,7 +83,8 @@ impl ChannelConnection {
             cmd.env(key, env_val);
         }
 
-        let mut child = cmd.spawn()
+        let mut child = cmd
+            .spawn()
             .map_err(|e| ChannelsError::SpawnFailed(format!("{}: {e}", config.binary)))?;
 
         let stdin = child.stdin.take().expect("stdin was piped");
@@ -241,7 +246,10 @@ impl ChannelConnection {
     ///
     /// Aborting the writer task drops its stdin handle, which sends EOF to the subprocess.
     /// Waits up to `timeout` for the child to exit; falls back to hard kill on timeout.
-    pub async fn graceful_shutdown(&mut self, timeout: std::time::Duration) -> Result<(), ChannelsError> {
+    pub async fn graceful_shutdown(
+        &mut self,
+        timeout: std::time::Duration,
+    ) -> Result<(), ChannelsError> {
         self.writer_handle.abort();
 
         match tokio::time::timeout(timeout, self.child.wait()).await {
@@ -379,14 +387,14 @@ mod tests {
         let mut conn = ChannelConnection::spawn(&config, channel_id, None).unwrap();
 
         // Process exits immediately, reader task sees EOF, incoming channel closes
-        let result = tokio::time::timeout(
-            std::time::Duration::from_secs(2),
-            conn.recv_incoming(),
-        )
-        .await
-        .expect("should not timeout");
+        let result = tokio::time::timeout(std::time::Duration::from_secs(2), conn.recv_incoming())
+            .await
+            .expect("should not timeout");
 
-        assert!(result.is_none(), "recv_incoming should return None on subprocess exit");
+        assert!(
+            result.is_none(),
+            "recv_incoming should return None on subprocess exit"
+        );
     }
 
     #[tokio::test]
@@ -448,15 +456,15 @@ mod tests {
             .await
             .unwrap();
 
-        let msg = tokio::time::timeout(
-            std::time::Duration::from_secs(2),
-            conn.recv_incoming(),
-        )
-        .await
-        .expect("should not timeout")
-        .expect("should receive message");
+        let msg = tokio::time::timeout(std::time::Duration::from_secs(2), conn.recv_incoming())
+            .await
+            .expect("should not timeout")
+            .expect("should receive message");
 
-        assert!(matches!(msg, IncomingChannelMessage::ChannelNotification(_)));
+        assert!(matches!(
+            msg,
+            IncomingChannelMessage::ChannelNotification(_)
+        ));
         conn.kill().await.unwrap();
     }
 }

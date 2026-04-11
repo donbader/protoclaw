@@ -51,8 +51,12 @@ mod tests {
     #[tokio::test]
     async fn when_generic_adapter_on_session_prompt_params_called_then_passthrough() {
         let adapter = GenericAcpAdapter;
-        let input = serde_json::json!({"sessionId": "s1", "message": {"role": "user", "content": "hi"}});
-        let output = adapter.on_session_prompt_params(input.clone()).await.unwrap();
+        let input =
+            serde_json::json!({"sessionId": "s1", "message": {"role": "user", "content": "hi"}});
+        let output = adapter
+            .on_session_prompt_params(input.clone())
+            .await
+            .unwrap();
         assert_eq!(input, output);
     }
 

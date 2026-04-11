@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use protoclaw_integration_tests::{
-    boot_supervisor_with_port, mock_agent_config, with_timeout, SseCollector,
+    SseCollector, boot_supervisor_with_port, mock_agent_config, with_timeout,
 };
 use rstest::rstest;
 
@@ -26,10 +26,20 @@ async fn when_three_messages_sent_rapidly_then_responses_arrive_in_fifo_order() 
     }
 
     let events = sse.collect_events(Duration::from_secs(15)).await;
-    let all_data: String = events.iter().map(|e| e.data.clone()).collect::<Vec<_>>().join("\n");
+    let all_data: String = events
+        .iter()
+        .map(|e| e.data.clone())
+        .collect::<Vec<_>>()
+        .join("\n");
 
-    assert!(all_data.contains("first"), "should contain 'first', all_data: {all_data:?}");
-    assert!(all_data.contains("third"), "should contain 'third', all_data: {all_data:?}");
+    assert!(
+        all_data.contains("first"),
+        "should contain 'first', all_data: {all_data:?}"
+    );
+    assert!(
+        all_data.contains("third"),
+        "should contain 'third', all_data: {all_data:?}"
+    );
 
     let pos_first = all_data.find("first").expect("first must exist");
     let pos_third = all_data.find("third").expect("third must exist");

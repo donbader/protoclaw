@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use protoclaw_integration_tests::{
-    boot_supervisor_with_port, mock_agent_config, with_timeout, SseCollector,
+    SseCollector, boot_supervisor_with_port, mock_agent_config, with_timeout,
 };
 use rstest::rstest;
 
@@ -39,7 +39,10 @@ async fn given_agent_thinking_enabled_when_message_sent_then_thought_events_prec
     assert!(
         !thought_positions.is_empty(),
         "expected thought SSE events, got: {:?}",
-        events.iter().map(|e| (&e.event_type, &e.data)).collect::<Vec<_>>()
+        events
+            .iter()
+            .map(|e| (&e.event_type, &e.data))
+            .collect::<Vec<_>>()
     );
 
     let result_position = events

@@ -290,7 +290,8 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn given_active_turn_with_response_when_new_turn_forces_cleanup_then_response_preserved() {
+    async fn given_active_turn_with_response_when_new_turn_forces_cleanup_then_response_preserved()
+    {
         let mut turn = ChatTurn::new("msg-1".to_string());
         turn.append_response("partial response from agent", 100);
 

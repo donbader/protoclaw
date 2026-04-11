@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use protoclaw_integration_tests::{
-    boot_supervisor_with_port, wasm_tool_config, with_timeout, SseCollector,
+    SseCollector, boot_supervisor_with_port, wasm_tool_config, with_timeout,
 };
 use rstest::rstest;
 
@@ -37,9 +37,7 @@ async fn given_wasm_tool_configured_when_message_sent_then_agent_echoes_back_wit
     let saw_echo = events
         .iter()
         .any(|e| e.data.contains("Echo: ") && e.data.contains("wasm-tool-test"));
-    let saw_result = events
-        .iter()
-        .any(|e| e.data == "Echo: wasm-tool-test");
+    let saw_result = events.iter().any(|e| e.data == "Echo: wasm-tool-test");
 
     assert!(
         saw_echo,
@@ -60,7 +58,7 @@ async fn given_wasm_tool_configured_when_message_sent_then_agent_echoes_back_wit
 #[rstest]
 #[test_log::test(tokio::test)]
 async fn given_wasm_tool_configured_when_session_created_then_wasm_tool_does_not_add_mcp_server_urls()
-{
+ {
     let mut config = wasm_tool_config();
     config
         .agents_manager

@@ -33,7 +33,9 @@ impl Tool for SystemInfoTool {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    ToolServer::new(vec![Box::new(SystemInfoTool)]).serve_stdio().await
+    ToolServer::new(vec![Box::new(SystemInfoTool)])
+        .serve_stdio()
+        .await
 }
 
 #[cfg(test)]

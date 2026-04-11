@@ -2,7 +2,11 @@ use tokio_util::sync::CancellationToken;
 
 pub async fn boot_supervisor_with_port(
     config: protoclaw_config::ProtoclawConfig,
-) -> (CancellationToken, tokio::task::JoinHandle<anyhow::Result<()>>, u16) {
+) -> (
+    CancellationToken,
+    tokio::task::JoinHandle<anyhow::Result<()>>,
+    u16,
+) {
     let cancel = CancellationToken::new();
     let sup = protoclaw_supervisor::Supervisor::new(config);
     let port_rx = sup.debug_http_port_rx();

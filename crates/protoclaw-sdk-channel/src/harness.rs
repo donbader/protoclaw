@@ -4,8 +4,8 @@ use tokio::sync::mpsc;
 use crate::error::ChannelSdkError;
 use crate::trait_def::Channel;
 use protoclaw_sdk_types::{
-    ChannelInitializeParams, ChannelInitializeResult, ChannelRequestPermission,
-    ChannelSendMessage, DeliverMessage, SessionCreated,
+    ChannelInitializeParams, ChannelInitializeResult, ChannelRequestPermission, ChannelSendMessage,
+    DeliverMessage, SessionCreated,
 };
 
 pub struct ChannelHarness<C: Channel> {
@@ -85,7 +85,10 @@ impl<C: Channel> ChannelHarness<C> {
     ) -> Result<Option<serde_json::Value>, ChannelSdkError> {
         let method = msg.get("method").and_then(|m| m.as_str()).unwrap_or("");
         let id = msg.get("id").cloned();
-        let params = msg.get("params").cloned().unwrap_or(serde_json::Value::Null);
+        let params = msg
+            .get("params")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
 
         match method {
             "initialize" => {
@@ -155,9 +158,7 @@ impl<C: Channel> ChannelHarness<C> {
 mod tests {
     use super::*;
     use async_trait::async_trait;
-    use protoclaw_sdk_types::{
-        ChannelCapabilities, PermissionResponse,
-    };
+    use protoclaw_sdk_types::{ChannelCapabilities, PermissionResponse};
     use rstest::rstest;
     use std::sync::{Arc, Mutex};
 
@@ -248,11 +249,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn when_initialize_request_received_then_harness_responds_with_capabilities_and_calls_on_ready() {
+    async fn when_initialize_request_received_then_harness_responds_with_capabilities_and_calls_on_ready()
+     {
         let ch = TestChannel::new();
         let on_ready_called = ch.on_ready_called.clone();
 
-        let input = make_jsonrpc_request(1, "initialize", serde_json::json!({"protocolVersion": 1}));
+        let input =
+            make_jsonrpc_request(1, "initialize", serde_json::json!({"protocolVersion": 1}));
         let reader = std::io::Cursor::new(input.into_bytes());
         let mut output = Vec::new();
 
@@ -270,11 +273,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn when_deliver_message_notification_received_then_harness_calls_channel_deliver_message() {
+    async fn when_deliver_message_notification_received_then_harness_calls_channel_deliver_message()
+    {
         let ch = TestChannel::new();
         let delivered = ch.delivered.clone();
 
-        let mut input = make_jsonrpc_request(1, "initialize", serde_json::json!({"protocolVersion": 1}));
+        let mut input =
+            make_jsonrpc_request(1, "initialize", serde_json::json!({"protocolVersion": 1}));
         input.push_str(&make_jsonrpc_notification(
             "channel/deliverMessage",
             serde_json::json!({"sessionId": "s1", "content": "hello"}),
@@ -296,7 +301,8 @@ mod tests {
     async fn when_request_permission_received_then_harness_calls_channel_and_sends_response() {
         let ch = TestChannel::new();
 
-        let mut input = make_jsonrpc_request(1, "initialize", serde_json::json!({"protocolVersion": 1}));
+        let mut input =
+            make_jsonrpc_request(1, "initialize", serde_json::json!({"protocolVersion": 1}));
         input.push_str(&make_jsonrpc_request(
             2,
             "channel/requestPermission",
@@ -325,7 +331,8 @@ mod tests {
     async fn when_unknown_method_received_then_harness_calls_handle_unknown_and_returns_error() {
         let ch = TestChannel::new();
 
-        let mut input = make_jsonrpc_request(1, "initialize", serde_json::json!({"protocolVersion": 1}));
+        let mut input =
+            make_jsonrpc_request(1, "initialize", serde_json::json!({"protocolVersion": 1}));
         input.push_str(&make_jsonrpc_request(
             2,
             "custom/method",
@@ -341,10 +348,12 @@ mod tests {
         let responses = parse_responses(&output);
         assert_eq!(responses.len(), 2);
         assert_eq!(responses[1]["id"], 2);
-        assert!(responses[1]["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("custom/method"));
+        assert!(
+            responses[1]["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("custom/method")
+        );
     }
 
     #[tokio::test]

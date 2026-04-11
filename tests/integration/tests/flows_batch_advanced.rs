@@ -1,7 +1,7 @@
 use std::{collections::HashMap, time::Duration};
 
 use protoclaw_integration_tests::{
-    boot_supervisor_with_port, mock_agent_config_with_options, with_timeout, SseCollector,
+    SseCollector, boot_supervisor_with_port, mock_agent_config_with_options, with_timeout,
 };
 use rstest::rstest;
 

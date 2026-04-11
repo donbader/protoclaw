@@ -4,13 +4,13 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
+use bollard::Docker;
 use bollard::container::{
     AttachContainerOptions, Config, CreateContainerOptions, NetworkingConfig,
     RemoveContainerOptions, StartContainerOptions, StopContainerOptions, WaitContainerOptions,
 };
 use bollard::image::CreateImageOptions;
 use bollard::models::{EndpointSettings, HostConfig};
-use bollard::Docker;
 use futures::StreamExt;
 use protoclaw_config::parse::{parse_cpu_limit, parse_memory_limit};
 use protoclaw_config::types::{DockerWorkspaceConfig, PullPolicy};
@@ -60,10 +60,7 @@ impl DockerBackend {
             .map(|(k, v)| format!("{}={}", k, v))
             .collect();
 
-        let entrypoint: Option<Vec<String>> = config
-            .entrypoint
-            .as_ref()
-            .map(|ep| vec![ep.clone()]);
+        let entrypoint: Option<Vec<String>> = config.entrypoint.as_ref().map(|ep| vec![ep.clone()]);
 
         let cmd: Option<Vec<String>> = if args.is_empty() {
             None
@@ -71,13 +68,14 @@ impl DockerBackend {
             Some(args.to_vec())
         };
 
-        let networking_config: Option<NetworkingConfig<String>> = config.network.as_ref().map(|net| {
-            let mut endpoints = HashMap::new();
-            endpoints.insert(net.clone(), EndpointSettings::default());
-            NetworkingConfig {
-                endpoints_config: endpoints,
-            }
-        });
+        let networking_config: Option<NetworkingConfig<String>> =
+            config.network.as_ref().map(|net| {
+                let mut endpoints = HashMap::new();
+                endpoints.insert(net.clone(), EndpointSettings::default());
+                NetworkingConfig {
+                    endpoints_config: endpoints,
+                }
+            });
 
         let container_config = Config {
             image: Some(config.image.clone()),
@@ -189,9 +187,15 @@ impl DockerBackend {
             docker,
             container_id: Some(container_id),
             alive: alive_flag,
-            stdin: Mutex::new(Some(Box::new(stdin_tx) as Box<dyn AsyncWrite + Unpin + Send>)),
-            stdout: Mutex::new(Some(Box::new(stdout_read) as Box<dyn AsyncRead + Unpin + Send>)),
-            stderr: Mutex::new(Some(Box::new(stderr_read) as Box<dyn AsyncRead + Unpin + Send>)),
+            stdin: Mutex::new(Some(
+                Box::new(stdin_tx) as Box<dyn AsyncWrite + Unpin + Send>
+            )),
+            stdout: Mutex::new(Some(
+                Box::new(stdout_read) as Box<dyn AsyncRead + Unpin + Send>
+            )),
+            stderr: Mutex::new(Some(
+                Box::new(stderr_read) as Box<dyn AsyncRead + Unpin + Send>
+            )),
         })
     }
 }
@@ -207,18 +211,16 @@ async fn pull_image_if_needed(
             info!(image, "PullPolicy::Never — skipping image pull");
             Ok(())
         }
-        PullPolicy::IfNotPresent => {
-            match docker.inspect_image(image).await {
-                Ok(_) => {
-                    info!(image, "Image already present — skipping pull");
-                    Ok(())
-                }
-                Err(_) => {
-                    info!(image, "Image not found locally — pulling");
-                    do_pull(docker, image).await
-                }
+        PullPolicy::IfNotPresent => match docker.inspect_image(image).await {
+            Ok(_) => {
+                info!(image, "Image already present — skipping pull");
+                Ok(())
             }
-        }
+            Err(_) => {
+                info!(image, "Image not found locally — pulling");
+                do_pull(docker, image).await
+            }
+        },
         PullPolicy::Always => {
             info!(image, "PullPolicy::Always — pulling image");
             do_pull(docker, image).await
@@ -445,7 +447,11 @@ mod tests {
     fn when_container_name_generated_then_short_uuid_suffix_is_8_chars() {
         let name = container_name("agent");
         let suffix = name.trim_start_matches("protoclaw-agent-");
-        assert_eq!(suffix.len(), 8, "short uuid suffix should be 8 chars, got: {suffix}");
+        assert_eq!(
+            suffix.len(),
+            8,
+            "short uuid suffix should be 8 chars, got: {suffix}"
+        );
     }
 
     #[rstest]
@@ -477,8 +483,14 @@ mod tests {
     fn when_build_host_config_with_no_limits_then_memory_and_cpu_are_none() {
         let config = given_minimal_docker_config();
         let hc = build_host_config(&config).expect("build_host_config should succeed");
-        assert!(hc.memory.is_none(), "memory should be None when not configured");
-        assert!(hc.nano_cpus.is_none(), "nano_cpus should be None when not configured");
+        assert!(
+            hc.memory.is_none(),
+            "memory should be None when not configured"
+        );
+        assert!(
+            hc.nano_cpus.is_none(),
+            "nano_cpus should be None when not configured"
+        );
     }
 
     #[rstest]

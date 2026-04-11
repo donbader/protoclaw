@@ -27,7 +27,11 @@ pub fn parse_callback_data(data: &str) -> Option<(&str, &str)> {
 }
 
 pub async fn process_callback(request_id: &str, option_id: &str, state: &SharedState) {
-    state.permission_broker.lock().await.resolve(request_id, option_id);
+    state
+        .permission_broker
+        .lock()
+        .await
+        .resolve(request_id, option_id);
     state.permission_messages.lock().await.remove(request_id);
 }
 
@@ -38,8 +42,14 @@ mod tests {
     #[test]
     fn build_keyboard_with_two_options_returns_one_row_two_buttons() {
         let options = vec![
-            PermissionOption { option_id: "allow".into(), label: "Allow".into() },
-            PermissionOption { option_id: "deny".into(), label: "Deny".into() },
+            PermissionOption {
+                option_id: "allow".into(),
+                label: "Allow".into(),
+            },
+            PermissionOption {
+                option_id: "deny".into(),
+                label: "Deny".into(),
+            },
         ];
         let kb = build_permission_keyboard("req-1", &options);
         assert_eq!(kb.inline_keyboard.len(), 1);
@@ -49,8 +59,14 @@ mod tests {
     #[test]
     fn build_keyboard_button_labels_match_options() {
         let options = vec![
-            PermissionOption { option_id: "allow".into(), label: "Allow".into() },
-            PermissionOption { option_id: "deny".into(), label: "Deny".into() },
+            PermissionOption {
+                option_id: "allow".into(),
+                label: "Allow".into(),
+            },
+            PermissionOption {
+                option_id: "deny".into(),
+                label: "Deny".into(),
+            },
         ];
         let kb = build_permission_keyboard("req-1", &options);
         assert_eq!(kb.inline_keyboard[0][0].text, "Allow");
@@ -59,9 +75,10 @@ mod tests {
 
     #[test]
     fn build_keyboard_callback_data_format() {
-        let options = vec![
-            PermissionOption { option_id: "allow".into(), label: "Allow".into() },
-        ];
+        let options = vec![PermissionOption {
+            option_id: "allow".into(),
+            label: "Allow".into(),
+        }];
         let kb = build_permission_keyboard("req-1", &options);
         let btn = &kb.inline_keyboard[0][0];
         match &btn.kind {
@@ -75,9 +92,10 @@ mod tests {
     #[test]
     fn build_keyboard_truncates_long_callback_data() {
         let long_id = "a".repeat(100);
-        let options = vec![
-            PermissionOption { option_id: "ok".into(), label: "OK".into() },
-        ];
+        let options = vec![PermissionOption {
+            option_id: "ok".into(),
+            label: "OK".into(),
+        }];
         let kb = build_permission_keyboard(&long_id, &options);
         let btn = &kb.inline_keyboard[0][0];
         match &btn.kind {
@@ -132,7 +150,13 @@ mod tests {
 
         process_callback("req-1", "allow", &state).await;
 
-        assert!(!state.permission_broker.lock().await.resolve("req-1", "allow"));
+        assert!(
+            !state
+                .permission_broker
+                .lock()
+                .await
+                .resolve("req-1", "allow")
+        );
     }
 
     #[tokio::test]
@@ -147,6 +171,13 @@ mod tests {
 
         process_callback("req-1", "allow", &state).await;
 
-        assert!(state.permission_messages.lock().await.get("req-1").is_none());
+        assert!(
+            state
+                .permission_messages
+                .lock()
+                .await
+                .get("req-1")
+                .is_none()
+        );
     }
 }

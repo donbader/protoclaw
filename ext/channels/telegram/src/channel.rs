@@ -3,13 +3,13 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use protoclaw_sdk_channel::{Channel, ChannelCapabilities, ChannelSdkError, ChannelSendMessage};
 use protoclaw_sdk_types::{
-    AckLifecycleNotification, AckNotification, ChannelInitializeParams,
-    ChannelRequestPermission, DeliverMessage, PermissionResponse, SessionCreated,
+    AckLifecycleNotification, AckNotification, ChannelInitializeParams, ChannelRequestPermission,
+    DeliverMessage, PermissionResponse, SessionCreated,
 };
+use teloxide::Bot;
 use teloxide::payloads::{SendMessageSetters, SetMessageReactionSetters};
 use teloxide::prelude::Requester;
 use teloxide::types::{ChatId, MessageId, ReactionType};
-use teloxide::Bot;
 use tokio::sync::mpsc;
 
 use crate::state::SharedState;
@@ -25,11 +25,15 @@ impl TelegramChannel {
     }
 
     fn bot(&self) -> Result<&Bot, ChannelSdkError> {
-        self.bot.as_ref().ok_or_else(|| ChannelSdkError::Protocol("bot not initialized".into()))
+        self.bot
+            .as_ref()
+            .ok_or_else(|| ChannelSdkError::Protocol("bot not initialized".into()))
     }
 
     fn parse_chat_id(peer_id: &str) -> Option<i64> {
-        peer_id.strip_prefix("telegram:").and_then(|s| s.parse().ok())
+        peer_id
+            .strip_prefix("telegram:")
+            .and_then(|s| s.parse().ok())
     }
 
     async fn handle_ack_message(&self, ack: AckNotification) {
@@ -59,7 +63,8 @@ impl TelegramChannel {
                     let bot_clone = bot_clone.clone();
                     let reaction = reaction.clone();
                     async move {
-                        bot_clone.set_message_reaction(ChatId(chat_id), MessageId(msg_id))
+                        bot_clone
+                            .set_message_reaction(ChatId(chat_id), MessageId(msg_id))
                             .reaction(vec![reaction])
                             .await
                     }
@@ -73,7 +78,9 @@ impl TelegramChannel {
             let _ = crate::deliver::retry_telegram_op("ack_send_typing", chat_id, || {
                 let bot_clone = bot_clone.clone();
                 async move {
-                    bot_clone.send_chat_action(ChatId(chat_id), teloxide::types::ChatAction::Typing).await
+                    bot_clone
+                        .send_chat_action(ChatId(chat_id), teloxide::types::ChatAction::Typing)
+                        .await
                 }
             })
             .await;
@@ -115,30 +122,40 @@ impl TelegramChannel {
         match cfg.reaction_lifecycle.as_str() {
             "remove" => {
                 let bot_clone = bot.clone();
-                let _ = crate::deliver::retry_telegram_op("ack_lifecycle_remove_reaction", chat_id, || {
-                    let bot_clone = bot_clone.clone();
-                    async move {
-                        bot_clone.set_message_reaction(ChatId(chat_id), MessageId(msg_id))
-                            .reaction(Vec::<ReactionType>::new())
-                            .await
-                    }
-                })
+                let _ = crate::deliver::retry_telegram_op(
+                    "ack_lifecycle_remove_reaction",
+                    chat_id,
+                    || {
+                        let bot_clone = bot_clone.clone();
+                        async move {
+                            bot_clone
+                                .set_message_reaction(ChatId(chat_id), MessageId(msg_id))
+                                .reaction(Vec::<ReactionType>::new())
+                                .await
+                        }
+                    },
+                )
                 .await;
             }
             "replace_done" => {
                 let done_reaction = ReactionType::Emoji {
-                    emoji: "✅".into(),
+                    emoji: "✅".into()
                 };
                 let bot_clone = bot.clone();
-                let _ = crate::deliver::retry_telegram_op("ack_lifecycle_done_reaction", chat_id, || {
-                    let bot_clone = bot_clone.clone();
-                    let done_reaction = done_reaction.clone();
-                    async move {
-                        bot_clone.set_message_reaction(ChatId(chat_id), MessageId(msg_id))
-                            .reaction(vec![done_reaction])
-                            .await
-                    }
-                })
+                let _ = crate::deliver::retry_telegram_op(
+                    "ack_lifecycle_done_reaction",
+                    chat_id,
+                    || {
+                        let bot_clone = bot_clone.clone();
+                        let done_reaction = done_reaction.clone();
+                        async move {
+                            bot_clone
+                                .set_message_reaction(ChatId(chat_id), MessageId(msg_id))
+                                .reaction(vec![done_reaction])
+                                .await
+                        }
+                    },
+                )
                 .await;
             }
             _ => {}
@@ -162,23 +179,43 @@ impl Channel for TelegramChannel {
         if let Some(ack) = params.ack {
             *self.state.ack_config.write().await = Some(ack);
         }
-        if let Some(emoji) = params.options.get("TELEGRAM_THOUGHT_EMOJI").and_then(|v| v.as_str()) {
+        if let Some(emoji) = params
+            .options
+            .get("TELEGRAM_THOUGHT_EMOJI")
+            .and_then(|v| v.as_str())
+        {
             *self.state.thought_emoji.write().await = emoji.to_string();
         }
-        if let Some(v) = params.options.get("TELEGRAM_RESPONSE_EDIT_COOLDOWN_MS").and_then(|v| v.as_u64()) {
+        if let Some(v) = params
+            .options
+            .get("TELEGRAM_RESPONSE_EDIT_COOLDOWN_MS")
+            .and_then(|v| v.as_u64())
+        {
             *self.state.response_edit_cooldown_ms.write().await = v;
         }
-        if let Some(v) = params.options.get("TELEGRAM_THOUGHT_DEBOUNCE_MS").and_then(|v| v.as_u64()) {
+        if let Some(v) = params
+            .options
+            .get("TELEGRAM_THOUGHT_DEBOUNCE_MS")
+            .and_then(|v| v.as_u64())
+        {
             *self.state.thought_debounce_ms.write().await = v;
         }
-        if let Some(v) = params.options.get("TELEGRAM_FINALIZATION_DELAY_MS").and_then(|v| v.as_u64()) {
+        if let Some(v) = params
+            .options
+            .get("TELEGRAM_FINALIZATION_DELAY_MS")
+            .and_then(|v| v.as_u64())
+        {
             *self.state.finalization_delay_ms.write().await = v;
         }
-        let token = params.options.get("TELEGRAM_BOT_TOKEN")
+        let token = params
+            .options
+            .get("TELEGRAM_BOT_TOKEN")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| ChannelSdkError::Protocol(
-                "TELEGRAM_BOT_TOKEN must be set in channel options".into()
-            ))?;
+            .ok_or_else(|| {
+                ChannelSdkError::Protocol(
+                    "TELEGRAM_BOT_TOKEN must be set in channel options".into(),
+                )
+            })?;
         self.bot = Some(Bot::new(token));
         Ok(())
     }
@@ -189,10 +226,7 @@ impl Channel for TelegramChannel {
     ) -> Result<(), ChannelSdkError> {
         let bot = self.bot()?.clone();
         *self.state.outbound.lock().await = Some(outbound);
-        tokio::spawn(crate::dispatcher::run_dispatcher(
-            bot,
-            self.state.clone(),
-        ));
+        tokio::spawn(crate::dispatcher::run_dispatcher(bot, self.state.clone()));
         Ok(())
     }
 
@@ -202,13 +236,21 @@ impl Channel for TelegramChannel {
     }
 
     async fn on_session_created(&mut self, msg: SessionCreated) -> Result<(), ChannelSdkError> {
-        let chat_id: i64 = msg.peer_info.peer_id
+        let chat_id: i64 = msg
+            .peer_info
+            .peer_id
             .strip_prefix("telegram:")
             .and_then(|s| s.parse().ok())
-            .ok_or_else(|| ChannelSdkError::Protocol(
-                format!("invalid peer_id for telegram: {}", msg.peer_info.peer_id)
-            ))?;
-        self.state.session_chat_map.write().await
+            .ok_or_else(|| {
+                ChannelSdkError::Protocol(format!(
+                    "invalid peer_id for telegram: {}",
+                    msg.peer_info.peer_id
+                ))
+            })?;
+        self.state
+            .session_chat_map
+            .write()
+            .await
             .insert(msg.session_id, chat_id);
         Ok(())
     }
@@ -230,8 +272,7 @@ impl Channel for TelegramChannel {
                 ))
             })?;
 
-        let keyboard =
-            crate::permissions::build_permission_keyboard(&req.request_id, &req.options);
+        let keyboard = crate::permissions::build_permission_keyboard(&req.request_id, &req.options);
 
         let sent = self
             .bot()?
@@ -246,15 +287,15 @@ impl Channel for TelegramChannel {
             .await
             .insert(req.request_id.clone(), (chat_id, sent.id.0));
 
-        let rx = self.state
+        let rx = self
+            .state
             .permission_broker
             .lock()
             .await
             .register(&req.request_id);
 
-        rx.await.map_err(|_| {
-            ChannelSdkError::Protocol("permission response channel closed".into())
-        })
+        rx.await
+            .map_err(|_| ChannelSdkError::Protocol("permission response channel closed".into()))
     }
 
     async fn handle_unknown(
@@ -275,7 +316,9 @@ impl Channel for TelegramChannel {
                 }
                 Ok(serde_json::Value::Null)
             }
-            _ => Err(ChannelSdkError::Protocol(format!("unknown method: {method}"))),
+            _ => Err(ChannelSdkError::Protocol(format!(
+                "unknown method: {method}"
+            ))),
         }
     }
 }
@@ -362,7 +405,10 @@ mod tests {
 
     #[test]
     fn parse_chat_id_valid() {
-        assert_eq!(TelegramChannel::parse_chat_id("telegram:12345"), Some(12345));
+        assert_eq!(
+            TelegramChannel::parse_chat_id("telegram:12345"),
+            Some(12345)
+        );
     }
 
     #[test]

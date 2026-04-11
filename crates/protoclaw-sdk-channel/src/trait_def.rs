@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use protoclaw_sdk_types::{
-    ChannelCapabilities, ChannelInitializeParams, ChannelRequestPermission,
-    ChannelSendMessage, DeliverMessage, PermissionResponse, SessionCreated,
+    ChannelCapabilities, ChannelInitializeParams, ChannelRequestPermission, ChannelSendMessage,
+    DeliverMessage, PermissionResponse, SessionCreated,
 };
 use tokio::sync::mpsc;
 
@@ -40,10 +40,7 @@ pub trait Channel: Send + 'static {
         )))
     }
 
-    async fn on_session_created(
-        &mut self,
-        _msg: SessionCreated,
-    ) -> Result<(), ChannelSdkError> {
+    async fn on_session_created(&mut self, _msg: SessionCreated) -> Result<(), ChannelSdkError> {
         Ok(())
     }
 }
@@ -137,9 +134,7 @@ mod tests {
     #[tokio::test]
     async fn when_handle_unknown_called_with_unknown_method_then_returns_error() {
         let mut ch = MockChannel;
-        let result = ch
-            .handle_unknown("foo/bar", serde_json::Value::Null)
-            .await;
+        let result = ch.handle_unknown("foo/bar", serde_json::Value::Null).await;
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(err.to_string().contains("foo/bar"));

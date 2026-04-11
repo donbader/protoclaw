@@ -1,8 +1,8 @@
 use std::time::Duration;
 
 use protoclaw_integration_tests::{
-    boot_supervisor_with_port, build_mock_agent_docker_image, cleanup_test_containers,
-    docker_agent_config, with_timeout, SseCollector,
+    SseCollector, boot_supervisor_with_port, build_mock_agent_docker_image,
+    cleanup_test_containers, docker_agent_config, with_timeout,
 };
 use rstest::rstest;
 

@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use protoclaw_integration_tests::{
-    boot_supervisor_with_port, sdk_tool_config, with_timeout, SseCollector,
+    SseCollector, boot_supervisor_with_port, sdk_tool_config, with_timeout,
 };
 use rstest::rstest;
 
@@ -36,9 +36,7 @@ async fn when_sdk_tool_configured_and_message_sent_then_agent_echoes_back_with_r
     let saw_echo = events
         .iter()
         .any(|e| e.data.contains("Echo: ") && e.data.contains("test-with-tool"));
-    let saw_result = events
-        .iter()
-        .any(|e| e.data == "Echo: test-with-tool");
+    let saw_result = events.iter().any(|e| e.data == "Echo: test-with-tool");
 
     assert!(
         saw_echo,

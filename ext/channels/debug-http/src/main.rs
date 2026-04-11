@@ -2,20 +2,20 @@ use std::convert::Infallible;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use axum::Router;
 use axum::extract::{Path, State};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Json};
 use axum::routing::{get, post};
-use axum::Router;
 use protoclaw_sdk_channel::{
-    content_to_string, Channel, ChannelCapabilities, ChannelHarness, ChannelSdkError,
-    ChannelSendMessage, PermissionBroker,
+    Channel, ChannelCapabilities, ChannelHarness, ChannelSdkError, ChannelSendMessage,
+    PermissionBroker, content_to_string,
 };
 use protoclaw_sdk_types::{
     ChannelRequestPermission, ContentKind, DeliverMessage, PeerInfo, PermissionResponse,
 };
 use serde::Deserialize;
-use tokio::sync::{broadcast, mpsc, Mutex, RwLock};
+use tokio::sync::{Mutex, RwLock, broadcast, mpsc};
 use tokio_stream::StreamExt;
 
 #[derive(Clone, Debug)]
@@ -80,7 +80,8 @@ impl Channel for DebugHttpChannel {
             self.host = host.to_string();
         }
         if let Some(port) = params.options.get("PORT").and_then(|v| {
-            v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+            v.as_u64()
+                .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
         }) {
             self.port = port as u16;
         }
@@ -98,7 +99,10 @@ impl Channel for DebugHttpChannel {
         let listener = tokio::net::TcpListener::bind(&addr)
             .await
             .map_err(ChannelSdkError::Io)?;
-        let bound_port = listener.local_addr().expect("TCP listener must have local address after successful bind").port();
+        let bound_port = listener
+            .local_addr()
+            .expect("TCP listener must have local address after successful bind")
+            .port();
 
         eprintln!("PORT:{bound_port}");
         tracing::info!(port = bound_port, "debug-http listening");
@@ -129,26 +133,40 @@ impl Channel for DebugHttpChannel {
                 event_type: None,
                 data: text,
             },
-            ContentKind::ToolCall { name, tool_call_id, input } => SsePayload {
+            ContentKind::ToolCall {
+                name,
+                tool_call_id,
+                input,
+            } => SsePayload {
                 event_type: Some("tool_call".into()),
                 data: serde_json::json!({
                     "toolCallId": tool_call_id,
                     "name": name,
                     "input": input,
-                }).to_string(),
+                })
+                .to_string(),
             },
-            ContentKind::ToolCallUpdate { name, tool_call_id, status, output } => SsePayload {
+            ContentKind::ToolCallUpdate {
+                name,
+                tool_call_id,
+                status,
+                output,
+            } => SsePayload {
                 event_type: Some("tool_call_update".into()),
                 data: serde_json::json!({
                     "toolCallId": tool_call_id,
                     "name": name,
                     "status": status,
                     "output": output,
-                }).to_string(),
+                })
+                .to_string(),
             },
             _ => {
                 let content_str = content_to_string(&msg.content);
-                SsePayload { event_type: None, data: content_str }
+                SsePayload {
+                    event_type: None,
+                    data: content_str,
+                }
             }
         };
         let _ = self.state.event_tx.send(payload);
@@ -173,15 +191,15 @@ impl Channel for DebugHttpChannel {
                 }),
             });
 
-        let rx = self.state
+        let rx = self
+            .state
             .permission_broker
             .lock()
             .await
             .register(&req.request_id);
 
-        rx.await.map_err(|_| {
-            ChannelSdkError::Protocol("permission response channel closed".into())
-        })
+        rx.await
+            .map_err(|_| ChannelSdkError::Protocol("permission response channel closed".into()))
     }
 }
 
@@ -218,7 +236,9 @@ async fn handle_message(
     }
     (
         axum::http::StatusCode::OK,
-        Json(serde_json::json!({"status": "queued", "message": "Message received and queued for processing"})),
+        Json(
+            serde_json::json!({"status": "queued", "message": "Message received and queued for processing"}),
+        ),
     )
 }
 
@@ -226,19 +246,20 @@ async fn handle_events(
     State(state): State<Arc<SharedState>>,
 ) -> Sse<impl tokio_stream::Stream<Item = Result<Event, Infallible>>> {
     let rx = state.event_tx.subscribe();
-    let stream = tokio_stream::wrappers::BroadcastStream::new(rx).filter_map(|result| match result {
-        Ok(payload) => {
-            let mut event = Event::default().data(payload.data);
-            if let Some(ref et) = payload.event_type {
-                event = event.event(et);
+    let stream =
+        tokio_stream::wrappers::BroadcastStream::new(rx).filter_map(|result| match result {
+            Ok(payload) => {
+                let mut event = Event::default().data(payload.data);
+                if let Some(ref et) = payload.event_type {
+                    event = event.event(et);
+                }
+                Some(Ok(event))
             }
-            Some(Ok(event))
-        }
-        Err(e) => {
-            tracing::warn!(error = %e, "SSE broadcast lagged, event dropped");
-            None
-        }
-    });
+            Err(e) => {
+                tracing::warn!(error = %e, "SSE broadcast lagged, event dropped");
+                None
+            }
+        });
     Sse::new(stream).keep_alive(KeepAlive::default())
 }
 
@@ -279,7 +300,11 @@ async fn handle_permission_respond(
         perms.retain(|p| p.request_id != id);
     }
     {
-        state.permission_broker.lock().await.resolve(&id, &body.option_id);
+        state
+            .permission_broker
+            .lock()
+            .await
+            .resolve(&id, &body.option_id);
     }
     Json(serde_json::json!({"status": "responded"}))
 }
@@ -338,7 +363,11 @@ mod tests {
     #[test]
     fn debug_http_channel_capabilities() {
         let state = make_shared_state();
-        let ch = DebugHttpChannel { state, host: "127.0.0.1".to_string(), port: 0 };
+        let ch = DebugHttpChannel {
+            state,
+            host: "127.0.0.1".to_string(),
+            port: 0,
+        };
         let caps = ch.capabilities();
         assert!(caps.streaming, "debug-http must support streaming");
         assert!(!caps.rich_text, "debug-http must not claim rich_text");
@@ -347,25 +376,39 @@ mod tests {
     #[tokio::test]
     async fn on_ready_stores_outbound_sender() {
         let state = make_shared_state();
-        let mut ch = DebugHttpChannel { state: state.clone(), host: "127.0.0.1".to_string(), port: 0 };
+        let mut ch = DebugHttpChannel {
+            state: state.clone(),
+            host: "127.0.0.1".to_string(),
+            port: 0,
+        };
         let (tx, _rx) = mpsc::channel(16);
         ch.on_ready(tx).await.unwrap();
         let outbound = state.outbound.lock().await;
-        assert!(outbound.is_some(), "on_ready must store the outbound sender");
+        assert!(
+            outbound.is_some(),
+            "on_ready must store the outbound sender"
+        );
     }
 
     #[tokio::test]
     async fn deliver_message_broadcasts_to_sse() {
         let state = make_shared_state();
         let mut rx = state.event_tx.subscribe();
-        let mut ch = DebugHttpChannel { state: state.clone(), host: "127.0.0.1".to_string(), port: 0 };
+        let mut ch = DebugHttpChannel {
+            state: state.clone(),
+            host: "127.0.0.1".to_string(),
+            port: 0,
+        };
         let msg = DeliverMessage {
             session_id: "s1".into(),
             content: serde_json::json!("hello from agent"),
         };
         ch.deliver_message(msg).await.unwrap();
         let received = rx.try_recv().expect("should have received broadcast");
-        assert!(received.event_type.is_none(), "plain string should have no event type");
+        assert!(
+            received.event_type.is_none(),
+            "plain string should have no event type"
+        );
         assert_eq!(received.data, "hello from agent");
     }
 
@@ -373,7 +416,11 @@ mod tests {
     async fn thought_chunk_broadcasts_as_named_event() {
         let state = make_shared_state();
         let mut rx = state.event_tx.subscribe();
-        let mut ch = DebugHttpChannel { state: state.clone(), host: "127.0.0.1".to_string(), port: 0 };
+        let mut ch = DebugHttpChannel {
+            state: state.clone(),
+            host: "127.0.0.1".to_string(),
+            port: 0,
+        };
         let msg = DeliverMessage {
             session_id: "s1".into(),
             content: serde_json::json!({"update": {"sessionUpdate": "agent_thought_chunk", "content": "thinking..."}}),
@@ -388,34 +435,52 @@ mod tests {
     async fn message_chunk_broadcasts_as_default_event() {
         let state = make_shared_state();
         let mut rx = state.event_tx.subscribe();
-        let mut ch = DebugHttpChannel { state: state.clone(), host: "127.0.0.1".to_string(), port: 0 };
+        let mut ch = DebugHttpChannel {
+            state: state.clone(),
+            host: "127.0.0.1".to_string(),
+            port: 0,
+        };
         let msg = DeliverMessage {
             session_id: "s1".into(),
             content: serde_json::json!({"update": {"sessionUpdate": "agent_message_chunk", "content": "hello"}}),
         };
         ch.deliver_message(msg).await.unwrap();
         let received = rx.try_recv().expect("should have received broadcast");
-        assert!(received.event_type.is_none(), "message chunk should use default event");
+        assert!(
+            received.event_type.is_none(),
+            "message chunk should use default event"
+        );
     }
 
     #[tokio::test]
     async fn result_broadcasts_as_default_event() {
         let state = make_shared_state();
         let mut rx = state.event_tx.subscribe();
-        let mut ch = DebugHttpChannel { state: state.clone(), host: "127.0.0.1".to_string(), port: 0 };
+        let mut ch = DebugHttpChannel {
+            state: state.clone(),
+            host: "127.0.0.1".to_string(),
+            port: 0,
+        };
         let msg = DeliverMessage {
             session_id: "s1".into(),
             content: serde_json::json!({"update": {"sessionUpdate": "result", "content": "done"}}),
         };
         ch.deliver_message(msg).await.unwrap();
         let received = rx.try_recv().expect("should have received broadcast");
-        assert!(received.event_type.is_none(), "result should use default event");
+        assert!(
+            received.event_type.is_none(),
+            "result should use default event"
+        );
     }
 
     #[tokio::test]
     async fn request_permission_resolves_via_oneshot() {
         let state = make_shared_state();
-        let mut ch = DebugHttpChannel { state: state.clone(), host: "127.0.0.1".to_string(), port: 0 };
+        let mut ch = DebugHttpChannel {
+            state: state.clone(),
+            host: "127.0.0.1".to_string(),
+            port: 0,
+        };
         let req = ChannelRequestPermission {
             request_id: "perm-1".into(),
             session_id: "s1".into(),
@@ -432,7 +497,11 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
         {
-            state2.permission_broker.lock().await.resolve("perm-1", "allow");
+            state2
+                .permission_broker
+                .lock()
+                .await
+                .resolve("perm-1", "allow");
         }
 
         let resp = handle.await.unwrap().unwrap();
@@ -471,7 +540,9 @@ mod tests {
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
 
-        let msg = rx.try_recv().expect("should have received outbound message");
+        let msg = rx
+            .try_recv()
+            .expect("should have received outbound message");
         assert_eq!(msg.content, "hello");
         assert_eq!(msg.peer_info.channel_name, "debug-http");
 
@@ -483,12 +554,16 @@ mod tests {
     #[tokio::test]
     async fn permission_respond_endpoint_resolves_pending() {
         let state = make_shared_state();
-        state.pending_permissions.write().await.push(PendingPermission {
-            request_id: "perm-1".into(),
-            session_id: "s1".into(),
-            description: "Allow?".into(),
-            options: serde_json::json!([{"optionId": "allow", "label": "Allow"}]),
-        });
+        state
+            .pending_permissions
+            .write()
+            .await
+            .push(PendingPermission {
+                request_id: "perm-1".into(),
+                session_id: "s1".into(),
+                description: "Allow?".into(),
+                options: serde_json::json!([{"optionId": "allow", "label": "Allow"}]),
+            });
         let rx = state.permission_broker.lock().await.register("perm-1");
 
         let app = build_router(state.clone());
@@ -501,7 +576,9 @@ mod tests {
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
 
-        let perm_resp = rx.await.expect("broker should have resolved the permission");
+        let perm_resp = rx
+            .await
+            .expect("broker should have resolved the permission");
         assert_eq!(perm_resp.option_id, "allow");
 
         let pending = state.pending_permissions.read().await;
@@ -512,7 +589,11 @@ mod tests {
     async fn tool_call_broadcasts_as_named_event() {
         let state = make_shared_state();
         let mut rx = state.event_tx.subscribe();
-        let mut ch = DebugHttpChannel { state: state.clone(), host: "127.0.0.1".to_string(), port: 0 };
+        let mut ch = DebugHttpChannel {
+            state: state.clone(),
+            host: "127.0.0.1".to_string(),
+            port: 0,
+        };
         let msg = DeliverMessage {
             session_id: "s1".into(),
             content: serde_json::json!({
@@ -527,7 +608,8 @@ mod tests {
         ch.deliver_message(msg).await.unwrap();
         let received = rx.try_recv().expect("should have received broadcast");
         assert_eq!(received.event_type.as_deref(), Some("tool_call"));
-        let data: serde_json::Value = serde_json::from_str(&received.data).expect("data should be JSON");
+        let data: serde_json::Value =
+            serde_json::from_str(&received.data).expect("data should be JSON");
         assert_eq!(data["name"], "read_file");
         assert_eq!(data["toolCallId"], "tc-1");
     }
@@ -536,7 +618,11 @@ mod tests {
     async fn tool_call_update_broadcasts_as_named_event() {
         let state = make_shared_state();
         let mut rx = state.event_tx.subscribe();
-        let mut ch = DebugHttpChannel { state: state.clone(), host: "127.0.0.1".to_string(), port: 0 };
+        let mut ch = DebugHttpChannel {
+            state: state.clone(),
+            host: "127.0.0.1".to_string(),
+            port: 0,
+        };
         let msg = DeliverMessage {
             session_id: "s1".into(),
             content: serde_json::json!({
@@ -552,7 +638,8 @@ mod tests {
         ch.deliver_message(msg).await.unwrap();
         let received = rx.try_recv().expect("should have received broadcast");
         assert_eq!(received.event_type.as_deref(), Some("tool_call_update"));
-        let data: serde_json::Value = serde_json::from_str(&received.data).expect("data should be JSON");
+        let data: serde_json::Value =
+            serde_json::from_str(&received.data).expect("data should be JSON");
         assert_eq!(data["name"], "read_file");
         assert_eq!(data["status"], "completed");
         assert_eq!(data["toolCallId"], "tc-1");

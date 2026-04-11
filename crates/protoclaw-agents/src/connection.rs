@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use futures::StreamExt;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::process::Command;
-use tokio::sync::{mpsc, oneshot, Mutex};
+use tokio::sync::{Mutex, mpsc, oneshot};
 use tokio_util::codec::{FramedRead, FramedWrite};
 
 use protoclaw_config::{AgentConfig, WorkspaceConfig};
@@ -72,10 +72,7 @@ impl AgentConnection {
     ) -> Result<Self, AgentsError> {
         let (backend, stdin, stdout, stderr) = match &config.workspace {
             WorkspaceConfig::Local(local) => {
-                let work_dir = local
-                    .working_dir
-                    .as_deref()
-                    .unwrap_or(Path::new("."));
+                let work_dir = local.working_dir.as_deref().unwrap_or(Path::new("."));
 
                 let mut cmd = Command::new(&local.binary);
                 cmd.args(&config.args)
@@ -88,7 +85,8 @@ impl AgentConnection {
                 if let Some(level) = log_level {
                     cmd.env("RUST_LOG", level);
                 }
-                let child = cmd.spawn()
+                let child = cmd
+                    .spawn()
                     .map_err(|e| AgentsError::SpawnFailed(format!("{}: {e}", local.binary)))?;
 
                 let mut backend: Box<dyn ProcessBackend> = Box::new(LocalBackend::new(child));
@@ -101,9 +99,8 @@ impl AgentConnection {
                 (backend, stdin, stdout, stderr)
             }
             WorkspaceConfig::Docker(docker_config) => {
-                let mut backend: Box<dyn ProcessBackend> = Box::new(
-                    DockerBackend::spawn(docker_config, name, &config.args).await?,
-                );
+                let mut backend: Box<dyn ProcessBackend> =
+                    Box::new(DockerBackend::spawn(docker_config, name, &config.args).await?);
                 let stdin: Box<dyn AsyncWrite + Unpin + Send> =
                     backend.take_stdin().expect("stdin was attached");
                 let stdout: Box<dyn AsyncRead + Unpin + Send> =
@@ -176,7 +173,14 @@ impl AgentConnection {
                         IncomingMessage::AgentNotification(value)
                     };
                     if let Some((slot_idx, ref bridge_tx)) = bridge {
-                        if bridge_tx.send(SlotIncoming { slot_idx, msg: Some(msg) }).await.is_err() {
+                        if bridge_tx
+                            .send(SlotIncoming {
+                                slot_idx,
+                                msg: Some(msg),
+                            })
+                            .await
+                            .is_err()
+                        {
                             break;
                         }
                     } else if let Some(ref local_tx) = local_incoming_tx {
@@ -187,7 +191,12 @@ impl AgentConnection {
                 }
             }
             if let Some((slot_idx, ref bridge_tx)) = bridge {
-                let _ = bridge_tx.send(SlotIncoming { slot_idx, msg: None }).await;
+                let _ = bridge_tx
+                    .send(SlotIncoming {
+                        slot_idx,
+                        msg: None,
+                    })
+                    .await;
             }
         });
 
@@ -285,9 +294,9 @@ impl AgentConnection {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use protoclaw_config::{LocalWorkspaceConfig, WorkspaceConfig};
     use rstest::rstest;
     use std::collections::HashMap;
-    use protoclaw_config::{LocalWorkspaceConfig, WorkspaceConfig};
 
     fn mock_agent_config() -> AgentConfig {
         let manifest_dir = env!("CARGO_MANIFEST_DIR");
@@ -382,7 +391,10 @@ mod tests {
             .unwrap();
 
         let pending = conn.pending_requests.lock().await;
-        assert!(pending.is_empty(), "notification should not create pending request");
+        assert!(
+            pending.is_empty(),
+            "notification should not create pending request"
+        );
 
         drop(pending);
         conn.kill().await.unwrap();
@@ -414,17 +426,14 @@ mod tests {
         fn take_stderr(&mut self) -> Option<Box<dyn AsyncRead + Unpin + Send>> {
             None
         }
-        fn kill(
-            &mut self,
-        ) -> Pin<Box<dyn Future<Output = Result<(), AgentsError>> + Send + '_>> {
+        fn kill(&mut self) -> Pin<Box<dyn Future<Output = Result<(), AgentsError>> + Send + '_>> {
             self.alive = false;
             Box::pin(async { Ok(()) })
         }
         fn wait(
             &mut self,
-        ) -> Pin<
-            Box<dyn Future<Output = Result<std::process::ExitStatus, AgentsError>> + Send + '_>,
-        > {
+        ) -> Pin<Box<dyn Future<Output = Result<std::process::ExitStatus, AgentsError>> + Send + '_>>
+        {
             Box::pin(async {
                 std::process::Command::new("true")
                     .status()

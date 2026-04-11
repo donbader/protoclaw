@@ -3,21 +3,20 @@ use protoclaw_integration_tests::{boot_supervisor_with_port, mock_agent_config, 
 use rstest::rstest;
 
 #[test_log::test(tokio::test)]
-async fn given_config_written_to_temp_path_when_loaded_and_supervisor_booted_then_health_responds() {
+async fn given_config_written_to_temp_path_when_loaded_and_supervisor_booted_then_health_responds()
+{
     // Write a valid config to a temp file at a non-default path
     let config = mock_agent_config();
     let yaml = serde_yaml::to_string(&config).expect("serialize config to yaml");
 
-    let temp_path = std::env::temp_dir().join(format!(
-        "protoclaw-test-{}.yaml",
-        std::process::id()
-    ));
+    let temp_path =
+        std::env::temp_dir().join(format!("protoclaw-test-{}.yaml", std::process::id()));
     std::fs::write(&temp_path, &yaml).expect("write temp config file");
 
     let path_str = temp_path.to_str().expect("temp path is valid UTF-8");
 
-    let loaded = ProtoclawConfig::load(Some(path_str))
-        .expect("config should load from custom path");
+    let loaded =
+        ProtoclawConfig::load(Some(path_str)).expect("config should load from custom path");
 
     let (cancel, handle, port) = boot_supervisor_with_port(loaded).await;
 

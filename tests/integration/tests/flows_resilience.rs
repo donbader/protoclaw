@@ -2,14 +2,15 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use protoclaw_integration_tests::{
-    boot_supervisor_with_port, mock_agent_config_with_options, with_timeout, SseCollector,
+    SseCollector, boot_supervisor_with_port, mock_agent_config_with_options, with_timeout,
 };
 use rstest::rstest;
 
 /// Multi-crash recovery: agent exits after each message, three full crash+recover cycles succeed.
 #[rstest]
 #[test_log::test(tokio::test)]
-async fn given_agent_exits_after_one_prompt_when_three_messages_sent_with_recovery_waits_then_all_three_recover() {
+async fn given_agent_exits_after_one_prompt_when_three_messages_sent_with_recovery_waits_then_all_three_recover()
+ {
     let mut opts = HashMap::new();
     opts.insert("exit_after".into(), serde_json::json!(1));
     let config = mock_agent_config_with_options(opts);
@@ -37,7 +38,11 @@ async fn given_agent_exits_after_one_prompt_when_three_messages_sent_with_recove
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 200, "agent should have recovered from first crash");
+    assert_eq!(
+        resp.status(),
+        200,
+        "agent should have recovered from first crash"
+    );
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["status"], "queued");
 
@@ -50,7 +55,11 @@ async fn given_agent_exits_after_one_prompt_when_three_messages_sent_with_recove
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 200, "agent should have recovered from second crash");
+    assert_eq!(
+        resp.status(),
+        200,
+        "agent should have recovered from second crash"
+    );
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["status"], "queued");
 
@@ -64,7 +73,8 @@ async fn given_agent_exits_after_one_prompt_when_three_messages_sent_with_recove
 /// SSE-verified recovery: after crash+recovery the agent actually echoes back via SSE.
 #[rstest]
 #[test_log::test(tokio::test)]
-async fn given_agent_exits_after_one_prompt_when_second_message_sent_after_recovery_then_sse_contains_echo() {
+async fn given_agent_exits_after_one_prompt_when_second_message_sent_after_recovery_then_sse_contains_echo()
+ {
     let mut opts = HashMap::new();
     opts.insert("exit_after".into(), serde_json::json!(2));
     let config = mock_agent_config_with_options(opts);
@@ -99,7 +109,10 @@ async fn given_agent_exits_after_one_prompt_when_second_message_sent_after_recov
     let saw_echo = events
         .iter()
         .any(|e| e.data.contains("Echo:") && e.data.contains("verify-echo"));
-    assert!(saw_echo, "recovered agent should echo 'verify-echo' via SSE; got: {events:?}");
+    assert!(
+        saw_echo,
+        "recovered agent should echo 'verify-echo' via SSE; got: {events:?}"
+    );
 
     cancel.cancel();
     let result = with_timeout(10, handle)
@@ -136,7 +149,11 @@ async fn given_agent_crashed_when_health_checked_during_recovery_then_health_ret
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 200, "health endpoint should respond during agent recovery");
+    assert_eq!(
+        resp.status(),
+        200,
+        "health endpoint should respond during agent recovery"
+    );
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["status"], "ok");
 

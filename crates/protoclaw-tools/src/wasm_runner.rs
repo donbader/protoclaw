@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use protoclaw_config::WasmSandboxConfig;
 use wasmtime::{Config, Engine, Linker, Module, Store, Trap};
+use wasmtime_wasi::WasiCtxBuilder;
 use wasmtime_wasi::p1::WasiP1Ctx;
 use wasmtime_wasi::p2::pipe::{MemoryInputPipe, MemoryOutputPipe};
-use wasmtime_wasi::WasiCtxBuilder;
 
 use crate::error::ToolsError;
 
@@ -26,7 +26,9 @@ impl WasmToolRunner {
 
         let engine_clone = engine.clone();
         let epoch_handle = tokio::spawn(async move {
-            let mut interval = tokio::time::interval(std::time::Duration::from_secs(protoclaw_core::constants::EPOCH_TICK_INTERVAL_SECS));
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(
+                protoclaw_core::constants::EPOCH_TICK_INTERVAL_SECS,
+            ));
             loop {
                 interval.tick().await;
                 engine_clone.increment_epoch();
@@ -229,15 +231,10 @@ mod tests {
         "#;
 
         let module_bytes = wat::parse_str(wat).unwrap();
-        let result = runner
-            .execute(&module_bytes, "", &low_fuel_sandbox())
-            .await;
+        let result = runner.execute(&module_bytes, "", &low_fuel_sandbox()).await;
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
-        assert!(
-            err.contains("fuel"),
-            "expected fuel error, got: {err}"
-        );
+        assert!(err.contains("fuel"), "expected fuel error, got: {err}");
     }
 
     #[tokio::test]

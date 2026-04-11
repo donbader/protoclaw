@@ -1,18 +1,22 @@
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
-
 use protoclaw_config::ChannelConfig;
 use protoclaw_core::types::ChannelId;
-use protoclaw_core::{constants, AgentsCommand, CrashTracker, ExponentialBackoff, Manager, ManagerError, ManagerHandle, SessionKey};
+use protoclaw_core::{
+    AgentsCommand, CrashTracker, ExponentialBackoff, Manager, ManagerError, ManagerHandle,
+    SessionKey, constants,
+};
 use protoclaw_sdk_types::{ChannelAckConfig, ChannelEvent, PermissionOption};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
 use crate::connection::{ChannelConnection, IncomingChannelMessage};
-use crate::session_queue::SessionQueue;
 use crate::error::ChannelsError;
-use protoclaw_sdk_types::{ChannelCapabilities, ChannelInitializeResult, ChannelSendMessage, ChannelRespondPermission};
+use crate::session_queue::SessionQueue;
+use protoclaw_sdk_types::{
+    ChannelCapabilities, ChannelInitializeResult, ChannelRespondPermission, ChannelSendMessage,
+};
 
 /// Commands sent to the ChannelsManager from other managers.
 pub enum ChannelsCommand {
@@ -73,7 +77,12 @@ pub struct ChannelsManager {
 }
 
 impl ChannelsManager {
-    pub fn new(channel_configs: HashMap<String, ChannelConfig>, init_timeout_secs: u64, exit_timeout_secs: u64, _default_agent_name: String) -> Self {
+    pub fn new(
+        channel_configs: HashMap<String, ChannelConfig>,
+        init_timeout_secs: u64,
+        exit_timeout_secs: u64,
+        _default_agent_name: String,
+    ) -> Self {
         let (cmd_tx, cmd_rx) = mpsc::channel(constants::CMD_CHANNEL_CAPACITY);
         Self {
             channel_configs,
@@ -128,7 +137,9 @@ impl ChannelsManager {
 
     /// Spawn and initialize a single channel subprocess.
     fn resolve_init_timeout(&self, channel_config: &ChannelConfig) -> Duration {
-        let secs = channel_config.init_timeout_secs.unwrap_or(self.init_timeout_secs);
+        let secs = channel_config
+            .init_timeout_secs
+            .unwrap_or(self.init_timeout_secs);
         Duration::from_secs(secs)
     }
 
@@ -186,7 +197,14 @@ impl ChannelsManager {
         );
         tokio::time::sleep(delay).await;
 
-        match Self::spawn_and_initialize(&slot.config, &slot.channel_id, Duration::from_secs(self.init_timeout_secs), self.log_level.as_deref()).await {
+        match Self::spawn_and_initialize(
+            &slot.config,
+            &slot.channel_id,
+            Duration::from_secs(self.init_timeout_secs),
+            self.log_level.as_deref(),
+        )
+        .await
+        {
             Ok((conn, caps)) => {
                 tracing::info!(
                     channel = %channel_name,
@@ -223,7 +241,10 @@ impl ChannelsManager {
                             "sessionId": entry.acp_session_id,
                             "content": content,
                         });
-                        if let Err(e) = conn.send_notification("channel/deliverMessage", params).await {
+                        if let Err(e) = conn
+                            .send_notification("channel/deliverMessage", params)
+                            .await
+                        {
                             tracing::warn!(
                                 channel = %slot.name,
                                 error = %e,
@@ -251,7 +272,10 @@ impl ChannelsManager {
                             "description": description,
                             "options": options,
                         });
-                        if let Err(e) = conn.send_notification("channel/requestPermission", params).await {
+                        if let Err(e) = conn
+                            .send_notification("channel/requestPermission", params)
+                            .await
+                        {
                             tracing::warn!(
                                 channel = %slot.name,
                                 error = %e,
@@ -274,7 +298,10 @@ impl ChannelsManager {
     /// Handle a ChannelEvent from AgentsManager (outbound: agent → channel).
     async fn handle_channel_event(&mut self, event: ChannelEvent) {
         match event {
-            ChannelEvent::DeliverMessage { session_key, content } => {
+            ChannelEvent::DeliverMessage {
+                session_key,
+                content,
+            } => {
                 if let Some(entry) = self.routing_table.get(&session_key) {
                     let slot = &self.slots[entry.slot_index];
 
@@ -285,7 +312,9 @@ impl ChannelsManager {
                                 "sessionId": entry.acp_session_id,
                                 "action": "response_started",
                             });
-                            let _ = conn.send_notification("channel/ackLifecycle", lifecycle_params).await;
+                            let _ = conn
+                                .send_notification("channel/ackLifecycle", lifecycle_params)
+                                .await;
                         }
                     }
 
@@ -294,7 +323,10 @@ impl ChannelsManager {
                             "sessionId": entry.acp_session_id,
                             "content": content,
                         });
-                        if let Err(e) = conn.send_notification("channel/deliverMessage", params).await {
+                        if let Err(e) = conn
+                            .send_notification("channel/deliverMessage", params)
+                            .await
+                        {
                             tracing::warn!(
                                 channel = %slot.name,
                                 session_key = %session_key,
@@ -336,10 +368,16 @@ impl ChannelsManager {
                     };
 
                     self.send_ack_to_channel(&session_key).await;
-                    self.dispatch_to_agent(&session_key, &merged, &agent_name).await;
+                    self.dispatch_to_agent(&session_key, &merged, &agent_name)
+                        .await;
                 }
             }
-            ChannelEvent::RoutePermission { session_key, request_id, description, options } => {
+            ChannelEvent::RoutePermission {
+                session_key,
+                request_id,
+                description,
+                options,
+            } => {
                 if let Some(entry) = self.routing_table.get(&session_key) {
                     let slot = &self.slots[entry.slot_index];
                     if let Some(conn) = &slot.connection {
@@ -349,7 +387,10 @@ impl ChannelsManager {
                             "description": description,
                             "options": options,
                         });
-                        if let Err(e) = conn.send_notification("channel/requestPermission", params).await {
+                        if let Err(e) = conn
+                            .send_notification("channel/requestPermission", params)
+                            .await
+                        {
                             tracing::warn!(
                                 channel = %slot.name,
                                 session_key = %session_key,
@@ -362,7 +403,12 @@ impl ChannelsManager {
                     tracing::warn!(session_key = %session_key, request_id = %request_id, "no routing entry for permission");
                 }
             }
-            ChannelEvent::AckMessage { session_key, channel_name, peer_id, message_id } => {
+            ChannelEvent::AckMessage {
+                session_key,
+                channel_name,
+                peer_id,
+                message_id,
+            } => {
                 tracing::debug!(session_key = %session_key, channel = %channel_name, peer = %peer_id, message_id = ?message_id, "ack message event received");
             }
         }
@@ -385,7 +431,10 @@ impl ChannelsManager {
                 "peerId": peer_id,
                 "messageId": serde_json::Value::Null,
             });
-            if let Err(e) = conn.send_notification("channel/ackMessage", ack_params).await {
+            if let Err(e) = conn
+                .send_notification("channel/ackMessage", ack_params)
+                .await
+            {
                 tracing::warn!(
                     channel = %slot.name,
                     error = %e,
@@ -396,7 +445,12 @@ impl ChannelsManager {
     }
 
     /// Dispatch a merged/immediate message to the agent as a PromptSession.
-    async fn dispatch_to_agent(&mut self, session_key: &SessionKey, message: &str, agent_name: &str) {
+    async fn dispatch_to_agent(
+        &mut self,
+        session_key: &SessionKey,
+        message: &str,
+        agent_name: &str,
+    ) {
         self.acked_sessions.remove(session_key);
 
         if let Some(entry) = self.routing_table.get(session_key) {
@@ -406,7 +460,9 @@ impl ChannelsManager {
                     "sessionId": entry.acp_session_id,
                     "channelName": slot.name,
                 });
-                let _ = conn.send_notification("channel/typingIndicator", params).await;
+                let _ = conn
+                    .send_notification("channel/typingIndicator", params)
+                    .await;
             }
         }
 
@@ -419,12 +475,15 @@ impl ChannelsManager {
         };
 
         let (reply_tx, reply_rx) = oneshot::channel();
-        if let Err(e) = agents_handle.send(AgentsCommand::PromptSession {
-            agent_name: agent_name.to_string(),
-            session_key: session_key.clone(),
-            message: message.to_string(),
-            reply: reply_tx,
-        }).await {
+        if let Err(e) = agents_handle
+            .send(AgentsCommand::PromptSession {
+                agent_name: agent_name.to_string(),
+                session_key: session_key.clone(),
+                message: message.to_string(),
+                reply: reply_tx,
+            })
+            .await
+        {
             tracing::error!(session_key = %session_key, error = %e, "failed to send PromptSession");
             return;
         }
@@ -444,16 +503,24 @@ impl ChannelsManager {
 
     /// Collect an incoming channel message into the session queue without dispatching.
     /// Returns the session key if the message was collected (for later flush).
-    async fn collect_channel_message(&mut self, slot_index: usize, msg: IncomingChannelMessage) -> Option<SessionKey> {
+    async fn collect_channel_message(
+        &mut self,
+        slot_index: usize,
+        msg: IncomingChannelMessage,
+    ) -> Option<SessionKey> {
         let channel_name = self.slots[slot_index].name.clone();
         let channel_id = self.slots[slot_index].channel_id.clone();
 
         let value = match &msg {
-            IncomingChannelMessage::ChannelRequest(v) | IncomingChannelMessage::ChannelNotification(v) => v.clone(),
+            IncomingChannelMessage::ChannelRequest(v)
+            | IncomingChannelMessage::ChannelNotification(v) => v.clone(),
         };
 
         let method = value["method"].as_str().unwrap_or("");
-        let params = value.get("params").cloned().unwrap_or(serde_json::Value::Null);
+        let params = value
+            .get("params")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
 
         match method {
             "channel/sendMessage" => {
@@ -476,16 +543,19 @@ impl ChannelsManager {
 
                     if !self.routing_table.contains_key(&session_key) {
                         let (reply_tx, reply_rx) = oneshot::channel();
-                        if let Err(e) = agents_handle.send(AgentsCommand::CreateSession {
-                            agent_name: agent_name.clone(),
-                            session_key: session_key.clone(),
-                            reply: reply_tx,
-                        }).await {
+                        if let Err(e) = agents_handle
+                            .send(AgentsCommand::CreateSession {
+                                agent_name: agent_name.clone(),
+                                session_key: session_key.clone(),
+                                reply: reply_tx,
+                            })
+                            .await
+                        {
                             tracing::error!(channel = %channel_name, error = %e, "failed to send CreateSession");
                             return None;
                         }
 
-                         match reply_rx.await {
+                        match reply_rx.await {
                             Ok(Ok(acp_session_id)) => {
                                 tracing::info!(
                                     channel = %channel_name,
@@ -493,12 +563,15 @@ impl ChannelsManager {
                                     acp_session_id = %acp_session_id,
                                     "session created"
                                 );
-                                self.routing_table.insert(session_key.clone(), RoutingEntry {
-                                    _channel_id: channel_id.clone(),
-                                    acp_session_id: acp_session_id.clone(),
-                                    slot_index,
-                                    agent_name: agent_name.clone(),
-                                });
+                                self.routing_table.insert(
+                                    session_key.clone(),
+                                    RoutingEntry {
+                                        _channel_id: channel_id.clone(),
+                                        acp_session_id: acp_session_id.clone(),
+                                        slot_index,
+                                        agent_name: agent_name.clone(),
+                                    },
+                                );
 
                                 if let Some(conn) = &self.slots[slot_index].connection {
                                     let peer_info_json = serde_json::to_value(&send_msg.peer_info).unwrap_or_else(|e| {
@@ -513,7 +586,10 @@ impl ChannelsManager {
                                         "sessionId": acp_session_id,
                                         "peerInfo": peer_info_json,
                                     });
-                                    if let Err(e) = conn.send_notification("channel/sessionCreated", params).await {
+                                    if let Err(e) = conn
+                                        .send_notification("channel/sessionCreated", params)
+                                        .await
+                                    {
                                         tracing::warn!(
                                             channel = %channel_name,
                                             error = %e,
@@ -529,7 +605,10 @@ impl ChannelsManager {
                                         "sessionId": "",
                                         "content": format!("⚠️ Failed to create session: {e}"),
                                     });
-                                    if let Err(notify_err) = conn.send_notification("channel/deliverMessage", error_params).await {
+                                    if let Err(notify_err) = conn
+                                        .send_notification("channel/deliverMessage", error_params)
+                                        .await
+                                    {
                                         tracing::warn!(channel = %channel_name, error = %notify_err, "failed to send session error to channel");
                                     }
                                 }
@@ -542,7 +621,10 @@ impl ChannelsManager {
                                         "sessionId": "",
                                         "content": "⚠️ Failed to create session: internal error (reply dropped)",
                                     });
-                                    if let Err(notify_err) = conn.send_notification("channel/deliverMessage", error_params).await {
+                                    if let Err(notify_err) = conn
+                                        .send_notification("channel/deliverMessage", error_params)
+                                        .await
+                                    {
                                         tracing::warn!(channel = %channel_name, error = %notify_err, "failed to send session error to channel");
                                     }
                                 }
@@ -572,10 +654,13 @@ impl ChannelsManager {
             "channel/respondPermission" => {
                 if let Ok(resp) = serde_json::from_value::<ChannelRespondPermission>(params) {
                     if let Some(agents_handle) = &self.agents_handle {
-                        if let Err(e) = agents_handle.send(AgentsCommand::RespondPermission {
-                            request_id: resp.request_id.clone(),
-                            option_id: resp.option_id,
-                        }).await {
+                        if let Err(e) = agents_handle
+                            .send(AgentsCommand::RespondPermission {
+                                request_id: resp.request_id.clone(),
+                                option_id: resp.option_id,
+                            })
+                            .await
+                        {
                             tracing::warn!(
                                 channel = %channel_name,
                                 request_id = %resp.request_id,
@@ -621,7 +706,8 @@ impl ChannelsManager {
             }
 
             self.send_ack_to_channel(session_key).await;
-            self.dispatch_to_agent(session_key, &merged, &agent_name).await;
+            self.dispatch_to_agent(session_key, &merged, &agent_name)
+                .await;
         }
     }
 
@@ -647,7 +733,12 @@ impl ChannelsManager {
                 continue;
             }
             if let Some(conn) = &mut slot.connection {
-                while let Ok(msg) = tokio::time::timeout(Duration::from_millis(constants::POLL_TIMEOUT_MS), conn.recv_incoming()).await {
+                while let Ok(msg) = tokio::time::timeout(
+                    Duration::from_millis(constants::POLL_TIMEOUT_MS),
+                    conn.recv_incoming(),
+                )
+                .await
+                {
                     results.push((i, msg));
                 }
             }
@@ -684,11 +775,20 @@ impl Manager for ChannelsManager {
                 None => ExponentialBackoff::default(),
             };
             let crash_tracker = match &config.crash_tracker {
-                Some(cfg) => CrashTracker::new(cfg.max_crashes, Duration::from_secs(cfg.window_secs)),
+                Some(cfg) => {
+                    CrashTracker::new(cfg.max_crashes, Duration::from_secs(cfg.window_secs))
+                }
                 None => CrashTracker::default(),
             };
 
-            match Self::spawn_and_initialize(config, &channel_id, init_timeout, self.log_level.as_deref()).await {
+            match Self::spawn_and_initialize(
+                config,
+                &channel_id,
+                init_timeout,
+                self.log_level.as_deref(),
+            )
+            .await
+            {
                 Ok((conn, caps)) => {
                     tracing::info!(
                         channel = %name,
@@ -742,7 +842,8 @@ impl Manager for ChannelsManager {
 
         tracing::info!(manager = self.name(), "manager running");
 
-        let mut poll_interval = tokio::time::interval(Duration::from_millis(constants::POLL_INTERVAL_MS));
+        let mut poll_interval =
+            tokio::time::interval(Duration::from_millis(constants::POLL_INTERVAL_MS));
 
         loop {
             let channel_event_fut = async {
@@ -801,7 +902,9 @@ impl Manager for ChannelsManager {
     }
 
     async fn health_check(&self) -> bool {
-        self.slots.iter().any(|s| s.connection.is_some() && !s.disabled)
+        self.slots
+            .iter()
+            .any(|s| s.connection.is_some() && !s.disabled)
     }
 }
 
@@ -811,7 +914,10 @@ mod tests {
     use rstest::rstest;
 
     fn make_channel_map(entries: Vec<(&str, ChannelConfig)>) -> HashMap<String, ChannelConfig> {
-        entries.into_iter().map(|(k, v)| (k.to_string(), v)).collect()
+        entries
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v))
+            .collect()
     }
 
     fn test_channel_config(binary: &str, enabled: bool, agent: &str) -> ChannelConfig {
@@ -839,13 +945,23 @@ mod tests {
 
     #[test]
     fn when_channels_manager_name_queried_then_returns_expected_name() {
-        let m = ChannelsManager::new(HashMap::new(), default_init_timeout(), default_exit_timeout(), "default".into());
+        let m = ChannelsManager::new(
+            HashMap::new(),
+            default_init_timeout(),
+            default_exit_timeout(),
+            "default".into(),
+        );
         assert_eq!(m.name(), "channels");
     }
 
     #[tokio::test]
     async fn when_channels_manager_started_with_no_channels_then_starts_successfully() {
-        let mut m = ChannelsManager::new(HashMap::new(), default_init_timeout(), default_exit_timeout(), "default".into());
+        let mut m = ChannelsManager::new(
+            HashMap::new(),
+            default_init_timeout(),
+            default_exit_timeout(),
+            "default".into(),
+        );
         let result = m.start().await;
         assert!(result.is_ok());
         assert!(m.slots.is_empty());
@@ -853,16 +969,27 @@ mod tests {
 
     #[tokio::test]
     async fn when_no_channels_configured_then_health_check_returns_healthy() {
-        let m = ChannelsManager::new(HashMap::new(), default_init_timeout(), default_exit_timeout(), "default".into());
+        let m = ChannelsManager::new(
+            HashMap::new(),
+            default_init_timeout(),
+            default_exit_timeout(),
+            "default".into(),
+        );
         assert!(!m.health_check().await);
     }
 
     #[tokio::test]
     async fn when_channel_binary_invalid_then_manager_continues_without_it() {
-        let configs = make_channel_map(vec![
-            ("bad-channel", test_channel_config("nonexistent-binary-xyz-99999", true, "default")),
-        ]);
-        let mut m = ChannelsManager::new(configs, default_init_timeout(), default_exit_timeout(), "default".into());
+        let configs = make_channel_map(vec![(
+            "bad-channel",
+            test_channel_config("nonexistent-binary-xyz-99999", true, "default"),
+        )]);
+        let mut m = ChannelsManager::new(
+            configs,
+            default_init_timeout(),
+            default_exit_timeout(),
+            "default".into(),
+        );
         let result = m.start().await;
         assert!(result.is_ok());
         assert_eq!(m.slots.len(), 1);
@@ -871,7 +998,12 @@ mod tests {
 
     #[tokio::test]
     async fn when_shutdown_command_sent_then_channels_manager_shuts_down() {
-        let m = ChannelsManager::new(HashMap::new(), default_init_timeout(), default_exit_timeout(), "default".into());
+        let m = ChannelsManager::new(
+            HashMap::new(),
+            default_init_timeout(),
+            default_exit_timeout(),
+            "default".into(),
+        );
         let tx = m.command_sender();
         tx.send(ChannelsCommand::Shutdown).await.unwrap();
     }
@@ -897,10 +1029,16 @@ mod tests {
 
     #[tokio::test]
     async fn when_channel_crashes_repeatedly_then_channel_disabled_after_threshold() {
-        let configs = make_channel_map(vec![
-            ("crasher", test_channel_config("nonexistent-binary-xyz-99999", true, "default")),
-        ]);
-        let mut m = ChannelsManager::new(configs, default_init_timeout(), default_exit_timeout(), "default".into());
+        let configs = make_channel_map(vec![(
+            "crasher",
+            test_channel_config("nonexistent-binary-xyz-99999", true, "default"),
+        )]);
+        let mut m = ChannelsManager::new(
+            configs,
+            default_init_timeout(),
+            default_exit_timeout(),
+            "default".into(),
+        );
         m.start().await.unwrap();
         let slot = &mut m.slots[0];
         for _ in 0..5 {
@@ -916,12 +1054,15 @@ mod tests {
     fn when_routing_entry_inserted_then_lookup_returns_it() {
         let mut table: HashMap<SessionKey, RoutingEntry> = HashMap::new();
         let key = SessionKey::new("debug-http", "local", "dev");
-        table.insert(key.clone(), RoutingEntry {
-            _channel_id: ChannelId::from("debug-http"),
-            acp_session_id: "acp-sess-1".into(),
-            slot_index: 0,
-            agent_name: "default".into(),
-        });
+        table.insert(
+            key.clone(),
+            RoutingEntry {
+                _channel_id: ChannelId::from("debug-http"),
+                acp_session_id: "acp-sess-1".into(),
+                slot_index: 0,
+                agent_name: "default".into(),
+            },
+        );
 
         assert!(table.contains_key(&key));
         let entry = table.get(&key).unwrap();
@@ -935,18 +1076,24 @@ mod tests {
         let key_alice = SessionKey::new("telegram", "direct", "alice");
         let key_bob = SessionKey::new("telegram", "direct", "bob");
 
-        table.insert(key_alice.clone(), RoutingEntry {
-            _channel_id: ChannelId::from("telegram"),
-            acp_session_id: "sess-alice".into(),
-            slot_index: 0,
-            agent_name: "default".into(),
-        });
-        table.insert(key_bob.clone(), RoutingEntry {
-            _channel_id: ChannelId::from("telegram"),
-            acp_session_id: "sess-bob".into(),
-            slot_index: 0,
-            agent_name: "default".into(),
-        });
+        table.insert(
+            key_alice.clone(),
+            RoutingEntry {
+                _channel_id: ChannelId::from("telegram"),
+                acp_session_id: "sess-alice".into(),
+                slot_index: 0,
+                agent_name: "default".into(),
+            },
+        );
+        table.insert(
+            key_bob.clone(),
+            RoutingEntry {
+                _channel_id: ChannelId::from("telegram"),
+                acp_session_id: "sess-bob".into(),
+                slot_index: 0,
+                agent_name: "default".into(),
+            },
+        );
 
         assert_eq!(table.len(), 2);
         assert_eq!(table.get(&key_alice).unwrap().acp_session_id, "sess-alice");
@@ -955,14 +1102,22 @@ mod tests {
 
     #[tokio::test]
     async fn when_deliver_event_received_then_routed_to_correct_agent_slot() {
-        let mut m = ChannelsManager::new(HashMap::new(), default_init_timeout(), default_exit_timeout(), "default".into());
+        let mut m = ChannelsManager::new(
+            HashMap::new(),
+            default_init_timeout(),
+            default_exit_timeout(),
+            "default".into(),
+        );
         let key = SessionKey::new("test", "local", "dev");
-        m.routing_table.insert(key.clone(), RoutingEntry {
-            _channel_id: ChannelId::from("test"),
-            acp_session_id: "acp-1".into(),
-            slot_index: 0,
-            agent_name: "default".into(),
-        });
+        m.routing_table.insert(
+            key.clone(),
+            RoutingEntry {
+                _channel_id: ChannelId::from("test"),
+                acp_session_id: "acp-1".into(),
+                slot_index: 0,
+                agent_name: "default".into(),
+            },
+        );
 
         let event = ChannelEvent::DeliverMessage {
             session_key: key,
@@ -981,23 +1136,41 @@ mod tests {
     async fn when_agents_handle_set_then_handle_stored_correctly() {
         let (tx, _rx) = mpsc::channel::<AgentsCommand>(16);
         let handle = ManagerHandle::new(tx);
-        let m = ChannelsManager::new(HashMap::new(), default_init_timeout(), default_exit_timeout(), "default".into()).with_agents_handle(handle);
+        let m = ChannelsManager::new(
+            HashMap::new(),
+            default_init_timeout(),
+            default_exit_timeout(),
+            "default".into(),
+        )
+        .with_agents_handle(handle);
         assert!(m.agents_handle.is_some());
     }
 
     #[tokio::test]
     async fn when_channel_events_receiver_set_then_stored_correctly() {
         let (_tx, rx) = mpsc::channel::<ChannelEvent>(16);
-        let m = ChannelsManager::new(HashMap::new(), default_init_timeout(), default_exit_timeout(), "default".into()).with_channel_events_rx(rx);
+        let m = ChannelsManager::new(
+            HashMap::new(),
+            default_init_timeout(),
+            default_exit_timeout(),
+            "default".into(),
+        )
+        .with_channel_events_rx(rx);
         assert!(m.channel_events_rx.is_some());
     }
 
     #[test]
     fn when_channel_config_has_agent_field_then_that_agent_name_used() {
-        let configs = make_channel_map(vec![
-            ("telegram", test_channel_config("telegram-channel", true, "opencode")),
-        ]);
-        let mut m = ChannelsManager::new(configs, default_init_timeout(), default_exit_timeout(), "default-agent".to_string());
+        let configs = make_channel_map(vec![(
+            "telegram",
+            test_channel_config("telegram-channel", true, "opencode"),
+        )]);
+        let mut m = ChannelsManager::new(
+            configs,
+            default_init_timeout(),
+            default_exit_timeout(),
+            "default-agent".to_string(),
+        );
         m.slots.push(ChannelSlot {
             name: "telegram".into(),
             config: test_channel_config("telegram-channel", true, "opencode"),
@@ -1013,10 +1186,16 @@ mod tests {
 
     #[test]
     fn when_channel_config_has_no_agent_field_then_default_agent_used() {
-        let configs = make_channel_map(vec![
-            ("debug-http", test_channel_config("debug-http", true, "default")),
-        ]);
-        let mut m = ChannelsManager::new(configs, default_init_timeout(), default_exit_timeout(), "first-enabled".to_string());
+        let configs = make_channel_map(vec![(
+            "debug-http",
+            test_channel_config("debug-http", true, "default"),
+        )]);
+        let mut m = ChannelsManager::new(
+            configs,
+            default_init_timeout(),
+            default_exit_timeout(),
+            "first-enabled".to_string(),
+        );
         m.slots.push(ChannelSlot {
             name: "debug-http".into(),
             config: test_channel_config("debug-http", true, "default"),
@@ -1032,25 +1211,44 @@ mod tests {
 
     #[tokio::test]
     async fn when_channel_is_disabled_then_not_spawned_on_start() {
-        let configs = make_channel_map(vec![
-            ("disabled-ch", test_channel_config("nonexistent-binary-xyz-99999", false, "default")),
-        ]);
-        let mut m = ChannelsManager::new(configs, default_init_timeout(), default_exit_timeout(), "default".into());
+        let configs = make_channel_map(vec![(
+            "disabled-ch",
+            test_channel_config("nonexistent-binary-xyz-99999", false, "default"),
+        )]);
+        let mut m = ChannelsManager::new(
+            configs,
+            default_init_timeout(),
+            default_exit_timeout(),
+            "default".into(),
+        );
         let result = m.start().await;
         assert!(result.is_ok());
-        assert!(m.slots.is_empty(), "disabled channel should not create a slot");
+        assert!(
+            m.slots.is_empty(),
+            "disabled channel should not create a slot"
+        );
     }
 
     #[tokio::test]
     async fn when_ack_sent_for_session_with_no_routing_entry_then_is_noop() {
-        let m = ChannelsManager::new(HashMap::new(), default_init_timeout(), default_exit_timeout(), "default".into());
+        let m = ChannelsManager::new(
+            HashMap::new(),
+            default_init_timeout(),
+            default_exit_timeout(),
+            "default".into(),
+        );
         let unknown_key = SessionKey::new("nonexistent", "x", "y");
         m.send_ack_to_channel(&unknown_key).await;
     }
 
     #[tokio::test]
     async fn when_ack_sent_for_session_with_no_connection_then_is_noop() {
-        let mut m = ChannelsManager::new(HashMap::new(), default_init_timeout(), default_exit_timeout(), "default".into());
+        let mut m = ChannelsManager::new(
+            HashMap::new(),
+            default_init_timeout(),
+            default_exit_timeout(),
+            "default".into(),
+        );
         m.slots.push(ChannelSlot {
             name: "telegram".into(),
             config: test_channel_config("telegram-channel", true, "default"),
@@ -1062,12 +1260,15 @@ mod tests {
             disabled: false,
         });
         let key = SessionKey::new("telegram", "direct", "alice");
-        m.routing_table.insert(key.clone(), RoutingEntry {
-            _channel_id: ChannelId::from("telegram"),
-            acp_session_id: "sess-1".into(),
-            slot_index: 0,
-            agent_name: "default".into(),
-        });
+        m.routing_table.insert(
+            key.clone(),
+            RoutingEntry {
+                _channel_id: ChannelId::from("telegram"),
+                acp_session_id: "sess-1".into(),
+                slot_index: 0,
+                agent_name: "default".into(),
+            },
+        );
         m.send_ack_to_channel(&key).await;
     }
 

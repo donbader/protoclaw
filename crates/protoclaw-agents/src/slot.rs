@@ -5,9 +5,9 @@ use protoclaw_config::AgentConfig;
 use protoclaw_core::{CrashTracker, ExponentialBackoff, SessionKey};
 use tokio_util::sync::CancellationToken;
 
+use crate::PendingPermission;
 use crate::acp_types::InitializeResult;
 use crate::connection::AgentConnection;
-use crate::PendingPermission;
 
 /// Per-agent state: connection, config, crash recovery, session routing.
 /// Mirrors ChannelSlot pattern from ChannelsManager.

@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use protoclaw_integration_tests::{
-    boot_supervisor_with_port, mock_agent_config, with_timeout, SseCollector,
+    SseCollector, boot_supervisor_with_port, mock_agent_config, with_timeout,
 };
 use rstest::rstest;
 
@@ -43,21 +43,25 @@ async fn when_message_sent_then_streaming_chunks_arrive_before_result() {
     let chunk_positions: Vec<usize> = events
         .iter()
         .enumerate()
-        .filter(|(i, e)| {
-            *i < result_position && e.event_type.as_deref() != Some("thought")
-        })
+        .filter(|(i, e)| *i < result_position && e.event_type.as_deref() != Some("thought"))
         .map(|(i, _)| i)
         .collect();
 
     assert!(
         !thought_positions.is_empty(),
         "expected thought events, got: {:?}",
-        events.iter().map(|e| (&e.event_type, &e.data)).collect::<Vec<_>>()
+        events
+            .iter()
+            .map(|e| (&e.event_type, &e.data))
+            .collect::<Vec<_>>()
     );
     assert!(
         !chunk_positions.is_empty(),
         "expected message chunk events before result, got: {:?}",
-        events.iter().map(|e| (&e.event_type, &e.data)).collect::<Vec<_>>()
+        events
+            .iter()
+            .map(|e| (&e.event_type, &e.data))
+            .collect::<Vec<_>>()
     );
 
     let last_thought = *thought_positions.last().unwrap();
@@ -99,7 +103,10 @@ async fn given_first_response_complete_when_followup_sent_then_second_response_a
 
     let first_events = sse.collect_events(Duration::from_secs(10)).await;
     let saw_first = first_events.iter().any(|e| e.data == "Echo: turn-1");
-    assert!(saw_first, "should have received echo for turn-1, got: {first_events:?}");
+    assert!(
+        saw_first,
+        "should have received echo for turn-1, got: {first_events:?}"
+    );
 
     // Reconnect SSE and send second turn
     let mut sse2 = SseCollector::connect(port).await;
@@ -113,7 +120,10 @@ async fn given_first_response_complete_when_followup_sent_then_second_response_a
 
     let second_events = sse2.collect_events(Duration::from_secs(10)).await;
     let saw_second = second_events.iter().any(|e| e.data == "Echo: turn-2");
-    assert!(saw_second, "should have received echo for turn-2, got: {second_events:?}");
+    assert!(
+        saw_second,
+        "should have received echo for turn-2, got: {second_events:?}"
+    );
 
     cancel.cancel();
     let _ = with_timeout(5, handle).await;

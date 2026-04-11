@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use protoclaw_integration_tests::{
-    boot_supervisor_with_port, sdk_channel_config, with_timeout, SseCollector,
+    SseCollector, boot_supervisor_with_port, sdk_channel_config, with_timeout,
 };
 use rstest::rstest;
 
@@ -36,9 +36,7 @@ async fn when_sdk_channel_receives_message_then_agent_echoes_back_with_result_ev
     let saw_echo = events
         .iter()
         .any(|e| e.data.contains("Echo: ") && e.data.contains("sdk-channel-test"));
-    let saw_result = events
-        .iter()
-        .any(|e| e.data == "Echo: sdk-channel-test");
+    let saw_result = events.iter().any(|e| e.data == "Echo: sdk-channel-test");
 
     assert!(
         saw_echo,

@@ -39,11 +39,7 @@ impl DebugHttpChannel {
         self
     }
 
-    pub fn with_names(
-        mut self,
-        channel_names: Vec<String>,
-        mcp_server_names: Vec<String>,
-    ) -> Self {
+    pub fn with_names(mut self, channel_names: Vec<String>, mcp_server_names: Vec<String>) -> Self {
         self.channel_names = channel_names;
         self.mcp_server_names = mcp_server_names;
         self
@@ -93,11 +89,16 @@ async fn handle_health(State(state): State<AppState>) -> Json<serde_json::Value>
 
     let agent_json = match agent_status {
         Some(statuses) => {
-            let agents: Vec<_> = statuses.iter().map(|s| serde_json::json!({
-                "name": s.name,
-                "connected": s.connected,
-                "session_count": s.session_count,
-            })).collect();
+            let agents: Vec<_> = statuses
+                .iter()
+                .map(|s| {
+                    serde_json::json!({
+                        "name": s.name,
+                        "connected": s.connected,
+                        "session_count": s.session_count,
+                    })
+                })
+                .collect();
             serde_json::json!(agents)
         }
         None => serde_json::json!([]),
@@ -114,9 +115,9 @@ async fn handle_health(State(state): State<AppState>) -> Json<serde_json::Value>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rstest::rstest;
-    use protoclaw_core::{AgentStatusInfo, AgentsCommand};
     use protoclaw_core::ManagerHandle;
+    use protoclaw_core::{AgentStatusInfo, AgentsCommand};
+    use rstest::rstest;
 
     #[test]
     fn when_debug_http_channel_created_then_instance_initialized() {
@@ -193,7 +194,10 @@ mod tests {
         assert!(body.get("status").is_some(), "missing 'status' key");
         assert!(body.get("agent").is_some(), "missing 'agent' key");
         assert!(body.get("channels").is_some(), "missing 'channels' key");
-        assert!(body.get("mcp_servers").is_some(), "missing 'mcp_servers' key");
+        assert!(
+            body.get("mcp_servers").is_some(),
+            "missing 'mcp_servers' key"
+        );
 
         cancel.cancel();
     }
@@ -252,10 +256,7 @@ mod tests {
             .unwrap();
 
         let body: serde_json::Value = resp.json().await.unwrap();
-        assert!(
-            body["channels"].is_array(),
-            "'channels' should be an array"
-        );
+        assert!(body["channels"].is_array(), "'channels' should be an array");
 
         cancel.cancel();
     }

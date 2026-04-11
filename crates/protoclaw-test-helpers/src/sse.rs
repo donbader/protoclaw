@@ -124,11 +124,7 @@ mod tests {
         chunks: Vec<&'static str>,
     ) -> impl futures_core::Stream<Item = reqwest::Result<bytes::Bytes>> + Unpin + Send + 'static
     {
-        stream_iter(
-            chunks
-                .into_iter()
-                .map(|s| Ok(bytes::Bytes::from(s))),
-        )
+        stream_iter(chunks.into_iter().map(|s| Ok(bytes::Bytes::from(s))))
     }
 
     #[test]

@@ -1,6 +1,6 @@
-use serde_json::{json, Value};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use serde_json::{Value, json};
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use tokio::io::{AsyncBufReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 
 static PROMPT_COUNT: AtomicUsize = AtomicUsize::new(0);
@@ -49,7 +49,9 @@ impl AgentOptions {
 }
 
 fn opts() -> &'static AgentOptions {
-    AGENT_OPTIONS.get().expect("initialize must be called first")
+    AGENT_OPTIONS
+        .get()
+        .expect("initialize must be called first")
 }
 
 #[tokio::main]
@@ -61,7 +63,10 @@ async fn main() {
     // The host's reader loop must skip these lines instead of terminating.
     if std::env::args().any(|a| a == "--noisy-startup") {
         use tokio::io::AsyncWriteExt;
-        stdout.write_all(b"[npm warn] some startup noise\n").await.ok();
+        stdout
+            .write_all(b"[npm warn] some startup noise\n")
+            .await
+            .ok();
         stdout.write_all(b"Loading agent v1.2.3...\n").await.ok();
         stdout.flush().await.ok();
     }
@@ -149,7 +154,10 @@ async fn main() {
 async fn write_message<W: AsyncWrite + Unpin>(writer: &mut W, msg: &Value) {
     let mut line = serde_json::to_string(msg).expect("failed to serialize");
     line.push('\n');
-    writer.write_all(line.as_bytes()).await.expect("failed to write");
+    writer
+        .write_all(line.as_bytes())
+        .await
+        .expect("failed to write");
     writer.flush().await.expect("failed to flush");
 }
 
@@ -185,7 +193,11 @@ async fn handle_initialize(stdout: &mut tokio::io::Stdout, id: Option<Value>, ms
     write_message(stdout, &resp).await;
 }
 
-async fn handle_session_new<W: AsyncWrite + Unpin>(stdout: &mut W, id: Option<Value>, msg: &Value) -> String {
+async fn handle_session_new<W: AsyncWrite + Unpin>(
+    stdout: &mut W,
+    id: Option<Value>,
+    msg: &Value,
+) -> String {
     let params = &msg["params"];
 
     if !params.get("cwd").is_some_and(|v| v.is_string()) {
@@ -208,7 +220,10 @@ async fn handle_session_new<W: AsyncWrite + Unpin>(stdout: &mut W, id: Option<Va
         return String::new();
     }
 
-    let count = params["mcpServers"].as_array().map(|a| a.len()).unwrap_or(0);
+    let count = params["mcpServers"]
+        .as_array()
+        .map(|a| a.len())
+        .unwrap_or(0);
     MCP_SERVER_COUNT.store(count, Ordering::SeqCst);
 
     let sid = uuid::Uuid::new_v4().to_string();
@@ -407,13 +422,11 @@ mod tests {
         assert_eq!(msgs.len(), 4);
         for msg in &msgs {
             if let Some(params) = msg.get("params") {
-                let update_type = params.get("update")
+                let update_type = params
+                    .get("update")
                     .and_then(|u| u.get("sessionUpdate"))
                     .and_then(|t| t.as_str());
-                assert_ne!(
-                    update_type,
-                    Some("agent_thought_chunk"),
-                );
+                assert_ne!(update_type, Some("agent_thought_chunk"),);
             }
         }
     }
@@ -456,7 +469,10 @@ mod tests {
                 "prompt": [{"type": "text", "text": "hello world"}]
             }
         });
-        assert_eq!(extract_prompt_message(&msg), Some("hello world".to_string()));
+        assert_eq!(
+            extract_prompt_message(&msg),
+            Some("hello world".to_string())
+        );
     }
 
     #[test]
@@ -533,7 +549,8 @@ mod tests {
         let msgs = collect_session_new_output(json!({
             "cwd": "/workspace",
             "mcpServers": []
-        })).await;
+        }))
+        .await;
         assert_eq!(msgs.len(), 1);
         assert!(msgs[0]["result"]["sessionId"].is_string());
     }
@@ -542,20 +559,32 @@ mod tests {
     async fn session_new_missing_cwd_returns_error() {
         let msgs = collect_session_new_output(json!({
             "mcpServers": []
-        })).await;
+        }))
+        .await;
         assert_eq!(msgs.len(), 1);
         assert_eq!(msgs[0]["error"]["code"], -32602);
-        assert!(msgs[0]["error"]["message"].as_str().unwrap().contains("cwd"));
+        assert!(
+            msgs[0]["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("cwd")
+        );
     }
 
     #[tokio::test]
     async fn session_new_missing_mcp_servers_returns_error() {
         let msgs = collect_session_new_output(json!({
             "cwd": "/workspace"
-        })).await;
+        }))
+        .await;
         assert_eq!(msgs.len(), 1);
         assert_eq!(msgs[0]["error"]["code"], -32602);
-        assert!(msgs[0]["error"]["message"].as_str().unwrap().contains("mcpServers"));
+        assert!(
+            msgs[0]["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("mcpServers")
+        );
     }
 
     #[tokio::test]
@@ -563,7 +592,8 @@ mod tests {
         let msgs = collect_session_new_output(json!({
             "cwd": 123,
             "mcpServers": []
-        })).await;
+        }))
+        .await;
         assert_eq!(msgs.len(), 1);
         assert_eq!(msgs[0]["error"]["code"], -32602);
     }

@@ -13,5 +13,7 @@ pub use docker_backend::DockerBackend;
 pub use error::*;
 pub use local_backend::LocalBackend;
 pub use manager::*;
+pub use protoclaw_core::{
+    AgentStatusInfo, AgentsCommand, McpServerUrl, PendingPermissionInfo, ToolsCommand,
+};
 pub use slot::*;
-pub use protoclaw_core::{AgentsCommand, AgentStatusInfo, PendingPermissionInfo, ToolsCommand, McpServerUrl};

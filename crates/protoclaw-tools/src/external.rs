@@ -23,19 +23,18 @@ impl std::fmt::Debug for ExternalMcpServer {
 
 impl ExternalMcpServer {
     pub async fn spawn(name: &str, config: &ToolConfig) -> Result<Self, ToolsError> {
-        let binary = config.binary.as_deref()
-            .ok_or_else(|| ToolsError::ExternalServerFailed(format!("{name}: no binary specified")))?;
+        let binary = config.binary.as_deref().ok_or_else(|| {
+            ToolsError::ExternalServerFailed(format!("{name}: no binary specified"))
+        })?;
         let mut cmd = Command::new(binary);
         cmd.args(&config.args);
 
-        let child_transport =
-            rmcp::transport::child_process::TokioChildProcess::new(cmd)
-                .map_err(|e| ToolsError::ExternalServerFailed(format!("{name}: {e}")))?;
+        let child_transport = rmcp::transport::child_process::TokioChildProcess::new(cmd)
+            .map_err(|e| ToolsError::ExternalServerFailed(format!("{name}: {e}")))?;
 
-        let client: RunningService<RoleClient, ()> =
-            rmcp::serve_client((), child_transport)
-                .await
-                .map_err(|e| ToolsError::ExternalServerFailed(format!("{name}: {e}")))?;
+        let client: RunningService<RoleClient, ()> = rmcp::serve_client((), child_transport)
+            .await
+            .map_err(|e| ToolsError::ExternalServerFailed(format!("{name}: {e}")))?;
 
         Ok(Self {
             name: name.to_string(),
@@ -91,7 +90,10 @@ mod tests {
         let result = ExternalMcpServer::spawn("bad-server", &config).await;
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("bad-server"), "error should contain server name: {err}");
+        assert!(
+            err.contains("bad-server"),
+            "error should contain server name: {err}"
+        );
     }
 
     #[rstest]
@@ -111,6 +113,9 @@ mod tests {
         let result = ExternalMcpServer::spawn("no-binary", &config).await;
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("no binary specified"), "error should mention missing binary: {err}");
+        assert!(
+            err.contains("no binary specified"),
+            "error should mention missing binary: {err}"
+        );
     }
 }

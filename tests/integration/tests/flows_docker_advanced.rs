@@ -2,9 +2,9 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use protoclaw_integration_tests::{
-    boot_supervisor_with_port, build_mock_agent_docker_image, cleanup_test_containers,
-    docker_agent_config, docker_agent_config_with_options, mock_agent_path, with_timeout,
-    SseCollector,
+    SseCollector, boot_supervisor_with_port, build_mock_agent_docker_image,
+    cleanup_test_containers, docker_agent_config, docker_agent_config_with_options,
+    mock_agent_path, with_timeout,
 };
 use rstest::rstest;
 
@@ -16,8 +16,8 @@ fn setup() {
 #[rstest]
 #[test_log::test(tokio::test)]
 #[ignore]
-async fn given_docker_agent_configured_to_exit_after_one_message_when_second_message_sent_then_agent_recovered(
-) {
+async fn given_docker_agent_configured_to_exit_after_one_message_when_second_message_sent_then_agent_recovered()
+ {
     setup();
     let mut opts = HashMap::new();
     opts.insert("exit_after".into(), serde_json::json!(1));
@@ -82,7 +82,12 @@ async fn given_stale_container_exists_when_supervisor_starts_then_stale_containe
     );
 
     let check = std::process::Command::new("docker")
-        .args(["ps", "-aq", "--filter", "name=protoclaw-stale-test-container"])
+        .args([
+            "ps",
+            "-aq",
+            "--filter",
+            "name=protoclaw-stale-test-container",
+        ])
         .output()
         .expect("docker ps failed");
     assert!(
@@ -96,11 +101,18 @@ async fn given_stale_container_exists_when_supervisor_starts_then_stale_containe
     tokio::time::sleep(Duration::from_secs(2)).await;
 
     let check_after = std::process::Command::new("docker")
-        .args(["ps", "-aq", "--filter", "name=protoclaw-stale-test-container"])
+        .args([
+            "ps",
+            "-aq",
+            "--filter",
+            "name=protoclaw-stale-test-container",
+        ])
         .output()
         .expect("docker ps failed");
     assert!(
-        String::from_utf8_lossy(&check_after.stdout).trim().is_empty(),
+        String::from_utf8_lossy(&check_after.stdout)
+            .trim()
+            .is_empty(),
         "stale container should be removed by supervisor startup cleanup"
     );
 

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use protoclaw_config::{resolve_binary_path, ProtoclawConfig};
+use protoclaw_config::{ProtoclawConfig, resolve_binary_path};
 use protoclaw_core::{CrashTracker, ExponentialBackoff, Manager, ManagerError, ManagerHandle};
 use tokio_util::sync::CancellationToken;
 
@@ -64,7 +64,8 @@ impl Supervisor {
             }
         }
 
-        let (channel_events_tx, channel_events_rx) = tokio::sync::mpsc::channel(protoclaw_core::constants::EVENT_CHANNEL_CAPACITY);
+        let (channel_events_tx, channel_events_rx) =
+            tokio::sync::mpsc::channel(protoclaw_core::constants::EVENT_CHANNEL_CAPACITY);
         let (debug_http_port_tx, debug_http_port_rx) = tokio::sync::watch::channel(0u16);
         Self {
             config,
@@ -105,9 +106,8 @@ impl Supervisor {
     }
 
     pub async fn run_with_cancel(mut self, cancel: CancellationToken) -> anyhow::Result<()> {
-        let per_manager_timeout = Duration::from_secs(
-            self.config.supervisor.shutdown_timeout_secs / 3,
-        );
+        let per_manager_timeout =
+            Duration::from_secs(self.config.supervisor.shutdown_timeout_secs / 3);
         let health_interval_secs = self.config.supervisor.health_check_interval_secs;
         let max_restarts = self.config.supervisor.max_restarts;
         let restart_window = Duration::from_secs(self.config.supervisor.restart_window_secs);
@@ -116,13 +116,13 @@ impl Supervisor {
         for &name in &MANAGER_ORDER {
             let child_token = cancel.child_token();
             slots.push(ManagerSlot {
-                            name: name.to_string(),
-                            cancel_token: child_token,
-                            join_handle: None,
-                            backoff: ExponentialBackoff::default(),
-                            crash_tracker: CrashTracker::new(max_restarts, restart_window),
-                            disabled: false,
-                        });
+                name: name.to_string(),
+                cancel_token: child_token,
+                join_handle: None,
+                backoff: ExponentialBackoff::default(),
+                crash_tracker: CrashTracker::new(max_restarts, restart_window),
+                disabled: false,
+            });
         }
 
         if let Err(e) = self.boot_managers(&mut slots).await {
@@ -136,9 +136,7 @@ impl Supervisor {
             notify.notify_one();
         }
 
-        let mut health_interval = tokio::time::interval(
-            Duration::from_secs(health_interval_secs),
-        );
+        let mut health_interval = tokio::time::interval(Duration::from_secs(health_interval_secs));
         health_interval.tick().await;
 
         loop {
@@ -159,7 +157,9 @@ impl Supervisor {
     }
 
     async fn boot_managers(&mut self, slots: &mut [ManagerSlot]) -> anyhow::Result<()> {
-        let (tools_tx, tools_rx) = tokio::sync::mpsc::channel::<ToolsCommand>(protoclaw_core::constants::CMD_CHANNEL_CAPACITY);
+        let (tools_tx, tools_rx) = tokio::sync::mpsc::channel::<ToolsCommand>(
+            protoclaw_core::constants::CMD_CHANNEL_CAPACITY,
+        );
         self.tools_tx = Some(tools_tx.clone());
         let mut tools_rx = Some(tools_rx);
         let mut channel_events_tx = self.channel_events_tx.take();
@@ -168,8 +168,16 @@ impl Supervisor {
         for slot in slots.iter_mut() {
             tracing::info!(manager = %slot.name, "booting");
 
-            let ce_tx = if slot.name == "agents" { channel_events_tx.take() } else { None };
-            let ce_rx = if slot.name == "channels" { channel_events_rx.take() } else { None };
+            let ce_tx = if slot.name == "agents" {
+                channel_events_tx.take()
+            } else {
+                None
+            };
+            let ce_rx = if slot.name == "channels" {
+                channel_events_rx.take()
+            } else {
+                None
+            };
 
             let mut manager = create_manager(
                 &slot.name,
@@ -296,17 +304,29 @@ impl Supervisor {
             tokio::time::sleep(delay).await;
 
             let tools_tx = self.tools_tx.clone().unwrap_or_else(|| {
-                let (tx, _) = tokio::sync::mpsc::channel::<ToolsCommand>(protoclaw_core::constants::CMD_CHANNEL_CAPACITY);
+                let (tx, _) = tokio::sync::mpsc::channel::<ToolsCommand>(
+                    protoclaw_core::constants::CMD_CHANNEL_CAPACITY,
+                );
                 tx
             });
             let tools_rx = if slot.name == "tools" {
-                let (new_tx, rx) = tokio::sync::mpsc::channel::<ToolsCommand>(protoclaw_core::constants::CMD_CHANNEL_CAPACITY);
+                let (new_tx, rx) = tokio::sync::mpsc::channel::<ToolsCommand>(
+                    protoclaw_core::constants::CMD_CHANNEL_CAPACITY,
+                );
                 self.tools_tx = Some(new_tx);
                 Some(rx)
             } else {
                 None
             };
-            let mut manager = create_manager(&slot.name, &self.config, &tools_tx, tools_rx, self.agents_cmd_tx.as_ref(), None, None);
+            let mut manager = create_manager(
+                &slot.name,
+                &self.config,
+                &tools_tx,
+                tools_rx,
+                self.agents_cmd_tx.as_ref(),
+                None,
+                None,
+            );
             if let Err(e) = manager.start().await {
                 tracing::error!(manager = %slot.name, error = %e, "restart boot failed");
                 continue;
@@ -334,10 +354,10 @@ fn create_manager(
     match name {
         "tools" => {
             let m = ToolsManager::new(
-                    config.tools_manager.tools.clone(),
-                    config.tools_manager.tools_server_host.clone(),
-                )
-                .with_cmd_rx(tools_rx.expect("tools_rx required for tools manager"));
+                config.tools_manager.tools.clone(),
+                config.tools_manager.tools_server_host.clone(),
+            )
+            .with_cmd_rx(tools_rx.expect("tools_rx required for tools manager"));
             ManagerKind::Tools(m)
         }
         "agents" => {
@@ -352,12 +372,15 @@ fn create_manager(
         "channels" => {
             let tx = agents_cmd_tx.expect("agents_cmd_tx required for channels manager");
             let agents_handle = ManagerHandle::new(tx.clone());
-            let default_agent = config.default_agent_name()
-                .unwrap_or("default")
-                .to_string();
-            let mut cm = ChannelsManager::new(config.channels_manager.channels.clone(), config.channels_manager.init_timeout_secs, config.channels_manager.exit_timeout_secs, default_agent)
-                .with_agents_handle(agents_handle)
-                .with_log_level(config.log_level.clone());
+            let default_agent = config.default_agent_name().unwrap_or("default").to_string();
+            let mut cm = ChannelsManager::new(
+                config.channels_manager.channels.clone(),
+                config.channels_manager.init_timeout_secs,
+                config.channels_manager.exit_timeout_secs,
+                default_agent,
+            )
+            .with_agents_handle(agents_handle)
+            .with_log_level(config.log_level.clone());
             if let Some(rx) = channel_events_rx {
                 cm = cm.with_channel_events_rx(rx);
             }
@@ -408,20 +431,25 @@ mod tests {
             .join("mock-agent");
 
         let mut agents = std::collections::HashMap::new();
-        agents.insert("default".to_string(), protoclaw_config::AgentConfig {
-            workspace: protoclaw_config::WorkspaceConfig::Local(protoclaw_config::LocalWorkspaceConfig {
-                binary: mock_agent.to_string_lossy().to_string(),
-                working_dir: None,
-                env: std::collections::HashMap::new(),
-            }),
-            args: vec![],
-            enabled: true,
-            tools: vec![],
-            acp_timeout_secs: None,
-            backoff: None,
-            crash_tracker: None,
-            options: std::collections::HashMap::new(),
-        });
+        agents.insert(
+            "default".to_string(),
+            protoclaw_config::AgentConfig {
+                workspace: protoclaw_config::WorkspaceConfig::Local(
+                    protoclaw_config::LocalWorkspaceConfig {
+                        binary: mock_agent.to_string_lossy().to_string(),
+                        working_dir: None,
+                        env: std::collections::HashMap::new(),
+                    },
+                ),
+                args: vec![],
+                enabled: true,
+                tools: vec![],
+                acp_timeout_secs: None,
+                backoff: None,
+                crash_tracker: None,
+                options: std::collections::HashMap::new(),
+            },
+        );
 
         ProtoclawConfig {
             agents_manager: protoclaw_config::AgentsManagerConfig {
@@ -474,7 +502,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn when_supervisor_run_with_cancel_called_then_boots_all_managers_and_shuts_down_cleanly() {
+    async fn when_supervisor_run_with_cancel_called_then_boots_all_managers_and_shuts_down_cleanly()
+    {
         let cancel = CancellationToken::new();
         let c = cancel.clone();
         let boot_signal = Arc::new(tokio::sync::Notify::new());
@@ -487,7 +516,10 @@ mod tests {
 
         let sup = Supervisor::new(test_config()).with_boot_notify(boot_signal);
         let result = sup.run_with_cancel(cancel).await;
-        assert!(result.is_ok(), "supervisor should boot and shut down cleanly: {result:?}");
+        assert!(
+            result.is_ok(),
+            "supervisor should boot and shut down cleanly: {result:?}"
+        );
     }
 
     #[tokio::test]
@@ -501,13 +533,13 @@ mod tests {
         let mut slots = Vec::with_capacity(3);
         for &name in &MANAGER_ORDER {
             slots.push(ManagerSlot {
-                            name: name.to_string(),
-                            cancel_token: cancel.child_token(),
-                            join_handle: None,
-                            backoff: ExponentialBackoff::default(),
-                            crash_tracker: CrashTracker::default(),
-                            disabled: false,
-                        });
+                name: name.to_string(),
+                cancel_token: cancel.child_token(),
+                join_handle: None,
+                backoff: ExponentialBackoff::default(),
+                crash_tracker: CrashTracker::default(),
+                disabled: false,
+            });
         }
 
         sup.boot_managers(&mut slots).await.unwrap();
@@ -541,13 +573,13 @@ mod tests {
                 Ok::<(), ManagerError>(())
             });
             slots.push(ManagerSlot {
-                            name: name.to_string(),
-                            cancel_token: token,
-                            join_handle: Some(handle),
-                            backoff: ExponentialBackoff::default(),
-                            crash_tracker: CrashTracker::default(),
-                            disabled: false,
-                        });
+                name: name.to_string(),
+                cancel_token: token,
+                join_handle: Some(handle),
+                backoff: ExponentialBackoff::default(),
+                crash_tracker: CrashTracker::default(),
+                disabled: false,
+            });
         }
 
         sup.shutdown_ordered(&mut slots, per_manager_timeout).await;
@@ -571,13 +603,13 @@ mod tests {
                 Ok::<(), ManagerError>(())
             });
             slots.push(ManagerSlot {
-                            name: name.to_string(),
-                            cancel_token: token,
-                            join_handle: Some(handle),
-                            backoff: ExponentialBackoff::default(),
-                            crash_tracker: CrashTracker::default(),
-                            disabled: false,
-                        });
+                name: name.to_string(),
+                cancel_token: token,
+                join_handle: Some(handle),
+                backoff: ExponentialBackoff::default(),
+                crash_tracker: CrashTracker::default(),
+                disabled: false,
+            });
         }
 
         let start = tokio::time::Instant::now();
@@ -598,13 +630,13 @@ mod tests {
             Ok::<(), ManagerError>(())
         });
         slots.push(ManagerSlot {
-                        name: "stuck".to_string(),
-                        cancel_token: token,
-                        join_handle: Some(handle),
-                        backoff: ExponentialBackoff::default(),
-                        crash_tracker: CrashTracker::default(),
-                        disabled: false,
-                    });
+            name: "stuck".to_string(),
+            cancel_token: token,
+            join_handle: Some(handle),
+            backoff: ExponentialBackoff::default(),
+            crash_tracker: CrashTracker::default(),
+            disabled: false,
+        });
 
         let start = tokio::time::Instant::now();
         sup.shutdown_ordered(&mut slots, per_manager_timeout).await;
@@ -621,23 +653,27 @@ mod tests {
 
         let mut slots = Vec::with_capacity(1);
         let token = cancel.child_token();
-        let handle = tokio::spawn(async move {
-            Err::<(), ManagerError>(ManagerError::Internal("crash".into()))
-        });
+        let handle =
+            tokio::spawn(
+                async move { Err::<(), ManagerError>(ManagerError::Internal("crash".into())) },
+            );
         slots.push(ManagerSlot {
-                        name: "tools".to_string(),
-                        cancel_token: token,
-                        join_handle: Some(handle),
-                        backoff: ExponentialBackoff::default(),
-                        crash_tracker: CrashTracker::new(5, Duration::from_secs(60)),
-                        disabled: false,
-                    });
+            name: "tools".to_string(),
+            cancel_token: token,
+            join_handle: Some(handle),
+            backoff: ExponentialBackoff::default(),
+            crash_tracker: CrashTracker::new(5, Duration::from_secs(60)),
+            disabled: false,
+        });
 
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         sup.check_and_restart_managers(&mut slots, &cancel).await;
 
-        assert!(slots[0].join_handle.is_some(), "manager should be restarted");
+        assert!(
+            slots[0].join_handle.is_some(),
+            "manager should be restarted"
+        );
         assert_eq!(slots[0].backoff.attempts(), 1);
 
         cancel.cancel();
@@ -653,9 +689,10 @@ mod tests {
 
         let mut slots = Vec::with_capacity(1);
         let token = cancel.child_token();
-        let handle = tokio::spawn(async move {
-            Err::<(), ManagerError>(ManagerError::Internal("crash".into()))
-        });
+        let handle =
+            tokio::spawn(
+                async move { Err::<(), ManagerError>(ManagerError::Internal("crash".into())) },
+            );
 
         let mut crash_tracker = CrashTracker::new(3, Duration::from_secs(60));
         crash_tracker.record_crash();
@@ -689,15 +726,24 @@ mod tests {
 
         let h1 = tokio::spawn({
             let t = child1.clone();
-            async move { t.cancelled().await; "child1" }
+            async move {
+                t.cancelled().await;
+                "child1"
+            }
         });
         let h2 = tokio::spawn({
             let t = child2.clone();
-            async move { t.cancelled().await; "child2" }
+            async move {
+                t.cancelled().await;
+                "child2"
+            }
         });
         let h3 = tokio::spawn({
             let t = child3.clone();
-            async move { t.cancelled().await; "child3" }
+            async move {
+                t.cancelled().await;
+                "child3"
+            }
         });
 
         root.cancel();
@@ -708,7 +754,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn when_supervisor_run_with_cancel_signalled_after_boot_then_exits_cleanly_within_timeout() {
+    async fn when_supervisor_run_with_cancel_signalled_after_boot_then_exits_cleanly_within_timeout()
+     {
         let cancel = CancellationToken::new();
         let c = cancel.clone();
         let boot_signal = Arc::new(tokio::sync::Notify::new());
@@ -733,17 +780,16 @@ mod tests {
 
         let mut slots = Vec::with_capacity(1);
         let token = cancel.child_token();
-        let handle = tokio::spawn(async {
-            Err::<(), ManagerError>(ManagerError::Internal("crash".into()))
-        });
+        let handle =
+            tokio::spawn(async { Err::<(), ManagerError>(ManagerError::Internal("crash".into())) });
         slots.push(ManagerSlot {
-                        name: "tools".to_string(),
-                        cancel_token: token,
-                        join_handle: Some(handle),
-                        backoff: ExponentialBackoff::default(),
-                        crash_tracker: CrashTracker::new(10, Duration::from_secs(60)),
-                        disabled: false,
-                    });
+            name: "tools".to_string(),
+            cancel_token: token,
+            join_handle: Some(handle),
+            backoff: ExponentialBackoff::default(),
+            crash_tracker: CrashTracker::new(10, Duration::from_secs(60)),
+            disabled: false,
+        });
 
         tokio::time::sleep(Duration::from_millis(50)).await;
         sup.check_and_restart_managers(&mut slots, &cancel).await;

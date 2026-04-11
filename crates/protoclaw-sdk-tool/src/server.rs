@@ -18,12 +18,12 @@ pub struct ToolServer {
 
 impl ToolServer {
     pub fn new(tools: Vec<Box<dyn Tool>>) -> Self {
-        let map: HashMap<String, Box<dyn Tool>> =
-            tools.into_iter().map(|t| (t.name().to_string(), t)).collect();
+        let map: HashMap<String, Box<dyn Tool>> = tools
+            .into_iter()
+            .map(|t| (t.name().to_string(), t))
+            .collect();
 
-        let mut server_info = ServerInfo::new(
-            ServerCapabilities::builder().enable_tools().build(),
-        );
+        let mut server_info = ServerInfo::new(ServerCapabilities::builder().enable_tools().build());
         server_info.server_info = Implementation::new("protoclaw-sdk-tool", "0.1.0");
 
         Self {
@@ -62,9 +62,10 @@ impl ToolServer {
         name: &str,
         arguments: Option<serde_json::Map<String, serde_json::Value>>,
     ) -> Result<CallToolResult, McpError> {
-        let tool = self.tools.get(name).ok_or_else(|| {
-            McpError::invalid_params(format!("unknown tool: {name}"), None)
-        })?;
+        let tool = self
+            .tools
+            .get(name)
+            .ok_or_else(|| McpError::invalid_params(format!("unknown tool: {name}"), None))?;
 
         let input = arguments
             .map(serde_json::Value::Object)
@@ -104,23 +105,28 @@ impl ServerHandler for ToolServer {
         request: CallToolRequestParams,
         _context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, McpError> {
-        self.dispatch_tool(request.name.as_ref(), request.arguments).await
+        self.dispatch_tool(request.name.as_ref(), request.arguments)
+            .await
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use async_trait::async_trait;
     use crate::error::ToolSdkError;
+    use async_trait::async_trait;
     use rstest::rstest;
 
     struct EchoTool;
 
     #[async_trait]
     impl Tool for EchoTool {
-        fn name(&self) -> &str { "echo" }
-        fn description(&self) -> &str { "Echoes input back" }
+        fn name(&self) -> &str {
+            "echo"
+        }
+        fn description(&self) -> &str {
+            "Echoes input back"
+        }
         fn input_schema(&self) -> serde_json::Value {
             serde_json::json!({
                 "type": "object",
@@ -128,7 +134,10 @@ mod tests {
                 "required": ["message"]
             })
         }
-        async fn execute(&self, input: serde_json::Value) -> Result<serde_json::Value, ToolSdkError> {
+        async fn execute(
+            &self,
+            input: serde_json::Value,
+        ) -> Result<serde_json::Value, ToolSdkError> {
             Ok(input)
         }
     }
@@ -137,12 +146,19 @@ mod tests {
 
     #[async_trait]
     impl Tool for FailTool {
-        fn name(&self) -> &str { "fail" }
-        fn description(&self) -> &str { "Always fails" }
+        fn name(&self) -> &str {
+            "fail"
+        }
+        fn description(&self) -> &str {
+            "Always fails"
+        }
         fn input_schema(&self) -> serde_json::Value {
             serde_json::json!({"type": "object"})
         }
-        async fn execute(&self, _input: serde_json::Value) -> Result<serde_json::Value, ToolSdkError> {
+        async fn execute(
+            &self,
+            _input: serde_json::Value,
+        ) -> Result<serde_json::Value, ToolSdkError> {
             Err(ToolSdkError::ExecutionFailed("intentional failure".into()))
         }
     }

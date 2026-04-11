@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use protoclaw_sdk_channel::{ChannelAckConfig, PermissionBroker};
 use protoclaw_sdk_types::ChannelSendMessage;
-use tokio::sync::{mpsc, Mutex, RwLock};
+use tokio::sync::{Mutex, RwLock, mpsc};
 
 use crate::turn::ChatTurn;
 

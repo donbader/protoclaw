@@ -14,8 +14,14 @@ pub struct WasmTool {
 }
 
 impl WasmTool {
-    pub fn new(name: String, config: ToolConfig, runner: Arc<WasmToolRunner>) -> Result<Self, ToolSdkError> {
-        let module = config.module.as_ref()
+    pub fn new(
+        name: String,
+        config: ToolConfig,
+        runner: Arc<WasmToolRunner>,
+    ) -> Result<Self, ToolSdkError> {
+        let module = config
+            .module
+            .as_ref()
             .ok_or_else(|| ToolSdkError::ExecutionFailed("no module path specified".into()))?;
         let module_bytes = std::fs::read(module).map_err(ToolSdkError::Io)?;
         Ok(Self {
@@ -45,12 +51,8 @@ impl Tool for WasmTool {
             .unwrap_or_else(|| serde_json::json!({"type": "object"}))
     }
 
-    async fn execute(
-        &self,
-        input: serde_json::Value,
-    ) -> Result<serde_json::Value, ToolSdkError> {
-        let input_json =
-            serde_json::to_string(&input).map_err(ToolSdkError::Serde)?;
+    async fn execute(&self, input: serde_json::Value) -> Result<serde_json::Value, ToolSdkError> {
+        let input_json = serde_json::to_string(&input).map_err(ToolSdkError::Serde)?;
 
         let output = self
             .runner
@@ -58,8 +60,8 @@ impl Tool for WasmTool {
             .await
             .map_err(|e| ToolSdkError::ExecutionFailed(e.to_string()))?;
 
-        let value: serde_json::Value = serde_json::from_str(&output)
-            .unwrap_or(serde_json::Value::String(output));
+        let value: serde_json::Value =
+            serde_json::from_str(&output).unwrap_or(serde_json::Value::String(output));
 
         Ok(value)
     }

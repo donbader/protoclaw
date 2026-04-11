@@ -8,7 +8,10 @@ pub trait Manager: Send + 'static {
 
     fn name(&self) -> &str;
     fn start(&mut self) -> impl std::future::Future<Output = Result<(), ManagerError>> + Send;
-    fn run(self, cancel: CancellationToken) -> impl std::future::Future<Output = Result<(), ManagerError>> + Send;
+    fn run(
+        self,
+        cancel: CancellationToken,
+    ) -> impl std::future::Future<Output = Result<(), ManagerError>> + Send;
     fn health_check(&self) -> impl std::future::Future<Output = bool> + Send;
 }
 

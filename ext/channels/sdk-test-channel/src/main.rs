@@ -94,9 +94,7 @@ mod tests {
     #[tokio::test]
     async fn deliver_echoes_back() {
         let (tx, mut rx) = mpsc::channel(4);
-        let mut ch = SdkTestChannel {
-            outbound: Some(tx),
-        };
+        let mut ch = SdkTestChannel { outbound: Some(tx) };
         let msg = DeliverMessage {
             session_id: "s1".into(),
             content: serde_json::json!("hello from agent"),

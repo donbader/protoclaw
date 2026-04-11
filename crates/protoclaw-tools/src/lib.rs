@@ -6,9 +6,9 @@ pub mod wasm_runner;
 pub mod wasm_tool;
 
 pub use error::*;
+pub use external::ExternalMcpServer;
 pub use manager::*;
 pub use mcp_host::McpHost;
-pub use external::ExternalMcpServer;
+pub use protoclaw_core::{McpServerUrl, ToolsCommand};
 pub use wasm_runner::WasmToolRunner;
 pub use wasm_tool::WasmTool;
-pub use protoclaw_core::{McpServerUrl, ToolsCommand};

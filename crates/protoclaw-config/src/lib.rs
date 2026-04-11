@@ -11,7 +11,7 @@ pub use resolve::*;
 pub use types::*;
 pub use validate::*;
 
-use figment::{providers::Format, Figment};
+use figment::{Figment, providers::Format};
 
 impl ProtoclawConfig {
     pub fn load(config_path: Option<&str>) -> Result<Self, ConfigError> {

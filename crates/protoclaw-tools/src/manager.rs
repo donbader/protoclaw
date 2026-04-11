@@ -11,8 +11,7 @@ use rmcp::model::{
 };
 use rmcp::service::RequestContext;
 use rmcp::transport::streamable_http_server::{
-    StreamableHttpServerConfig, StreamableHttpService,
-    session::local::LocalSessionManager,
+    StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
 };
 use rmcp::{ErrorData as McpError, RoleServer};
 use tokio_util::sync::CancellationToken;
@@ -29,12 +28,8 @@ pub struct AggregatedToolServer {
 }
 
 impl AggregatedToolServer {
-    pub fn new(
-        native_host: Arc<McpHost>,
-        external_servers: Arc<Vec<ExternalMcpServer>>,
-    ) -> Self {
-        let mut server_info =
-            ServerInfo::new(ServerCapabilities::builder().enable_tools().build());
+    pub fn new(native_host: Arc<McpHost>, external_servers: Arc<Vec<ExternalMcpServer>>) -> Self {
+        let mut server_info = ServerInfo::new(ServerCapabilities::builder().enable_tools().build());
         server_info.server_info = Implementation::new("protoclaw-tools", "0.1.0");
         Self {
             native_host,
@@ -156,7 +151,9 @@ impl Manager for ToolsManager {
     async fn start(&mut self) -> Result<(), ManagerError> {
         let mut all_tools: Vec<Box<dyn Tool>> = std::mem::take(&mut self.native_tools);
 
-        let wasm_configs: Vec<(String, ToolConfig)> = self.tool_configs.iter()
+        let wasm_configs: Vec<(String, ToolConfig)> = self
+            .tool_configs
+            .iter()
             .filter(|(_, c)| c.tool_type == "wasm" && c.enabled)
             .map(|(n, c)| (n.clone(), c.clone()))
             .collect();
@@ -184,7 +181,9 @@ impl Manager for ToolsManager {
         self.native_host = Some(native_host.clone());
 
         let mut external_servers = Vec::new();
-        let mcp_configs: Vec<(String, ToolConfig)> = self.tool_configs.iter()
+        let mcp_configs: Vec<(String, ToolConfig)> = self
+            .tool_configs
+            .iter()
             .filter(|(_, c)| c.tool_type == "mcp" && c.enabled)
             .map(|(n, c)| (n.clone(), c.clone()))
             .collect();
@@ -217,10 +216,12 @@ impl Manager for ToolsManager {
 
             let service: StreamableHttpService<AggregatedToolServer, LocalSessionManager> =
                 StreamableHttpService::new(
-                    move || Ok(AggregatedToolServer::new(
-                        native_host_clone.clone(),
-                        external_servers_clone.clone(),
-                    )),
+                    move || {
+                        Ok(AggregatedToolServer::new(
+                            native_host_clone.clone(),
+                            external_servers_clone.clone(),
+                        ))
+                    },
                     Default::default(),
                     config,
                 );
@@ -229,7 +230,8 @@ impl Manager for ToolsManager {
             let listener = tokio::net::TcpListener::bind("0.0.0.0:0")
                 .await
                 .map_err(|e| ManagerError::Internal(format!("tools server bind: {e}")))?;
-            let port = listener.local_addr()
+            let port = listener
+                .local_addr()
                 .map_err(|e| ManagerError::Internal(format!("tools server addr: {e}")))?
                 .port();
 
@@ -244,7 +246,10 @@ impl Manager for ToolsManager {
             tracing::info!(url = %url, "tools aggregated MCP server listening");
 
             for (name, _) in &mcp_configs {
-                self.server_urls.push(McpServerUrl { name: name.clone(), url: url.clone() });
+                self.server_urls.push(McpServerUrl {
+                    name: name.clone(),
+                    url: url.clone(),
+                });
             }
         }
 
@@ -376,8 +381,12 @@ mod tests {
     #[tokio::test]
     async fn when_native_tools_registered_then_aggregate_list_contains_them() {
         let tools: Vec<Box<dyn Tool>> = vec![
-            Box::new(DummyTool { tool_name: "tool-a".into() }),
-            Box::new(DummyTool { tool_name: "tool-b".into() }),
+            Box::new(DummyTool {
+                tool_name: "tool-a".into(),
+            }),
+            Box::new(DummyTool {
+                tool_name: "tool-b".into(),
+            }),
         ];
         let host = Arc::new(McpHost::new(tools));
         let ext = Arc::new(vec![]);
@@ -392,9 +401,9 @@ mod tests {
 
     #[tokio::test]
     async fn when_known_tool_called_via_aggregated_server_then_returns_result() {
-        let tools: Vec<Box<dyn Tool>> = vec![
-            Box::new(DummyTool { tool_name: "my-tool".into() }),
-        ];
+        let tools: Vec<Box<dyn Tool>> = vec![Box::new(DummyTool {
+            tool_name: "my-tool".into(),
+        })];
         let host = Arc::new(McpHost::new(tools));
         let ext = Arc::new(vec![]);
         let agg = AggregatedToolServer::new(host, ext);
@@ -415,9 +424,9 @@ mod tests {
 
     #[tokio::test]
     async fn when_manager_given_native_tools_then_they_appear_in_host_tool_list() {
-        let tools: Vec<Box<dyn Tool>> = vec![
-            Box::new(DummyTool { tool_name: "native-1".into() }),
-        ];
+        let tools: Vec<Box<dyn Tool>> = vec![Box::new(DummyTool {
+            tool_name: "native-1".into(),
+        })];
         let mut m = ToolsManager::new(HashMap::new(), "127.0.0.1".into()).with_native_tools(tools);
         m.start().await.unwrap();
 
@@ -439,17 +448,20 @@ mod tests {
         let bytes = wat::parse_str(wat).unwrap();
         std::fs::write(&wasm_path, &bytes).unwrap();
 
-        let tool_configs = HashMap::from([("wasm-tool-1".to_string(), ToolConfig {
-            tool_type: "wasm".into(),
-            binary: None,
-            args: vec![],
-            enabled: true,
-            module: Some(wasm_path),
-            description: "test wasm tool".into(),
-            input_schema: None,
-            sandbox: protoclaw_config::WasmSandboxConfig::default(),
-            options: HashMap::new(),
-        })]);
+        let tool_configs = HashMap::from([(
+            "wasm-tool-1".to_string(),
+            ToolConfig {
+                tool_type: "wasm".into(),
+                binary: None,
+                args: vec![],
+                enabled: true,
+                module: Some(wasm_path),
+                description: "test wasm tool".into(),
+                input_schema: None,
+                sandbox: protoclaw_config::WasmSandboxConfig::default(),
+                options: HashMap::new(),
+            },
+        )]);
 
         let mut m = ToolsManager::new(tool_configs, "127.0.0.1".into());
         m.start().await.unwrap();
@@ -466,17 +478,20 @@ mod tests {
 
     #[tokio::test]
     async fn when_invalid_wasm_path_provided_then_skipped_and_start_succeeds() {
-        let tool_configs = HashMap::from([("bad-tool".to_string(), ToolConfig {
-            tool_type: "wasm".into(),
-            binary: None,
-            args: vec![],
-            enabled: true,
-            module: Some(std::path::PathBuf::from("/nonexistent/tool.wasm")),
-            description: "bad".into(),
-            input_schema: None,
-            sandbox: protoclaw_config::WasmSandboxConfig::default(),
-            options: HashMap::new(),
-        })]);
+        let tool_configs = HashMap::from([(
+            "bad-tool".to_string(),
+            ToolConfig {
+                tool_type: "wasm".into(),
+                binary: None,
+                args: vec![],
+                enabled: true,
+                module: Some(std::path::PathBuf::from("/nonexistent/tool.wasm")),
+                description: "bad".into(),
+                input_schema: None,
+                sandbox: protoclaw_config::WasmSandboxConfig::default(),
+                options: HashMap::new(),
+            },
+        )]);
 
         let mut m = ToolsManager::new(tool_configs, "127.0.0.1".into());
         let result = m.start().await;
@@ -499,22 +514,26 @@ mod tests {
         let bytes = wat::parse_str(wat).unwrap();
         std::fs::write(&wasm_path, &bytes).unwrap();
 
-        let native_tools: Vec<Box<dyn Tool>> = vec![
-            Box::new(DummyTool { tool_name: "native-1".into() }),
-        ];
-        let tool_configs = HashMap::from([("wasm-1".to_string(), ToolConfig {
-            tool_type: "wasm".into(),
-            binary: None,
-            args: vec![],
-            enabled: true,
-            module: Some(wasm_path),
-            description: "wasm".into(),
-            input_schema: None,
-            sandbox: protoclaw_config::WasmSandboxConfig::default(),
-            options: HashMap::new(),
-        })]);
+        let native_tools: Vec<Box<dyn Tool>> = vec![Box::new(DummyTool {
+            tool_name: "native-1".into(),
+        })];
+        let tool_configs = HashMap::from([(
+            "wasm-1".to_string(),
+            ToolConfig {
+                tool_type: "wasm".into(),
+                binary: None,
+                args: vec![],
+                enabled: true,
+                module: Some(wasm_path),
+                description: "wasm".into(),
+                input_schema: None,
+                sandbox: protoclaw_config::WasmSandboxConfig::default(),
+                options: HashMap::new(),
+            },
+        )]);
 
-        let mut m = ToolsManager::new(tool_configs, "127.0.0.1".into()).with_native_tools(native_tools);
+        let mut m =
+            ToolsManager::new(tool_configs, "127.0.0.1".into()).with_native_tools(native_tools);
         m.start().await.unwrap();
 
         let host = m.native_host.as_ref().unwrap();
@@ -534,36 +553,57 @@ mod tests {
         let mut m = ToolsManager::new(HashMap::new(), "127.0.0.1".into());
         m.start().await.unwrap();
 
-        m.server_urls.push(McpServerUrl { name: "tool-a".into(), url: "http://a".into() });
-        m.server_urls.push(McpServerUrl { name: "tool-b".into(), url: "http://b".into() });
+        m.server_urls.push(McpServerUrl {
+            name: "tool-a".into(),
+            url: "http://a".into(),
+        });
+        m.server_urls.push(McpServerUrl {
+            name: "tool-b".into(),
+            url: "http://b".into(),
+        });
 
         let urls = m.server_urls.clone();
         let filtered: Vec<McpServerUrl> = match None::<Vec<String>> {
-            Some(names) => urls.iter().filter(|u| names.iter().any(|n| n == &u.name)).cloned().collect(),
+            Some(names) => urls
+                .iter()
+                .filter(|u| names.iter().any(|n| n == &u.name))
+                .cloned()
+                .collect(),
             None => urls,
         };
         assert_eq!(filtered.len(), 2);
 
-        for h in &m.server_handles { h.abort(); }
+        for h in &m.server_handles {
+            h.abort();
+        }
     }
 
     #[tokio::test]
     async fn when_get_mcp_urls_called_with_filter_then_returns_matching_urls_only() {
         let mut m = ToolsManager::new(HashMap::new(), "127.0.0.1".into());
         m.start().await.unwrap();
-        m.server_urls.push(McpServerUrl { name: "system-info".into(), url: "http://si".into() });
-        m.server_urls.push(McpServerUrl { name: "filesystem".into(), url: "http://fs".into() });
+        m.server_urls.push(McpServerUrl {
+            name: "system-info".into(),
+            url: "http://si".into(),
+        });
+        m.server_urls.push(McpServerUrl {
+            name: "filesystem".into(),
+            url: "http://fs".into(),
+        });
 
         let urls = m.server_urls.clone();
         let names = vec!["system-info".to_string()];
-        let filtered: Vec<McpServerUrl> = urls.iter()
+        let filtered: Vec<McpServerUrl> = urls
+            .iter()
             .filter(|u| names.iter().any(|n| n == &u.name))
             .cloned()
             .collect();
         assert_eq!(filtered.len(), 1);
         assert_eq!(filtered[0].name, "system-info");
 
-        for h in &m.server_handles { h.abort(); }
+        for h in &m.server_handles {
+            h.abort();
+        }
     }
 
     #[tokio::test]
@@ -573,28 +613,34 @@ mod tests {
 
         let urls = m.server_urls.clone();
         let names = vec!["nonexistent".to_string()];
-        let filtered: Vec<McpServerUrl> = urls.iter()
+        let filtered: Vec<McpServerUrl> = urls
+            .iter()
             .filter(|u| names.iter().any(|n| n == &u.name))
             .cloned()
             .collect();
         assert!(filtered.is_empty());
 
-        for h in &m.server_handles { h.abort(); }
+        for h in &m.server_handles {
+            h.abort();
+        }
     }
 
     #[tokio::test]
     async fn when_mcp_server_is_disabled_then_not_spawned_on_start() {
-        let tool_configs = HashMap::from([("disabled-tool".to_string(), ToolConfig {
-            tool_type: "mcp".into(),
-            binary: Some("nonexistent-binary-xyz-99999".into()),
-            args: vec![],
-            enabled: false,
-            module: None,
-            description: String::new(),
-            input_schema: None,
-            sandbox: Default::default(),
-            options: HashMap::new(),
-        })]);
+        let tool_configs = HashMap::from([(
+            "disabled-tool".to_string(),
+            ToolConfig {
+                tool_type: "mcp".into(),
+                binary: Some("nonexistent-binary-xyz-99999".into()),
+                args: vec![],
+                enabled: false,
+                module: None,
+                description: String::new(),
+                input_schema: None,
+                sandbox: Default::default(),
+                options: HashMap::new(),
+            },
+        )]);
         let mut m = ToolsManager::new(tool_configs, "127.0.0.1".into());
         m.start().await.unwrap();
         let ext = m.external_servers.as_ref().unwrap();
@@ -621,9 +667,9 @@ mod tests {
 
     #[tokio::test]
     async fn when_native_tool_exists_then_route_call_dispatches_to_native_not_external() {
-        let tools: Vec<Box<dyn Tool>> = vec![
-            Box::new(DummyTool { tool_name: "native-only".into() }),
-        ];
+        let tools: Vec<Box<dyn Tool>> = vec![Box::new(DummyTool {
+            tool_name: "native-only".into(),
+        })];
         let host = Arc::new(McpHost::new(tools));
         let ext = Arc::new(vec![]);
         let agg = AggregatedToolServer::new(host, ext);
@@ -635,8 +681,12 @@ mod tests {
     #[tokio::test]
     async fn when_no_external_servers_then_aggregate_list_equals_native_list() {
         let tools: Vec<Box<dyn Tool>> = vec![
-            Box::new(DummyTool { tool_name: "alpha".into() }),
-            Box::new(DummyTool { tool_name: "beta".into() }),
+            Box::new(DummyTool {
+                tool_name: "alpha".into(),
+            }),
+            Box::new(DummyTool {
+                tool_name: "beta".into(),
+            }),
         ];
         let host = Arc::new(McpHost::new(tools));
         let native_list = host.tool_list();

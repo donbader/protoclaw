@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use protoclaw_integration_tests::{
-    boot_supervisor_with_port, mock_agent_config, with_timeout, SseCollector,
+    SseCollector, boot_supervisor_with_port, mock_agent_config, with_timeout,
 };
 use rstest::rstest;
 
@@ -36,7 +36,10 @@ async fn when_message_sent_then_full_acp_session_lifecycle_completes() {
     assert!(
         !thought_positions.is_empty(),
         "expected thought events proving ACP session pipeline ran, got: {:?}",
-        events.iter().map(|e| (&e.event_type, &e.data)).collect::<Vec<_>>()
+        events
+            .iter()
+            .map(|e| (&e.event_type, &e.data))
+            .collect::<Vec<_>>()
     );
 
     // Prove the result arrived

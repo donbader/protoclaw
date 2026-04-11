@@ -8,7 +8,7 @@ mod status;
 
 fn init_tracing(log_level: &str, log_format: &str) {
     use tracing_subscriber::prelude::*;
-    use tracing_subscriber::{fmt, EnvFilter, Registry};
+    use tracing_subscriber::{EnvFilter, Registry, fmt};
 
     let filter = EnvFilter::new(log_level);
     match log_format {
@@ -19,10 +19,7 @@ fn init_tracing(log_level: &str, log_format: &str) {
                 .init();
         }
         _ => {
-            Registry::default()
-                .with(filter)
-                .with(fmt::layer())
-                .init();
+            Registry::default().with(filter).with(fmt::layer()).init();
         }
     }
 }
@@ -37,7 +34,11 @@ async fn main() -> Result<()> {
                 .map_err(|e| anyhow::anyhow!("failed to load config: {e}"))?;
             init_tracing(&config.log_level, &config.log_format);
             tracing::info!(config_path = %cli.config, "protoclaw starting");
-            tracing::info!(agents = config.agents_manager.agents.len(), channels = config.channels_manager.channels.len(), "config loaded");
+            tracing::info!(
+                agents = config.agents_manager.agents.len(),
+                channels = config.channels_manager.channels.len(),
+                "config loaded"
+            );
             print!("{}", banner::format_banner(&config, &cli.config));
             protoclaw::supervisor::Supervisor::new(config).run().await?;
             tracing::info!("protoclaw shut down");
@@ -61,7 +62,10 @@ async fn main() -> Result<()> {
                     if result.is_ok() {
                         println!("\u{2713} Configuration valid: {}", cli.config);
                     } else {
-                        eprintln!("\u{2717} Configuration has {} error(s)", result.errors.len());
+                        eprintln!(
+                            "\u{2717} Configuration has {} error(s)",
+                            result.errors.len()
+                        );
                         std::process::exit(1);
                     }
                 }

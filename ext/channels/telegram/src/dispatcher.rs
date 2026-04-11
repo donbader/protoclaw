@@ -54,7 +54,10 @@ async fn handle_text_message(
             telegram_date = msg.date.timestamp(),
             "inbound message"
         );
-        state.last_message_ids.write().await
+        state
+            .last_message_ids
+            .write()
+            .await
             .insert(msg.chat.id.0, msg.id.0);
         let chat_type = chat_type_str(&msg.chat);
         let _ = process_text_message(msg.chat.id.0, chat_type, text, &state).await;
@@ -86,9 +89,15 @@ async fn handle_callback_query(
     })
     .await;
 
-    if let Some((chat_id, msg_id)) = state.permission_messages.lock().await.get(request_id).copied()
+    if let Some((chat_id, msg_id)) = state
+        .permission_messages
+        .lock()
+        .await
+        .get(request_id)
+        .copied()
     {
-        let empty_kb = InlineKeyboardMarkup::new(Vec::<Vec<teloxide::types::InlineKeyboardButton>>::new());
+        let empty_kb =
+            InlineKeyboardMarkup::new(Vec::<Vec<teloxide::types::InlineKeyboardButton>>::new());
         let bot_clone2 = bot.clone();
         let empty_kb_clone = empty_kb.clone();
         let _ = crate::deliver::retry_telegram_op("clear_permission_keyboard", chat_id, || {

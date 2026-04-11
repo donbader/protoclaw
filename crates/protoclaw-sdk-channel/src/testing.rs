@@ -145,7 +145,11 @@ mod tests {
         ) -> Result<PermissionResponse, ChannelSdkError> {
             Ok(PermissionResponse {
                 request_id: req.request_id,
-                option_id: req.options.first().map(|o| o.option_id.clone()).unwrap_or_default(),
+                option_id: req
+                    .options
+                    .first()
+                    .map(|o| o.option_id.clone())
+                    .unwrap_or_default(),
             })
         }
     }

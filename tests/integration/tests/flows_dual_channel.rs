@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use protoclaw_integration_tests::{
-    boot_supervisor_with_port, debug_http_path, mock_agent_path, with_timeout, SseCollector,
+    SseCollector, boot_supervisor_with_port, debug_http_path, mock_agent_path, with_timeout,
 };
 use protoclaw_test_helpers::sdk_test_channel_path;
 use rstest::rstest;

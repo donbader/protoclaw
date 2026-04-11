@@ -1,9 +1,9 @@
 use std::path::{Path, PathBuf};
 
 use figment::{
+    Error, Metadata, Profile, Provider,
     providers::Format,
     value::{Dict, Map},
-    Error, Metadata, Profile, Provider,
 };
 
 pub struct SubstYaml(PathBuf);
