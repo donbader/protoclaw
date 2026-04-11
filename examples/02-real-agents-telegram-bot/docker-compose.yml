@@ -37,6 +37,7 @@ services:
       - protoclaw-external
     depends_on:
       - socket-proxy
+      - opencode-agent-image
     restart: unless-stopped
 
   opencode-agent-image:
