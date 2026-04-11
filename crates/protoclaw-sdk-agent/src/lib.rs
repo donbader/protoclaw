@@ -10,7 +10,6 @@ pub use generic::GenericAcpAdapter;
 mod tests {
     use super::*;
     use adapter::AgentAdapter;
-    use rstest::rstest;
 
     #[tokio::test]
     async fn when_generic_adapter_on_initialize_result_called_then_passthrough() {

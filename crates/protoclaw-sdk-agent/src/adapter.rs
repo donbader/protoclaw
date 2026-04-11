@@ -147,3 +147,145 @@ impl<T: AgentAdapter> DynAgentAdapter for T {
         Box::pin(AgentAdapter::on_permission_request(self, request))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::rstest;
+
+    type AdapterHook = for<'a> fn(
+        &'a DefaultAdapter,
+        serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>>;
+
+    struct DefaultAdapter;
+
+    impl AgentAdapter for DefaultAdapter {}
+
+    struct PermissionRewritingAdapter;
+
+    impl AgentAdapter for PermissionRewritingAdapter {
+        async fn on_permission_request(
+            &self,
+            mut request: serde_json::Value,
+        ) -> Result<serde_json::Value, AgentSdkError> {
+            request["approved"] = serde_json::json!(true);
+            Ok(request)
+        }
+    }
+
+    fn call_on_initialize_params<'a>(
+        adapter: &'a DefaultAdapter,
+        value: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>> {
+        Box::pin(AgentAdapter::on_initialize_params(adapter, value))
+    }
+
+    fn call_on_initialize_result<'a>(
+        adapter: &'a DefaultAdapter,
+        value: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>> {
+        Box::pin(AgentAdapter::on_initialize_result(adapter, value))
+    }
+
+    fn call_on_session_new_params<'a>(
+        adapter: &'a DefaultAdapter,
+        value: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>> {
+        Box::pin(AgentAdapter::on_session_new_params(adapter, value))
+    }
+
+    fn call_on_session_new_result<'a>(
+        adapter: &'a DefaultAdapter,
+        value: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>> {
+        Box::pin(AgentAdapter::on_session_new_result(adapter, value))
+    }
+
+    fn call_on_session_prompt_params<'a>(
+        adapter: &'a DefaultAdapter,
+        value: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>> {
+        Box::pin(AgentAdapter::on_session_prompt_params(adapter, value))
+    }
+
+    fn call_on_session_update<'a>(
+        adapter: &'a DefaultAdapter,
+        value: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>> {
+        Box::pin(AgentAdapter::on_session_update(adapter, value))
+    }
+
+    fn call_on_permission_request<'a>(
+        adapter: &'a DefaultAdapter,
+        value: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>> {
+        Box::pin(AgentAdapter::on_permission_request(adapter, value))
+    }
+
+    #[rstest]
+    #[case::initialize_params(
+        serde_json::json!({"protocolVersion": 1}),
+        call_on_initialize_params
+    )]
+    #[case::initialize_result(
+        serde_json::json!({"capabilities": {"streaming": true}}),
+        call_on_initialize_result
+    )]
+    #[case::session_new_params(
+        serde_json::json!({"sessionId": null}),
+        call_on_session_new_params
+    )]
+    #[case::session_new_result(
+        serde_json::json!({"sessionId": "sess-1"}),
+        call_on_session_new_result
+    )]
+    #[case::session_prompt_params(
+        serde_json::json!({"message": {"role": "user", "content": "hello"}}),
+        call_on_session_prompt_params
+    )]
+    #[case::session_update(
+        serde_json::json!({"type": "agent_message_chunk", "content": "hello"}),
+        call_on_session_update
+    )]
+    #[case::permission_request(
+        serde_json::json!({"requestId": "perm-1", "description": "Allow?"}),
+        call_on_permission_request
+    )]
+    #[tokio::test]
+    async fn when_default_adapter_hook_called_then_passthrough(
+        #[case] input: serde_json::Value,
+        #[case] hook: AdapterHook,
+    ) {
+        let adapter = DefaultAdapter;
+
+        let output = hook(&adapter, input.clone()).await.unwrap();
+
+        assert_eq!(output, input);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_custom_adapter_overrides_permission_request_then_overridden_value_returned() {
+        let adapter = PermissionRewritingAdapter;
+        let input = serde_json::json!({"requestId": "perm-1", "description": "Allow?"});
+
+        let output = AgentAdapter::on_permission_request(&adapter, input).await.unwrap();
+
+        assert_eq!(output["approved"], serde_json::json!(true));
+        assert_eq!(output["requestId"], serde_json::json!("perm-1"));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_custom_adapter_on_non_overridden_hook_called_then_default_passthrough_used() {
+        let adapter = PermissionRewritingAdapter;
+        let input = serde_json::json!({"sessionId": "sess-2"});
+
+        let output = AgentAdapter::on_session_new_result(&adapter, input.clone())
+            .await
+            .unwrap();
+
+        assert_eq!(output, input);
+    }
+}

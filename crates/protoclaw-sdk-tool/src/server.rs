@@ -233,4 +233,82 @@ mod tests {
     fn when_tool_cast_to_dyn_trait_object_then_compiles() {
         let _tool: Box<dyn DynTool> = Box::new(EchoTool);
     }
+
+    struct StaticTool {
+        tool_name: &'static str,
+        payload: &'static str,
+    }
+
+    impl Tool for StaticTool {
+        fn name(&self) -> &str {
+            self.tool_name
+        }
+
+        fn description(&self) -> &str {
+            "Returns a static payload"
+        }
+
+        fn input_schema(&self) -> serde_json::Value {
+            serde_json::json!({"type": "object"})
+        }
+
+        async fn execute(
+            &self,
+            _input: serde_json::Value,
+        ) -> Result<serde_json::Value, ToolSdkError> {
+            Ok(serde_json::json!({"tool": self.payload}))
+        }
+    }
+
+    #[rstest]
+    #[test]
+    fn when_tool_server_new_called_then_tools_are_registered_by_name() {
+        let tools: Vec<Box<dyn DynTool>> = vec![
+            Box::new(StaticTool {
+                tool_name: "alpha",
+                payload: "A",
+            }),
+            Box::new(StaticTool {
+                tool_name: "beta",
+                payload: "B",
+            }),
+        ];
+        let server = ToolServer::new(tools);
+
+        assert_eq!(server.tools.len(), 2);
+        assert!(server.tools.contains_key("alpha"));
+        assert!(server.tools.contains_key("beta"));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_tool_server_dispatches_by_name_then_matching_tool_handles_request() {
+        let tools: Vec<Box<dyn DynTool>> = vec![
+            Box::new(StaticTool {
+                tool_name: "alpha",
+                payload: "A",
+            }),
+            Box::new(StaticTool {
+                tool_name: "beta",
+                payload: "B",
+            }),
+        ];
+        let server = ToolServer::new(tools);
+
+        let result = server.dispatch_tool("beta", None).await.unwrap();
+
+        assert_eq!(result.is_error, Some(false));
+        assert_eq!(result.content, vec![Content::text(r#"{"tool":"B"}"#.to_string())]);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_tool_server_dispatches_unknown_name_then_invalid_params_includes_name() {
+        let tools: Vec<Box<dyn DynTool>> = vec![Box::new(EchoTool)];
+        let server = ToolServer::new(tools);
+
+        let error = server.dispatch_tool("missing-tool", None).await.unwrap_err();
+
+        assert!(error.message.contains("unknown tool: missing-tool"));
+    }
 }
