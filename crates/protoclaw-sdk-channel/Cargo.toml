@@ -1,8 +1,15 @@
 [package]
 name = "protoclaw-sdk-channel"
 version = "0.1.0"
+description = "Channel SDK for protoclaw — build messaging channel integrations"
 edition.workspace = true
 rust-version.workspace = true
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/donbader/protoclaw"
+homepage = "https://github.com/donbader/protoclaw"
+readme = "README.md"
+keywords = ["agent", "mcp", "acp", "sdk"]
+categories = ["network-programming"]
 
 [dependencies]
 protoclaw-sdk-types = { workspace = true }

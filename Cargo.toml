@@ -5,6 +5,9 @@ members = ["crates/*", "tests/integration", "ext/channels/debug-http", "ext/chan
 [workspace.package]
 edition = "2024"
 rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/donbader/protoclaw"
+homepage = "https://github.com/donbader/protoclaw"
 
 [workspace.dependencies]
 protoclaw-agents = { path = "crates/protoclaw-agents" }
@@ -31,10 +34,10 @@ tempfile = "3"
 axum = "0.8"
 tokio-stream = { version = "0.1", features = ["sync"] }
 protoclaw-channels = { path = "crates/protoclaw-channels" }
-protoclaw-sdk-types = { path = "crates/protoclaw-sdk-types" }
-protoclaw-sdk-channel = { path = "crates/protoclaw-sdk-channel" }
-protoclaw-sdk-tool = { path = "crates/protoclaw-sdk-tool" }
-protoclaw-sdk-agent = { path = "crates/protoclaw-sdk-agent" }
+protoclaw-sdk-types = { path = "crates/protoclaw-sdk-types", version = "0.1.0" }
+protoclaw-sdk-channel = { path = "crates/protoclaw-sdk-channel", version = "0.1.0" }
+protoclaw-sdk-tool = { path = "crates/protoclaw-sdk-tool", version = "0.1.0" }
+protoclaw-sdk-agent = { path = "crates/protoclaw-sdk-agent", version = "0.1.0" }
 protoclaw-test-helpers = { path = "crates/protoclaw-test-helpers" }
 wasmtime = "42"
 wasmtime-wasi = "42"
