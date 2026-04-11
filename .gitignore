@@ -5,3 +5,14 @@ libnull.rlib
 # Coverage
 coverage/
 *.profraw
+
+# GSD planning (local-only)
+.planning/
+
+# IDE / OS
+.DS_Store
+.idea/
+.vscode/
+
+# WASM artifacts
+*.wasm
