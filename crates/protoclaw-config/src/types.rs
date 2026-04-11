@@ -898,7 +898,7 @@ agents_manager:
     opencode:
       workspace:
         type: local
-        binary: "@built-in/opencode"
+        binary: "@built-in/agents/opencode-wrapper"
         env:
           OPENCODE_API_KEY: "test"
       tools:
@@ -910,18 +910,18 @@ channels_manager:
     window_ms: 1000
   channels:
     telegram:
-      binary: "@built-in/telegram-channel"
+      binary: "@built-in/channels/telegram"
       agent: "opencode"
       ack:
         reaction: true
         typing: true
     debug-http:
-      binary: "@built-in/debug-http"
+      binary: "@built-in/channels/debug-http"
 
 tools_manager:
   tools:
     system-info:
-      binary: "@built-in/system-info"
+      binary: "@built-in/tools/system-info"
 
 supervisor:
   shutdown_timeout_secs: 15

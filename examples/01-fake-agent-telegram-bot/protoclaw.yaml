@@ -10,7 +10,7 @@ agents_manager:
     mock:
       workspace:
         type: local
-        binary: "@built-in/mock-agent"
+        binary: "@built-in/agents/mock-agent"
       options:
         thinking: true
         thinking_time_ms: 3000
@@ -37,7 +37,7 @@ agents_manager:
 channels_manager:
   channels:
     debug-http:
-      binary: "@built-in/debug-http"
+      binary: "@built-in/channels/debug-http"
       agent: "mock"
       options:
         HOST: "0.0.0.0"
@@ -46,7 +46,7 @@ channels_manager:
         reaction: false
         typing: false
     telegram:
-      binary: "@built-in/telegram-channel"
+      binary: "@built-in/channels/telegram"
       enabled: "${TELEGRAM_ENABLED:false}"
       agent: "mock"
       options:
@@ -60,7 +60,7 @@ channels_manager:
 tools_manager:
   tools:
     system-info:
-      binary: "@built-in/system-info"
+      binary: "@built-in/tools/system-info"
 
 supervisor:
   shutdown_timeout_secs: 30

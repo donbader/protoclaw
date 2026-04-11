@@ -22,7 +22,7 @@ fn given_fake_agent_example_yaml_when_loaded_then_has_one_mock_agent() {
         .expect("missing 'mock' agent");
     match &mock.workspace {
         protoclaw_config::WorkspaceConfig::Local(local) => {
-            assert_eq!(local.binary, "@built-in/mock-agent");
+            assert_eq!(local.binary, "@built-in/agents/mock-agent");
         }
         other => panic!("expected Local workspace, got {other:?}"),
     }
@@ -83,7 +83,7 @@ fn given_real_agent_example_yaml_when_loaded_then_has_opencode_and_claude_agents
         .expect("missing 'opencode-local' agent");
     match &opencode_local.workspace {
         protoclaw_config::WorkspaceConfig::Local(local) => {
-            assert_eq!(local.binary, "@built-in/agents/opencode");
+            assert_eq!(local.binary, "@built-in/agents/opencode-wrapper");
         }
         other => panic!("expected Local workspace, got {other:?}"),
     }

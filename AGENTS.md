@@ -79,7 +79,7 @@ Example binaries:
 - **unwrap() rule**: `.expect("reason")` for true invariants (piped stdio, consumed-once fields). Bare `.unwrap()` only in tests. Use `?` for fallible paths.
 - **Module structure**: Flat `lib.rs` with `pub mod` + `pub use` re-exports. No `mod.rs` files.
 - **Manager communication**: `tokio::sync::mpsc` channels via `ManagerHandle<C>`. No shared mutable state between managers.
-- **Config layering**: Defaults → YAML file → env vars (`PROTOCLAW_` prefix, `__` separator). Top-level fields: `log_level` (default "info"), `extensions_dir` (default "/usr/local/bin"). `@built-in/` binary prefix resolved against `extensions_dir` in supervisor before manager construction.
+- **Config layering**: Defaults → YAML file → env vars (`PROTOCLAW_` prefix, `__` separator). Top-level fields: `log_level` (default "info"), `extensions_dir` (default "/usr/local/bin"). `@built-in/{agents,channels,tools}/<name>` binary prefix resolved against `extensions_dir` in supervisor before manager construction. Legacy flat paths (e.g. `@built-in/mock-agent`) supported via built-in aliases with deprecation warnings.
 - **Tracing**: Use `tracing` spans/events, not `println!` or `log` crate. Exception: CLI entry points (`main.rs`, `init.rs`, `status.rs`) may use `println!`/`eprintln!` for user-facing output before tracing is initialized.
 - **Test framework**: `rstest = "0.23"` is a `[dev-dependency]` in every workspace crate. Use `#[rstest]` for all new and migrated tests.
 - **BDD test naming**: Tests use `when_action_then_result` or `given_precondition_when_action_then_result` naming. No `test_` prefix. No `it_` prefix.

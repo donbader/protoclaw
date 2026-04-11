@@ -32,7 +32,7 @@ agents_manager:
     opencode-local:
       workspace:
         type: local
-        binary: "@built-in/agents/opencode"
+        binary: "@built-in/agents/opencode-wrapper"
         env:
           XDG_CONFIG_HOME: "/home/protoclaw/.config"
           XDG_DATA_HOME: "/home/protoclaw/.local/share"
@@ -58,7 +58,7 @@ agents_manager:
 channels_manager:
   channels:
     debug-http:
-      binary: "@built-in/debug-http"
+      binary: "@built-in/channels/debug-http"
       agent: "opencode"
       options:
         HOST: "0.0.0.0"
@@ -67,7 +67,7 @@ channels_manager:
         reaction: false
         typing: false
     telegram:
-      binary: "@built-in/telegram-channel"
+      binary: "@built-in/channels/telegram"
       enabled: "${TELEGRAM_ENABLED:false}"
       agent: "opencode"
       options:
@@ -82,7 +82,7 @@ tools_manager:
   tools_server_host: "protoclaw"
   tools:
     system-info:
-      binary: "@built-in/system-info"
+      binary: "@built-in/tools/system-info"
 
 supervisor:
   shutdown_timeout_secs: 30

@@ -1,0 +1,5 @@
+FROM ghcr.io/donbader/protoclaw-builder:latest AS builder
+
+FROM gcr.io/distroless/cc-debian12:nonroot
+COPY --from=builder /usr/local/bin/agents/mock-agent /usr/local/bin/agents/mock-agent
+ENTRYPOINT ["/usr/local/bin/agents/mock-agent"]

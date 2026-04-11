@@ -17,7 +17,7 @@ services:
     restart: unless-stopped
 
   protoclaw:
-    image: ghcr.io/donbader/protoclaw:latest
+    image: ghcr.io/donbader/protoclaw-builder:latest
     ports:
       - "8080:8080"
     volumes:
@@ -33,8 +33,19 @@ services:
       - protoclaw-internal
       - protoclaw-external
     depends_on:
-      - socket-proxy
+      socket-proxy:
+        condition: service_started
+      mock-agent-image:
+        condition: service_completed_successfully
     restart: unless-stopped
+
+  mock-agent-image:
+    build:
+      context: .
+      dockerfile: Dockerfile.mock-agent
+    image: protoclaw-mock-agent:latest
+    entrypoint: ["true"]
+    restart: "no"
 
 networks:
   protoclaw-internal:

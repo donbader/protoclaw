@@ -9,7 +9,7 @@ cp .env.example .env
 docker compose up
 ```
 
-Uses pre-built images from `ghcr.io/donbader/protoclaw` — no Rust compilation needed.
+Uses pre-built images from `ghcr.io/donbader/protoclaw-builder` — no Rust compilation needed.
 
 Send a message:
 
@@ -87,7 +87,7 @@ By default the mock agent runs as a local subprocess. To run it in an isolated c
 
 2. `docker compose up`
 
-The mock-agent image is pulled from `ghcr.io/donbader/protoclaw-mock-agent`.
+The mock-agent image is built locally from `Dockerfile.mock-agent` (extracts the binary from the builder image).
 
 Security: socket proxy restricts Docker API to containers/images only. Agent containers get `cap_drop: ALL` and `no-new-privileges`.
 

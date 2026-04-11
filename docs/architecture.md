@@ -131,4 +131,4 @@ Config uses Figment with three layers (later layers override earlier ones):
 2. **YAML file** — `protoclaw.yaml` in the working directory
 3. **Environment variables** — `PROTOCLAW_` prefix, `__` as separator (e.g., `PROTOCLAW_LOG_LEVEL`)
 
-`@built-in/` binary paths in config are resolved against `extensions_dir` by the supervisor before managers are constructed.
+`@built-in/{agents,channels,tools}/<name>` binary paths in config are resolved against `extensions_dir` by the supervisor before managers are constructed. Legacy flat paths (e.g. `@built-in/mock-agent`) are supported via built-in aliases with deprecation warnings.

@@ -22,14 +22,18 @@ RUN cargo build --release \
     --bin opencode-wrapper
 
 # Stage 4: Core runtime — protoclaw only (distroless, no shell)
-# TODO: Pin distroless image by digest — Phase 74 will add reproducible pinning
 FROM gcr.io/distroless/cc-debian12:nonroot AS core
 COPY --from=builder /build/target/release/protoclaw /usr/local/bin/protoclaw
 WORKDIR /workspace
 ENTRYPOINT ["protoclaw"]
 
-# Stage 5: Mock-agent standalone (for Docker workspace mode)
-# TODO: Pin distroless image by digest — Phase 74 will add reproducible pinning
-FROM gcr.io/distroless/cc-debian12:nonroot AS mock-agent
-COPY --from=builder /build/target/release/mock-agent /usr/local/bin/mock-agent
-ENTRYPOINT ["mock-agent"]
+# Stage 5: Builder export — protoclaw + all ext/ binaries in categorized paths
+FROM gcr.io/distroless/cc-debian12:nonroot AS builder-export
+COPY --from=builder /build/target/release/protoclaw /usr/local/bin/protoclaw
+COPY --from=builder /build/target/release/mock-agent /usr/local/bin/agents/mock-agent
+COPY --from=builder /build/target/release/opencode-wrapper /usr/local/bin/agents/opencode-wrapper
+COPY --from=builder /build/target/release/telegram-channel /usr/local/bin/channels/telegram
+COPY --from=builder /build/target/release/debug-http /usr/local/bin/channels/debug-http
+COPY --from=builder /build/target/release/system-info /usr/local/bin/tools/system-info
+WORKDIR /workspace
+ENTRYPOINT ["protoclaw"]

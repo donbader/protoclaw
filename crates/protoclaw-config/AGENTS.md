@@ -8,7 +8,7 @@ Figment-based layered configuration for protoclaw. Loads from embedded defaults 
 |------|---------|
 | `types.rs` | All config structs (`ProtoclawConfig`, `AgentConfig`, `ChannelConfig`, `ToolConfig`, `SupervisorConfig`, etc.) with serde defaults |
 | `lib.rs` | `ProtoclawConfig::load()` — Figment layered loading |
-| `resolve.rs` | `resolve_binary_path()` — `@built-in/` prefix → `extensions_dir` |
+| `resolve.rs` | `resolve_binary_path()` — `@built-in/{agents,channels,tools}/<name>` → `extensions_dir`, with legacy alias support |
 | `validate.rs` | `validate_config()` — binary existence, working dir checks |
 | `error.rs` | `ConfigError` enum (thiserror) |
 | `parse.rs` | `parse_memory_limit()`, `parse_cpu_limit()` — K8s-style string to Docker-native units |
@@ -65,7 +65,9 @@ Env var override format: `PROTOCLAW_SUPERVISOR__SHUTDOWN_TIMEOUT_SECS=60` (doubl
 ## Binary Resolution
 
 `resolve_binary_path()` expands `@built-in/` prefix against `extensions_dir`:
-- `@built-in/mock-agent` + `/usr/local/bin` → `/usr/local/bin/mock-agent`
+- Canonical: `@built-in/agents/mock-agent` + `/usr/local/bin` → `/usr/local/bin/agents/mock-agent`
+- Canonical: `@built-in/channels/telegram` + `/usr/local/bin` → `/usr/local/bin/channels/telegram`
+- Legacy flat paths (e.g. `@built-in/mock-agent`) are resolved via built-in aliases with a deprecation warning.
 - Absolute paths and relative names pass through unchanged.
 
 Called by Supervisor before manager construction — managers receive resolved paths.

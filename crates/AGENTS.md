@@ -32,7 +32,7 @@ Config structs in `types.rs`: `ProtoclawConfig` (with `log_level`, `extensions_d
 Files:
 - `types.rs`: Config structs with serde defaults
 - `lib.rs`: Figment loading + `ProtoclawConfig::load()`
-- `resolve.rs`: Binary path resolution (`@built-in/` prefix → `extensions_dir`)
+- `resolve.rs`: Binary path resolution (`@built-in/{agents,channels,tools}/<name>` → `extensions_dir`, with legacy alias support)
 - `validate.rs`: Config validation rules
 - `error.rs`: `ConfigError`
 

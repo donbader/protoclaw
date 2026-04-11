@@ -22,12 +22,12 @@ jobs:
             image: ghcr.io/donbader/protoclaw
             platform: linux/arm64
             runner: ubuntu-24.04-arm
-          - target: mock-agent
-            image: ghcr.io/donbader/protoclaw-mock-agent
+          - target: builder-export
+            image: ghcr.io/donbader/protoclaw-builder
             platform: linux/amd64
             runner: ubuntu-latest
-          - target: mock-agent
-            image: ghcr.io/donbader/protoclaw-mock-agent
+          - target: builder-export
+            image: ghcr.io/donbader/protoclaw-builder
             platform: linux/arm64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
@@ -91,8 +91,8 @@ jobs:
         include:
           - target: core
             image: ghcr.io/donbader/protoclaw
-          - target: mock-agent
-            image: ghcr.io/donbader/protoclaw-mock-agent
+          - target: builder-export
+            image: ghcr.io/donbader/protoclaw-builder
     steps:
       - name: Download amd64 digest
         uses: actions/download-artifact@v4
@@ -137,3 +137,25 @@ jobs:
       - name: Inspect image
         run: |
           docker buildx imagetools inspect ${{ matrix.image }}:${{ steps.meta.outputs.version }}
+
+      - name: Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ matrix.image }}:${{ steps.meta.outputs.version }}
+          format: table
+          exit-code: 1
+          severity: CRITICAL,HIGH
+          timeout: 10m
+
+      - name: Verify multi-arch manifest
+        run: |
+          MANIFEST=$(docker buildx imagetools inspect ${{ matrix.image }}:${{ steps.meta.outputs.version }} --raw)
+          AMD64=$(echo "$MANIFEST" | jq -r '.manifests[] | select(.platform.architecture=="amd64") | .digest')
+          ARM64=$(echo "$MANIFEST" | jq -r '.manifests[] | select(.platform.architecture=="arm64") | .digest')
+          if [ -z "$AMD64" ] || [ -z "$ARM64" ]; then
+            echo "ERROR: Missing platform in manifest"
+            echo "amd64: $AMD64"
+            echo "arm64: $ARM64"
+            exit 1
+          fi
+          echo "Multi-arch verified: amd64=$AMD64 arm64=$ARM64"
