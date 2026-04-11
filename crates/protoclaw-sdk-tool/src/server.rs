@@ -228,4 +228,9 @@ mod tests {
         let schema = Tool::input_schema(&tool);
         assert!(schema.is_object());
     }
+
+    #[test]
+    fn when_tool_cast_to_dyn_trait_object_then_compiles() {
+        let _tool: Box<dyn DynTool> = Box::new(EchoTool);
+    }
 }

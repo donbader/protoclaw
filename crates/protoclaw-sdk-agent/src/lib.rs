@@ -101,4 +101,39 @@ mod tests {
         assert!(matches!(err, AgentSdkError::Protocol(_)));
         assert!(err.to_string().contains("bad handshake"));
     }
+
+    struct InjectingAdapter;
+
+    impl AgentAdapter for InjectingAdapter {
+        async fn on_session_prompt_params(
+            &self,
+            mut params: serde_json::Value,
+        ) -> Result<serde_json::Value, AgentSdkError> {
+            if let Some(obj) = params.as_object_mut() {
+                obj.insert("injected".into(), serde_json::json!(true));
+            }
+            Ok(params)
+        }
+    }
+
+    #[tokio::test]
+    async fn when_custom_adapter_overrides_hook_then_transformed_value_returned() {
+        let adapter = InjectingAdapter;
+        let input = serde_json::json!({"sessionId": "s1", "message": {"role": "user", "content": "hi"}});
+        let output = AgentAdapter::on_session_prompt_params(&adapter, input.clone())
+            .await
+            .unwrap();
+        assert_eq!(output["injected"], serde_json::json!(true));
+        assert_eq!(output["sessionId"], serde_json::json!("s1"));
+    }
+
+    #[tokio::test]
+    async fn when_custom_adapter_non_overridden_hook_called_then_passthrough() {
+        let adapter = InjectingAdapter;
+        let input = serde_json::json!({"protocolVersion": 1});
+        let output = AgentAdapter::on_initialize_params(&adapter, input.clone())
+            .await
+            .unwrap();
+        assert_eq!(input, output);
+    }
 }
