@@ -21,16 +21,13 @@ agents_manager:
     # 1. Set mock-docker.enabled: true (below)
     # 2. Set mock.enabled: false (above) — or remove it
     # 3. Change channel agent fields from "mock" to "mock-docker"
-    # 4. Build agent image: docker compose --profile build-only build
-    # 5. Start: docker compose up
     mock-docker:
       enabled: false
       workspace:
         type: docker
-        image: "protoclaw-mock-agent:latest"
+        image: "ghcr.io/donbader/protoclaw-mock-agent:latest"
         docker_host: "tcp://socket-proxy:2375"
         network: "protoclaw-internal"
-      pull_policy: "Never"
       options:
         thinking: true
         thinking_time_ms: 3000

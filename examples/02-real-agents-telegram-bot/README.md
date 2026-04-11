@@ -7,10 +7,10 @@ A protoclaw bot with a real AI agent (OpenCode + Claude). The agent runs in an i
 ```sh
 cp .env.example .env
 # Edit .env — set ANTHROPIC_API_KEY (required for the AI agent)
-docker compose up --build -d
+docker compose up -d
 ```
 
-First build takes several minutes (core Rust compilation + npm install). Subsequent starts use cached layers.
+Uses pre-built binaries from `ghcr.io/donbader/protoclaw` — only the Node.js + opencode layer is built locally (fast, no Rust compilation).
 
 Send a message:
 
@@ -91,7 +91,7 @@ To switch, edit `protoclaw.yaml`: disable the current agent, enable the new one,
 
 | File | Purpose |
 |------|---------|
-| `Dockerfile` | Multi-stage Dockerfile: Rust build + opencode/claude-code targets + agent image |
+| `Dockerfile` | Multi-stage: pulls ghcr.io base + opencode/claude-code targets + agent image |
 | `docker-compose.yml` | Socket-proxy + protoclaw + agent image build |
 | `protoclaw.yaml` | Agent, channel, tool, and supervisor config |
 | `.opencode/` | OpenCode config baked into agent image |

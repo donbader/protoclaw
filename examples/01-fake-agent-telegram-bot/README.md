@@ -6,10 +6,10 @@ A working protoclaw bot with zero API keys. The mock agent echoes messages back 
 
 ```sh
 cp .env.example .env
-docker compose up --build
+docker compose up
 ```
 
-First build takes a few minutes (Rust compilation). Subsequent starts use cached layers.
+Uses pre-built images from `ghcr.io/donbader/protoclaw` — no Rust compilation needed.
 
 Send a message:
 
@@ -80,17 +80,14 @@ Protoclaw also connects to a [docker-socket-proxy](https://github.com/Tecnativa/
 
 By default the mock agent runs as a local subprocess. To run it in an isolated container instead:
 
-1. Build the agent image:
-   ```sh
-   docker compose --profile build-only build
-   ```
-
-2. Edit `protoclaw.yaml`:
+1. Edit `protoclaw.yaml`:
    - Set `mock-docker.enabled: true`
    - Set `mock.enabled: false`
    - Change channel `agent` fields from `"mock"` to `"mock-docker"`
 
-3. `docker compose up --build`
+2. `docker compose up`
+
+The mock-agent image is pulled from `ghcr.io/donbader/protoclaw-mock-agent`.
 
 Security: socket proxy restricts Docker API to containers/images only. Agent containers get `cap_drop: ALL` and `no-new-privileges`.
 
@@ -98,7 +95,7 @@ Security: socket proxy restricts Docker API to containers/images only. Agent con
 
 | File | Purpose |
 |------|---------|
-| `docker-compose.yml` | Protoclaw + socket-proxy + agent image build |
+| `docker-compose.yml` | Protoclaw + socket-proxy (uses ghcr.io images) |
 | `protoclaw.yaml` | Agent, channel, tool, and supervisor config |
 | `.env.example` | Environment template |
 | `test.sh` | E2E tests (`--docker` for Docker workspace) |
