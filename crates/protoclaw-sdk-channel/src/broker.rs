@@ -22,6 +22,7 @@ pub struct PermissionBroker {
 }
 
 impl PermissionBroker {
+    /// Create an empty broker with no pending requests.
     pub fn new() -> Self {
         Self {
             resolvers: HashMap::new(),

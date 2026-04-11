@@ -11,12 +11,16 @@ use rmcp::{ErrorData as McpError, RoleServer};
 
 use crate::trait_def::DynTool;
 
+/// MCP tool server that registers [`DynTool`] implementations and serves them over stdio.
+///
+/// Implements rmcp's `ServerHandler` to handle `list_tools` and `call_tool` MCP methods.
 pub struct ToolServer {
     tools: HashMap<String, Box<dyn DynTool>>,
     server_info: ServerInfo,
 }
 
 impl ToolServer {
+    /// Create a new server from a list of tools, registering each by name.
     pub fn new(tools: Vec<Box<dyn DynTool>>) -> Self {
         let map: HashMap<String, Box<dyn DynTool>> = tools
             .into_iter()
@@ -32,6 +36,7 @@ impl ToolServer {
         }
     }
 
+    /// Run the MCP server over stdin/stdout until the client disconnects.
     pub async fn serve_stdio(self) -> Result<(), Box<dyn std::error::Error>> {
         use rmcp::ServiceExt;
         let service = self
@@ -41,6 +46,7 @@ impl ToolServer {
         Ok(())
     }
 
+    /// Convert all registered tools into rmcp [`RmcpTool`] descriptors for `list_tools`.
     pub fn build_tool_list(&self) -> Vec<RmcpTool> {
         self.tools
             .values()
@@ -57,6 +63,10 @@ impl ToolServer {
             .collect()
     }
 
+    /// Dispatch a tool call by name, returning an MCP `CallToolResult`.
+    ///
+    /// Returns an MCP protocol error only for unknown tool names; execution
+    /// failures are returned as `CallToolResult::error` (content-level).
     pub async fn dispatch_tool(
         &self,
         name: &str,

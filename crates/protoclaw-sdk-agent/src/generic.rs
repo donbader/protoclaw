@@ -1,5 +1,8 @@
 use crate::adapter::AgentAdapter;
 
+/// Default passthrough [`AgentAdapter`] that forwards all ACP messages unchanged.
+///
+/// Use this when no message transformation is needed.
 #[derive(Debug, Default, Clone)]
 pub struct GenericAcpAdapter;
 

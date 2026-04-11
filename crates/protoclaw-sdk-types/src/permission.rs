@@ -4,7 +4,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct PermissionOption {
+    /// Machine-readable identifier for this option (e.g. `"allow_once"`).
     pub option_id: String,
+    /// Human-readable label shown to the user.
     pub label: String,
 }
 
@@ -12,8 +14,11 @@ pub struct PermissionOption {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct PermissionRequest {
+    /// Unique identifier for correlating the response.
     pub request_id: String,
+    /// Human-readable description of what the agent is requesting.
     pub description: String,
+    /// Available choices the user can select from.
     pub options: Vec<PermissionOption>,
 }
 
@@ -21,7 +26,9 @@ pub struct PermissionRequest {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct PermissionResponse {
+    /// Identifier matching the original [`PermissionRequest`].
     pub request_id: String,
+    /// The `option_id` the user selected.
     pub option_id: String,
 }
 
@@ -29,9 +36,13 @@ pub struct PermissionResponse {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ChannelRequestPermission {
+    /// Unique identifier for correlating the response.
     pub request_id: String,
+    /// Session the permission request belongs to.
     pub session_id: String,
+    /// Human-readable description of what is being requested.
     pub description: String,
+    /// Available choices the user can select from.
     pub options: Vec<PermissionOption>,
 }
 

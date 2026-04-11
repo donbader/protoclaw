@@ -3,10 +3,16 @@ use std::pin::Pin;
 
 use crate::error::ToolSdkError;
 
+/// An MCP-compatible tool. Implement this trait to define tool metadata and execution logic.
+/// The [`ToolServer`](crate::ToolServer) handles MCP framing; you only provide business logic.
 pub trait Tool: Send + Sync + 'static {
+    /// Return the unique name of this tool.
     fn name(&self) -> &str;
+    /// Return a human-readable description of what this tool does.
     fn description(&self) -> &str;
+    /// Return the JSON Schema describing expected input.
     fn input_schema(&self) -> serde_json::Value;
+    /// Execute the tool with the given input and return the result.
     fn execute(
         &self,
         input: serde_json::Value,
@@ -16,9 +22,13 @@ pub trait Tool: Send + Sync + 'static {
 /// Dyn-compatible alias for [`Tool`]. Use `Box<dyn DynTool>` for runtime dispatch.
 /// Implementors write `impl Tool for X`; the blanket impl provides `DynTool` automatically.
 pub trait DynTool: Send + Sync + 'static {
+    /// Dyn-compatible version of [`Tool::name`].
     fn name(&self) -> &str;
+    /// Dyn-compatible version of [`Tool::description`].
     fn description(&self) -> &str;
+    /// Dyn-compatible version of [`Tool::input_schema`].
     fn input_schema(&self) -> serde_json::Value;
+    /// Dyn-compatible version of [`Tool::execute`].
     fn execute<'a>(
         &'a self,
         input: serde_json::Value,

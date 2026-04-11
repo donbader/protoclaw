@@ -1,9 +1,13 @@
+/// Errors produced by channel SDK operations.
 #[derive(Debug, thiserror::Error)]
 pub enum ChannelSdkError {
+    /// An I/O error from the underlying transport.
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
+    /// A protocol-level error (e.g. unknown method, bad handshake).
     #[error("Protocol error: {0}")]
     Protocol(String),
+    /// JSON serialization or deserialization failed.
     #[error("Serialization error: {0}")]
     Serde(#[from] serde_json::Error),
 }

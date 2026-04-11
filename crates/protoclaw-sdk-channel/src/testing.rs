@@ -19,6 +19,7 @@ pub struct ChannelTester<C: Channel> {
 }
 
 impl<C: Channel> ChannelTester<C> {
+    /// Create a new tester wrapping the given channel, with a buffered outbound channel.
     pub fn new(channel: C) -> Self {
         let (outbound_tx, outbound_rx) = mpsc::channel(64);
         Self {
@@ -28,6 +29,7 @@ impl<C: Channel> ChannelTester<C> {
         }
     }
 
+    /// Query the wrapped channel's capabilities.
     pub fn capabilities(&self) -> ChannelCapabilities {
         self.channel.capabilities()
     }
@@ -49,10 +51,12 @@ impl<C: Channel> ChannelTester<C> {
         Ok(())
     }
 
+    /// Deliver an agent message to the channel under test.
     pub async fn deliver(&mut self, msg: DeliverMessage) -> Result<(), ChannelSdkError> {
         self.channel.deliver_message(msg).await
     }
 
+    /// Forward a permission request to the channel under test.
     pub async fn request_permission(
         &mut self,
         req: ChannelRequestPermission,
@@ -60,10 +64,12 @@ impl<C: Channel> ChannelTester<C> {
         self.channel.request_permission(req).await
     }
 
+    /// Get a mutable reference to the wrapped channel.
     pub fn channel_mut(&mut self) -> &mut C {
         &mut self.channel
     }
 
+    /// Get a shared reference to the wrapped channel.
     pub fn channel(&self) -> &C {
         &self.channel
     }

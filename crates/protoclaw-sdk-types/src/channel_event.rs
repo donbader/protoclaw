@@ -8,24 +8,38 @@ use crate::session_key::SessionKey;
 pub enum ChannelEvent {
     /// Deliver an agent session/update message to the originating channel.
     DeliverMessage {
+        /// Routing key identifying which channel + conversation to target.
         session_key: SessionKey,
+        /// Agent-produced content payload (streaming chunk, result, thought, etc.).
         content: serde_json::Value,
     },
     /// Signal that the agent has finished processing a prompt for this session.
     /// Triggers queue flush: marks the session idle and dispatches any queued messages.
     /// Sent once per completed `session/prompt`, after all streaming updates have been forwarded.
-    SessionComplete { session_key: SessionKey },
+    SessionComplete {
+        /// Routing key identifying the completed session.
+        session_key: SessionKey,
+    },
     /// Route a permission request to the originating channel.
     RoutePermission {
+        /// Routing key identifying which channel + conversation to target.
         session_key: SessionKey,
+        /// Unique identifier for correlating the permission response.
         request_id: String,
+        /// Human-readable description of what is being requested.
         description: String,
+        /// Permission options as a JSON array of `{optionId, label}` objects.
         options: serde_json::Value,
     },
+    /// Acknowledge receipt of a message back to the originating channel.
     AckMessage {
+        /// Routing key identifying the session to acknowledge.
         session_key: SessionKey,
+        /// Name of the channel that sent the original message.
         channel_name: String,
+        /// Peer identifier within the channel.
         peer_id: String,
+        /// Optional platform-specific message identifier for targeted ack.
         message_id: Option<String>,
     },
 }

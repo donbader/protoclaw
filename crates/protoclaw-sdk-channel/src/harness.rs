@@ -8,19 +8,26 @@ use protoclaw_sdk_types::{
     DeliverMessage, SessionCreated,
 };
 
+/// JSON-RPC stdio harness that drives a [`Channel`] implementation.
+///
+/// Handles line-delimited JSON framing, the initialize handshake, and
+/// bidirectional message routing between stdin/stdout and the channel.
 pub struct ChannelHarness<C: Channel> {
     channel: C,
 }
 
 impl<C: Channel> ChannelHarness<C> {
+    /// Wrap a [`Channel`] implementation for harness-driven execution.
     pub fn new(channel: C) -> Self {
         Self { channel }
     }
 
+    /// Run the harness event loop over real stdio (stdin/stdout).
     pub async fn run_stdio(self) -> Result<(), ChannelSdkError> {
         self.run(tokio::io::stdin(), tokio::io::stdout()).await
     }
 
+    /// Run the harness event loop over the given async reader and writer.
     pub async fn run<R, W>(mut self, reader: R, mut writer: W) -> Result<(), ChannelSdkError>
     where
         R: tokio::io::AsyncRead + Unpin + Send,

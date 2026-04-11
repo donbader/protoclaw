@@ -4,7 +4,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ChannelCapabilities {
+    /// Whether the channel supports streaming (chunked) delivery.
     pub streaming: bool,
+    /// Whether the channel supports rich text (Markdown, HTML).
     pub rich_text: bool,
 }
 
@@ -12,10 +14,14 @@ pub struct ChannelCapabilities {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ChannelInitializeParams {
+    /// ACP protocol version for compatibility negotiation.
     pub protocol_version: u32,
+    /// Unique identifier for this channel instance.
     pub channel_id: String,
+    /// Optional ack configuration for reactions and typing indicators.
     #[serde(default)]
     pub ack: Option<ChannelAckConfig>,
+    /// Channel-specific configuration from `protoclaw.yaml` `options` section.
     #[serde(default)]
     pub options: std::collections::HashMap<String, serde_json::Value>,
 }
@@ -24,7 +30,9 @@ pub struct ChannelInitializeParams {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ChannelInitializeResult {
+    /// ACP protocol version the channel supports.
     pub protocol_version: u32,
+    /// Capabilities the channel advertises.
     pub capabilities: ChannelCapabilities,
 }
 
@@ -32,7 +40,9 @@ pub struct ChannelInitializeResult {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct DeliverMessage {
+    /// ACP session that produced this content.
     pub session_id: String,
+    /// Agent content payload (streaming update, result, thought, etc.).
     pub content: serde_json::Value,
 }
 
@@ -40,8 +50,11 @@ pub struct DeliverMessage {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct PeerInfo {
+    /// Name of the originating channel (e.g., `"telegram"`, `"debug-http"`).
     pub channel_name: String,
+    /// Opaque identifier for the peer within the channel.
     pub peer_id: String,
+    /// Conversation kind (e.g., `"direct"`, `"group"`, `"local"`).
     pub kind: String,
 }
 
@@ -49,7 +62,9 @@ pub struct PeerInfo {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ChannelSendMessage {
+    /// Identity of the user who sent the message.
     pub peer_info: PeerInfo,
+    /// User message text content.
     pub content: String,
 }
 
@@ -72,9 +87,12 @@ pub struct ChannelSendMessage {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ThoughtContent {
+    /// ACP session that produced the thought.
     pub session_id: String,
+    /// Content type discriminator (always `"agent_thought_chunk"`).
     #[serde(rename = "type")]
     pub update_type: String,
+    /// The thought text content.
     pub content: String,
 }
 
@@ -113,28 +131,46 @@ impl ThoughtContent {
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub enum ContentKind {
+    /// Agent thinking/reasoning content.
     Thought(ThoughtContent),
+    /// Streaming chunk of agent response text.
     MessageChunk {
+        /// The chunk text.
         text: String,
     },
+    /// Final result text from the agent.
     Result {
+        /// The result text.
         text: String,
     },
+    /// Echo of user message chunk (for display).
     UserMessageChunk {
+        /// The echoed user text.
         text: String,
     },
+    /// Token usage update notification (no content fields).
     UsageUpdate,
+    /// Agent invoked a tool.
     ToolCall {
+        /// Tool name being called.
         name: String,
+        /// Unique identifier for this tool invocation.
         tool_call_id: String,
+        /// Tool input arguments, if any.
         input: Option<serde_json::Value>,
     },
+    /// Progress/completion update for a tool call.
     ToolCallUpdate {
+        /// Tool name.
         name: String,
+        /// Identifier matching the originating `ToolCall`.
         tool_call_id: String,
+        /// Execution status (e.g., `"completed"`, `"running"`).
         status: String,
+        /// Tool output text, if available.
         output: Option<String>,
     },
+    /// Unrecognized content type.
     Unknown,
 }
 
@@ -244,9 +280,13 @@ fn extract_content_text(update: &serde_json::Value) -> String {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct AckNotification {
+    /// ACP session the ack relates to.
     pub session_id: String,
+    /// Channel that should display the ack.
     pub channel_name: String,
+    /// Peer whose message triggered the ack.
     pub peer_id: String,
+    /// Platform-specific message ID, if available.
     pub message_id: Option<String>,
 }
 
@@ -255,7 +295,9 @@ pub struct AckNotification {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct AckLifecycleNotification {
+    /// ACP session the lifecycle event relates to.
     pub session_id: String,
+    /// Lifecycle action (e.g., `"response_started"`).
     pub action: String,
 }
 
@@ -264,9 +306,13 @@ pub struct AckLifecycleNotification {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ChannelAckConfig {
+    /// Whether to add emoji reactions on message receipt.
     pub reaction: bool,
+    /// Whether to show typing indicators while processing.
     pub typing: bool,
+    /// Emoji to use for the ack reaction (e.g., `"👀"`).
     pub reaction_emoji: String,
+    /// How to handle the reaction when response starts (e.g., `"remove"`).
     pub reaction_lifecycle: String,
 }
 
@@ -274,7 +320,9 @@ pub struct ChannelAckConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ChannelRespondPermission {
+    /// Identifier matching the originating permission request.
     pub request_id: String,
+    /// The option the user selected.
     pub option_id: String,
 }
 
@@ -284,7 +332,9 @@ pub struct ChannelRespondPermission {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionCreated {
+    /// Newly created ACP session identifier.
     pub session_id: String,
+    /// Peer whose message triggered session creation.
     pub peer_info: PeerInfo,
 }
 

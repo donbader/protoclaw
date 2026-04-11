@@ -8,6 +8,7 @@ use crate::error::AgentSdkError;
 ///
 /// All methods have default passthrough implementations — override only the hooks you need.
 pub trait AgentAdapter: Send + Sync + 'static {
+    /// Transform `initialize` request params before they reach the agent.
     fn on_initialize_params(
         &self,
         params: serde_json::Value,
@@ -15,6 +16,7 @@ pub trait AgentAdapter: Send + Sync + 'static {
         async move { Ok(params) }
     }
 
+    /// Transform `initialize` response before it reaches the supervisor.
     fn on_initialize_result(
         &self,
         result: serde_json::Value,
@@ -22,6 +24,7 @@ pub trait AgentAdapter: Send + Sync + 'static {
         async move { Ok(result) }
     }
 
+    /// Transform `session/new` request params before they reach the agent.
     fn on_session_new_params(
         &self,
         params: serde_json::Value,
@@ -29,6 +32,7 @@ pub trait AgentAdapter: Send + Sync + 'static {
         async move { Ok(params) }
     }
 
+    /// Transform `session/new` response before it reaches the supervisor.
     fn on_session_new_result(
         &self,
         result: serde_json::Value,
@@ -36,6 +40,7 @@ pub trait AgentAdapter: Send + Sync + 'static {
         async move { Ok(result) }
     }
 
+    /// Transform `session/prompt` request params before they reach the agent.
     fn on_session_prompt_params(
         &self,
         params: serde_json::Value,
@@ -43,6 +48,7 @@ pub trait AgentAdapter: Send + Sync + 'static {
         async move { Ok(params) }
     }
 
+    /// Transform a `session/update` streaming event before it reaches the supervisor.
     fn on_session_update(
         &self,
         event: serde_json::Value,
@@ -50,6 +56,7 @@ pub trait AgentAdapter: Send + Sync + 'static {
         async move { Ok(event) }
     }
 
+    /// Transform a permission request event before it reaches the supervisor.
     fn on_permission_request(
         &self,
         request: serde_json::Value,
@@ -61,36 +68,43 @@ pub trait AgentAdapter: Send + Sync + 'static {
 /// Dyn-compatible alias for [`AgentAdapter`]. Use `Box<dyn DynAgentAdapter>` for runtime dispatch.
 /// Implementors write `impl AgentAdapter for X`; the blanket impl provides `DynAgentAdapter` automatically.
 pub trait DynAgentAdapter: Send + Sync + 'static {
+    /// Dyn-compatible version of [`AgentAdapter::on_initialize_params`].
     fn on_initialize_params<'a>(
         &'a self,
         params: serde_json::Value,
     ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>>;
 
+    /// Dyn-compatible version of [`AgentAdapter::on_initialize_result`].
     fn on_initialize_result<'a>(
         &'a self,
         result: serde_json::Value,
     ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>>;
 
+    /// Dyn-compatible version of [`AgentAdapter::on_session_new_params`].
     fn on_session_new_params<'a>(
         &'a self,
         params: serde_json::Value,
     ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>>;
 
+    /// Dyn-compatible version of [`AgentAdapter::on_session_new_result`].
     fn on_session_new_result<'a>(
         &'a self,
         result: serde_json::Value,
     ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>>;
 
+    /// Dyn-compatible version of [`AgentAdapter::on_session_prompt_params`].
     fn on_session_prompt_params<'a>(
         &'a self,
         params: serde_json::Value,
     ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>>;
 
+    /// Dyn-compatible version of [`AgentAdapter::on_session_update`].
     fn on_session_update<'a>(
         &'a self,
         event: serde_json::Value,
     ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>>;
 
+    /// Dyn-compatible version of [`AgentAdapter::on_permission_request`].
     fn on_permission_request<'a>(
         &'a self,
         request: serde_json::Value,

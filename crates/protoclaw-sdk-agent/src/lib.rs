@@ -1,5 +1,14 @@
+//! Agent adapter SDK for protoclaw.
+//!
+//! Provides the [`AgentAdapter`] trait for intercepting and transforming ACP
+//! protocol messages, and [`GenericAcpAdapter`] as a zero-cost passthrough default.
+#![warn(missing_docs)]
+
+/// ACP message adapter trait and dyn-compatible wrapper.
 pub mod adapter;
+/// Error types for the agent SDK.
 pub mod error;
+/// Zero-cost passthrough adapter implementation.
 pub mod generic;
 
 pub use adapter::{AgentAdapter, DynAgentAdapter};

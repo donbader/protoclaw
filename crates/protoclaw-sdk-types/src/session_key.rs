@@ -9,10 +9,12 @@ use std::str::FromStr;
 pub struct SessionKey(String);
 
 impl SessionKey {
+    /// Create a new session key from channel name, conversation kind, and peer identifier.
     pub fn new(channel_name: &str, kind: &str, peer_id: &str) -> Self {
         Self(format!("{channel_name}:{kind}:{peer_id}"))
     }
 
+    /// Extract the channel name (first colon-delimited segment) from the key.
     pub fn channel_name(&self) -> &str {
         self.0.split(':').next().unwrap_or("")
     }
