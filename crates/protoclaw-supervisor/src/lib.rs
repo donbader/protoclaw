@@ -10,6 +10,16 @@ use protoclaw_channels::{ChannelsCommand, ChannelsManager};
 use protoclaw_core::ChannelEvent;
 use protoclaw_tools::{ToolsCommand, ToolsManager};
 
+#[derive(Debug, thiserror::Error)]
+pub enum SupervisorError {
+    #[error("failed to boot manager '{manager}': {source}")]
+    BootFailure {
+        manager: String,
+        #[source]
+        source: ManagerError,
+    },
+}
+
 pub struct Supervisor {
     config: ProtoclawConfig,
     tools_tx: Option<tokio::sync::mpsc::Sender<ToolsCommand>>,
@@ -90,7 +100,7 @@ impl Supervisor {
         self
     }
 
-    pub async fn run(self) -> anyhow::Result<()> {
+    pub async fn run(self) -> Result<(), SupervisorError> {
         let cancel = CancellationToken::new();
         let cancel_clone = cancel.clone();
 
@@ -105,7 +115,7 @@ impl Supervisor {
         result
     }
 
-    pub async fn run_with_cancel(mut self, cancel: CancellationToken) -> anyhow::Result<()> {
+    pub async fn run_with_cancel(mut self, cancel: CancellationToken) -> Result<(), SupervisorError> {
         let per_manager_timeout =
             Duration::from_secs(self.config.supervisor.shutdown_timeout_secs / 3);
         let health_interval_secs = self.config.supervisor.health_check_interval_secs;
@@ -156,7 +166,7 @@ impl Supervisor {
         Ok(())
     }
 
-    async fn boot_managers(&mut self, slots: &mut [ManagerSlot]) -> anyhow::Result<()> {
+    async fn boot_managers(&mut self, slots: &mut [ManagerSlot]) -> Result<(), SupervisorError> {
         let (tools_tx, tools_rx) = tokio::sync::mpsc::channel::<ToolsCommand>(
             protoclaw_core::constants::CMD_CHANNEL_CAPACITY,
         );
@@ -197,7 +207,10 @@ impl Supervisor {
 
             if let Err(e) = manager.start().await {
                 tracing::error!(manager = %slot.name, error = %e, "boot failed");
-                return Err(anyhow::anyhow!("failed to boot {}: {e}", slot.name));
+                return Err(SupervisorError::BootFailure {
+                    manager: slot.name.clone(),
+                    source: e,
+                });
             }
 
             // After channels manager starts, grab port discovery and command sender

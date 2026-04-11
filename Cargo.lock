@@ -2289,6 +2289,7 @@ dependencies = [
  "reqwest",
  "rstest",
  "serde_json",
+ "temp-env",
  "tempfile",
  "tokio",
  "tracing",
@@ -2464,7 +2465,6 @@ dependencies = [
 name = "protoclaw-supervisor"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "protoclaw-agents",
  "protoclaw-channels",
  "protoclaw-config",
@@ -2473,6 +2473,7 @@ dependencies = [
  "rstest",
  "serde_json",
  "tempfile",
+ "thiserror 2.0.18",
  "tokio",
  "tokio-util",
  "tracing",
@@ -3649,6 +3650,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "temp-env"
+version = "0.3.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "96374855068f47402c3121c6eed88d29cb1de8f3ab27090e273e420bdabcf050"
+dependencies = [
+ "parking_lot",
 ]
 
 [[package]]

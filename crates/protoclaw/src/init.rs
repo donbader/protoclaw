@@ -89,14 +89,9 @@ mod tests {
     #[test]
     fn when_no_known_binary_on_path_then_detect_agent_binary_returns_none() {
         let dir = tempfile::tempdir().unwrap();
-        let original_path = std::env::var("PATH").unwrap_or_default();
-        unsafe {
-            std::env::set_var("PATH", dir.path());
-        }
-        let result = detect_agent_binary();
-        unsafe {
-            std::env::set_var("PATH", &original_path);
-        }
+        let result = temp_env::with_var("PATH", Some(dir.path().to_str().unwrap()), || {
+            detect_agent_binary()
+        });
         assert!(result.is_none());
     }
 
