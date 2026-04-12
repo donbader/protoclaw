@@ -10,9 +10,13 @@ RUN cargo chef prepare --recipe-path recipe.json
 # Stage 3: Builder — cook deps from recipe, then build all workspace binaries
 FROM chef AS builder
 COPY --from=planner /build/recipe.json recipe.json
-RUN cargo chef cook --release --recipe-path recipe.json
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    cargo chef cook --release --locked --recipe-path recipe.json
 COPY . .
-RUN cargo build --release \
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    cargo build --release --locked \
     --bin protoclaw \
     --bin telegram-channel \
     --bin debug-http \
