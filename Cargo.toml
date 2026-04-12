@@ -44,7 +44,7 @@ wasmtime-wasi = "43"
 rstest = "0.26"
 serde_yaml = { package = "yaml_serde", version = "0.10" }
 subst = "0.3"
-bollard = "0.18"
+bollard = "0.20"
 temp-env = "0.3"
 
 [profile.release]
