@@ -153,16 +153,16 @@ async fn when_docker_agent_configured_with_resource_limits_then_container_has_li
 
     let docker = bollard::Docker::connect_with_local_defaults().expect("connect to Docker");
     let containers = docker
-        .list_containers(Some(bollard::container::ListContainersOptions {
+        .list_containers(Some(bollard::query_parameters::ListContainersOptions {
             all: false,
-            filters: {
+            filters: Some({
                 let mut f = HashMap::new();
                 f.insert(
                     "label".to_string(),
                     vec!["protoclaw.managed=true".to_string()],
                 );
                 f
-            },
+            }),
             ..Default::default()
         }))
         .await
