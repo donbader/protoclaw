@@ -15,7 +15,7 @@ categories = ["network-programming"]
 protoclaw-sdk-types = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-tokio = { workspace = true, default-features = false, features = ["io-util", "macros", "rt-multi-thread", "sync"] }
+tokio = { workspace = true, default-features = false, features = ["io-util", "io-std", "macros", "rt-multi-thread", "sync"] }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 
