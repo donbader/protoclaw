@@ -7,6 +7,10 @@ pub struct PermissionOption {
     /// Machine-readable identifier for this option (e.g. `"allow_once"`).
     pub option_id: String,
     /// Human-readable label shown to the user.
+    ///
+    /// Accepts `"name"` as an alias on deserialization for compatibility with
+    /// agents that use `name` instead of `label` (e.g. OpenCode).
+    #[serde(alias = "name")]
     pub label: String,
 }
 
@@ -101,6 +105,14 @@ mod tests {
         assert!(json.get("request_id").is_none());
         let deser: PermissionResponse = serde_json::from_value(json).unwrap();
         assert_eq!(deser, resp);
+    }
+
+    #[test]
+    fn when_deserializing_permission_option_with_name_alias_then_maps_to_label() {
+        let json = serde_json::json!({"optionId": "once", "name": "Allow once"});
+        let opt: PermissionOption = serde_json::from_value(json).unwrap();
+        assert_eq!(opt.label, "Allow once");
+        assert_eq!(opt.option_id, "once");
     }
 
     #[test]

@@ -784,7 +784,12 @@ impl AgentsManager {
         params: &serde_json::Value,
     ) {
         let request_id = params["requestId"].as_str().unwrap_or("").to_string();
-        let description = params["description"].as_str().unwrap_or("").to_string();
+        let description = params["description"]
+            .as_str()
+            .filter(|s| !s.is_empty())
+            .or_else(|| params["toolCall"]["title"].as_str())
+            .unwrap_or("Permission requested")
+            .to_string();
 
         let options: Vec<PermissionOption> = params
             .get("options")
@@ -797,32 +802,59 @@ impl AgentsManager {
         tracing::info!(agent = %self.slots[slot_idx].name(), %request_id, %description, "permission requested");
 
         let session_id = params["sessionId"].as_str().unwrap_or("");
-        if let Some(session_key) = self.slots[slot_idx].reverse_map.get(session_id).cloned()
+        let routed = if let Some(session_key) =
+            self.slots[slot_idx].reverse_map.get(session_id).cloned()
             && let Some(sender) = &self.channels_sender
         {
             let options_json = serde_json::to_value(&options).unwrap_or_else(|e| {
-                    tracing::warn!(error = %e, %request_id, "failed to serialize permission options, using null");
-                    serde_json::Value::default()
-                });
-            let _ = sender
+                tracing::warn!(error = %e, %request_id, "failed to serialize permission options, using null");
+                serde_json::Value::default()
+            });
+            sender
                 .send(ChannelEvent::RoutePermission {
                     session_key,
                     request_id: request_id.clone(),
                     description: description.clone(),
                     options: options_json,
                 })
-                .await;
-        }
+                .await
+                .is_ok()
+        } else {
+            false
+        };
 
-        self.slots[slot_idx].pending_permissions.insert(
-            request_id,
-            PendingPermission {
-                request: request.clone(),
-                description,
-                options,
-                _received_at: std::time::Instant::now(),
-            },
-        );
+        if routed {
+            self.slots[slot_idx].pending_permissions.insert(
+                request_id,
+                PendingPermission {
+                    request: request.clone(),
+                    description,
+                    options,
+                    _received_at: std::time::Instant::now(),
+                },
+            );
+        } else {
+            tracing::warn!(
+                agent = %self.slots[slot_idx].name(),
+                %request_id,
+                "permission not routable to channel, auto-approving"
+            );
+            let auto_option = options
+                .first()
+                .map(|o| o.option_id.clone())
+                .unwrap_or_else(|| "once".to_string());
+            if let Some(conn) = self.slots[slot_idx].connection.as_ref() {
+                let resp = serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": request.get("id").cloned().unwrap_or(serde_json::Value::Null),
+                    "result": {
+                        "requestId": request_id,
+                        "optionId": auto_option,
+                    }
+                });
+                let _ = conn.send_notification("_raw_response", resp).await;
+            }
+        }
     }
 
     async fn handle_fs_read(
@@ -2470,6 +2502,186 @@ mod tests {
             ),
             "unexpected version 99 must produce ProtocolMismatch(expected=2, got=99), got: {err:?}"
         );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_permission_request_has_no_description_then_falls_back_to_tool_call_title() {
+        let (handle, _rx) = make_tools_handle();
+        let mut m = AgentsManager::new(mock_agents_manager_config_with(HashMap::new()), handle);
+
+        let (channels_tx, mut channels_rx) = mpsc::channel::<ChannelEvent>(16);
+        m.channels_sender = Some(channels_tx);
+
+        let cancel = CancellationToken::new();
+        let mut slot = AgentSlot::new("test-agent".into(), mock_agent_config(), &cancel);
+        let session_key = SessionKey::new("telegram", "direct", "u1");
+        let acp_session_id = "acp-perm-1".to_string();
+        slot.session_map
+            .insert(session_key.clone(), acp_session_id.clone());
+        slot.reverse_map
+            .insert(acp_session_id.clone(), session_key.clone());
+        m.slots.push(slot);
+
+        let request = serde_json::json!({"id": 0, "method": "session/request_permission"});
+        let params = serde_json::json!({
+            "sessionId": acp_session_id,
+            "options": [{"optionId": "once", "label": "Allow once"}],
+            "toolCall": {"title": "external_directory", "kind": "other"}
+        });
+
+        m.handle_permission_request(0, &request, &params).await;
+
+        let event = channels_rx.try_recv().expect("should route permission");
+        match event {
+            ChannelEvent::RoutePermission { description, .. } => {
+                assert_eq!(description, "external_directory");
+            }
+            other => panic!("expected RoutePermission, got: {other:?}"),
+        }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_permission_request_has_no_description_or_title_then_uses_default() {
+        let (handle, _rx) = make_tools_handle();
+        let mut m = AgentsManager::new(mock_agents_manager_config_with(HashMap::new()), handle);
+
+        let (channels_tx, mut channels_rx) = mpsc::channel::<ChannelEvent>(16);
+        m.channels_sender = Some(channels_tx);
+
+        let cancel = CancellationToken::new();
+        let mut slot = AgentSlot::new("test-agent".into(), mock_agent_config(), &cancel);
+        let session_key = SessionKey::new("telegram", "direct", "u1");
+        let acp_session_id = "acp-perm-2".to_string();
+        slot.session_map
+            .insert(session_key.clone(), acp_session_id.clone());
+        slot.reverse_map
+            .insert(acp_session_id.clone(), session_key.clone());
+        m.slots.push(slot);
+
+        let request = serde_json::json!({"id": 1, "method": "session/request_permission"});
+        let params = serde_json::json!({
+            "sessionId": acp_session_id,
+            "options": [{"optionId": "once", "label": "Allow once"}],
+        });
+
+        m.handle_permission_request(0, &request, &params).await;
+
+        let event = channels_rx.try_recv().expect("should route permission");
+        match event {
+            ChannelEvent::RoutePermission { description, .. } => {
+                assert_eq!(description, "Permission requested");
+            }
+            other => panic!("expected RoutePermission, got: {other:?}"),
+        }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_permission_not_routable_then_auto_approves_and_skips_pending() {
+        let (handle, _rx) = make_tools_handle();
+        let mut m = AgentsManager::new(mock_agents_manager_config_with(HashMap::new()), handle);
+        // No channels_sender set — permission cannot be routed
+
+        let cancel = CancellationToken::new();
+        let slot = AgentSlot::new("test-agent".into(), mock_agent_config(), &cancel);
+        m.slots.push(slot);
+
+        let request = serde_json::json!({"id": 5, "method": "session/request_permission"});
+        let params = serde_json::json!({
+            "sessionId": "unknown-session",
+            "options": [{"optionId": "once", "label": "Allow once"}],
+            "toolCall": {"title": "external_directory", "kind": "other"}
+        });
+
+        m.handle_permission_request(0, &request, &params).await;
+
+        assert!(
+            m.slots[0].pending_permissions.is_empty(),
+            "unroutable permission must not be stored in pending_permissions"
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_permission_routed_then_stored_in_pending() {
+        let (handle, _rx) = make_tools_handle();
+        let mut m = AgentsManager::new(mock_agents_manager_config_with(HashMap::new()), handle);
+
+        let (channels_tx, _channels_rx) = mpsc::channel::<ChannelEvent>(16);
+        m.channels_sender = Some(channels_tx);
+
+        let cancel = CancellationToken::new();
+        let mut slot = AgentSlot::new("test-agent".into(), mock_agent_config(), &cancel);
+        let session_key = SessionKey::new("telegram", "direct", "u1");
+        let acp_session_id = "acp-perm-3".to_string();
+        slot.session_map
+            .insert(session_key.clone(), acp_session_id.clone());
+        slot.reverse_map
+            .insert(acp_session_id.clone(), session_key.clone());
+        m.slots.push(slot);
+
+        let request = serde_json::json!({"id": 2, "method": "session/request_permission"});
+        let params = serde_json::json!({
+            "sessionId": acp_session_id,
+            "options": [{"optionId": "once", "label": "Allow once"}],
+            "description": "Allow access?"
+        });
+
+        m.handle_permission_request(0, &request, &params).await;
+
+        assert_eq!(
+            m.slots[0].pending_permissions.len(),
+            1,
+            "routed permission must be stored in pending_permissions"
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_permission_options_use_name_instead_of_label_then_deserialized_correctly() {
+        let (handle, _rx) = make_tools_handle();
+        let mut m = AgentsManager::new(mock_agents_manager_config_with(HashMap::new()), handle);
+
+        let (channels_tx, mut channels_rx) = mpsc::channel::<ChannelEvent>(16);
+        m.channels_sender = Some(channels_tx);
+
+        let cancel = CancellationToken::new();
+        let mut slot = AgentSlot::new("test-agent".into(), mock_agent_config(), &cancel);
+        let session_key = SessionKey::new("telegram", "direct", "u1");
+        let acp_session_id = "acp-perm-4".to_string();
+        slot.session_map
+            .insert(session_key.clone(), acp_session_id.clone());
+        slot.reverse_map
+            .insert(acp_session_id.clone(), session_key.clone());
+        m.slots.push(slot);
+
+        let request = serde_json::json!({"id": 3, "method": "session/request_permission"});
+        let params = serde_json::json!({
+            "sessionId": acp_session_id,
+            "options": [
+                {"optionId": "once", "name": "Allow once", "kind": "allow_once"},
+                {"optionId": "always", "name": "Always allow", "kind": "allow_always"},
+                {"optionId": "reject", "name": "Reject", "kind": "reject_once"}
+            ],
+            "toolCall": {"title": "external_directory", "kind": "other"}
+        });
+
+        m.handle_permission_request(0, &request, &params).await;
+
+        assert_eq!(
+            m.slots[0].pending_permissions.len(),
+            1,
+            "options with name alias must deserialize successfully"
+        );
+        let perm = m.slots[0].pending_permissions.values().next().unwrap();
+        assert_eq!(perm.options.len(), 3);
+        assert_eq!(perm.options[0].label, "Allow once");
+        assert_eq!(perm.options[1].label, "Always allow");
+
+        let event = channels_rx.try_recv().expect("should route permission");
+        assert!(matches!(event, ChannelEvent::RoutePermission { .. }));
     }
 
     #[rstest]

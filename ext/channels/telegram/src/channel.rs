@@ -272,9 +272,15 @@ impl Channel for TelegramChannel {
 
         let keyboard = crate::permissions::build_permission_keyboard(&req.request_id, &req.options);
 
+        let display_description = if req.description.is_empty() {
+            "Permission requested"
+        } else {
+            &req.description
+        };
+
         let sent = self
             .bot()?
-            .send_message(teloxide::types::ChatId(chat_id), &req.description)
+            .send_message(teloxide::types::ChatId(chat_id), display_description)
             .reply_markup(keyboard)
             .await
             .map_err(|e| ChannelSdkError::Protocol(format!("telegram send error: {e}")))?;
