@@ -54,6 +54,39 @@ impl AggregatedToolServer {
         name: &str,
         args: Option<serde_json::Map<String, serde_json::Value>>,
     ) -> Result<CallToolResult, McpError> {
+        let start = std::time::Instant::now();
+
+        let result = self.dispatch_tool_inner(name, args).await;
+
+        let duration = start.elapsed();
+        let status = if result.is_ok() { "ok" } else { "error" };
+        metrics::counter!(
+            "protoclaw_tool_invocations_total",
+            "tool" => name.to_string(),
+            "status" => status
+        )
+        .increment(1);
+        metrics::histogram!(
+            "protoclaw_tool_duration_seconds",
+            "tool" => name.to_string()
+        )
+        .record(duration.as_secs_f64());
+        tracing::info!(
+            target: "protoclaw::audit",
+            tool_name = %name,
+            success = result.is_ok(),
+            duration_ms = duration.as_millis() as u64,
+            "tool_invoked"
+        );
+
+        result
+    }
+
+    async fn dispatch_tool_inner(
+        &self,
+        name: &str,
+        args: Option<serde_json::Map<String, serde_json::Value>>,
+    ) -> Result<CallToolResult, McpError> {
         if let Ok(result) = self.native_host.dispatch_tool(name, args.clone()).await {
             return Ok(result);
         }
