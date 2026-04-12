@@ -39,6 +39,74 @@ struct PromptCompletion {
     session_key: SessionKey,
 }
 
+/// Resolve the effective working directory for an agent from its workspace config.
+fn resolve_agent_cwd(workspace: &WorkspaceConfig) -> std::path::PathBuf {
+    match workspace {
+        WorkspaceConfig::Local(local) => local.working_dir.clone().unwrap_or_else(|| {
+            std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("/"))
+        }),
+        WorkspaceConfig::Docker(docker) => docker.working_dir.clone().unwrap_or_else(|| {
+            std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("/"))
+        }),
+    }
+}
+
+/// Validate that `requested` resolves to a path inside `sandbox_root`.
+/// Uses `canonicalize()` so symlinks cannot escape the sandbox.
+/// Returns the canonical resolved path on success.
+fn validate_fs_path(
+    sandbox_root: &std::path::Path,
+    requested: &str,
+) -> Result<std::path::PathBuf, String> {
+    let requested_path = std::path::Path::new(requested);
+    let resolved = if requested_path.is_absolute() {
+        requested_path.to_path_buf()
+    } else {
+        sandbox_root.join(requested_path)
+    };
+    let canonical = resolved
+        .canonicalize()
+        .map_err(|e| format!("path resolution failed: {e}"))?;
+    let canonical_root = sandbox_root
+        .canonicalize()
+        .map_err(|e| format!("sandbox root resolution failed: {e}"))?;
+    if !canonical.starts_with(&canonical_root) {
+        return Err("path outside allowed directory".into());
+    }
+    Ok(canonical)
+}
+
+/// Validate that `requested` resolves to a path whose *parent directory* is inside `sandbox_root`.
+/// Used for writes where the file may not yet exist.
+/// Returns the validated write path (canonical parent + filename) on success.
+fn validate_fs_write_path(
+    sandbox_root: &std::path::Path,
+    requested: &str,
+) -> Result<std::path::PathBuf, String> {
+    let requested_path = std::path::Path::new(requested);
+    let resolved = if requested_path.is_absolute() {
+        requested_path.to_path_buf()
+    } else {
+        sandbox_root.join(requested_path)
+    };
+    let parent = resolved
+        .parent()
+        .ok_or_else(|| "invalid path: no parent directory".to_string())?;
+    let filename = resolved
+        .file_name()
+        .ok_or_else(|| "invalid path: no filename".to_string())?;
+    let canonical_parent = parent
+        .canonicalize()
+        .map_err(|e| format!("parent directory resolution failed: {e}"))?;
+    let canonical_root = sandbox_root
+        .canonicalize()
+        .map_err(|e| format!("sandbox root resolution failed: {e}"))?;
+    if !canonical_parent.starts_with(&canonical_root) {
+        return Err("path outside allowed directory".into());
+    }
+    Ok(canonical_parent.join(filename))
+}
+
 pub struct AgentsManager {
     agent_configs: Vec<(String, AgentConfig)>,
     manager_config: AgentsManagerConfig,
@@ -198,20 +266,7 @@ impl AgentsManager {
             })
             .collect();
 
-        let cwd = match &slot.config.workspace {
-            WorkspaceConfig::Local(local) => local
-                .working_dir
-                .clone()
-                .unwrap_or_else(|| {
-                    std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("/"))
-                }),
-            WorkspaceConfig::Docker(docker) => docker
-                .working_dir
-                .clone()
-                .unwrap_or_else(|| {
-                    std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("/"))
-                }),
-        };
+        let cwd = resolve_agent_cwd(&slot.config.workspace);
 
         let params = serde_json::to_value(SessionNewParams {
             session_id: None,
@@ -778,7 +833,15 @@ impl AgentsManager {
         params: &serde_json::Value,
     ) {
         let path = params["path"].as_str().unwrap_or("");
-        match tokio::fs::read_to_string(path).await {
+        let sandbox_root = resolve_agent_cwd(&slot.config.workspace);
+        let resolved = match validate_fs_path(&sandbox_root, path) {
+            Ok(p) => p,
+            Err(msg) => {
+                Self::send_error_response(slot, request, -32000, &msg).await;
+                return;
+            }
+        };
+        match tokio::fs::read_to_string(&resolved).await {
             Ok(content) => {
                 Self::send_success_response(
                     slot,
@@ -800,7 +863,15 @@ impl AgentsManager {
     ) {
         let path = params["path"].as_str().unwrap_or("");
         let content = params["content"].as_str().unwrap_or("");
-        match tokio::fs::write(path, content).await {
+        let sandbox_root = resolve_agent_cwd(&slot.config.workspace);
+        let resolved = match validate_fs_write_path(&sandbox_root, path) {
+            Ok(p) => p,
+            Err(msg) => {
+                Self::send_error_response(slot, request, -32000, &msg).await;
+                return;
+            }
+        };
+        match tokio::fs::write(&resolved, content).await {
             Ok(()) => {
                 Self::send_success_response(slot, request, serde_json::json!({})).await;
             }
@@ -1303,6 +1374,35 @@ mod tests {
                 protoclaw_config::LocalWorkspaceConfig {
                     binary: target_dir.to_string_lossy().to_string(),
                     working_dir: None,
+                    env: HashMap::new(),
+                },
+            ),
+            args: vec![],
+            enabled: true,
+            tools: vec![],
+            acp_timeout_secs: None,
+            backoff: None,
+            crash_tracker: None,
+            options: HashMap::new(),
+        }
+    }
+
+    fn mock_agent_config_with_working_dir(working_dir: &std::path::Path) -> AgentConfig {
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        let target_dir = std::path::Path::new(manifest_dir)
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("target")
+            .join("debug")
+            .join("mock-agent");
+
+        AgentConfig {
+            workspace: protoclaw_config::WorkspaceConfig::Local(
+                protoclaw_config::LocalWorkspaceConfig {
+                    binary: target_dir.to_string_lossy().to_string(),
+                    working_dir: Some(working_dir.to_path_buf()),
                     env: HashMap::new(),
                 },
             ),
@@ -1913,7 +2013,11 @@ mod tests {
         std::fs::write(&file_path, "hello world").unwrap();
 
         let cancel = CancellationToken::new();
-        let slot = AgentSlot::new("test-agent".into(), mock_agent_config(), &cancel);
+        let slot = AgentSlot::new(
+            "test-agent".into(),
+            mock_agent_config_with_working_dir(dir.path()),
+            &cancel,
+        );
         let request = serde_json::json!({"id": 1, "method": "fs/read_text_file"});
         let params = serde_json::json!({"path": file_path.to_str().unwrap()});
 
@@ -1923,10 +2027,15 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn when_fs_read_called_with_nonexistent_path_then_completes_without_panic() {
+        let dir = tempfile::tempdir().unwrap();
         let cancel = CancellationToken::new();
-        let slot = AgentSlot::new("test-agent".into(), mock_agent_config(), &cancel);
+        let slot = AgentSlot::new(
+            "test-agent".into(),
+            mock_agent_config_with_working_dir(dir.path()),
+            &cancel,
+        );
         let request = serde_json::json!({"id": 2, "method": "fs/read_text_file"});
-        let params = serde_json::json!({"path": "/nonexistent/path/file.txt"});
+        let params = serde_json::json!({"path": dir.path().join("nonexistent.txt").to_str().unwrap()});
 
         AgentsManager::handle_fs_read(&slot, &request, &params).await;
     }
@@ -1938,7 +2047,11 @@ mod tests {
         let file_path = dir.path().join("output.txt");
 
         let cancel = CancellationToken::new();
-        let slot = AgentSlot::new("test-agent".into(), mock_agent_config(), &cancel);
+        let slot = AgentSlot::new(
+            "test-agent".into(),
+            mock_agent_config_with_working_dir(dir.path()),
+            &cancel,
+        );
         let request = serde_json::json!({"id": 3, "method": "fs/write_text_file"});
         let params =
             serde_json::json!({"path": file_path.to_str().unwrap(), "content": "written content"});
@@ -1951,12 +2064,126 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn when_fs_write_called_with_invalid_path_then_completes_without_panic() {
+        let dir = tempfile::tempdir().unwrap();
         let cancel = CancellationToken::new();
-        let slot = AgentSlot::new("test-agent".into(), mock_agent_config(), &cancel);
+        let slot = AgentSlot::new(
+            "test-agent".into(),
+            mock_agent_config_with_working_dir(dir.path()),
+            &cancel,
+        );
         let request = serde_json::json!({"id": 4, "method": "fs/write_text_file"});
-        let params = serde_json::json!({"path": "/nonexistent/dir/file.txt", "content": "data"});
+        let params = serde_json::json!({"path": dir.path().join("subdir/nonexistent/file.txt").to_str().unwrap(), "content": "data"});
 
         AgentsManager::handle_fs_write(&slot, &request, &params).await;
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_fs_read_called_with_relative_path_inside_sandbox_then_succeeds() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("notes.txt"), "secure content").unwrap();
+
+        let cancel = CancellationToken::new();
+        let slot = AgentSlot::new(
+            "test-agent".into(),
+            mock_agent_config_with_working_dir(dir.path()),
+            &cancel,
+        );
+        let request = serde_json::json!({"id": 10, "method": "fs/read_text_file"});
+        let params = serde_json::json!({"path": "notes.txt"});
+
+        AgentsManager::handle_fs_read(&slot, &request, &params).await;
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_fs_read_called_with_path_traversal_then_completes_without_panic() {
+        let dir = tempfile::tempdir().unwrap();
+        let cancel = CancellationToken::new();
+        let slot = AgentSlot::new(
+            "test-agent".into(),
+            mock_agent_config_with_working_dir(dir.path()),
+            &cancel,
+        );
+        let request = serde_json::json!({"id": 11, "method": "fs/read_text_file"});
+        let params = serde_json::json!({"path": "../../etc/passwd"});
+
+        AgentsManager::handle_fs_read(&slot, &request, &params).await;
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_fs_read_called_with_absolute_path_outside_sandbox_then_completes_without_panic() {
+        let dir = tempfile::tempdir().unwrap();
+        let cancel = CancellationToken::new();
+        let slot = AgentSlot::new(
+            "test-agent".into(),
+            mock_agent_config_with_working_dir(dir.path()),
+            &cancel,
+        );
+        let request = serde_json::json!({"id": 12, "method": "fs/read_text_file"});
+        let params = serde_json::json!({"path": "/etc/hostname"});
+
+        AgentsManager::handle_fs_read(&slot, &request, &params).await;
+    }
+
+    #[rstest]
+    fn when_validate_fs_path_with_relative_inside_sandbox_then_ok() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("file.txt"), "x").unwrap();
+        let result = validate_fs_path(dir.path(), "file.txt");
+        assert!(result.is_ok());
+    }
+
+    #[rstest]
+    fn when_validate_fs_path_with_path_traversal_then_err() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = validate_fs_path(dir.path(), "../../etc/passwd");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err == "path outside allowed directory" || err.starts_with("path resolution failed"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[rstest]
+    fn when_validate_fs_path_with_absolute_outside_sandbox_then_err() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = validate_fs_path(dir.path(), "/etc/hostname");
+        let err = result.unwrap_err();
+        assert!(
+            err == "path outside allowed directory" || err.starts_with("path resolution failed"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[rstest]
+    fn when_validate_fs_path_with_absolute_inside_sandbox_then_ok() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("inside.txt"), "y").unwrap();
+        let abs_path = dir.path().join("inside.txt").to_string_lossy().to_string();
+        let result = validate_fs_path(dir.path(), &abs_path);
+        assert!(result.is_ok());
+    }
+
+    #[rstest]
+    fn when_validate_fs_write_path_with_relative_inside_sandbox_then_ok() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = validate_fs_write_path(dir.path(), "newfile.txt");
+        assert!(result.is_ok());
+    }
+
+    #[rstest]
+    fn when_validate_fs_write_path_with_path_traversal_then_err() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = validate_fs_write_path(dir.path(), "../../tmp/escape.txt");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err == "path outside allowed directory" || err.starts_with("parent directory resolution failed"),
+            "unexpected error: {err}"
+        );
     }
 
     fn mock_agent_config_with_crash_tracker(max_crashes: u32, window_secs: u64) -> AgentConfig {
