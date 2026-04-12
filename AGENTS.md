@@ -194,3 +194,8 @@ Check which AGENTS.md files exist in the affected directories and their parents.
 - `PreopenedDir.readonly` default flipped from `false` to `true` — WASM sandbox filesystem access is read-only by default; set `readonly: false` in config to grant write access
 - `WasmToolRunner` now wires `memory_limit_bytes` into a `ResourceLimiter` on each `Store` and `preopened_dirs` into `WasiCtxBuilder` via `.preopened_dir()`; WASM tools enforce configured resource and filesystem boundaries
 - `WasmState` wrapper struct introduced in `wasm_runner.rs` to hold both `WasiP1Ctx` and `WasmResourceLimiter` as `Store` data (required by wasmtime's `store.limiter()` API)
+
+## v0.3.0 Changes
+
+- `ToolConfig.options` wired as env vars to MCP server subprocesses (`external.rs`) and as WASI env vars to WASM tools (`wasm_runner.rs`, `wasm_tool.rs`)
+- Supervisor circuit breaker tracing enhanced with structured `max_restarts` and `restart_window_secs` fields on both `CrashAction::Disabled` tracing events

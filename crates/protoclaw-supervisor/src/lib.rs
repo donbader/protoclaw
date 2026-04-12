@@ -288,11 +288,15 @@ impl Supervisor {
                 CrashAction::Disabled => {
                     tracing::error!(
                         manager = %slot.name,
-                        "crash loop detected, marking disabled"
+                        max_restarts = self.config.supervisor.max_restarts,
+                        restart_window_secs = self.config.supervisor.restart_window_secs,
+                        "crash loop detected, marking disabled — restart circuit breaker tripped"
                     );
                     if slot.name == "agents" || slot.name == "channels" {
                         tracing::error!(
                             manager = %slot.name,
+                            max_restarts = self.config.supervisor.max_restarts,
+                            restart_window_secs = self.config.supervisor.restart_window_secs,
                             "critical manager crash loop — initiating shutdown"
                         );
                         root_cancel.cancel();
