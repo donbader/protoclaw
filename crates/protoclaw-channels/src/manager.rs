@@ -728,14 +728,14 @@ impl ChannelsManager {
                         option_id: resp.option_id,
                     })
                     .await
-                {
-                    tracing::warn!(
-                        channel = %channel_name,
-                        request_id = %resp.request_id,
-                        error = %e,
-                        "failed to forward permission response"
-                    );
-                }
+            {
+                tracing::warn!(
+                    channel = %channel_name,
+                    request_id = %resp.request_id,
+                    error = %e,
+                    "failed to forward permission response"
+                );
+            }
         } else {
             tracing::warn!(channel = %channel_name, "failed to parse channel/respondPermission params");
         }
@@ -803,9 +803,10 @@ impl ChannelsManager {
         for slot in &mut self.slots {
             slot.lifecycle.cancel_token.cancel();
             if let Some(mut conn) = slot.connection.take()
-                && let Err(e) = conn.graceful_shutdown(timeout).await {
-                    tracing::warn!(channel = %slot.name, error = %e, "graceful shutdown failed, process may linger");
-                }
+                && let Err(e) = conn.graceful_shutdown(timeout).await
+            {
+                tracing::warn!(channel = %slot.name, error = %e, "graceful shutdown failed, process may linger");
+            }
         }
     }
 

@@ -127,7 +127,8 @@ mod tests {
     #[tokio::test]
     async fn when_custom_adapter_overrides_hook_then_transformed_value_returned() {
         let adapter = InjectingAdapter;
-        let input = serde_json::json!({"sessionId": "s1", "message": {"role": "user", "content": "hi"}});
+        let input =
+            serde_json::json!({"sessionId": "s1", "message": {"role": "user", "content": "hi"}});
         let output = AgentAdapter::on_session_prompt_params(&adapter, input.clone())
             .await
             .unwrap();

@@ -170,7 +170,9 @@ mod tests {
     type AdapterHook = for<'a> fn(
         &'a DefaultAdapter,
         serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>>;
+    ) -> Pin<
+        Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>,
+    >;
 
     struct DefaultAdapter;
 
@@ -284,7 +286,9 @@ mod tests {
         let adapter = PermissionRewritingAdapter;
         let input = serde_json::json!({"requestId": "perm-1", "description": "Allow?"});
 
-        let output = AgentAdapter::on_permission_request(&adapter, input).await.unwrap();
+        let output = AgentAdapter::on_permission_request(&adapter, input)
+            .await
+            .unwrap();
 
         assert_eq!(output["approved"], serde_json::json!(true));
         assert_eq!(output["requestId"], serde_json::json!("perm-1"));

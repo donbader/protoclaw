@@ -59,14 +59,15 @@ impl AggregatedToolServer {
         }
         for ext in self.external_servers.iter() {
             if let Ok(ext_tools) = ext.list_tools().await
-                && ext_tools.iter().any(|t| t.name.as_ref() == name) {
-                    let mut params = CallToolRequestParams::new(name.to_string());
-                    params.arguments = args;
-                    return ext
-                        .call_tool(params)
-                        .await
-                        .map_err(|e| McpError::internal_error(e.to_string(), None));
-                }
+                && ext_tools.iter().any(|t| t.name.as_ref() == name)
+            {
+                let mut params = CallToolRequestParams::new(name.to_string());
+                params.arguments = args;
+                return ext
+                    .call_tool(params)
+                    .await
+                    .map_err(|e| McpError::internal_error(e.to_string(), None));
+            }
         }
         Err(McpError::invalid_params(
             format!("unknown tool: {name}"),

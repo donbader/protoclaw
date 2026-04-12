@@ -123,23 +123,20 @@ async fn send_flush(bot: &Bot, state: &Arc<SharedState>, chat_id: i64, flush: &P
         tracing::debug!(chat_id, "flush: no response to send");
     }
     if let Some((thought_msg_id, elapsed_secs)) = flush.thought_collapse
-        && thought_msg_id != 0 {
-            let emoji = thought_emoji(state).await;
-            let collapse_text = format!("{emoji} Thought for {elapsed_secs:.1}s");
-            let _ = retry_telegram_op("flush_collapse_thought", chat_id, || {
-                let collapse_text = collapse_text.clone();
-                async move {
-                    bot.edit_message_text(
-                        ChatId(chat_id),
-                        MessageId(thought_msg_id),
-                        &collapse_text,
-                    )
+        && thought_msg_id != 0
+    {
+        let emoji = thought_emoji(state).await;
+        let collapse_text = format!("{emoji} Thought for {elapsed_secs:.1}s");
+        let _ = retry_telegram_op("flush_collapse_thought", chat_id, || {
+            let collapse_text = collapse_text.clone();
+            async move {
+                bot.edit_message_text(ChatId(chat_id), MessageId(thought_msg_id), &collapse_text)
                     .parse_mode(ParseMode::Html)
                     .await
-                }
-            })
-            .await;
-        }
+            }
+        })
+        .await;
+    }
 }
 
 pub fn split_message(text: &str, max_len: usize) -> Vec<String> {
@@ -167,12 +164,13 @@ pub fn split_message(text: &str, max_len: usize) -> Vec<String> {
         let open_count = candidate.matches("<pre>").count() + candidate.matches("<pre ").count();
         let close_count = candidate.matches("</pre>").count();
         if open_count > close_count
-            && let Some(close_pos) = remaining.find("</pre>") {
-                let end = close_pos + "</pre>".len();
-                if end <= remaining.len() {
-                    boundary = end;
-                }
+            && let Some(close_pos) = remaining.find("</pre>")
+        {
+            let end = close_pos + "</pre>".len();
+            if end <= remaining.len() {
+                boundary = end;
             }
+        }
 
         if boundary <= max_len {
             let candidate = &remaining[..boundary];
@@ -260,9 +258,10 @@ pub async fn deliver_to_chat(
             {
                 let turns = state.turns.read().await;
                 if let Some(turn) = turns.get(&chat_id)
-                    && turn.thought.as_ref().map(|t| t.suppressed).unwrap_or(false) {
-                        return Ok(());
-                    }
+                    && turn.thought.as_ref().map(|t| t.suppressed).unwrap_or(false)
+                {
+                    return Ok(());
+                }
             }
 
             {
@@ -330,9 +329,10 @@ pub async fn deliver_to_chat(
                 {
                     let mut turns = state.turns.write().await;
                     if let Some(turn) = turns.get_mut(&chat_id)
-                        && let Some(track) = turn.thought.as_mut() {
-                            track.msg_id = sent.id.0;
-                        }
+                        && let Some(track) = turn.thought.as_mut()
+                    {
+                        track.msg_id = sent.id.0;
+                    }
                 }
             } else {
                 let bot_clone = bot.clone();
@@ -376,16 +376,18 @@ pub async fn deliver_to_chat(
                     }
                     let mut turns = state_clone.turns.write().await;
                     if let Some(turn) = turns.get_mut(&chat_id)
-                        && let Some(track) = turn.thought.as_mut() {
-                            track.debounce_handle = None;
-                        }
+                        && let Some(track) = turn.thought.as_mut()
+                    {
+                        track.debounce_handle = None;
+                    }
                 });
 
                 let mut turns = state.turns.write().await;
                 if let Some(turn) = turns.get_mut(&chat_id)
-                    && let Some(track) = turn.thought.as_mut() {
-                        track.debounce_handle = Some(handle);
-                    }
+                    && let Some(track) = turn.thought.as_mut()
+                {
+                    track.debounce_handle = Some(handle);
+                }
             }
             Ok(())
         }
@@ -487,37 +489,39 @@ pub async fn deliver_to_chat(
                             .and_then(|t| t.take_response_for_finalize())
                     };
                     if let Some((text, msg_id)) = final_data
-                        && !text.is_empty() && msg_id != 0 {
-                            let formatted = format_telegram_html(&text);
-                            let final_chunks = split_message(&formatted, 4096);
-                            let chunk0 = final_chunks[0].clone();
-                            if let Err(e) = bot_clone
-                                .edit_message_text(ChatId(chat_id), MessageId(msg_id), &chunk0)
-                                .parse_mode(ParseMode::Html)
+                        && !text.is_empty()
+                        && msg_id != 0
+                    {
+                        let formatted = format_telegram_html(&text);
+                        let final_chunks = split_message(&formatted, 4096);
+                        let chunk0 = final_chunks[0].clone();
+                        if let Err(e) = bot_clone
+                            .edit_message_text(ChatId(chat_id), MessageId(msg_id), &chunk0)
+                            .parse_mode(ParseMode::Html)
+                            .await
+                        {
+                            tracing::warn!(%e, chat_id, "failed to finalize message edit (late)");
+                        }
+                        for chunk in final_chunks.iter().skip(1) {
+                            let chunk = chunk.clone();
+                            let bot_clone2 = bot_clone.clone();
+                            if let Err(e) =
+                                retry_telegram_op("finalizing_late_overflow", chat_id, || {
+                                    let chunk = chunk.clone();
+                                    let bot_clone2 = bot_clone2.clone();
+                                    async move {
+                                        bot_clone2
+                                            .send_message(ChatId(chat_id), &chunk)
+                                            .parse_mode(ParseMode::Html)
+                                            .await
+                                    }
+                                })
                                 .await
                             {
-                                tracing::warn!(%e, chat_id, "failed to finalize message edit (late)");
-                            }
-                            for chunk in final_chunks.iter().skip(1) {
-                                let chunk = chunk.clone();
-                                let bot_clone2 = bot_clone.clone();
-                                if let Err(e) =
-                                    retry_telegram_op("finalizing_late_overflow", chat_id, || {
-                                        let chunk = chunk.clone();
-                                        let bot_clone2 = bot_clone2.clone();
-                                        async move {
-                                            bot_clone2
-                                                .send_message(ChatId(chat_id), &chunk)
-                                                .parse_mode(ParseMode::Html)
-                                                .await
-                                        }
-                                    })
-                                    .await
-                                {
-                                    tracing::warn!(%e, chat_id, "failed to send overflow chunk (late)");
-                                }
+                                tracing::warn!(%e, chat_id, "failed to send overflow chunk (late)");
                             }
                         }
+                    }
                     state_clone.turns.write().await.remove(&chat_id);
                 });
 
@@ -572,9 +576,10 @@ pub async fn deliver_to_chat(
                 {
                     let mut turns = state.turns.write().await;
                     if let Some(turn) = turns.get_mut(&chat_id)
-                        && let Some(track) = turn.response.as_mut() {
-                            track.msg_id = sent.id.0;
-                        }
+                        && let Some(track) = turn.response.as_mut()
+                    {
+                        track.msg_id = sent.id.0;
+                    }
                 }
             }
             Ok(())
@@ -609,10 +614,11 @@ pub async fn deliver_to_chat(
 
                 if let Some(mid) = message_id
                     && let Some(turn) = turns.get(&chat_id)
-                        && turn.is_different_turn(mid) {
-                            tracing::info!(chat_id, stale_message_id = mid, current_message_id = %turn.message_id, "discarding stale result from previous turn");
-                            return Ok(());
-                        }
+                    && turn.is_different_turn(mid)
+                {
+                    tracing::info!(chat_id, stale_message_id = mid, current_message_id = %turn.message_id, "discarding stale result from previous turn");
+                    return Ok(());
+                }
             }
 
             let collapse_data = {
@@ -621,23 +627,24 @@ pub async fn deliver_to_chat(
             };
 
             if let Some((thought_msg_id, elapsed_secs)) = collapse_data
-                && thought_msg_id != 0 {
-                    let emoji = thought_emoji(state).await;
-                    let collapse_text = format!("{emoji} Thought for {elapsed_secs:.1}s");
-                    let _ = retry_telegram_op("collapse_thought", chat_id, || {
-                        let collapse_text = collapse_text.clone();
-                        async move {
-                            bot.edit_message_text(
-                                ChatId(chat_id),
-                                MessageId(thought_msg_id),
-                                &collapse_text,
-                            )
-                            .parse_mode(ParseMode::Html)
-                            .await
-                        }
-                    })
-                    .await;
-                }
+                && thought_msg_id != 0
+            {
+                let emoji = thought_emoji(state).await;
+                let collapse_text = format!("{emoji} Thought for {elapsed_secs:.1}s");
+                let _ = retry_telegram_op("collapse_thought", chat_id, || {
+                    let collapse_text = collapse_text.clone();
+                    async move {
+                        bot.edit_message_text(
+                            ChatId(chat_id),
+                            MessageId(thought_msg_id),
+                            &collapse_text,
+                        )
+                        .parse_mode(ParseMode::Html)
+                        .await
+                    }
+                })
+                .await;
+            }
 
             {
                 let mut turns = state.turns.write().await;
@@ -763,18 +770,19 @@ pub async fn deliver_to_chat(
                 }
             })
             .await
-                && !tool_call_id.is_empty() {
-                    let mut turns = state.turns.write().await;
-                    if let Some(turn) = turns.get_mut(&chat_id) {
-                        turn.tool_calls.insert(
-                            tool_call_id,
-                            ToolCallTrack {
-                                msg_id: sent.id.0,
-                                name: name.to_string(),
-                            },
-                        );
-                    }
+                && !tool_call_id.is_empty()
+            {
+                let mut turns = state.turns.write().await;
+                if let Some(turn) = turns.get_mut(&chat_id) {
+                    turn.tool_calls.insert(
+                        tool_call_id,
+                        ToolCallTrack {
+                            msg_id: sent.id.0,
+                            name: name.to_string(),
+                        },
+                    );
                 }
+            }
             Ok(())
         }
 

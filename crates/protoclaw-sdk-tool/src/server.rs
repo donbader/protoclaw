@@ -308,7 +308,10 @@ mod tests {
         let result = server.dispatch_tool("beta", None).await.unwrap();
 
         assert_eq!(result.is_error, Some(false));
-        assert_eq!(result.content, vec![Content::text(r#"{"tool":"B"}"#.to_string())]);
+        assert_eq!(
+            result.content,
+            vec![Content::text(r#"{"tool":"B"}"#.to_string())]
+        );
     }
 
     #[rstest]
@@ -317,7 +320,10 @@ mod tests {
         let tools: Vec<Box<dyn DynTool>> = vec![Box::new(EchoTool)];
         let server = ToolServer::new(tools);
 
-        let error = server.dispatch_tool("missing-tool", None).await.unwrap_err();
+        let error = server
+            .dispatch_tool("missing-tool", None)
+            .await
+            .unwrap_err();
 
         assert!(error.message.contains("unknown tool: missing-tool"));
     }

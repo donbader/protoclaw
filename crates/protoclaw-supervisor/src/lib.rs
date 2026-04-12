@@ -203,9 +203,10 @@ impl Supervisor {
             );
 
             if slot.name == "agents"
-                && let ManagerKind::Agents(ref m) = manager {
-                    self.agents_cmd_tx = Some(m.command_sender());
-                }
+                && let ManagerKind::Agents(ref m) = manager
+            {
+                self.agents_cmd_tx = Some(m.command_sender());
+            }
 
             if let Err(e) = manager.start().await {
                 tracing::error!(manager = %slot.name, error = %e, "boot failed");
@@ -217,22 +218,23 @@ impl Supervisor {
 
             // After channels manager starts, grab port discovery and command sender
             if slot.name == "channels"
-                && let ManagerKind::Channels(ref m) = manager {
-                    self.channels_cmd_tx = Some(m.command_sender());
-                    // Forward port discovery from channel subprocess to supervisor's watch
-                    if let Some(mut channel_port_rx) = m.channel_port("debug-http") {
-                        let port_tx = self.debug_http_port_tx.clone();
-                        tokio::spawn(async move {
-                            while channel_port_rx.changed().await.is_ok() {
-                                let port = *channel_port_rx.borrow();
-                                if port != 0 {
-                                    let _ = port_tx.send(port);
-                                    break;
-                                }
+                && let ManagerKind::Channels(ref m) = manager
+            {
+                self.channels_cmd_tx = Some(m.command_sender());
+                // Forward port discovery from channel subprocess to supervisor's watch
+                if let Some(mut channel_port_rx) = m.channel_port("debug-http") {
+                    let port_tx = self.debug_http_port_tx.clone();
+                    tokio::spawn(async move {
+                        while channel_port_rx.changed().await.is_ok() {
+                            let port = *channel_port_rx.borrow();
+                            if port != 0 {
+                                let _ = port_tx.send(port);
+                                break;
                             }
-                        });
-                    }
+                        }
+                    });
                 }
+            }
 
             let token = slot.lifecycle.cancel_token.clone();
             let handle = tokio::spawn(async move { manager.run(token).await });

@@ -93,8 +93,14 @@ mod tests {
         let tool = ContractTool;
 
         assert_eq!(Tool::name(&tool), "contract-tool");
-        assert_eq!(Tool::description(&tool), "Validates the Tool trait contract");
-        assert_eq!(Tool::input_schema(&tool)["required"], serde_json::json!(["message"]));
+        assert_eq!(
+            Tool::description(&tool),
+            "Validates the Tool trait contract"
+        );
+        assert_eq!(
+            Tool::input_schema(&tool)["required"],
+            serde_json::json!(["message"])
+        );
     }
 
     #[rstest]

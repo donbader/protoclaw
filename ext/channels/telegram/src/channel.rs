@@ -53,23 +53,24 @@ impl TelegramChannel {
         };
 
         if cfg.reaction
-            && let Some(&msg_id) = self.state.last_message_ids.read().await.get(&chat_id) {
-                let reaction = ReactionType::Emoji {
-                    emoji: cfg.reaction_emoji.clone(),
-                };
-                let bot_clone = bot.clone();
-                let _ = crate::deliver::retry_telegram_op("ack_set_reaction", chat_id, || {
-                    let bot_clone = bot_clone.clone();
-                    let reaction = reaction.clone();
-                    async move {
-                        bot_clone
-                            .set_message_reaction(ChatId(chat_id), MessageId(msg_id))
-                            .reaction(vec![reaction])
-                            .await
-                    }
-                })
-                .await;
-            }
+            && let Some(&msg_id) = self.state.last_message_ids.read().await.get(&chat_id)
+        {
+            let reaction = ReactionType::Emoji {
+                emoji: cfg.reaction_emoji.clone(),
+            };
+            let bot_clone = bot.clone();
+            let _ = crate::deliver::retry_telegram_op("ack_set_reaction", chat_id, || {
+                let bot_clone = bot_clone.clone();
+                let reaction = reaction.clone();
+                async move {
+                    bot_clone
+                        .set_message_reaction(ChatId(chat_id), MessageId(msg_id))
+                        .reaction(vec![reaction])
+                        .await
+                }
+            })
+            .await;
+        }
 
         if cfg.typing {
             let bot_clone = bot.clone();

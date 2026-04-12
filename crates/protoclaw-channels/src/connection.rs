@@ -153,9 +153,10 @@ impl ChannelConnection {
             let mut lines = BufReader::new(stderr).lines();
             while let Ok(Some(line)) = lines.next_line().await {
                 if let Some(port_str) = line.strip_prefix("PORT:")
-                    && let Ok(port) = port_str.trim().parse::<u16>() {
-                        let _ = port_tx.send(port);
-                    }
+                    && let Ok(port) = port_str.trim().parse::<u16>()
+                {
+                    let _ = port_tx.send(port);
+                }
                 tracing::info!(target: "subprocess_stderr", "{}", line);
             }
         });

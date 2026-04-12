@@ -513,18 +513,19 @@ impl AgentsManager {
             .reverse_map
             .get(&event.session_id)
             .cloned()
-            && let Some(sender) = &self.channels_sender {
-                let _ = sender
-                    .send(ChannelEvent::DeliverMessage {
-                        session_key: session_key.clone(),
-                        content,
-                    })
-                    .await;
+            && let Some(sender) = &self.channels_sender
+        {
+            let _ = sender
+                .send(ChannelEvent::DeliverMessage {
+                    session_key: session_key.clone(),
+                    content,
+                })
+                .await;
 
-                if is_result {
-                    self.streaming_completed.insert(session_key);
-                }
+            if is_result {
+                self.streaming_completed.insert(session_key);
             }
+        }
     }
 
     async fn forward_malformed_update_error(
@@ -595,20 +596,21 @@ impl AgentsManager {
 
         let session_id = params["sessionId"].as_str().unwrap_or("");
         if let Some(session_key) = self.slots[slot_idx].reverse_map.get(session_id).cloned()
-            && let Some(sender) = &self.channels_sender {
-                let options_json = serde_json::to_value(&options).unwrap_or_else(|e| {
+            && let Some(sender) = &self.channels_sender
+        {
+            let options_json = serde_json::to_value(&options).unwrap_or_else(|e| {
                     tracing::warn!(error = %e, %request_id, "failed to serialize permission options, using null");
                     serde_json::Value::default()
                 });
-                let _ = sender
-                    .send(ChannelEvent::RoutePermission {
-                        session_key,
-                        request_id: request_id.clone(),
-                        description: description.clone(),
-                        options: options_json,
-                    })
-                    .await;
-            }
+            let _ = sender
+                .send(ChannelEvent::RoutePermission {
+                    session_key,
+                    request_id: request_id.clone(),
+                    description: description.clone(),
+                    options: options_json,
+                })
+                .await;
+        }
 
         self.slots[slot_idx].pending_permissions.insert(
             request_id,
@@ -782,9 +784,10 @@ impl AgentsManager {
             CrashAction::RestartAfter(delay) => {
                 tracing::warn!(agent = %agent_name, "agent process exited, attempting recovery");
                 if let Some(mut old_conn) = slot.connection.take()
-                    && let Err(e) = old_conn.kill().await {
-                        tracing::debug!(agent = %agent_name, error = %e, "failed to clean up old connection (may already be dead)");
-                    }
+                    && let Err(e) = old_conn.kill().await
+                {
+                    tracing::debug!(agent = %agent_name, error = %e, "failed to clean up old connection (may already be dead)");
+                }
                 tracing::info!(agent = %agent_name, delay_ms = delay.as_millis(), "waiting before restart");
                 tokio::time::sleep(delay).await;
                 true
@@ -1102,18 +1105,20 @@ fn normalize_tool_event_fields(content: &mut serde_json::Value, update_type: &st
     };
 
     if !update.contains_key("name")
-        && let Some(title) = update.remove("title") {
-            update.insert("name".to_string(), title);
-        }
+        && let Some(title) = update.remove("title")
+    {
+        update.insert("name".to_string(), title);
+    }
 
-    if update_type == "tool_call_update" && !update.contains_key("output")
+    if update_type == "tool_call_update"
+        && !update.contains_key("output")
         && let Some(raw) = update
             .get("rawOutput")
             .and_then(|r| r.get("output"))
             .cloned()
-        {
-            update.insert("output".to_string(), raw);
-        }
+    {
+        update.insert("output".to_string(), raw);
+    }
 }
 
 #[cfg(test)]
