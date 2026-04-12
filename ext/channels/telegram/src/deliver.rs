@@ -988,12 +988,16 @@ mod tests {
     #[rstest]
     fn when_tool_call_update_failed_then_emoji_is_cross() {
         let text = format_tool_call_update_text("my_tool", "failed", Some("err"));
-        assert!(text.starts_with("❌"), "failed status must use ❌ emoji, got: {text}");
+        assert!(
+            text.starts_with("❌"),
+            "failed status must use ❌ emoji, got: {text}"
+        );
     }
 
     #[rstest]
     fn when_tool_call_update_failed_with_html_in_output_then_escaped() {
-        let text = format_tool_call_update_text("tool", "failed", Some("<script>alert(1)</script>"));
+        let text =
+            format_tool_call_update_text("tool", "failed", Some("<script>alert(1)</script>"));
         assert!(
             !text.contains("<script>"),
             "HTML in error output must be escaped, got: {text}"

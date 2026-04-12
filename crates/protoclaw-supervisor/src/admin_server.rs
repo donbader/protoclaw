@@ -11,7 +11,9 @@ pub async fn start(port: u16, health: SharedHealth) {
     let handle = match PrometheusBuilder::new().install_recorder() {
         Ok(h) => h,
         Err(e) => {
-            tracing::warn!("prometheus recorder already installed, /metrics will be unavailable: {e}");
+            tracing::warn!(
+                "prometheus recorder already installed, /metrics will be unavailable: {e}"
+            );
             return;
         }
     };
