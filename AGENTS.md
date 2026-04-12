@@ -151,7 +151,6 @@ fn when_decoding_non_json_input_then_returns_none(#[case] input: &str) {
 - **No `std::env::var` in channel/tool binaries**: Runtime config flows through the initialize handshake (`ChannelInitializeParams.options`). CLI entry points (`main.rs`, `init.rs`, `status.rs`) are exempt.
 - **No cross-manager crate imports**: Managers communicate only via `ManagerHandle<C>` commands. Use trait abstractions (e.g., `AgentDispatch`) instead of importing another manager's crate.
 - **Config-driven channels**: Channel subprocesses receive configuration through `ChannelInitializeParams.options`, not environment variables. `ChannelConfig.options` in `protoclaw.yaml` is the single source.
-- **No GSD milestone git tags**: When running `/gsd-complete-milestone`, skip the `git_tag` step entirely. This project uses `release-plz` to manage semver tags (`protoclaw-sdk-*-vX.Y.Z`). GSD milestone tags like `v7.0` conflict with the release tag namespace. Acknowledge the skip with: "Skipped git tag — release-plz manages tags for this project."
 
 ## Design Documentation
 
