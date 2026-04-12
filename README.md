@@ -1,6 +1,9 @@
 # protoclaw
 
 [![CI](https://github.com/donbader/protoclaw/actions/workflows/ci.yml/badge.svg)](https://github.com/donbader/protoclaw/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/protoclaw-sdk-types.svg)](https://crates.io/crates/protoclaw-sdk-types)
+[![docs.rs](https://img.shields.io/docsrs/protoclaw-sdk-types)](https://docs.rs/protoclaw-sdk-types)
+[![MSRV](https://img.shields.io/badge/MSRV-1.94-blue)](https://github.com/donbader/protoclaw/blob/main/Cargo.toml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](LICENSE-MIT)
 
 Infrastructure sidecar that connects AI agents to messaging channels and tools.
