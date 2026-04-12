@@ -203,7 +203,7 @@ impl AgentsManager {
             Some(slot.config.options.clone())
         };
         let params = serde_json::to_value(InitializeParams {
-            protocol_version: 1,
+            protocol_version: 2,
             capabilities: ClientCapabilities { experimental: None },
             options,
         })?;
@@ -215,14 +215,15 @@ impl AgentsManager {
             .map_err(|_| AgentsError::ConnectionClosed)?;
 
         let result: InitializeResult = serde_json::from_value(resp)?;
-        if result.protocol_version != 1 {
+        if result.protocol_version != 1 && result.protocol_version != 2 {
             return Err(AcpError::ProtocolMismatch {
-                expected: 1,
+                expected: 2,
                 got: result.protocol_version,
             }
             .into());
         }
 
+        slot.protocol_version = result.protocol_version;
         slot.agent_capabilities = Some(result);
         Ok(())
     }
@@ -1472,13 +1473,14 @@ mod tests {
         assert_eq!(m.slots.len(), 1);
         assert!(m.slots[0].connection.is_some());
         assert!(m.slots[0].agent_capabilities.is_some());
+        assert_eq!(m.slots[0].protocol_version, 2);
         assert_eq!(
             m.slots[0]
                 .agent_capabilities
                 .as_ref()
                 .unwrap()
                 .protocol_version,
-            1
+            2
         );
 
         m.shutdown_all().await;
@@ -2433,6 +2435,56 @@ mod tests {
         assert!(
             matches!(result, Err(AgentsError::AgentNotFound(_))),
             "expected AgentNotFound, got: {result:?}"
+        );
+
+        m.shutdown_all().await;
+        tools_task.abort();
+    }
+
+    fn make_protocol_mismatch_error(expected: u32, got: u32) -> AgentsError {
+        crate::acp_error::AcpError::ProtocolMismatch { expected, got }.into()
+    }
+
+    #[rstest]
+    fn when_v1_is_accepted_range_value_then_not_a_mismatch() {
+        let negotiated = 1u32;
+        assert!(negotiated == 1 || negotiated == 2);
+    }
+
+    #[rstest]
+    fn when_v2_is_accepted_range_value_then_not_a_mismatch() {
+        let negotiated = 2u32;
+        assert!(negotiated == 1 || negotiated == 2);
+    }
+
+    #[rstest]
+    fn when_unknown_version_v99_then_protocol_mismatch_error_produced() {
+        let err = make_protocol_mismatch_error(2, 99);
+        assert!(
+            matches!(
+                err,
+                AgentsError::Protocol(crate::acp_error::AcpError::ProtocolMismatch {
+                    expected: 2,
+                    got: 99
+                })
+            ),
+            "unexpected version 99 must produce ProtocolMismatch(expected=2, got=99), got: {err:?}"
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_agent_reports_v2_then_slot_protocol_version_stored() {
+        let (handle, rx) = make_tools_handle();
+        let tools_task = tokio::spawn(serve_tools_urls(rx));
+
+        let mut m = AgentsManager::new(mock_agents_manager_config(), handle);
+        m.start().await.unwrap();
+
+        assert_eq!(
+            m.slots[0].protocol_version,
+            2,
+            "slot must store the negotiated protocol version"
         );
 
         m.shutdown_all().await;

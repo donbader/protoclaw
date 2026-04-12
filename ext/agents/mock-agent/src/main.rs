@@ -183,7 +183,7 @@ async fn handle_initialize(stdout: &mut tokio::io::Stdout, id: Option<Value>, ms
         "jsonrpc": "2.0",
         "id": id,
         "result": {
-            "protocolVersion": 1,
+            "protocolVersion": 2,
             "loadSession": true,
             "mcpCapabilities": { "http": true, "sse": true },
             "promptCapabilities": { "embeddedContext": true },

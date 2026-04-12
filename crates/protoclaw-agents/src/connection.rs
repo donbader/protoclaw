@@ -433,7 +433,7 @@ mod tests {
             .expect("timeout waiting for response")
             .expect("oneshot cancelled");
 
-        assert_eq!(resp["protocolVersion"], 1);
+        assert_eq!(resp["protocolVersion"], 2);
         conn.kill().await.unwrap();
     }
 

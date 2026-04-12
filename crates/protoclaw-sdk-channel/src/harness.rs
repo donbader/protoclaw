@@ -105,6 +105,12 @@ impl<C: Channel> ChannelHarness<C> {
                     capabilities: caps,
                 };
                 if let Ok(init_params) = serde_json::from_value::<ChannelInitializeParams>(params) {
+                    if init_params.protocol_version != 1 {
+                        tracing::warn!(
+                            protocol_version = init_params.protocol_version,
+                            "channel received unexpected protocol version; expected 1"
+                        );
+                    }
                     self.channel.on_initialize(init_params).await?;
                 }
                 self.channel.on_ready(outbound_tx.clone()).await?;

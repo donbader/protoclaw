@@ -5,9 +5,9 @@ use protoclaw_config::AgentConfig;
 use protoclaw_core::{CrashTracker, ExponentialBackoff, SessionKey, SlotLifecycle};
 use tokio_util::sync::CancellationToken;
 
-use crate::PendingPermission;
 use crate::acp_types::InitializeResult;
 use crate::connection::AgentConnection;
+use crate::PendingPermission;
 
 pub struct AgentSlot {
     pub(crate) name: String,
@@ -15,6 +15,9 @@ pub struct AgentSlot {
     pub(crate) connection: Option<AgentConnection>,
     pub(crate) lifecycle: SlotLifecycle,
     pub(crate) agent_capabilities: Option<InitializeResult>,
+    /// Negotiated ACP protocol version, set after successful initialize handshake.
+    /// 0 means not yet initialized.
+    pub(crate) protocol_version: u32,
     pub(crate) session_map: HashMap<SessionKey, String>,
     pub(crate) reverse_map: HashMap<String, SessionKey>,
     pub(crate) pending_permissions: HashMap<String, PendingPermission>,
@@ -42,6 +45,7 @@ impl AgentSlot {
             connection: None,
             lifecycle,
             agent_capabilities: None,
+            protocol_version: 0,
             session_map: HashMap::new(),
             reverse_map: HashMap::new(),
             pending_permissions: HashMap::new(),
