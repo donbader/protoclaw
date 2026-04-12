@@ -1,6 +1,6 @@
 # Protoclaw Real Agent Example — Docker Workspace (default)
 # Opencode runs in an isolated container managed by protoclaw via bollard.
-# API keys are passed via env vars — set them in .env
+# API keys are baked into the agent image via .opencode/opencode.json
 # To switch to local workspace: disable opencode, enable opencode-local,
 # update channel agent fields, and add volume mounts back to docker-compose.yml.
 
@@ -19,9 +19,6 @@ agents_manager:
         docker_host: "tcp://socket-proxy:2375"
         network: "protoclaw-external"
         env:
-          OPENCODE_PROVIDER: "${OPENCODE_PROVIDER:anthropic}"
-          OPENCODE_MODEL: "${OPENCODE_MODEL:claude-sonnet-4-20250514}"
-          ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:}"
           XDG_CONFIG_HOME: "/home/node/.config"
           XDG_DATA_HOME: "/home/node/.local/share"
       pull_policy: "Never"
@@ -47,7 +44,6 @@ agents_manager:
         type: local
         binary: "claude"
         env:
-          ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:}"
           CLAUDE_CONFIG_DIR: "/home/protoclaw/.claude"
       args:
         - "--acp"

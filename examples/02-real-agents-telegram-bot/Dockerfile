@@ -65,9 +65,13 @@ COPY --from=builder /usr/local/bin/agents/opencode-wrapper /usr/local/bin/agents
 # Glob trick: README.md always exists so COPY never fails; .opencode is optional.
 RUN mkdir -p /home/node/.config/opencode
 COPY README.md .opencode* /tmp/build-staging/
-RUN if [ -d /tmp/build-staging/.opencode ]; then \
-      cp -r /tmp/build-staging/.opencode/* /home/node/.config/opencode/ 2>/dev/null || true; \
+RUN if [ -f /tmp/build-staging/opencode.json ]; then \
+      cp /tmp/build-staging/opencode.json /home/node/.config/opencode/ && \
+      cp /tmp/build-staging/package*.json /home/node/.config/opencode/ 2>/dev/null || true; \
     fi && rm -rf /tmp/build-staging
+RUN if [ -f /home/node/.config/opencode/package.json ]; then \
+      cd /home/node/.config/opencode && npm install --omit=dev; \
+    fi
 USER node
 WORKDIR /home/node
 ENTRYPOINT ["/usr/local/bin/agents/opencode-wrapper"]

@@ -1,12 +1,10 @@
 # Example 02: Real Agent Bot
 
-A protoclaw bot with a real AI agent (OpenCode + Claude). The agent runs in an isolated Docker container — config optionally baked in at build time, API keys passed via environment variables.
+A protoclaw bot with a real AI agent (OpenCode + Claude). The agent runs in an isolated Docker container — config and API keys baked into the image via `.opencode/opencode.json`.
 
 ## Quick Start
 
 ```sh
-cp .env.example .env
-# Edit .env — set ANTHROPIC_API_KEY (required for the AI agent)
 docker compose up -d
 ```
 
