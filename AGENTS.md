@@ -199,3 +199,7 @@ Check which AGENTS.md files exist in the affected directories and their parents.
 
 - `ToolConfig.options` wired as env vars to MCP server subprocesses (`external.rs`) and as WASI env vars to WASM tools (`wasm_runner.rs`, `wasm_tool.rs`)
 - Supervisor circuit breaker tracing enhanced with structured `max_restarts` and `restart_window_secs` fields on both `CrashAction::Disabled` tracing events
+- `AgentsCommand` extended with `ForkSession`, `ListSessions`, `CancelSession` — capability-gated dispatch checks `slot.agent_capabilities.session_capabilities` before sending fork/list requests; missing capability returns `AgentsError::CapabilityNotSupported`
+- `ContentKind::AvailableCommandsUpdate { commands }` added to `protoclaw-sdk-types` — channels receive typed command-list updates from agents
+- Telegram channel calls `bot.set_my_commands()` on `AvailableCommandsUpdate` — agent-provided commands appear in Telegram's `/` menu
+- Per-session cancel via `CancelSession` command sends `session/cancel` to the agent for a specific session; the existing broadcast `CancelOperation` is preserved for shutdown scenarios

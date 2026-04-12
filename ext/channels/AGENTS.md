@@ -29,6 +29,7 @@ Both channels use `ContentKind::from_content(&msg.content)` from `protoclaw-sdk-
 - `ContentKind::MessageChunk { text }` / `ContentKind::Result { text }` — agent response chunks and final result
 - `ContentKind::ToolCall { name, tool_call_id, input }` — agent started a tool call
 - `ContentKind::ToolCallUpdate { name, tool_call_id, status, output }` — tool call status change (in_progress, completed, failed)
+- `ContentKind::AvailableCommandsUpdate { commands }` — agent-provided command list; Telegram calls `bot.set_my_commands()` on this
 - `ContentKind::UsageUpdate` / `ContentKind::Unknown` — silently ignored
 
 **debug-http:** Emits thoughts as named SSE event `"thought"`, tool calls as `"tool_call"`, tool call updates as `"tool_call_update"`, and user message chunks as `"user_message_chunk"` via `SsePayload` struct. Tool call SSE data is JSON with `toolCallId`, `name`, `input`/`status`/`output` fields. Regular messages use default SSE data events. SSE clients filter by event type.

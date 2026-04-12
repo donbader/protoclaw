@@ -25,7 +25,7 @@ Shared serde types used by all three SDK crates (agent, channel, tool) and by in
 - `ChannelSendMessage { peer_info, content }` — channel → protoclaw
 - `PeerInfo { channel_name, peer_id, kind }` — inbound message identity
 - `ThoughtContent` — helper to extract `agent_thought_chunk` from `DeliverMessage.content`
-- `ContentKind` — typed dispatch enum over `DeliverMessage.content`: `Thought`, `MessageChunk`, `Result`, `UserMessageChunk`, `UsageUpdate`, `ToolCall`, `ToolCallUpdate`, `Unknown`
+- `ContentKind` — typed dispatch enum over `DeliverMessage.content`: `Thought`, `MessageChunk`, `Result`, `UserMessageChunk`, `UsageUpdate`, `ToolCall`, `ToolCallUpdate`, `AvailableCommandsUpdate`, `Unknown`
 - `AckNotification` / `AckLifecycleNotification` — ack reaction lifecycle
 - `ChannelAckConfig` — ack settings passed via initialize
 - `SessionCreated` — session-to-peer mapping notification
