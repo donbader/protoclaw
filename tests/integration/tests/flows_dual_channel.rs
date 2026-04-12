@@ -148,6 +148,7 @@ fn build_dual_channel_config() -> protoclaw_config::ProtoclawConfig {
             health_check_interval_secs: 1,
             max_restarts: 3,
             restart_window_secs: 60,
+            admin_port: 3000,
         },
         log_level: "info".into(),
         log_format: protoclaw_config::LogFormat::Pretty,

@@ -154,6 +154,7 @@ fn build_two_agent_config(channel_routes_to: &str) -> protoclaw_config::Protocla
             health_check_interval_secs: 1,
             max_restarts: 3,
             restart_window_secs: 60,
+            admin_port: 3000,
         },
         log_level: "info".into(),
         log_format: protoclaw_config::LogFormat::Pretty,
