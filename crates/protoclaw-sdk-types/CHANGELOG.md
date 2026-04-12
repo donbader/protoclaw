@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0](https://github.com/donbader/protoclaw/compare/protoclaw-sdk-types-v0.2.3...protoclaw-sdk-types-v0.3.0) - 2026-04-12
+
+### Added
+
+- *(sdk)* mark public enums non_exhaustive and document API stability
+- *(sdk-types,telegram)* add ContentKind::AvailableCommandsUpdate and Telegram setMyCommands
+
+### Other
+
+- *(acp)* document extension types and clean agent-specific references
+- update AGENTS.md with v0.3.0 Phase 80 changes
+
 ## [0.2.3](https://github.com/donbader/protoclaw/compare/protoclaw-sdk-types-v0.2.2...protoclaw-sdk-types-v0.2.3) - 2026-04-12
 
 ### Other
