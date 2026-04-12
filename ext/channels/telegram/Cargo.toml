@@ -10,7 +10,7 @@ name = "telegram-channel"
 path = "src/main.rs"
 
 [dependencies]
-teloxide = { version = "0.17", features = ["macros"] }
+teloxide = { version = "0.17", default-features = false, features = ["macros", "rustls", "ctrlc_handler"] }
 protoclaw-sdk-channel = { workspace = true }
 protoclaw-sdk-types = { workspace = true }
 regex = "1"

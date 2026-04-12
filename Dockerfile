@@ -1,6 +1,5 @@
-# Stage 1: Chef base — install cargo-chef, cached across all builds
-# lukemathwalker/cargo-chef:latest-rust-1.94-bookworm
-FROM lukemathwalker/cargo-chef:latest-rust-1.94-bookworm@sha256:7e550e59b8c14e74aa86ca9e5950b75d937c9d51e7f5a4c840e726a33b4b8455 AS chef
+# Stage 1: Chef base — Alpine for native musl toolchain
+FROM lukemathwalker/cargo-chef:latest-rust-1.94-alpine AS chef
 WORKDIR /build
 
 # Stage 2: Planner — generate recipe.json from workspace manifests
@@ -21,14 +20,14 @@ RUN cargo build --release \
     --bin system-info \
     --bin opencode-wrapper
 
-# Stage 4: Core runtime — protoclaw only (distroless, no shell)
-FROM gcr.io/distroless/cc-debian12:nonroot AS core
+# Stage 4: Core runtime — protoclaw only (static, no OS packages)
+FROM gcr.io/distroless/static-debian12:nonroot AS core
 COPY --from=builder /build/target/release/protoclaw /usr/local/bin/protoclaw
 WORKDIR /workspace
 ENTRYPOINT ["protoclaw"]
 
 # Stage 5: Builder export — protoclaw + all ext/ binaries in categorized paths
-FROM gcr.io/distroless/cc-debian12:nonroot AS builder-export
+FROM gcr.io/distroless/static-debian12:nonroot AS builder-export
 COPY --from=builder /build/target/release/protoclaw /usr/local/bin/protoclaw
 COPY --from=builder /build/target/release/mock-agent /usr/local/bin/agents/mock-agent
 COPY --from=builder /build/target/release/opencode-wrapper /usr/local/bin/agents/opencode-wrapper
