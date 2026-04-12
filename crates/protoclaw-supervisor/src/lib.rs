@@ -3,15 +3,18 @@ use std::time::Duration;
 
 use protoclaw_config::{ProtoclawConfig, resolve_all_binary_paths};
 use protoclaw_core::{
-    CrashAction, CrashTracker, ExponentialBackoff, Manager, ManagerError, ManagerHandle,
-    SlotLifecycle,
+    CrashAction, CrashTracker, ExponentialBackoff, HealthSnapshot, HealthStatus, Manager,
+    ManagerError, ManagerHandle, SlotLifecycle,
 };
+use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 
 use protoclaw_agents::{AgentsCommand, AgentsManager};
 use protoclaw_channels::{ChannelsCommand, ChannelsManager};
 use protoclaw_core::ChannelEvent;
 use protoclaw_tools::{ToolsCommand, ToolsManager};
+
+pub mod admin_server;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SupervisorError {
@@ -33,6 +36,7 @@ pub struct Supervisor {
     debug_http_port_tx: tokio::sync::watch::Sender<u16>,
     debug_http_port_rx: tokio::sync::watch::Receiver<u16>,
     boot_notify: Option<Arc<tokio::sync::Notify>>,
+    health: Arc<RwLock<HealthSnapshot>>,
 }
 
 struct ManagerSlot {
@@ -74,6 +78,7 @@ impl Supervisor {
             debug_http_port_tx,
             debug_http_port_rx,
             boot_notify: None,
+            health: Arc::new(RwLock::new(HealthSnapshot::default())),
         }
     }
 
@@ -135,6 +140,8 @@ impl Supervisor {
         if let Some(notify) = &self.boot_notify {
             notify.notify_one();
         }
+
+        admin_server::start(self.config.supervisor.admin_port, self.health.clone()).await;
 
         let mut health_interval = tokio::time::interval(Duration::from_secs(health_interval_secs));
         health_interval.tick().await;
@@ -343,8 +350,76 @@ impl Supervisor {
             let handle = tokio::spawn(async move { manager.run(token).await });
             slot.join_handle = Some(handle);
 
+            metrics::counter!("protoclaw_manager_restarts_total", "manager" => slot.name.clone())
+                .increment(1);
+
             tracing::info!(manager = %slot.name, "restarted");
         }
+
+        self.refresh_health_snapshot(slots).await;
+    }
+
+    async fn refresh_health_snapshot(&self, slots: &[ManagerSlot]) {
+        let agents_running = slots
+            .iter()
+            .any(|s| s.name == "agents" && s.join_handle.is_some());
+        let channels_running = slots
+            .iter()
+            .any(|s| s.name == "channels" && s.join_handle.is_some());
+
+        let agents: Vec<protoclaw_core::AgentHealth> = self
+            .config
+            .agents_manager
+            .agents
+            .keys()
+            .map(|name| protoclaw_core::AgentHealth {
+                name: name.clone(),
+                connected: agents_running,
+                session_count: 0,
+            })
+            .collect();
+
+        let channels: Vec<String> = if channels_running {
+            self.config
+                .channels_manager
+                .channels
+                .keys()
+                .cloned()
+                .collect()
+        } else {
+            Vec::new()
+        };
+
+        let mcp_servers: Vec<String> = self
+            .config
+            .tools_manager
+            .tools
+            .iter()
+            .filter(|(_, t)| {
+                t.enabled && t.tool_type == protoclaw_config::ToolType::Mcp
+            })
+            .map(|(name, _)| name.clone())
+            .collect();
+
+        let degraded = agents.iter().any(|a| !a.connected);
+        let status = if degraded {
+            HealthStatus::Degraded
+        } else {
+            HealthStatus::Healthy
+        };
+
+        let mut snapshot = self.health.write().await;
+        *snapshot = HealthSnapshot {
+            status,
+            agents,
+            channels,
+            mcp_servers,
+        };
+
+        metrics::gauge!("protoclaw_agents_connected").set(
+            snapshot.agents.iter().filter(|a| a.connected).count() as f64,
+        );
+        metrics::gauge!("protoclaw_channels_running").set(snapshot.channels.len() as f64);
     }
 }
 
