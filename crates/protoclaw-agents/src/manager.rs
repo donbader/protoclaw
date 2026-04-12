@@ -885,7 +885,12 @@ impl AgentsManager {
 
         let slot = &mut self.slots[slot_idx];
         match Self::start_session(slot, &self.tools_handle, acp_timeout).await {
-            Ok(_session_id) => {
+            Ok(session_id) => {
+                // Clear stale session IDs from the crashed process — they are
+                // no longer valid in the newly spawned agent.
+                slot.session_map.clear();
+                slot.reverse_map.clear();
+                Self::register_default_session(slot, agent_name, session_id);
                 slot.lifecycle.backoff.reset();
                 tracing::info!(agent = %agent_name, "agent recovered successfully");
             }
@@ -1309,6 +1314,60 @@ mod tests {
         m.handle_crash(0).await;
 
         assert!(m.slots[0].connection.is_some(), "should have reconnected");
+
+        m.shutdown_all().await;
+        tools_task.abort();
+    }
+
+    #[tokio::test]
+    async fn when_agent_crashes_then_session_map_has_fresh_id() {
+        let mut config = mock_agent_config();
+        config
+            .options
+            .insert("exit_after".into(), serde_json::json!(1));
+        config
+            .options
+            .insert("reject_load".into(), serde_json::json!(true));
+
+        let (handle, rx) = make_tools_handle();
+        let tools_task = tokio::spawn(serve_tools_urls(rx));
+
+        let mut m = AgentsManager::new(
+            mock_agents_manager_config_with(HashMap::from([("default".into(), config)])),
+            handle,
+        );
+        m.start().await.unwrap();
+
+        let default_key = SessionKey::new("default", "default", "default");
+        let pre_crash_id = m.slots[0]
+            .session_map
+            .get(&default_key)
+            .cloned()
+            .expect("session_map should have default key after start");
+
+        let _ = AgentsManager::send_prompt_to_slot(&m.slots[0], "trigger-crash").await;
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        m.handle_crash(0).await;
+
+        let post_crash_id = m.slots[0]
+            .session_map
+            .get(&default_key)
+            .cloned()
+            .expect("session_map should have default key after crash recovery");
+
+        assert_ne!(
+            pre_crash_id, post_crash_id,
+            "session_map must contain the new session ID, not the stale pre-crash one"
+        );
+        assert!(
+            !m.slots[0].reverse_map.contains_key(&pre_crash_id),
+            "reverse_map must not contain the stale pre-crash session ID"
+        );
+        assert!(
+            m.slots[0].reverse_map.contains_key(&post_crash_id),
+            "reverse_map must contain the new session ID"
+        );
 
         m.shutdown_all().await;
         tools_task.abort();
