@@ -846,10 +846,10 @@ pub async fn deliver_to_chat(
                         Some(teloxide::types::BotCommand::new(name, description))
                     })
                     .collect();
-                if !bot_commands.is_empty() {
-                    if let Err(e) = bot.set_my_commands(bot_commands).await {
-                        tracing::warn!(error = %e, "failed to set bot commands");
-                    }
+                if !bot_commands.is_empty()
+                    && let Err(e) = bot.set_my_commands(bot_commands).await
+                {
+                    tracing::warn!(error = %e, "failed to set bot commands");
                 }
             }
             Ok(())
