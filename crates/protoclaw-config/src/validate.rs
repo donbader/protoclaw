@@ -121,11 +121,10 @@ fn validate_local_agent(
             binary: local.binary.clone(),
         });
     }
-    if let Some(path) = &local.working_dir {
-        if !path.exists() {
+    if let Some(path) = &local.working_dir
+        && !path.exists() {
             errors.push(ValidationError::WorkingDirNotFound { path: path.clone() });
         }
-    }
 }
 
 fn validate_docker_agent(
@@ -133,32 +132,29 @@ fn validate_docker_agent(
     docker: &crate::DockerWorkspaceConfig,
     errors: &mut Vec<ValidationError>,
 ) {
-    if let Some(mem) = &docker.memory_limit {
-        if let Err(e) = crate::parse_memory_limit(mem) {
+    if let Some(mem) = &docker.memory_limit
+        && let Err(e) = crate::parse_memory_limit(mem) {
             errors.push(ValidationError::InvalidMemoryLimit {
                 field: format!("agents_manager.agents.{name}.workspace.memory_limit"),
                 value: mem.clone(),
                 reason: e.to_string(),
             });
         }
-    }
-    if let Some(cpu) = &docker.cpu_limit {
-        if let Err(e) = crate::parse_cpu_limit(cpu) {
+    if let Some(cpu) = &docker.cpu_limit
+        && let Err(e) = crate::parse_cpu_limit(cpu) {
             errors.push(ValidationError::InvalidCpuLimit {
                 field: format!("agents_manager.agents.{name}.workspace.cpu_limit"),
                 value: cpu.clone(),
                 reason: e.to_string(),
             });
         }
-    }
-    if let Some(host) = &docker.docker_host {
-        if !host.starts_with("unix://") && !host.starts_with("tcp://") {
+    if let Some(host) = &docker.docker_host
+        && !host.starts_with("unix://") && !host.starts_with("tcp://") {
             errors.push(ValidationError::InvalidDockerHost {
                 field: format!("agents_manager.agents.{name}.workspace.docker_host"),
                 value: host.clone(),
             });
         }
-    }
     for volume in &docker.volumes {
         if !volume.contains(':') {
             errors.push(ValidationError::InvalidVolumeMount {
@@ -191,14 +187,13 @@ fn validate_channel_binaries(config: &ProtoclawConfig, errors: &mut Vec<Validati
 
 fn validate_tool_binaries(config: &ProtoclawConfig, errors: &mut Vec<ValidationError>) {
     for (name, tool) in &config.tools_manager.tools {
-        if let Some(binary) = &tool.binary {
-            if !binary_exists(binary) {
+        if let Some(binary) = &tool.binary
+            && !binary_exists(binary) {
                 errors.push(ValidationError::BinaryNotFound {
                     field: format!("tools_manager.tools.{name}.binary"),
                     binary: binary.clone(),
                 });
             }
-        }
     }
 }
 
