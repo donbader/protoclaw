@@ -10,24 +10,14 @@ env:
 
 jobs:
   build:
-    name: Build (${{ matrix.target }}, ${{ matrix.platform }})
+    name: Build (${{ matrix.arch }})
     strategy:
       matrix:
         include:
-          - target: core
-            image: ghcr.io/donbader/protoclaw
+          - arch: amd64
             platform: linux/amd64
             runner: ubuntu-latest
-          - target: core
-            image: ghcr.io/donbader/protoclaw
-            platform: linux/arm64
-            runner: ubuntu-24.04-arm
-          - target: builder-export
-            image: ghcr.io/donbader/protoclaw-builder
-            platform: linux/amd64
-            runner: ubuntu-latest
-          - target: builder-export
-            image: ghcr.io/donbader/protoclaw-builder
+          - arch: arm64
             platform: linux/arm64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
@@ -47,35 +37,47 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v6
-        with:
-          images: ${{ matrix.image }}
-
-      - name: Build and push by digest
-        id: build
+      # Build both targets sequentially — shares the builder stage via local cache
+      - name: Build and push core
+        id: core
         uses: docker/build-push-action@v7
         with:
           context: .
-          target: ${{ matrix.target }}
+          target: core
           platforms: ${{ matrix.platform }}
-          labels: ${{ steps.meta.outputs.labels }}
-          outputs: type=image,name=${{ matrix.image }},push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=gha,scope=${{ matrix.target }}-${{ matrix.platform }}
-          cache-to: type=gha,scope=${{ matrix.target }}-${{ matrix.platform }},mode=max
+          outputs: type=image,name=ghcr.io/donbader/protoclaw,push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=build-${{ matrix.platform }}
+          cache-to: type=gha,scope=build-${{ matrix.platform }},mode=max
 
-      - name: Export digest
+      - name: Build and push builder-export
+        id: builder-export
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: builder-export
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=ghcr.io/donbader/protoclaw-builder,push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=build-${{ matrix.platform }}
+
+      - name: Export digests
         run: |
-          mkdir -p /tmp/digests/${{ matrix.target }}
-          digest="${{ steps.build.outputs.digest }}"
-          touch "/tmp/digests/${{ matrix.target }}/${digest#sha256:}"
+          mkdir -p /tmp/digests/core /tmp/digests/builder-export
+          touch "/tmp/digests/core/${{ steps.core.outputs.digest }}"
+          touch "/tmp/digests/builder-export/${{ steps.builder-export.outputs.digest }}"
 
-      - name: Upload digest
+      - name: Upload core digest
         uses: actions/upload-artifact@v7
         with:
-          name: digest-${{ matrix.target }}-${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
-          path: /tmp/digests/${{ matrix.target }}/*
+          name: digest-core-${{ matrix.arch }}
+          path: /tmp/digests/core/*
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload builder-export digest
+        uses: actions/upload-artifact@v7
+        with:
+          name: digest-builder-export-${{ matrix.arch }}
+          path: /tmp/digests/builder-export/*
           if-no-files-found: error
           retention-days: 1
 
@@ -139,7 +141,7 @@ jobs:
           docker buildx imagetools inspect ${{ matrix.image }}:${{ steps.meta.outputs.version }}
 
       - name: Trivy vulnerability scan
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: ${{ matrix.image }}:${{ steps.meta.outputs.version }}
           format: table

@@ -49,4 +49,4 @@ temp-env = "0.3"
 
 [profile.release]
 strip = true
-lto = true
+lto = "thin"
