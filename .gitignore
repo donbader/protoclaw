@@ -15,4 +15,4 @@ coverage/
 .vscode/
 
 # WASM artifacts
-*.wasm
+*.wasm.worktrees/
