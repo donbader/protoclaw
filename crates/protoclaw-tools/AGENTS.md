@@ -53,3 +53,10 @@ Served over HTTP via rmcp's `StreamableHttpService` (stateful mode) on a random 
 
 - `#[tracing::instrument]` added to `start()` and `aggregate_tool_list()`
 - `ExternalMcpServer` test coverage expanded: routing, tool list aggregation
+
+## v0.3.0 Changes
+
+- `route_call()` now wraps the actual dispatch in `dispatch_tool_inner()` — do not inline them again; the outer function owns timing, metrics, and audit logging
+- `protoclaw_tool_invocations_total` counter incremented after every tool call (`tool` + `status` labels; status is `"ok"` or `"error"`)
+- `protoclaw_tool_duration_seconds` histogram recorded per invocation (`tool` label; value in seconds as f64)
+- `tracing::info!(target: "protoclaw::audit")` emitted per invocation with `tool_name`, `success`, `duration_ms` structured fields; no separate log file — events flow through the tracing subscriber

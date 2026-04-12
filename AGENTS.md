@@ -205,3 +205,11 @@ Check which AGENTS.md files exist in the affected directories and their parents.
 - Per-session cancel via `CancelSession` command sends `session/cancel` to the agent for a specific session; the existing broadcast `CancelOperation` is preserved for shutdown scenarios
 - `fs/read_text_file` and `fs/write_text_file` ACP tool handlers in `protoclaw-agents/src/manager.rs` enforce path sandboxing: all requested paths must resolve inside the agent's `working_dir`; traversals outside return JSON-RPC error code `-32000` with message `"path outside allowed directory"`; `resolve_agent_cwd()` and `validate_fs_path()` / `validate_fs_write_path()` helpers extracted for reuse
 - `debug-http` channel supports optional bearer token auth: set `API_KEY` in `ChannelConfig.options` to require `Authorization: Bearer <token>` on all routes except `/health`; when `API_KEY` is absent, no auth is required (backward compatible); implemented via `axum::middleware::from_fn_with_state`
+- `SupervisorConfig.admin_port` added (default `3000`) — configures the admin HTTP server port; set in `protoclaw.yaml` under `supervisor.admin_port`
+- `HealthSnapshot`, `HealthStatus`, `AgentHealth` types added to `protoclaw-core` (`health.rs`) — point-in-time supervisor health used by both the admin endpoint and the CLI `status` command
+- Admin HTTP server added to supervisor (`crates/protoclaw-supervisor/src/admin_server.rs`) — spawned as a background tokio task before the health loop; binds to `127.0.0.1:{admin_port}`
+  - `GET /health` — JSON `HealthSnapshot`; 200 when healthy, 503 when degraded (tools degradation does NOT trigger 503)
+  - `GET /metrics` — Prometheus text format via `metrics-exporter-prometheus`
+- Metrics emitted by supervisor: `protoclaw_agents_connected` (gauge), `protoclaw_channels_running` (gauge), `protoclaw_manager_restarts_total` (counter, `manager` label)
+- Metrics emitted by tools manager: `protoclaw_tool_invocations_total` (counter, `tool`+`status` labels), `protoclaw_tool_duration_seconds` (histogram, `tool` label)
+- Audit logging added to `route_call()` in `protoclaw-tools/src/manager.rs` — `tracing::info!(target: "protoclaw::audit", tool_name, success, duration_ms, "tool_invoked")` emitted after every tool dispatch; no separate log file in v0.3.0, audit events flow through the tracing subscriber
