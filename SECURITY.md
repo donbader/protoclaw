@@ -4,10 +4,7 @@
 
 **Please do not report security vulnerabilities through public GitHub issues.**
 
-To report a vulnerability privately, use one of the following:
-
-- **Email:** [security@protoclaw.dev](mailto:security@protoclaw.dev)
-- **GitHub Security Advisories:** [Report a vulnerability](https://github.com/donbader/protoclaw/security/advisories/new)
+To report a vulnerability privately, use [GitHub Security Advisories](https://github.com/donbader/protoclaw/security/advisories/new).
 
 Please include as much detail as possible: description of the issue, steps to reproduce, potential impact, and any suggested mitigations.
 
