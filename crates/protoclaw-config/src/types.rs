@@ -352,7 +352,7 @@ pub struct WasmSandboxConfig {
 pub struct PreopenedDir {
     pub host: PathBuf,
     pub guest: String,
-    #[serde(default)]
+    #[serde(default = "default_readonly_true")]
     pub readonly: bool,
 }
 
@@ -406,6 +406,9 @@ fn default_extensions_dir() -> String {
     "/usr/local/bin".into()
 }
 fn default_true() -> bool {
+    true
+}
+fn default_readonly_true() -> bool {
     true
 }
 fn default_agent() -> String {
@@ -1103,6 +1106,13 @@ pull_policy: always
             }
             _ => panic!("expected Docker variant"),
         }
+    }
+
+    #[test]
+    fn when_preopened_dir_readonly_default_flipped_then_serde_defaults_to_true() {
+        let yaml = "host: \"/tmp\"\nguest: \"/data\"";
+        let dir: PreopenedDir = serde_yaml::from_str(yaml).unwrap();
+        assert!(dir.readonly, "readonly should default to true");
     }
 
     #[test]

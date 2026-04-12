@@ -188,3 +188,9 @@ Check which AGENTS.md files exist in the affected directories and their parents.
 
 - v5.1 milestone (Tech Debt & Hardening, phases 45-54) complete
 - rstest/BDD test conventions enforced workspace-wide (all new and migrated tests use `#[rstest]`, `when_*`/`given_*` naming)
+
+## v5.2 Changes
+
+- `PreopenedDir.readonly` default flipped from `false` to `true` — WASM sandbox filesystem access is read-only by default; set `readonly: false` in config to grant write access
+- `WasmToolRunner` now wires `memory_limit_bytes` into a `ResourceLimiter` on each `Store` and `preopened_dirs` into `WasiCtxBuilder` via `.preopened_dir()`; WASM tools enforce configured resource and filesystem boundaries
+- `WasmState` wrapper struct introduced in `wasm_runner.rs` to hold both `WasiP1Ctx` and `WasmResourceLimiter` as `Store` data (required by wasmtime's `store.limiter()` API)
