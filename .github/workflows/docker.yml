@@ -62,8 +62,10 @@ jobs:
       - name: Export digests
         run: |
           mkdir -p /tmp/digests/core /tmp/digests/builder-export
-          touch "/tmp/digests/core/${{ steps.core.outputs.digest }}"
-          touch "/tmp/digests/builder-export/${{ steps.builder-export.outputs.digest }}"
+          core_digest="${{ steps.core.outputs.digest }}"
+          builder_digest="${{ steps.builder-export.outputs.digest }}"
+          touch "/tmp/digests/core/${core_digest#sha256:}"
+          touch "/tmp/digests/builder-export/${builder_digest#sha256:}"
 
       - name: Upload core digest
         uses: actions/upload-artifact@v7
