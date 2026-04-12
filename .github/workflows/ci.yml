@@ -45,6 +45,8 @@ jobs:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
       - uses: taiki-e/install-action@nextest
       - name: Build required binaries
         run: cargo build --locked --bin mock-agent --bin debug-http --bin sdk-test-tool --bin sdk-test-channel
