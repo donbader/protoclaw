@@ -43,6 +43,8 @@ struct SharedState {
     /// Pending permission requests from the agent.
     pending_permissions: RwLock<Vec<PendingPermission>>,
     permission_broker: Mutex<PermissionBroker>,
+    /// Optional API key; when set, all routes except /health require Bearer auth.
+    api_key: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -60,6 +62,7 @@ struct DebugHttpChannel {
     state: Arc<SharedState>,
     host: String,
     port: u16,
+    api_key: Option<String>,
 }
 
 impl Channel for DebugHttpChannel {
@@ -83,6 +86,9 @@ impl Channel for DebugHttpChannel {
         }) {
             self.port = port as u16;
         }
+        if let Some(key) = params.options.get("API_KEY").and_then(|v| v.as_str()) {
+            self.api_key = Some(key.to_string());
+        }
         Ok(())
     }
 
@@ -90,7 +96,14 @@ impl Channel for DebugHttpChannel {
         &mut self,
         outbound: mpsc::Sender<ChannelSendMessage>,
     ) -> Result<(), ChannelSdkError> {
-        *self.state.outbound.lock().await = Some(outbound);
+        let (event_tx, _) = broadcast::channel::<SsePayload>(256);
+        self.state = Arc::new(SharedState {
+            outbound: Mutex::new(Some(outbound)),
+            event_tx,
+            pending_permissions: RwLock::new(Vec::new()),
+            permission_broker: Mutex::new(PermissionBroker::new()),
+            api_key: self.api_key.clone(),
+        });
 
         let router = build_router(self.state.clone());
         let addr = format!("{}:{}", self.host, self.port);
@@ -201,6 +214,33 @@ impl Channel for DebugHttpChannel {
     }
 }
 
+async fn auth_middleware(
+    State(state): State<Arc<SharedState>>,
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let Some(ref expected_key) = state.api_key else {
+        return next.run(request).await;
+    };
+    if request.uri().path() == "/health" {
+        return next.run(request).await;
+    }
+    let auth_header = request
+        .headers()
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok());
+    let authorized = matches!(auth_header, Some(h) if h.starts_with("Bearer ") && &h[7..] == expected_key);
+    if authorized {
+        next.run(request).await
+    } else {
+        axum::response::Response::builder()
+            .status(axum::http::StatusCode::UNAUTHORIZED)
+            .header("content-type", "application/json")
+            .body(axum::body::Body::from(r#"{"error":"unauthorized"}"#))
+            .expect("building 401 response must not fail")
+    }
+}
+
 fn build_router(state: Arc<SharedState>) -> Router {
     Router::new()
         .route("/health", get(handle_health))
@@ -209,6 +249,10 @@ fn build_router(state: Arc<SharedState>) -> Router {
         .route("/cancel", post(handle_cancel))
         .route("/permissions/pending", get(handle_permissions_pending))
         .route("/permissions/{id}/respond", post(handle_permission_respond))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            auth_middleware,
+        ))
         .with_state(state)
 }
 
@@ -328,12 +372,14 @@ async fn main() {
         event_tx,
         pending_permissions: RwLock::new(Vec::new()),
         permission_broker: Mutex::new(PermissionBroker::new()),
+        api_key: None,
     });
 
     let channel = DebugHttpChannel {
         state: state.clone(),
         host,
         port,
+        api_key: None,
     };
 
     if let Err(e) = ChannelHarness::new(channel).run_stdio().await {
@@ -355,6 +401,18 @@ mod tests {
             event_tx,
             pending_permissions: RwLock::new(Vec::new()),
             permission_broker: Mutex::new(PermissionBroker::new()),
+            api_key: None,
+        })
+    }
+
+    fn make_shared_state_with_key(key: &str) -> Arc<SharedState> {
+        let (event_tx, _) = broadcast::channel::<SsePayload>(256);
+        Arc::new(SharedState {
+            outbound: Mutex::new(None),
+            event_tx,
+            pending_permissions: RwLock::new(Vec::new()),
+            permission_broker: Mutex::new(PermissionBroker::new()),
+            api_key: Some(key.to_string()),
         })
     }
 
@@ -365,6 +423,7 @@ mod tests {
             state,
             host: "127.0.0.1".to_string(),
             port: 0,
+            api_key: None,
         };
         let caps = ch.capabilities();
         assert!(caps.streaming, "debug-http must support streaming");
@@ -378,10 +437,11 @@ mod tests {
             state: state.clone(),
             host: "127.0.0.1".to_string(),
             port: 0,
+            api_key: None,
         };
         let (tx, _rx) = mpsc::channel(16);
         ch.on_ready(tx).await.unwrap();
-        let outbound = state.outbound.lock().await;
+        let outbound = ch.state.outbound.lock().await;
         assert!(
             outbound.is_some(),
             "on_ready must store the outbound sender"
@@ -396,6 +456,7 @@ mod tests {
             state: state.clone(),
             host: "127.0.0.1".to_string(),
             port: 0,
+            api_key: None,
         };
         let msg = DeliverMessage {
             session_id: "s1".into(),
@@ -418,6 +479,7 @@ mod tests {
             state: state.clone(),
             host: "127.0.0.1".to_string(),
             port: 0,
+            api_key: None,
         };
         let msg = DeliverMessage {
             session_id: "s1".into(),
@@ -437,6 +499,7 @@ mod tests {
             state: state.clone(),
             host: "127.0.0.1".to_string(),
             port: 0,
+            api_key: None,
         };
         let msg = DeliverMessage {
             session_id: "s1".into(),
@@ -458,6 +521,7 @@ mod tests {
             state: state.clone(),
             host: "127.0.0.1".to_string(),
             port: 0,
+            api_key: None,
         };
         let msg = DeliverMessage {
             session_id: "s1".into(),
@@ -478,6 +542,7 @@ mod tests {
             state: state.clone(),
             host: "127.0.0.1".to_string(),
             port: 0,
+            api_key: None,
         };
         let req = ChannelRequestPermission {
             request_id: "perm-1".into(),
@@ -591,6 +656,7 @@ mod tests {
             state: state.clone(),
             host: "127.0.0.1".to_string(),
             port: 0,
+            api_key: None,
         };
         let msg = DeliverMessage {
             session_id: "s1".into(),
@@ -620,6 +686,7 @@ mod tests {
             state: state.clone(),
             host: "127.0.0.1".to_string(),
             port: 0,
+            api_key: None,
         };
         let msg = DeliverMessage {
             session_id: "s1".into(),
@@ -641,5 +708,75 @@ mod tests {
         assert_eq!(data["name"], "read_file");
         assert_eq!(data["status"], "completed");
         assert_eq!(data["toolCallId"], "tc-1");
+    }
+
+    #[tokio::test]
+    async fn when_api_key_configured_and_no_auth_header_then_returns_401() {
+        let state = make_shared_state_with_key("secret-token");
+        let app = build_router(state);
+        let req = Request::builder()
+            .method("POST")
+            .uri("/message")
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"message":"hello"}"#))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn when_api_key_configured_and_wrong_token_then_returns_401() {
+        let state = make_shared_state_with_key("secret-token");
+        let app = build_router(state);
+        let req = Request::builder()
+            .method("POST")
+            .uri("/message")
+            .header("content-type", "application/json")
+            .header("authorization", "Bearer wrong-token")
+            .body(Body::from(r#"{"message":"hello"}"#))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn when_api_key_configured_and_correct_token_then_request_succeeds() {
+        let state = make_shared_state_with_key("secret-token");
+        let app = build_router(state);
+        let req = Request::builder()
+            .method("POST")
+            .uri("/message")
+            .header("content-type", "application/json")
+            .header("authorization", "Bearer secret-token")
+            .body(Body::from(r#"{"message":"hello"}"#))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn when_api_key_configured_then_health_endpoint_exempt_from_auth() {
+        let state = make_shared_state_with_key("secret-token");
+        let app = build_router(state);
+        let req = Request::builder()
+            .uri("/health")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn when_no_api_key_configured_then_requests_succeed_without_auth() {
+        let state = make_shared_state();
+        let app = build_router(state);
+        let req = Request::builder()
+            .method("POST")
+            .uri("/message")
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"message":"hello"}"#))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
     }
 }
