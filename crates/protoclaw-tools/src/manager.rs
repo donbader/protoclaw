@@ -344,7 +344,7 @@ impl ToolsManager {
 mod tests {
     use super::*;
     use protoclaw_sdk_tool::{Tool, ToolSdkError};
-    use rstest::rstest;
+    
 
     struct DummyTool {
         tool_name: String,

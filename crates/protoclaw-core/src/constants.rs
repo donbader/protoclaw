@@ -32,7 +32,7 @@ pub const DEFAULT_CRASH_WINDOW_SECS: u64 = 60;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rstest::rstest;
+    
 
     #[test]
     fn when_checking_poll_interval_then_matches_expected_value() {

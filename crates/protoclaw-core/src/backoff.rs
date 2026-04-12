@@ -94,7 +94,7 @@ impl Default for CrashTracker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rstest::rstest;
+    
 
     #[test]
     fn when_new_backoff_created_then_initial_delay_is_100ms() {

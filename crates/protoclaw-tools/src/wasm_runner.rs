@@ -130,7 +130,7 @@ impl Drop for WasmToolRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rstest::rstest;
+    
 
     fn default_sandbox() -> WasmSandboxConfig {
         WasmSandboxConfig::default()

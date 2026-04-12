@@ -498,7 +498,7 @@ impl ProtoclawConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rstest::rstest;
+    
 
     #[test]
     fn when_no_log_level_set_then_defaults_to_info() {

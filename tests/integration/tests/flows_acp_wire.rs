@@ -3,7 +3,6 @@ use std::time::Duration;
 use protoclaw_integration_tests::{
     SseCollector, boot_supervisor_with_port, mock_agent_config, with_timeout,
 };
-use rstest::rstest;
 
 #[test_log::test(tokio::test)]
 async fn when_supervisor_boots_then_acp_session_established_and_health_responds() {

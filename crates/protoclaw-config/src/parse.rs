@@ -90,7 +90,7 @@ pub fn parse_cpu_limit(s: &str) -> Result<i64, ConfigError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rstest::rstest;
+    
 
     #[test]
     fn when_memory_limit_has_k_suffix_then_converts_to_bytes() {

@@ -15,7 +15,7 @@ pub enum ChannelSdkError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rstest::rstest;
+    
 
     #[test]
     fn when_std_io_error_converted_then_wrapped_as_channel_sdk_io_error() {

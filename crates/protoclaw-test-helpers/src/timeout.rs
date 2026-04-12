@@ -13,7 +13,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rstest::rstest;
+    
 
     #[tokio::test]
     async fn when_with_timeout_called_with_fast_future_then_returns_result() {

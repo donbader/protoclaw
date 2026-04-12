@@ -33,7 +33,7 @@ pub enum ManagerError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rstest::rstest;
+    
 
     #[test]
     fn when_boot_failed_error_displayed_then_includes_manager_name() {

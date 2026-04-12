@@ -3,7 +3,6 @@ use std::time::Duration;
 use protoclaw_integration_tests::{
     SseCollector, boot_supervisor_with_port, sdk_channel_config, with_timeout,
 };
-use rstest::rstest;
 
 #[test_log::test(tokio::test)]
 async fn when_sdk_channel_receives_message_then_agent_echoes_back_with_result_event() {

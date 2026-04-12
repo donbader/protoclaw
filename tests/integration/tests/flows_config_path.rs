@@ -1,6 +1,5 @@
 use protoclaw_config::ProtoclawConfig;
 use protoclaw_integration_tests::{boot_supervisor_with_port, mock_agent_config, with_timeout};
-use rstest::rstest;
 
 #[test_log::test(tokio::test)]
 async fn given_config_written_to_temp_path_when_loaded_and_supervisor_booted_then_health_responds()

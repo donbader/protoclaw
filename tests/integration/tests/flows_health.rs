@@ -1,5 +1,4 @@
 use protoclaw_integration_tests::{boot_supervisor_with_port, mock_agent_config, with_timeout};
-use rstest::rstest;
 
 /// GET /health returns 200 with {"status": "ok"} (channel-level health).
 #[test_log::test(tokio::test)]

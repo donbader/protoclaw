@@ -3,7 +3,6 @@ use std::time::Duration;
 use protoclaw_integration_tests::{
     SseCollector, boot_supervisor_with_port, mock_agent_config, with_timeout,
 };
-use rstest::rstest;
 
 /// Send 3 messages rapidly. With FIFO queue + merging, queued messages may be
 /// joined into fewer agent turns. Verify all content arrives and FIFO order holds.

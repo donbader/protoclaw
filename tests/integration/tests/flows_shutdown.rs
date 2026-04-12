@@ -3,7 +3,6 @@ use std::time::Duration;
 use protoclaw_integration_tests::{
     SseCollector, boot_supervisor_with_port, mock_agent_config, with_timeout,
 };
-use rstest::rstest;
 
 /// Send message, cancel after first SSE event arrives, assert full response + clean exit.
 #[test_log::test(tokio::test)]

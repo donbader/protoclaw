@@ -85,7 +85,7 @@ impl Encoder<serde_json::Value> for NdJsonCodec {
 mod tests {
     use super::*;
     use bytes::BufMut;
-    use rstest::rstest;
+    
 
     fn codec() -> NdJsonCodec {
         NdJsonCodec::new()

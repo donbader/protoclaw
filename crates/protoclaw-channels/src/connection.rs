@@ -286,7 +286,7 @@ impl ChannelConnection {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rstest::rstest;
+    
 
     fn cat_channel_config() -> ChannelConfig {
         ChannelConfig {

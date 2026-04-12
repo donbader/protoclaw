@@ -37,7 +37,7 @@ pub enum Commands {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rstest::rstest;
+    
 
     #[test]
     fn when_no_subcommand_given_then_command_is_none() {

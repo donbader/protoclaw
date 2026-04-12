@@ -84,7 +84,7 @@ pub fn run_init(config_path: &str, force: bool) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rstest::rstest;
+    
 
     #[test]
     fn when_no_known_binary_on_path_then_detect_agent_binary_returns_none() {

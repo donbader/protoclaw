@@ -69,7 +69,7 @@ impl Tool for WasmTool {
 mod tests {
     use super::*;
     use protoclaw_config::WasmSandboxConfig;
-    use rstest::rstest;
+    
     use std::collections::HashMap;
     use std::path::PathBuf;
 

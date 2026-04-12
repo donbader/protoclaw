@@ -1,4 +1,3 @@
-use rstest::rstest;
 use std::path::PathBuf;
 
 fn workspace_root() -> PathBuf {

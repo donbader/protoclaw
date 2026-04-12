@@ -50,7 +50,7 @@ pub enum ManagerCommand {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rstest::rstest;
+    
 
     #[tokio::test]
     async fn when_command_sent_via_handle_then_receiver_gets_command() {

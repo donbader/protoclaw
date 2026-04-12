@@ -12,7 +12,6 @@
 
 use figment::Jail;
 use protoclaw_config::ProtoclawConfig;
-use rstest::rstest;
 
 #[test]
 fn given_example_01_yaml_when_loaded_via_figment_jail_then_config_parses() {

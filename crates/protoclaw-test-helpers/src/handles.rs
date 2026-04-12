@@ -9,7 +9,7 @@ pub fn make_handle<C: Send + 'static>(buffer: usize) -> (ManagerHandle<C>, mpsc:
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rstest::rstest;
+    
 
     #[tokio::test]
     async fn when_make_handle_called_then_messages_sent_via_handle_are_received_on_channel() {

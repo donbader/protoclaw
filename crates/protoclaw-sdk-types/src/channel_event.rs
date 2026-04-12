@@ -47,7 +47,7 @@ pub enum ChannelEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rstest::rstest;
+    
 
     #[test]
     fn when_deliver_message_event_serialized_then_deserializes_correctly() {

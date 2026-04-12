@@ -4,7 +4,6 @@ use std::time::Duration;
 use protoclaw_integration_tests::{
     SseCollector, boot_supervisor_with_port, debug_http_path, mock_agent_path, with_timeout,
 };
-use rstest::rstest;
 
 /// Two agents (agent-a, agent-b) with different echo_prefix. Channel routes to agent-a.
 /// Verify response contains "agent-a:" and NOT "agent-b:".

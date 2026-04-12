@@ -15,7 +15,7 @@ pub enum FramingError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rstest::rstest;
+    
 
     #[test]
     fn when_framing_errors_created_then_display_matches_template() {

@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use protoclaw_integration_tests::{
     boot_supervisor_with_port, mock_agent_config_with_options, with_timeout,
 };
-use rstest::rstest;
 
 #[test_log::test(tokio::test)]
 async fn given_agent_requests_permission_when_responded_to_then_permission_acknowledged() {
