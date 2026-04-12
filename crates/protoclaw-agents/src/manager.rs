@@ -7,7 +7,8 @@ use crate::acp_error::AcpError;
 use crate::acp_types::{
     ClientCapabilities, ContentPart, InitializeParams, InitializeResult, McpServerInfo,
     SessionCancelParams, SessionForkParams, SessionForkResult, SessionListParams,
-    SessionLoadParams, SessionNewParams, SessionPromptParams, SessionUpdateEvent, SessionUpdateType,
+    SessionLoadParams, SessionNewParams, SessionPromptParams, SessionUpdateEvent,
+    SessionUpdateType,
 };
 use crate::slot::{AgentSlot, find_slot_by_name};
 use protoclaw_config::{AgentConfig, AgentsManagerConfig, WorkspaceConfig};
@@ -554,8 +555,7 @@ impl AgentsManager {
         })?;
         let rx = conn.send_request("session/fork", params).await?;
 
-        let acp_timeout =
-            Self::acp_timeout_for(&self.slots[slot_idx].config, &self.manager_config);
+        let acp_timeout = Self::acp_timeout_for(&self.slots[slot_idx].config, &self.manager_config);
         let resp = tokio::time::timeout(acp_timeout, rx)
             .await
             .map_err(|_| AgentsError::Timeout(acp_timeout))?
@@ -564,13 +564,10 @@ impl AgentsManager {
         let result: SessionForkResult = serde_json::from_value(resp)?;
         let new_session_id = result.session_id.clone();
 
-        let fork_key = SessionKey::new(
-            session_key.channel_name(),
-            "fork",
-            &new_session_id,
-        );
+        let fork_key = SessionKey::new(session_key.channel_name(), "fork", &new_session_id);
         let slot = &mut self.slots[slot_idx];
-        slot.session_map.insert(fork_key.clone(), new_session_id.clone());
+        slot.session_map
+            .insert(fork_key.clone(), new_session_id.clone());
         slot.reverse_map.insert(new_session_id.clone(), fork_key);
 
         tracing::info!(agent = %agent_name, forked_session_id = %new_session_id, "session forked");
@@ -2037,7 +2034,8 @@ mod tests {
             &cancel,
         );
         let request = serde_json::json!({"id": 2, "method": "fs/read_text_file"});
-        let params = serde_json::json!({"path": dir.path().join("nonexistent.txt").to_str().unwrap()});
+        let params =
+            serde_json::json!({"path": dir.path().join("nonexistent.txt").to_str().unwrap()});
 
         AgentsManager::handle_fs_read(&slot, &request, &params).await;
     }
@@ -2183,7 +2181,8 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(
-            err == "path outside allowed directory" || err.starts_with("parent directory resolution failed"),
+            err == "path outside allowed directory"
+                || err.starts_with("parent directory resolution failed"),
             "unexpected error: {err}"
         );
     }
@@ -2352,7 +2351,8 @@ mod tests {
     }
 
     #[rstest]
-    fn when_session_update_type_name_called_with_available_commands_update_then_returns_correct_string() {
+    fn when_session_update_type_name_called_with_available_commands_update_then_returns_correct_string()
+     {
         let update = SessionUpdateType::AvailableCommandsUpdate {
             commands: serde_json::Value::Array(vec![]),
         };
@@ -2482,8 +2482,7 @@ mod tests {
         m.start().await.unwrap();
 
         assert_eq!(
-            m.slots[0].protocol_version,
-            2,
+            m.slots[0].protocol_version, 2,
             "slot must store the negotiated protocol version"
         );
 

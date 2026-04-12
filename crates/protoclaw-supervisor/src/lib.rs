@@ -395,9 +395,7 @@ impl Supervisor {
             .tools_manager
             .tools
             .iter()
-            .filter(|(_, t)| {
-                t.enabled && t.tool_type == protoclaw_config::ToolType::Mcp
-            })
+            .filter(|(_, t)| t.enabled && t.tool_type == protoclaw_config::ToolType::Mcp)
             .map(|(name, _)| name.clone())
             .collect();
 
@@ -416,9 +414,8 @@ impl Supervisor {
             mcp_servers,
         };
 
-        metrics::gauge!("protoclaw_agents_connected").set(
-            snapshot.agents.iter().filter(|a| a.connected).count() as f64,
-        );
+        metrics::gauge!("protoclaw_agents_connected")
+            .set(snapshot.agents.iter().filter(|a| a.connected).count() as f64);
         metrics::gauge!("protoclaw_channels_running").set(snapshot.channels.len() as f64);
     }
 }

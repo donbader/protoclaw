@@ -229,7 +229,8 @@ async fn auth_middleware(
         .headers()
         .get(axum::http::header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok());
-    let authorized = matches!(auth_header, Some(h) if h.starts_with("Bearer ") && &h[7..] == expected_key);
+    let authorized =
+        matches!(auth_header, Some(h) if h.starts_with("Bearer ") && &h[7..] == expected_key);
     if authorized {
         next.run(request).await
     } else {

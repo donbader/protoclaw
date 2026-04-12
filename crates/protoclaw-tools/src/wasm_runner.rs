@@ -1,11 +1,13 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use protoclaw_config::{WasmSandboxConfig, PreopenedDir};
-use wasmtime::{Config, Engine, Error as WasmtimeError, Linker, Module, ResourceLimiter, Store, Trap};
-use wasmtime_wasi::{DirPerms, FilePerms, WasiCtxBuilder};
+use protoclaw_config::{PreopenedDir, WasmSandboxConfig};
+use wasmtime::{
+    Config, Engine, Error as WasmtimeError, Linker, Module, ResourceLimiter, Store, Trap,
+};
 use wasmtime_wasi::p1::WasiP1Ctx;
 use wasmtime_wasi::p2::pipe::{MemoryInputPipe, MemoryOutputPipe};
+use wasmtime_wasi::{DirPerms, FilePerms, WasiCtxBuilder};
 
 use crate::error::ToolsError;
 
@@ -327,7 +329,14 @@ mod tests {
         "#;
 
         let module_bytes = wat::parse_str(wat).unwrap();
-        let result = runner.execute(&module_bytes, r#"{"hello":"world"}"#, &default_sandbox(), &HashMap::new()).await
+        let result = runner
+            .execute(
+                &module_bytes,
+                r#"{"hello":"world"}"#,
+                &default_sandbox(),
+                &HashMap::new(),
+            )
+            .await
             .unwrap();
         assert_eq!(result, r#"{"hello":"world"}"#);
     }
@@ -351,7 +360,9 @@ mod tests {
         "#;
 
         let module_bytes = wat::parse_str(wat).unwrap();
-        let result = runner.execute(&module_bytes, "", &low_fuel_sandbox(), &HashMap::new()).await;
+        let result = runner
+            .execute(&module_bytes, "", &low_fuel_sandbox(), &HashMap::new())
+            .await;
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("fuel"), "expected fuel error, got: {err}");
@@ -372,7 +383,9 @@ mod tests {
         "#;
 
         let module_bytes = wat::parse_str(wat).unwrap();
-        let result = runner.execute(&module_bytes, "", &short_epoch_sandbox(), &HashMap::new()).await;
+        let result = runner
+            .execute(&module_bytes, "", &short_epoch_sandbox(), &HashMap::new())
+            .await;
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(
@@ -395,8 +408,12 @@ mod tests {
 
         let module_bytes = wat::parse_str(wat).unwrap();
         let sandbox = default_sandbox();
-        let r1 = runner.execute(&module_bytes, "", &sandbox, &HashMap::new()).await;
-        let r2 = runner.execute(&module_bytes, "", &sandbox, &HashMap::new()).await;
+        let r1 = runner
+            .execute(&module_bytes, "", &sandbox, &HashMap::new())
+            .await;
+        let r2 = runner
+            .execute(&module_bytes, "", &sandbox, &HashMap::new())
+            .await;
         assert!(r1.is_ok());
         assert!(r2.is_ok());
     }
@@ -427,7 +444,14 @@ mod tests {
         "#;
 
         let module_bytes = wat::parse_str(wat).unwrap();
-        let result = runner.execute(&module_bytes, "", &one_page_memory_sandbox(), &HashMap::new()).await;
+        let result = runner
+            .execute(
+                &module_bytes,
+                "",
+                &one_page_memory_sandbox(),
+                &HashMap::new(),
+            )
+            .await;
         assert!(result.is_err(), "expected error due to memory limit");
         let err = result.unwrap_err().to_string();
         assert!(
@@ -451,8 +475,18 @@ mod tests {
         "#;
 
         let module_bytes = wat::parse_str(wat).unwrap();
-        let result = runner.execute(&module_bytes, "", &one_page_memory_sandbox(), &HashMap::new()).await;
-        assert!(result.is_ok(), "expected success within memory limit, got: {result:?}");
+        let result = runner
+            .execute(
+                &module_bytes,
+                "",
+                &one_page_memory_sandbox(),
+                &HashMap::new(),
+            )
+            .await;
+        assert!(
+            result.is_ok(),
+            "expected success within memory limit, got: {result:?}"
+        );
     }
 
     /// Verifies that with no preopened_dirs configured, the sandbox has no filesystem access.
@@ -478,8 +512,13 @@ mod tests {
             preopened_dirs: vec![],
             ..Default::default()
         };
-        let result = runner.execute(&module_bytes, "", &sandbox, &HashMap::new()).await;
-        assert!(result.is_ok(), "non-filesystem module should succeed with no preopens: {result:?}");
+        let result = runner
+            .execute(&module_bytes, "", &sandbox, &HashMap::new())
+            .await;
+        assert!(
+            result.is_ok(),
+            "non-filesystem module should succeed with no preopens: {result:?}"
+        );
     }
 
     /// Verifies that configuring a preopened directory (readonly) allows the module to run.
@@ -523,7 +562,10 @@ mod tests {
     fn when_options_provided_then_wasi_ctx_builds_without_error() {
         let stdout = MemoryOutputPipe::new(4096);
         let mut options = HashMap::new();
-        options.insert("MY_KEY".into(), serde_json::Value::String("my_value".into()));
+        options.insert(
+            "MY_KEY".into(),
+            serde_json::Value::String("my_value".into()),
+        );
         options.insert("NUMERIC".into(), serde_json::json!(42));
 
         let result = build_wasi_ctx("{}", &stdout, &[], &options);
@@ -546,6 +588,9 @@ mod tests {
         let result = runner
             .execute(&module_bytes, "", &default_sandbox(), &HashMap::new())
             .await;
-        assert!(result.is_ok(), "expected success with empty options: {result:?}");
+        assert!(
+            result.is_ok(),
+            "expected success with empty options: {result:?}"
+        );
     }
 }
