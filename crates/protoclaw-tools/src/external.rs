@@ -13,6 +13,13 @@ pub struct ExternalMcpServer {
     client: Arc<RunningService<RoleClient, ()>>,
 }
 
+fn serialize_option_value(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::String(s) => s.clone(),
+        other => other.to_string(),
+    }
+}
+
 impl std::fmt::Debug for ExternalMcpServer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ExternalMcpServer")
@@ -28,6 +35,10 @@ impl ExternalMcpServer {
         })?;
         let mut cmd = Command::new(binary);
         cmd.args(&config.args);
+        for (key, value) in &config.options {
+            let val = serialize_option_value(value);
+            cmd.env(key, &val);
+        }
 
         let child_transport = rmcp::transport::child_process::TokioChildProcess::new(cmd)
             .map_err(|e| ToolsError::ExternalServerFailed(format!("{name}: {e}")))?;
@@ -117,5 +128,19 @@ mod tests {
             err.contains("no binary specified"),
             "error should mention missing binary: {err}"
         );
+    }
+
+    #[rstest]
+    #[case::string_value(serde_json::Value::String("hello".into()), "hello")]
+    #[case::number_value(serde_json::json!(42), "42")]
+    #[case::bool_true(serde_json::Value::Bool(true), "true")]
+    #[case::bool_false(serde_json::Value::Bool(false), "false")]
+    #[case::array_value(serde_json::json!([1, 2, 3]), "[1,2,3]")]
+    #[case::object_value(serde_json::json!({"k": "v"}), r#"{"k":"v"}"#)]
+    fn when_serialize_option_value_called_then_returns_expected_string(
+        #[case] value: serde_json::Value,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(serialize_option_value(&value), expected);
     }
 }
