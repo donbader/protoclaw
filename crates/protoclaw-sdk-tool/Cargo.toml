@@ -1,6 +1,6 @@
 [package]
 name = "protoclaw-sdk-tool"
-version = "0.2.0"
+version = "0.2.1"
 description = "Tool SDK for protoclaw — build MCP-compatible tool servers"
 edition.workspace = true
 rust-version.workspace = true

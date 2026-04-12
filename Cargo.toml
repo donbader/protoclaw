@@ -34,10 +34,10 @@ tempfile = "3"
 axum = "0.8"
 tokio-stream = { version = "0.1", features = ["sync"] }
 protoclaw-channels = { path = "crates/protoclaw-channels" }
-protoclaw-sdk-types = { path = "crates/protoclaw-sdk-types", version = "0.2.0" }
+protoclaw-sdk-types = { path = "crates/protoclaw-sdk-types", version = "0.2.1" }
 protoclaw-sdk-channel = { path = "crates/protoclaw-sdk-channel", version = "0.2.0" }
-protoclaw-sdk-tool = { path = "crates/protoclaw-sdk-tool", version = "0.2.0" }
-protoclaw-sdk-agent = { path = "crates/protoclaw-sdk-agent", version = "0.2.0" }
+protoclaw-sdk-tool = { path = "crates/protoclaw-sdk-tool", version = "0.2.1" }
+protoclaw-sdk-agent = { path = "crates/protoclaw-sdk-agent", version = "0.2.1" }
 protoclaw-test-helpers = { path = "crates/protoclaw-test-helpers" }
 wasmtime = "43"
 wasmtime-wasi = "43"
