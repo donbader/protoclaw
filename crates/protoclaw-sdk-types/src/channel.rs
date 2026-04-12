@@ -170,6 +170,11 @@ pub enum ContentKind {
         /// Tool output text, if available.
         output: Option<String>,
     },
+    /// Agent-provided list of available commands (e.g., for Telegram / menu).
+    AvailableCommandsUpdate {
+        /// The commands payload from the agent (array of command objects).
+        commands: serde_json::Value,
+    },
     /// Unrecognized content type.
     Unknown,
 }
@@ -252,6 +257,12 @@ impl ContentKind {
                     output,
                 }
             }
+            "available_commands_update" => ContentKind::AvailableCommandsUpdate {
+                commands: update
+                    .get("commands")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Array(vec![])),
+            },
             _ => ContentKind::Unknown,
         }
     }
@@ -813,5 +824,39 @@ mod tests {
         assert!(json.get("peer_info").is_none());
         let deser: SessionCreated = serde_json::from_value(json).unwrap();
         assert_eq!(deser, sc);
+    }
+
+    #[rstest]
+    fn when_content_has_available_commands_update_then_content_kind_is_available_commands_update() {
+        let content = serde_json::json!({
+            "update": {
+                "sessionUpdate": "available_commands_update",
+                "commands": [{"name": "start", "description": "Start the bot"}]
+            }
+        });
+        let kind = ContentKind::from_content(&content);
+        match kind {
+            ContentKind::AvailableCommandsUpdate { commands } => {
+                assert!(commands.is_array());
+                assert_eq!(commands.as_array().unwrap().len(), 1);
+            }
+            other => panic!("expected AvailableCommandsUpdate, got {:?}", other),
+        }
+    }
+
+    #[rstest]
+    fn when_content_has_available_commands_update_without_commands_then_defaults_to_empty_array() {
+        let content = serde_json::json!({
+            "update": {
+                "sessionUpdate": "available_commands_update"
+            }
+        });
+        let kind = ContentKind::from_content(&content);
+        match kind {
+            ContentKind::AvailableCommandsUpdate { commands } => {
+                assert_eq!(commands, serde_json::Value::Array(vec![]));
+            }
+            other => panic!("expected AvailableCommandsUpdate, got {:?}", other),
+        }
     }
 }

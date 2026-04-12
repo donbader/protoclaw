@@ -836,6 +836,25 @@ pub async fn deliver_to_chat(
 
         ContentKind::UserMessageChunk { .. } | ContentKind::UsageUpdate => Ok(()),
 
+        ContentKind::AvailableCommandsUpdate { commands } => {
+            if let Some(cmds) = commands.as_array() {
+                let bot_commands: Vec<teloxide::types::BotCommand> = cmds
+                    .iter()
+                    .filter_map(|cmd| {
+                        let name = cmd.get("name")?.as_str()?;
+                        let description = cmd.get("description")?.as_str().unwrap_or(name);
+                        Some(teloxide::types::BotCommand::new(name, description))
+                    })
+                    .collect();
+                if !bot_commands.is_empty() {
+                    if let Err(e) = bot.set_my_commands(bot_commands).await {
+                        tracing::warn!(error = %e, "failed to set bot commands");
+                    }
+                }
+            }
+            Ok(())
+        }
+
         ContentKind::Unknown => Ok(()),
     }
 }
