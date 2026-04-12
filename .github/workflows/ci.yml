@@ -23,7 +23,7 @@ jobs:
       - name: Install Rust
         run: rustup update stable
       - name: Cache cargo
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -48,7 +48,7 @@ jobs:
       - name: Install MSRV toolchain
         run: rustup toolchain install 1.94 --no-self-update --profile minimal
       - name: Cache cargo
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -95,7 +95,7 @@ jobs:
       - name: Install Rust
         run: rustup update stable
       - name: Cache cargo
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
