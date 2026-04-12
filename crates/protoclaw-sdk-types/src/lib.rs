@@ -5,6 +5,11 @@
 //! the internal protoclaw supervisor.
 //!
 //! All serializable types use `camelCase` JSON field names.
+//!
+//! # Stability
+//!
+//! This crate is **unstable** — types, enums, and wire formats may change between releases.
+//! Enums marked `#[non_exhaustive]` will have new variants added; match arms must include `_`.
 #![warn(missing_docs)]
 
 /// Channel protocol wire types (capabilities, initialize, deliver, send, ack, content).

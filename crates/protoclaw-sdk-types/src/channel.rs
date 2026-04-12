@@ -130,6 +130,7 @@ impl ThoughtContent {
 /// }
 /// ```
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum ContentKind {
     /// Agent thinking/reasoning content.
     Thought(ThoughtContent),

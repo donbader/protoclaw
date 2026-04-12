@@ -2,6 +2,11 @@
 //!
 //! Provides the [`AgentAdapter`] trait for intercepting and transforming ACP
 //! protocol messages, and [`GenericAcpAdapter`] as a zero-cost passthrough default.
+//!
+//! # Stability
+//!
+//! This crate is **unstable** — APIs may change between releases.
+//! Enums marked `#[non_exhaustive]` will have new variants added; match arms must include `_`.
 #![warn(missing_docs)]
 
 /// ACP message adapter trait and dyn-compatible wrapper.

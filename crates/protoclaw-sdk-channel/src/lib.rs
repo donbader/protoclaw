@@ -2,6 +2,11 @@
 //!
 //! Provides the [`Channel`] trait for building messaging integrations and
 //! [`ChannelHarness`] for JSON-RPC stdio framing, handshake, and message routing.
+//!
+//! # Stability
+//!
+//! This crate is **unstable** — APIs may change between releases.
+//! Enums marked `#[non_exhaustive]` will have new variants added; match arms must include `_`.
 #![warn(missing_docs)]
 
 /// Permission request/response oneshot management.

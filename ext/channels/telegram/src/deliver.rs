@@ -856,6 +856,7 @@ pub async fn deliver_to_chat(
         }
 
         ContentKind::Unknown => Ok(()),
+        _ => Ok(()),
     }
 }
 

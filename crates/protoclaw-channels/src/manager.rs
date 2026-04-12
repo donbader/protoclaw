@@ -439,6 +439,7 @@ impl ChannelsManager {
             } => {
                 self.log_ack_message_event(&session_key, &channel_name, &peer_id, &message_id);
             }
+            _ => {}
         }
     }
 

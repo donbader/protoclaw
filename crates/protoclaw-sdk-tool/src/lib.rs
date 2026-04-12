@@ -2,6 +2,11 @@
 //!
 //! Provides the [`Tool`] trait for building MCP-compatible tools and
 //! [`ToolServer`] for serving them over stdio.
+//!
+//! # Stability
+//!
+//! This crate is **unstable** — APIs may change between releases.
+//! Enums marked `#[non_exhaustive]` will have new variants added; match arms must include `_`.
 #![warn(missing_docs)]
 
 /// Error types for tool SDK operations.
