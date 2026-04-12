@@ -51,6 +51,30 @@ pub fn resolve_binary_path(binary: &str, extensions_dir: &str) -> String {
     }
 }
 
+pub fn resolve_all_binary_paths(config: &mut crate::ProtoclawConfig) {
+    let ext = config.extensions_dir.clone();
+    for agent in config.agents_manager.agents.values_mut() {
+        match &mut agent.workspace {
+            crate::WorkspaceConfig::Local(local) => {
+                local.binary = resolve_binary_path(&local.binary, &ext);
+            }
+            crate::WorkspaceConfig::Docker(docker) => {
+                if let Some(ref mut ep) = docker.entrypoint {
+                    *ep = resolve_binary_path(ep, &ext);
+                }
+            }
+        }
+    }
+    for ch in config.channels_manager.channels.values_mut() {
+        ch.binary = resolve_binary_path(&ch.binary, &ext);
+    }
+    for tool in config.tools_manager.tools.values_mut() {
+        if let Some(ref mut bin) = tool.binary {
+            *bin = resolve_binary_path(bin, &ext);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -143,5 +167,63 @@ mod tests {
             env: std::collections::HashMap::new(),
         });
         assert!(matches!(workspace, WorkspaceConfig::Local(_)));
+    }
+
+    #[rstest]
+    fn when_resolve_all_called_then_docker_entrypoint_resolved() {
+        use crate::{
+            AgentConfig, AgentsManagerConfig, ChannelsManagerConfig, DockerWorkspaceConfig,
+            ProtoclawConfig, PullPolicy, SupervisorConfig, ToolsManagerConfig, WorkspaceConfig,
+        };
+        use std::collections::HashMap;
+
+        let mut config = ProtoclawConfig {
+            log_level: "info".into(),
+            log_format: crate::LogFormat::Pretty,
+            extensions_dir: "/usr/local/bin".into(),
+            agents_manager: AgentsManagerConfig {
+                acp_timeout_secs: 30,
+                shutdown_grace_ms: 5000,
+                agents: HashMap::from([(
+                    "test-agent".into(),
+                    AgentConfig {
+                        workspace: WorkspaceConfig::Docker(DockerWorkspaceConfig {
+                            image: "my-agent:latest".into(),
+                            entrypoint: Some("@built-in/agents/opencode-wrapper".into()),
+                            volumes: vec![],
+                            env: HashMap::new(),
+                            memory_limit: None,
+                            cpu_limit: None,
+                            docker_host: None,
+                            network: None,
+                            pull_policy: PullPolicy::default(),
+                        }),
+                        args: vec![],
+                        enabled: true,
+                        tools: vec![],
+                        backoff: None,
+                        crash_tracker: None,
+                        acp_timeout_secs: None,
+                        options: HashMap::new(),
+                    },
+                )]),
+            },
+            channels_manager: ChannelsManagerConfig::default(),
+            tools_manager: ToolsManagerConfig::default(),
+            supervisor: SupervisorConfig::default(),
+        };
+
+        resolve_all_binary_paths(&mut config);
+
+        let agent = &config.agents_manager.agents["test-agent"];
+        match &agent.workspace {
+            WorkspaceConfig::Docker(d) => {
+                assert_eq!(
+                    d.entrypoint.as_deref(),
+                    Some("/usr/local/bin/agents/opencode-wrapper")
+                );
+            }
+            _ => panic!("expected Docker workspace"),
+        }
     }
 }

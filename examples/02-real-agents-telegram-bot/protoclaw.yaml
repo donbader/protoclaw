@@ -15,7 +15,7 @@ agents_manager:
       workspace:
         type: docker
         image: "protoclaw-opencode-agent:latest"
-        entrypoint: "opencode-wrapper"
+        entrypoint: "@built-in/agents/opencode-wrapper"
         docker_host: "tcp://socket-proxy:2375"
         network: "protoclaw-external"
         env:

@@ -70,6 +70,12 @@ Env var override format: `PROTOCLAW_SUPERVISOR__SHUTDOWN_TIMEOUT_SECS=60` (doubl
 - Legacy flat paths (e.g. `@built-in/mock-agent`) are resolved via built-in aliases with a deprecation warning.
 - Absolute paths and relative names pass through unchanged.
 
+`resolve_all_binary_paths()` applies resolution to all binary paths in the config at once:
+- Local agent `binary` fields
+- Docker agent `entrypoint` fields
+- Channel `binary` fields
+- Tool `binary` fields
+
 Called by Supervisor before manager construction — managers receive resolved paths.
 
 ## Validation
