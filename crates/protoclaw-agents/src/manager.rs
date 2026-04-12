@@ -198,12 +198,24 @@ impl AgentsManager {
             })
             .collect();
 
+        let cwd = match &slot.config.workspace {
+            WorkspaceConfig::Local(local) => local
+                .working_dir
+                .clone()
+                .unwrap_or_else(|| {
+                    std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("/"))
+                }),
+            WorkspaceConfig::Docker(docker) => docker
+                .working_dir
+                .clone()
+                .unwrap_or_else(|| {
+                    std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("/"))
+                }),
+        };
+
         let params = serde_json::to_value(SessionNewParams {
             session_id: None,
-            cwd: std::env::current_dir()
-                .unwrap_or_else(|_| std::path::PathBuf::from("/"))
-                .to_string_lossy()
-                .into_owned(),
+            cwd: cwd.to_string_lossy().into_owned(),
             mcp_servers,
         })?;
 

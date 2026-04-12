@@ -196,6 +196,12 @@ pub struct DockerWorkspaceConfig {
     pub network: Option<String>,
     #[serde(default)]
     pub pull_policy: PullPolicy,
+    /// Working directory to pass as `cwd` in the ACP `session/new` handshake.
+    /// Refers to a path *inside* the agent container, not on the host.
+    /// When unset, the supervisor's own working directory is used (which is
+    /// usually wrong for Docker workspaces — set this to the container's WORKDIR).
+    #[serde(default)]
+    pub working_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]

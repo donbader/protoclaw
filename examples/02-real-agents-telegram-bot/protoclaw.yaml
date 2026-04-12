@@ -18,6 +18,7 @@ agents_manager:
         entrypoint: "@built-in/agents/opencode-wrapper"
         docker_host: "tcp://socket-proxy:2375"
         network: "protoclaw-external"
+        working_dir: "/home/node"
         env:
           XDG_CONFIG_HOME: "/home/node/.config"
           XDG_DATA_HOME: "/home/node/.local/share"

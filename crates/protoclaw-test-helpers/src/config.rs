@@ -558,6 +558,7 @@ pub fn docker_agent_config_with_options(
                     docker_host: None,
                     network: None,
                     pull_policy: protoclaw_config::PullPolicy::Never,
+                    working_dir: None,
                 },
             ),
             args: vec![],

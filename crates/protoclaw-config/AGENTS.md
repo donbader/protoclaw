@@ -43,7 +43,7 @@ Per-entity override types:
 
 `WorkspaceConfig` — tagged enum (`#[serde(tag = "type")]`):
 - `WorkspaceConfig::Local(LocalWorkspaceConfig)` — `binary` (required), `working_dir` (optional), `env` (optional)
-- `WorkspaceConfig::Docker(DockerWorkspaceConfig)` — `image` (required), `entrypoint`, `volumes`, `env`, `memory_limit`, `cpu_limit`, `docker_host`, `network`, `pull_policy`
+- `WorkspaceConfig::Docker(DockerWorkspaceConfig)` — `image` (required), `entrypoint`, `volumes`, `env`, `memory_limit`, `cpu_limit`, `docker_host`, `network`, `pull_policy`, `working_dir` (optional, path inside the container sent as `cwd` in ACP `session/new`)
 
 `PullPolicy` — enum: `Always`, `IfNotPresent` (default), `Never`. Config-only; pull logic deferred to Docker runtime phase.
 

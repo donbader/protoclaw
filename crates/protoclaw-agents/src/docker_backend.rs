@@ -433,6 +433,7 @@ mod tests {
             docker_host: None,
             network: None,
             pull_policy: PullPolicy::IfNotPresent,
+            working_dir: None,
         }
     }
 
@@ -447,6 +448,7 @@ mod tests {
             docker_host: None,
             network: Some("my-net".to_string()),
             pull_policy: PullPolicy::IfNotPresent,
+            working_dir: None,
         }
     }
 
