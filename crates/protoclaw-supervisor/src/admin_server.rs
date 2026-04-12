@@ -8,9 +8,13 @@ use tokio::sync::RwLock;
 type SharedHealth = Arc<RwLock<HealthSnapshot>>;
 
 pub async fn start(port: u16, health: SharedHealth) {
-    let handle = PrometheusBuilder::new()
-        .install_recorder()
-        .expect("failed to install Prometheus recorder");
+    let handle = match PrometheusBuilder::new().install_recorder() {
+        Ok(h) => h,
+        Err(e) => {
+            tracing::warn!("prometheus recorder already installed, /metrics will be unavailable: {e}");
+            return;
+        }
+    };
 
     let state = (health, Arc::new(handle));
     let app = Router::new()
