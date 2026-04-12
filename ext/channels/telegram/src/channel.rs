@@ -52,8 +52,8 @@ impl TelegramChannel {
             None => return,
         };
 
-        if cfg.reaction {
-            if let Some(&msg_id) = self.state.last_message_ids.read().await.get(&chat_id) {
+        if cfg.reaction
+            && let Some(&msg_id) = self.state.last_message_ids.read().await.get(&chat_id) {
                 let reaction = ReactionType::Emoji {
                     emoji: cfg.reaction_emoji.clone(),
                 };
@@ -70,7 +70,6 @@ impl TelegramChannel {
                 })
                 .await;
             }
-        }
 
         if cfg.typing {
             let bot_clone = bot.clone();

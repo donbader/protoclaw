@@ -202,11 +202,10 @@ impl Supervisor {
                 ce_rx,
             );
 
-            if slot.name == "agents" {
-                if let ManagerKind::Agents(ref m) = manager {
+            if slot.name == "agents"
+                && let ManagerKind::Agents(ref m) = manager {
                     self.agents_cmd_tx = Some(m.command_sender());
                 }
-            }
 
             if let Err(e) = manager.start().await {
                 tracing::error!(manager = %slot.name, error = %e, "boot failed");
@@ -217,8 +216,8 @@ impl Supervisor {
             }
 
             // After channels manager starts, grab port discovery and command sender
-            if slot.name == "channels" {
-                if let ManagerKind::Channels(ref m) = manager {
+            if slot.name == "channels"
+                && let ManagerKind::Channels(ref m) = manager {
                     self.channels_cmd_tx = Some(m.command_sender());
                     // Forward port discovery from channel subprocess to supervisor's watch
                     if let Some(mut channel_port_rx) = m.channel_port("debug-http") {
@@ -234,7 +233,6 @@ impl Supervisor {
                         });
                     }
                 }
-            }
 
             let token = slot.lifecycle.cancel_token.clone();
             let handle = tokio::spawn(async move { manager.run(token).await });

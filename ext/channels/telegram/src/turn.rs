@@ -118,11 +118,10 @@ impl ChatTurn {
         if let TurnPhase::Finalizing(handle) = &self.phase {
             handle.abort();
         }
-        if let Some(ref track) = self.thought {
-            if let Some(ref h) = track.debounce_handle {
+        if let Some(ref track) = self.thought
+            && let Some(ref h) = track.debounce_handle {
                 h.abort();
             }
-        }
         self.thought = None;
         self.response = None;
         self.tool_calls.clear();

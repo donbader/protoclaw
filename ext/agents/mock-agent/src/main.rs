@@ -123,11 +123,10 @@ async fn main() {
                 .await;
 
                 let count = PROMPT_COUNT.fetch_add(1, Ordering::SeqCst) + 1;
-                if let Some(limit) = opts().exit_after {
-                    if count >= limit {
+                if let Some(limit) = opts().exit_after
+                    && count >= limit {
                         std::process::exit(1);
                     }
-                }
             }
             "session/cancel" => {
                 handle_session_cancel(&mut stdout, id).await;

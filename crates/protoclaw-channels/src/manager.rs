@@ -721,8 +721,8 @@ impl ChannelsManager {
     /// Forward a channel/respondPermission message to the agents manager.
     async fn handle_respond_permission(&self, params: serde_json::Value, channel_name: &str) {
         if let Ok(resp) = serde_json::from_value::<ChannelRespondPermission>(params) {
-            if let Some(agents_handle) = &self.agents_handle {
-                if let Err(e) = agents_handle
+            if let Some(agents_handle) = &self.agents_handle
+                && let Err(e) = agents_handle
                     .send(AgentsCommand::RespondPermission {
                         request_id: resp.request_id.clone(),
                         option_id: resp.option_id,
@@ -736,7 +736,6 @@ impl ChannelsManager {
                         "failed to forward permission response"
                     );
                 }
-            }
         } else {
             tracing::warn!(channel = %channel_name, "failed to parse channel/respondPermission params");
         }
@@ -803,11 +802,10 @@ impl ChannelsManager {
         let timeout = Duration::from_secs(self.exit_timeout_secs);
         for slot in &mut self.slots {
             slot.lifecycle.cancel_token.cancel();
-            if let Some(mut conn) = slot.connection.take() {
-                if let Err(e) = conn.graceful_shutdown(timeout).await {
+            if let Some(mut conn) = slot.connection.take()
+                && let Err(e) = conn.graceful_shutdown(timeout).await {
                     tracing::warn!(channel = %slot.name, error = %e, "graceful shutdown failed, process may linger");
                 }
-            }
         }
     }
 

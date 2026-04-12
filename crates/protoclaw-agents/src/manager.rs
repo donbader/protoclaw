@@ -513,8 +513,7 @@ impl AgentsManager {
             .reverse_map
             .get(&event.session_id)
             .cloned()
-        {
-            if let Some(sender) = &self.channels_sender {
+            && let Some(sender) = &self.channels_sender {
                 let _ = sender
                     .send(ChannelEvent::DeliverMessage {
                         session_key: session_key.clone(),
@@ -526,7 +525,6 @@ impl AgentsManager {
                     self.streaming_completed.insert(session_key);
                 }
             }
-        }
     }
 
     async fn forward_malformed_update_error(
@@ -596,8 +594,8 @@ impl AgentsManager {
         tracing::info!(agent = %self.slots[slot_idx].name(), %request_id, %description, "permission requested");
 
         let session_id = params["sessionId"].as_str().unwrap_or("");
-        if let Some(session_key) = self.slots[slot_idx].reverse_map.get(session_id).cloned() {
-            if let Some(sender) = &self.channels_sender {
+        if let Some(session_key) = self.slots[slot_idx].reverse_map.get(session_id).cloned()
+            && let Some(sender) = &self.channels_sender {
                 let options_json = serde_json::to_value(&options).unwrap_or_else(|e| {
                     tracing::warn!(error = %e, %request_id, "failed to serialize permission options, using null");
                     serde_json::Value::default()
@@ -611,7 +609,6 @@ impl AgentsManager {
                     })
                     .await;
             }
-        }
 
         self.slots[slot_idx].pending_permissions.insert(
             request_id,
@@ -784,11 +781,10 @@ impl AgentsManager {
             }
             CrashAction::RestartAfter(delay) => {
                 tracing::warn!(agent = %agent_name, "agent process exited, attempting recovery");
-                if let Some(mut old_conn) = slot.connection.take() {
-                    if let Err(e) = old_conn.kill().await {
+                if let Some(mut old_conn) = slot.connection.take()
+                    && let Err(e) = old_conn.kill().await {
                         tracing::debug!(agent = %agent_name, error = %e, "failed to clean up old connection (may already be dead)");
                     }
-                }
                 tracing::info!(agent = %agent_name, delay_ms = delay.as_millis(), "waiting before restart");
                 tokio::time::sleep(delay).await;
                 true
@@ -1105,21 +1101,19 @@ fn normalize_tool_event_fields(content: &mut serde_json::Value, update_type: &st
         None => return,
     };
 
-    if !update.contains_key("name") {
-        if let Some(title) = update.remove("title") {
+    if !update.contains_key("name")
+        && let Some(title) = update.remove("title") {
             update.insert("name".to_string(), title);
         }
-    }
 
-    if update_type == "tool_call_update" && !update.contains_key("output") {
-        if let Some(raw) = update
+    if update_type == "tool_call_update" && !update.contains_key("output")
+        && let Some(raw) = update
             .get("rawOutput")
             .and_then(|r| r.get("output"))
             .cloned()
         {
             update.insert("output".to_string(), raw);
         }
-    }
 }
 
 #[cfg(test)]

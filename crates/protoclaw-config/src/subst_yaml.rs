@@ -48,11 +48,10 @@ fn coerce_substituted_strings(value: &mut serde_yaml::Value) {
                 *value = serde_yaml::Value::Bool(false);
             } else if let Ok(n) = s.parse::<i64>() {
                 *value = serde_yaml::Value::Number(n.into());
-            } else if s.contains('.') {
-                if let Ok(f) = s.parse::<f64>() {
+            } else if s.contains('.')
+                && let Ok(f) = s.parse::<f64>() {
                     *value = serde_yaml::Value::Number(f.into());
                 }
-            }
         }
         serde_yaml::Value::Sequence(arr) => {
             for v in arr {
