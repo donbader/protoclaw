@@ -16,3 +16,4 @@ coverage/
 
 # WASM artifacts
 *.wasm
+.worktrees/
