@@ -54,7 +54,7 @@ impl Tool for WasmTool {
 
         let output = self
             .runner
-            .execute(&self.module_bytes, &input_json, &self.config.sandbox)
+            .execute(&self.module_bytes, &input_json, &self.config.sandbox, &self.config.options)
             .await
             .map_err(|e| ToolSdkError::ExecutionFailed(e.to_string()))?;
 

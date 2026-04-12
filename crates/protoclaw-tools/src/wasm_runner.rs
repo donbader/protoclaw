@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use protoclaw_config::{WasmSandboxConfig, PreopenedDir};
@@ -94,14 +95,16 @@ impl WasmToolRunner {
         module_bytes: &[u8],
         input_json: &str,
         sandbox: &WasmSandboxConfig,
+        options: &HashMap<String, serde_json::Value>,
     ) -> Result<String, ToolsError> {
         let engine = self.engine.clone();
         let module_bytes = module_bytes.to_vec();
         let input_json = input_json.to_string();
         let sandbox = sandbox.clone();
+        let options = options.clone();
 
         tokio::task::spawn_blocking(move || {
-            Self::execute_sync(&engine, &module_bytes, &input_json, &sandbox)
+            Self::execute_sync(&engine, &module_bytes, &input_json, &sandbox, &options)
         })
         .await
         .map_err(|e| ToolsError::McpHostFailed(format!("spawn_blocking: {e}")))?
@@ -112,12 +115,13 @@ impl WasmToolRunner {
         module_bytes: &[u8],
         input_json: &str,
         sandbox: &WasmSandboxConfig,
+        options: &HashMap<String, serde_json::Value>,
     ) -> Result<String, ToolsError> {
         let module = Module::new(engine, module_bytes)
             .map_err(|e| ToolsError::McpHostFailed(format!("wasm compile: {e}")))?;
 
         let stdout = MemoryOutputPipe::new(4096);
-        let wasi = build_wasi_ctx(input_json, &stdout, &sandbox.preopened_dirs)?;
+        let wasi = build_wasi_ctx(input_json, &stdout, &sandbox.preopened_dirs, options)?;
 
         let state = WasmState {
             wasi,
@@ -191,6 +195,7 @@ fn build_wasi_ctx(
     input_json: &str,
     stdout: &MemoryOutputPipe,
     preopened_dirs: &[PreopenedDir],
+    options: &HashMap<String, serde_json::Value>,
 ) -> Result<WasiP1Ctx, ToolsError> {
     let mut builder = WasiCtxBuilder::new();
     builder
@@ -209,6 +214,14 @@ fn build_wasi_ctx(
             .map_err(|e| {
                 ToolsError::McpHostFailed(format!("preopened dir {}: {e}", preopen.guest))
             })?;
+    }
+
+    for (key, value) in options {
+        let val = match value {
+            serde_json::Value::String(s) => s.clone(),
+            other => other.to_string(),
+        };
+        builder.env(key, &val);
     }
 
     Ok(builder.build_p1())
@@ -314,9 +327,7 @@ mod tests {
         "#;
 
         let module_bytes = wat::parse_str(wat).unwrap();
-        let result = runner
-            .execute(&module_bytes, r#"{"hello":"world"}"#, &default_sandbox())
-            .await
+        let result = runner.execute(&module_bytes, r#"{"hello":"world"}"#, &default_sandbox(), &HashMap::new()).await
             .unwrap();
         assert_eq!(result, r#"{"hello":"world"}"#);
     }
@@ -340,7 +351,7 @@ mod tests {
         "#;
 
         let module_bytes = wat::parse_str(wat).unwrap();
-        let result = runner.execute(&module_bytes, "", &low_fuel_sandbox()).await;
+        let result = runner.execute(&module_bytes, "", &low_fuel_sandbox(), &HashMap::new()).await;
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("fuel"), "expected fuel error, got: {err}");
@@ -361,9 +372,7 @@ mod tests {
         "#;
 
         let module_bytes = wat::parse_str(wat).unwrap();
-        let result = runner
-            .execute(&module_bytes, "", &short_epoch_sandbox())
-            .await;
+        let result = runner.execute(&module_bytes, "", &short_epoch_sandbox(), &HashMap::new()).await;
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(
@@ -386,8 +395,8 @@ mod tests {
 
         let module_bytes = wat::parse_str(wat).unwrap();
         let sandbox = default_sandbox();
-        let r1 = runner.execute(&module_bytes, "", &sandbox).await;
-        let r2 = runner.execute(&module_bytes, "", &sandbox).await;
+        let r1 = runner.execute(&module_bytes, "", &sandbox, &HashMap::new()).await;
+        let r2 = runner.execute(&module_bytes, "", &sandbox, &HashMap::new()).await;
         assert!(r1.is_ok());
         assert!(r2.is_ok());
     }
@@ -418,9 +427,7 @@ mod tests {
         "#;
 
         let module_bytes = wat::parse_str(wat).unwrap();
-        let result = runner
-            .execute(&module_bytes, "", &one_page_memory_sandbox())
-            .await;
+        let result = runner.execute(&module_bytes, "", &one_page_memory_sandbox(), &HashMap::new()).await;
         assert!(result.is_err(), "expected error due to memory limit");
         let err = result.unwrap_err().to_string();
         assert!(
@@ -444,9 +451,7 @@ mod tests {
         "#;
 
         let module_bytes = wat::parse_str(wat).unwrap();
-        let result = runner
-            .execute(&module_bytes, "", &one_page_memory_sandbox())
-            .await;
+        let result = runner.execute(&module_bytes, "", &one_page_memory_sandbox(), &HashMap::new()).await;
         assert!(result.is_ok(), "expected success within memory limit, got: {result:?}");
     }
 
@@ -473,7 +478,7 @@ mod tests {
             preopened_dirs: vec![],
             ..Default::default()
         };
-        let result = runner.execute(&module_bytes, "", &sandbox).await;
+        let result = runner.execute(&module_bytes, "", &sandbox, &HashMap::new()).await;
         assert!(result.is_ok(), "non-filesystem module should succeed with no preopens: {result:?}");
     }
 
@@ -489,14 +494,13 @@ mod tests {
             readonly: true,
         }];
 
-        let result = build_wasi_ctx("{}", &stdout, &preopened);
+        let result = build_wasi_ctx("{}", &stdout, &preopened, &HashMap::new());
         assert!(
             result.is_ok(),
             "expected WasiCtx to build with valid preopened dir"
         );
     }
 
-    /// Verifies that a nonexistent preopened dir causes build_wasi_ctx to fail.
     #[rstest]
     fn when_preopened_dir_host_path_does_not_exist_then_wasi_ctx_build_fails() {
         let stdout = MemoryOutputPipe::new(4096);
@@ -506,12 +510,42 @@ mod tests {
             readonly: true,
         }];
 
-        let result = build_wasi_ctx("{}", &stdout, &preopened);
+        let result = build_wasi_ctx("{}", &stdout, &preopened, &HashMap::new());
         assert!(result.is_err(), "expected error for nonexistent host path");
         let err = result.err().unwrap().to_string();
         assert!(
             err.contains("preopened dir"),
             "expected preopened dir error message, got: {err}"
         );
+    }
+
+    #[rstest]
+    fn when_options_provided_then_wasi_ctx_builds_without_error() {
+        let stdout = MemoryOutputPipe::new(4096);
+        let mut options = HashMap::new();
+        options.insert("MY_KEY".into(), serde_json::Value::String("my_value".into()));
+        options.insert("NUMERIC".into(), serde_json::json!(42));
+
+        let result = build_wasi_ctx("{}", &stdout, &[], &options);
+        assert!(result.is_ok(), "expected WasiCtx to build with options");
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_wasm_tool_executed_with_empty_options_then_execution_succeeds() {
+        let runner = WasmToolRunner::new().unwrap();
+
+        let wat = r#"
+            (module
+                (memory (export "memory") 1)
+                (func (export "_start"))
+            )
+        "#;
+
+        let module_bytes = wat::parse_str(wat).unwrap();
+        let result = runner
+            .execute(&module_bytes, "", &default_sandbox(), &HashMap::new())
+            .await;
+        assert!(result.is_ok(), "expected success with empty options: {result:?}");
     }
 }
