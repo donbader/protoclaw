@@ -34,12 +34,12 @@ jobs:
         run: cargo fmt --all -- --check
 
   msrv:
-    name: MSRV (1.85)
+    name: MSRV (1.94)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - name: Install MSRV toolchain
-        run: rustup toolchain install 1.85 --no-self-update --profile minimal
+        run: rustup toolchain install 1.94 --no-self-update --profile minimal
       - name: Cache cargo
         uses: actions/cache@v4
         with:
@@ -50,7 +50,7 @@ jobs:
           key: ${{ runner.os }}-msrv-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-msrv-
       - name: Check MSRV
-        run: cargo +1.85 check --locked --workspace
+        run: cargo +1.94 check --locked --workspace
 
   audit:
     name: Security Audit

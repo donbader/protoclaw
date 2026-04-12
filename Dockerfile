@@ -1,6 +1,6 @@
 # Stage 1: Chef base — install cargo-chef, cached across all builds
-# lukemathwalker/cargo-chef:latest-rust-1.91-bookworm
-FROM lukemathwalker/cargo-chef:latest-rust-1.91-bookworm@sha256:beee6a0e6a7fba23540109792737deca7686e3dca811a86ea074b22711cfea83 AS chef
+# lukemathwalker/cargo-chef:latest-rust-1.94-bookworm
+FROM lukemathwalker/cargo-chef:latest-rust-1.94-bookworm@sha256:7e550e59b8c14e74aa86ca9e5950b75d937c9d51e7f5a4c840e726a33b4b8455 AS chef
 WORKDIR /build
 
 # Stage 2: Planner — generate recipe.json from workspace manifests

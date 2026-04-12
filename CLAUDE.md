@@ -128,7 +128,7 @@ Infrastructure sidecar that connects AI agents to the outside world. Protoclaw w
 | rmcp 1.3 | tokio 1.x | rmcp uses tokio internally for all transports. No version conflicts expected. |
 | wasmtime 38 | tokio 1.x | wasmtime-wasi uses tokio for async WASI operations. Same tokio version tree. |
 | rmcp 1.3 | serde 1.x, serde_json 1.x | rmcp re-exports its own JSON-RPC types built on serde. Custom ACP types must use same serde version. |
-| wasmtime 38 | Rust 2024 edition | Wasmtime 38 requires recent stable Rust. Pin MSRV to 1.85+ to ensure compatibility with all deps. |
+| wasmtime 38 | Rust 2024 edition | Wasmtime 38+ requires recent stable Rust. MSRV pinned to 1.94. |
 | tracing 0.1 | tracing-subscriber 0.3 | These are the current stable pair. tracing 0.2 is not yet released. |
 | figment 0.10 | serde 1.x, toml 0.8 | figment deserializes config via serde. toml 0.8 provider is built-in. |
 | dashmap 6.x | Rust 2024 edition | dashmap 6 requires recent Rust. Compatible with our MSRV. |
