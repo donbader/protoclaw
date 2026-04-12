@@ -1,10 +1,6 @@
 # Stage 1: Chef base — Alpine for native musl toolchain
 FROM lukemathwalker/cargo-chef:latest-rust-1.94-alpine AS chef
 WORKDIR /build
-# Install sccache for object-level compilation caching
-RUN cargo install sccache --locked
-ENV RUSTC_WRAPPER=sccache
-ENV SCCACHE_DIR=/tmp/sccache
 
 # Stage 2: Planner — generate recipe.json from workspace manifests
 FROM chef AS planner
@@ -16,12 +12,10 @@ FROM chef AS builder
 COPY --from=planner /build/recipe.json recipe.json
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=/tmp/sccache \
     cargo chef cook --release --locked --recipe-path recipe.json
 COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=/tmp/sccache \
     cargo build --release --locked \
     --bin protoclaw \
     --bin telegram-channel \
