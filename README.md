@@ -6,13 +6,15 @@
 [![MSRV](https://img.shields.io/badge/MSRV-1.94-blue)](https://github.com/donbader/protoclaw/blob/main/Cargo.toml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](LICENSE-MIT)
 
-Infrastructure sidecar that connects AI agents to messaging channels and tools.
+Infrastructure sidecar that connects AI agents to messaging channels and tools. You bring the agent; protoclaw handles the plumbing.
+
+> ⚠️ **Unstable** — protoclaw is under active development. APIs, config format, and protocol details may change between releases.
 
 ## What is protoclaw?
 
-Protoclaw manages the lifecycle of AI agent subprocesses, routes messages between channels (Telegram, HTTP) and agents via the ACP protocol (JSON-RPC 2.0 over stdio), and provides tool access through MCP servers and WASM sandboxes.
+Protoclaw is not an AI assistant — it's the infrastructure layer that any agent can plug into. It manages the lifecycle of agent subprocesses, routes messages between channels (Telegram, HTTP) and agents via the ACP protocol (JSON-RPC 2.0 over stdio), and provides tool access through MCP servers and WASM sandboxes.
 
-It runs as a sidecar alongside your agent binary. You bring the AI logic; protoclaw handles the plumbing: crash recovery, message routing, config loading, and subprocess supervision.
+It runs as a sidecar alongside your agent binary. You bring the AI logic; protoclaw handles crash recovery, message routing, config loading, and subprocess supervision.
 
 ## Architecture
 
@@ -89,6 +91,16 @@ Rust stable toolchain required. Check `rust-toolchain.toml` for the pinned versi
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+## Inspiration
+
+Protoclaw draws inspiration from these projects:
+
+- [nanoclaw](https://github.com/qwibitai/nanoclaw) — a lightweight TypeScript personal AI assistant that bridges messaging channels to Claude agents in isolated containers. Established the core pattern of agents connected to channels with isolation as a first-class concern.
+- [openclaw](https://github.com/openclaw/openclaw) — a feature-rich TypeScript personal AI assistant gateway with 20+ channel integrations and an ACP bridge. Demonstrated that a gateway/sidecar pattern cleanly separates channel routing from agent logic.
+- [ironclaw](https://github.com/nearai/ironclaw) — a Rust personal AI assistant with WASM-sandboxed tools, MCP support, and PostgreSQL-backed memory. Proved out WASM tool sandboxing and channel abstraction in Rust.
+
+Where these projects are complete AI assistants, protoclaw takes their architectural ideas — channel abstraction, tool sandboxing, protocol-driven communication — and applies them as a standalone infrastructure layer that any agent can plug into.
 
 ## License
 
