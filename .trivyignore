@@ -1,0 +1,4 @@
+# glibc integer overflow in memalign — distroless base image, no fix available upstream
+# Revisit when gcr.io/distroless/cc-debian12 rebuilds with patched glibc
+# Added: 2026-04-12
+CVE-2026-0861
