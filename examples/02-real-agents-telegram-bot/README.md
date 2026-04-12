@@ -1,6 +1,6 @@
 # Example 02: Real Agent Bot
 
-A protoclaw bot with a real AI agent (OpenCode + Claude). The agent runs in an isolated Docker container — config baked in at build time, API keys passed via environment variables.
+A protoclaw bot with a real AI agent (OpenCode + Claude). The agent runs in an isolated Docker container — config optionally baked in at build time, API keys passed via environment variables.
 
 ## Quick Start
 
@@ -83,7 +83,7 @@ Three agents ship in `protoclaw.yaml`. OpenCode Docker workspace is enabled by d
 |---|---|---|---|
 | Workspace | `docker` | `local` | `local` |
 | Binary | `opencode-wrapper` | `@built-in/agents/opencode` | `claude` |
-| Config | Baked into image | Volume-mounted | Volume-mounted |
+| Config | Baked into image (if `.opencode/` present) | Volume-mounted | Volume-mounted |
 
 To switch, edit `protoclaw.yaml`: disable the current agent, enable the new one, update channel `agent` fields. See comments in the YAML for details.
 
@@ -94,6 +94,6 @@ To switch, edit `protoclaw.yaml`: disable the current agent, enable the new one,
 | `Dockerfile` | Multi-stage: pulls ghcr.io base + opencode/claude-code targets + agent image |
 | `docker-compose.yml` | Socket-proxy + protoclaw + agent image build |
 | `protoclaw.yaml` | Agent, channel, tool, and supervisor config |
-| `.opencode/` | OpenCode config baked into agent image |
+| `.opencode/` | OpenCode config baked into agent image (gitignored — create your own or omit) |
 | `.env.example` | Environment template |
 | `test.sh` | E2E tests (`--local` for local workspace) |
