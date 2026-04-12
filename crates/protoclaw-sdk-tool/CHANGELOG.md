@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.4](https://github.com/donbader/protoclaw/compare/protoclaw-sdk-tool-v0.2.3...protoclaw-sdk-tool-v0.2.4) - 2026-04-12
+
+### Added
+
+- *(sdk)* mark public enums non_exhaustive and document API stability
+
 ## [0.2.3](https://github.com/donbader/protoclaw/compare/protoclaw-sdk-tool-v0.2.2...protoclaw-sdk-tool-v0.2.3) - 2026-04-12
 
 ### Other
