@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3](https://github.com/donbader/protoclaw/compare/protoclaw-sdk-channel-v0.2.2...protoclaw-sdk-channel-v0.2.3) - 2026-04-12
+
+### Other
+
+- fix trailing whitespace in test modules
+
 ## [0.2.2](https://github.com/donbader/protoclaw/compare/protoclaw-sdk-channel-v0.2.1...protoclaw-sdk-channel-v0.2.2) - 2026-04-12
 
 ### Fixed
