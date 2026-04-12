@@ -4,6 +4,12 @@ on:
   push:
     branches:
       - main
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "LICENSE-*"
+      - ".github/workflows/ghcr-cleanup.yml"
+      - ".github/workflows/docker.yml"
 
 permissions:
   pull-requests: write
@@ -37,8 +43,8 @@ jobs:
     name: Release PR
     runs-on: ubuntu-latest
     concurrency:
-      group: release-plz
-      cancel-in-progress: false
+      group: release-plz-pr
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@v6
         with:
