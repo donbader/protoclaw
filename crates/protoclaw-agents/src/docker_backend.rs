@@ -290,7 +290,10 @@ impl ProcessBackend for DockerBackend {
         Box::pin(async move {
             if let Some(id) = &self.container_id {
                 let id = id.clone();
-                let stop_opts = StopContainerOptions { t: Some(10), ..Default::default() };
+                let stop_opts = StopContainerOptions {
+                    t: Some(10),
+                    ..Default::default()
+                };
                 if let Err(e) = self.docker.stop_container(&id, Some(stop_opts)).await {
                     warn!(container_id = %id, error = %e, "Failed to stop container (continuing to remove)");
                 }

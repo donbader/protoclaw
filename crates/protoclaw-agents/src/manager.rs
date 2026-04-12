@@ -953,7 +953,13 @@ impl AgentsManager {
                 };
                 tracing::info!(container_id = %id, agent = %name, "cleanup: removing stale container");
                 if let Err(e) = docker
-                    .stop_container(&id, Some(StopContainerOptions { t: Some(5), ..Default::default() }))
+                    .stop_container(
+                        &id,
+                        Some(StopContainerOptions {
+                            t: Some(5),
+                            ..Default::default()
+                        }),
+                    )
                     .await
                 {
                     tracing::warn!(container_id = %id, error = %e, "cleanup: stop failed, proceeding to remove");
