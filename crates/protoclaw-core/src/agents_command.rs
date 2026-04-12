@@ -44,6 +44,20 @@ pub enum AgentsCommand {
         message: String,
         reply: oneshot::Sender<Result<(), String>>,
     },
+    ForkSession {
+        agent_name: String,
+        session_key: SessionKey,
+        reply: oneshot::Sender<Result<String, String>>,
+    },
+    ListSessions {
+        agent_name: String,
+        reply: oneshot::Sender<Result<serde_json::Value, String>>,
+    },
+    CancelSession {
+        agent_name: String,
+        session_key: SessionKey,
+        reply: oneshot::Sender<Result<(), String>>,
+    },
 }
 
 #[cfg(test)]

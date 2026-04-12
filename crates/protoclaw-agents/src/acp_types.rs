@@ -117,6 +117,34 @@ pub struct SessionCancelParams {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SessionForkParams {
+    #[serde(rename = "sessionId")]
+    pub session_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SessionForkResult {
+    #[serde(rename = "sessionId")]
+    pub session_id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct SessionListParams {}
+
+#[derive(Debug, Deserialize, PartialEq)]
+pub struct SessionListResult {
+    pub sessions: Vec<SessionInfo>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+pub struct SessionInfo {
+    #[serde(rename = "sessionId")]
+    pub session_id: String,
+    #[serde(default)]
+    pub metadata: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SessionLoadParams {
     #[serde(rename = "sessionId")]
     pub session_id: String,
@@ -291,5 +319,35 @@ mod tests {
         let json = serde_json::to_string(&event).expect("serialize");
         let deserialized: SessionUpdateEvent = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(event, deserialized);
+    }
+
+    #[rstest]
+    fn when_session_fork_params_serialized_then_session_id_is_camel_case() {
+        let params = SessionForkParams {
+            session_id: "ses-1".into(),
+        };
+        let json = serde_json::to_value(&params).unwrap();
+        assert_eq!(json["sessionId"], "ses-1");
+    }
+
+    #[rstest]
+    fn when_session_fork_result_deserialized_then_session_id_populated() {
+        let json = serde_json::json!({"sessionId": "ses-forked"});
+        let result: SessionForkResult = serde_json::from_value(json).unwrap();
+        assert_eq!(result.session_id, "ses-forked");
+    }
+
+    #[rstest]
+    fn when_session_list_result_deserialized_then_sessions_populated() {
+        let json = serde_json::json!({
+            "sessions": [
+                {"sessionId": "ses-1", "metadata": {}},
+                {"sessionId": "ses-2"}
+            ]
+        });
+        let result: SessionListResult = serde_json::from_value(json).unwrap();
+        assert_eq!(result.sessions.len(), 2);
+        assert_eq!(result.sessions[0].session_id, "ses-1");
+        assert_eq!(result.sessions[1].session_id, "ses-2");
     }
 }

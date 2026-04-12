@@ -6,8 +6,8 @@ use std::time::Duration;
 use crate::acp_error::AcpError;
 use crate::acp_types::{
     ClientCapabilities, ContentPart, InitializeParams, InitializeResult, McpServerInfo,
-    SessionCancelParams, SessionLoadParams, SessionNewParams, SessionPromptParams,
-    SessionUpdateEvent, SessionUpdateType,
+    SessionCancelParams, SessionForkParams, SessionForkResult, SessionListParams,
+    SessionLoadParams, SessionNewParams, SessionPromptParams, SessionUpdateEvent, SessionUpdateType,
 };
 use crate::slot::{AgentSlot, find_slot_by_name};
 use protoclaw_config::{AgentConfig, AgentsManagerConfig, WorkspaceConfig};
@@ -328,6 +328,26 @@ impl AgentsManager {
                     .await;
                 let _ = reply.send(result.map_err(|e| e.to_string()));
             }
+            AgentsCommand::ForkSession {
+                agent_name,
+                session_key,
+                reply,
+            } => {
+                let result = self.fork_session(&agent_name, &session_key).await;
+                let _ = reply.send(result.map_err(|e| e.to_string()));
+            }
+            AgentsCommand::ListSessions { agent_name, reply } => {
+                let result = self.list_sessions(&agent_name).await;
+                let _ = reply.send(result.map_err(|e| e.to_string()));
+            }
+            AgentsCommand::CancelSession {
+                agent_name,
+                session_key,
+                reply,
+            } => {
+                let result = self.cancel_session(&agent_name, &session_key).await;
+                let _ = reply.send(result.map_err(|e| e.to_string()));
+            }
         }
         false
     }
@@ -444,6 +464,120 @@ impl AgentsManager {
         Ok(())
     }
 
+    async fn fork_session(
+        &mut self,
+        agent_name: &str,
+        session_key: &SessionKey,
+    ) -> Result<String, AgentsError> {
+        let slot_idx = find_slot_by_name(&self.slots, agent_name)
+            .ok_or_else(|| AgentsError::AgentNotFound(agent_name.to_string()))?;
+
+        let slot = &self.slots[slot_idx];
+        if slot
+            .agent_capabilities
+            .as_ref()
+            .and_then(|r| r.session_capabilities.as_ref())
+            .and_then(|c| c.fork.as_ref())
+            .is_none()
+        {
+            return Err(AgentsError::CapabilityNotSupported("fork".into()));
+        }
+
+        let acp_session_id = slot
+            .session_map
+            .get(session_key)
+            .ok_or(AgentsError::ConnectionClosed)?
+            .clone();
+
+        let conn = slot
+            .connection
+            .as_ref()
+            .ok_or(AgentsError::ConnectionClosed)?;
+        let params = serde_json::to_value(SessionForkParams {
+            session_id: acp_session_id,
+        })?;
+        let rx = conn.send_request("session/fork", params).await?;
+
+        let acp_timeout =
+            Self::acp_timeout_for(&self.slots[slot_idx].config, &self.manager_config);
+        let resp = tokio::time::timeout(acp_timeout, rx)
+            .await
+            .map_err(|_| AgentsError::Timeout(acp_timeout))?
+            .map_err(|_| AgentsError::ConnectionClosed)?;
+
+        let result: SessionForkResult = serde_json::from_value(resp)?;
+        let new_session_id = result.session_id.clone();
+
+        let fork_key = SessionKey::new(
+            session_key.channel_name(),
+            "fork",
+            &new_session_id,
+        );
+        let slot = &mut self.slots[slot_idx];
+        slot.session_map.insert(fork_key.clone(), new_session_id.clone());
+        slot.reverse_map.insert(new_session_id.clone(), fork_key);
+
+        tracing::info!(agent = %agent_name, forked_session_id = %new_session_id, "session forked");
+        Ok(new_session_id)
+    }
+
+    async fn list_sessions(&self, agent_name: &str) -> Result<serde_json::Value, AgentsError> {
+        let slot_idx = find_slot_by_name(&self.slots, agent_name)
+            .ok_or_else(|| AgentsError::AgentNotFound(agent_name.to_string()))?;
+
+        let slot = &self.slots[slot_idx];
+        if slot
+            .agent_capabilities
+            .as_ref()
+            .and_then(|r| r.session_capabilities.as_ref())
+            .and_then(|c| c.list.as_ref())
+            .is_none()
+        {
+            return Err(AgentsError::CapabilityNotSupported("list".into()));
+        }
+
+        let conn = slot
+            .connection
+            .as_ref()
+            .ok_or(AgentsError::ConnectionClosed)?;
+        let params = serde_json::to_value(SessionListParams {})?;
+        let rx = conn.send_request("session/list", params).await?;
+
+        let acp_timeout = Self::acp_timeout_for(&slot.config, &self.manager_config);
+        let resp = tokio::time::timeout(acp_timeout, rx)
+            .await
+            .map_err(|_| AgentsError::Timeout(acp_timeout))?
+            .map_err(|_| AgentsError::ConnectionClosed)?;
+
+        Ok(resp)
+    }
+
+    async fn cancel_session(
+        &self,
+        agent_name: &str,
+        session_key: &SessionKey,
+    ) -> Result<(), AgentsError> {
+        let slot_idx = find_slot_by_name(&self.slots, agent_name)
+            .ok_or_else(|| AgentsError::AgentNotFound(agent_name.to_string()))?;
+
+        let slot = &self.slots[slot_idx];
+        let acp_session_id = slot
+            .session_map
+            .get(session_key)
+            .ok_or(AgentsError::ConnectionClosed)?
+            .clone();
+
+        let conn = slot
+            .connection
+            .as_ref()
+            .ok_or(AgentsError::ConnectionClosed)?;
+        let params = serde_json::to_value(SessionCancelParams {
+            session_id: acp_session_id,
+        })?;
+        conn.send_notification("session/cancel", params).await?;
+        Ok(())
+    }
+
     async fn handle_incoming(&mut self, slot_idx: usize, msg: IncomingMessage) {
         let value = match &msg {
             IncomingMessage::AgentNotification(v) | IncomingMessage::AgentRequest(v) => v.clone(),
@@ -490,7 +624,10 @@ impl AgentsManager {
             SessionUpdateType::Plan { .. } => "plan",
             SessionUpdateType::UsageUpdate { .. } => "usage_update",
             SessionUpdateType::UserMessageChunk { .. } => "user_message_chunk",
-            _ => "other",
+            SessionUpdateType::AvailableCommandsUpdate { .. } => "available_commands_update",
+            SessionUpdateType::CurrentModeUpdate { .. } => "current_mode_update",
+            SessionUpdateType::ConfigOptionUpdate { .. } => "config_option_update",
+            SessionUpdateType::SessionInfoUpdate { .. } => "session_info_update",
         }
     }
 
@@ -1983,5 +2120,95 @@ mod tests {
         let original = content.clone();
         normalize_tool_event_fields(&mut content, "agent_message_chunk");
         assert_eq!(content, original);
+    }
+
+    #[rstest]
+    fn when_session_update_type_name_called_with_available_commands_update_then_returns_correct_string() {
+        let update = SessionUpdateType::AvailableCommandsUpdate {
+            commands: serde_json::Value::Array(vec![]),
+        };
+        assert_eq!(
+            AgentsManager::session_update_type_name(&update),
+            "available_commands_update"
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_agent_lacks_fork_capability_then_fork_session_returns_error() {
+        let (handle, rx) = make_tools_handle();
+        let tools_task = tokio::spawn(serve_tools_urls(rx));
+
+        let mut m = AgentsManager::new(mock_agents_manager_config(), handle);
+        m.start().await.unwrap();
+
+        let session_key = SessionKey::new("telegram", "user", "u1");
+        let result = m.fork_session("default", &session_key).await;
+        assert!(
+            matches!(result, Err(AgentsError::CapabilityNotSupported(_))),
+            "expected CapabilityNotSupported, got: {result:?}"
+        );
+
+        m.shutdown_all().await;
+        tools_task.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_agent_lacks_list_capability_then_list_sessions_returns_error() {
+        let (handle, rx) = make_tools_handle();
+        let tools_task = tokio::spawn(serve_tools_urls(rx));
+
+        let mut m = AgentsManager::new(mock_agents_manager_config(), handle);
+        m.start().await.unwrap();
+
+        let result = m.list_sessions("default").await;
+        assert!(
+            matches!(result, Err(AgentsError::CapabilityNotSupported(_))),
+            "expected CapabilityNotSupported, got: {result:?}"
+        );
+
+        m.shutdown_all().await;
+        tools_task.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_cancel_session_called_for_unknown_session_then_returns_error() {
+        let (handle, rx) = make_tools_handle();
+        let tools_task = tokio::spawn(serve_tools_urls(rx));
+
+        let mut m = AgentsManager::new(mock_agents_manager_config(), handle);
+        m.start().await.unwrap();
+
+        let unknown_key = SessionKey::new("telegram", "user", "no-such-session");
+        let result = m.cancel_session("default", &unknown_key).await;
+        assert!(
+            matches!(result, Err(AgentsError::ConnectionClosed)),
+            "expected ConnectionClosed for unknown session, got: {result:?}"
+        );
+
+        m.shutdown_all().await;
+        tools_task.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_fork_session_called_for_unknown_agent_then_returns_agent_not_found() {
+        let (handle, rx) = make_tools_handle();
+        let tools_task = tokio::spawn(serve_tools_urls(rx));
+
+        let mut m = AgentsManager::new(mock_agents_manager_config(), handle);
+        m.start().await.unwrap();
+
+        let session_key = SessionKey::new("telegram", "user", "u1");
+        let result = m.fork_session("no-such-agent", &session_key).await;
+        assert!(
+            matches!(result, Err(AgentsError::AgentNotFound(_))),
+            "expected AgentNotFound, got: {result:?}"
+        );
+
+        m.shutdown_all().await;
+        tools_task.abort();
     }
 }

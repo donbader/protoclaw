@@ -18,6 +18,8 @@ pub enum AgentsError {
     Json(#[from] serde_json::Error),
     #[error("Agent not found: {0}")]
     AgentNotFound(String),
+    #[error("Agent does not support capability: {0}")]
+    CapabilityNotSupported(String),
     #[error("Docker error: {0}")]
     DockerError(String),
     #[error("Failed to pull image {image}: {reason}")]
