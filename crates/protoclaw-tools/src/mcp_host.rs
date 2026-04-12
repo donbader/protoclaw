@@ -37,7 +37,6 @@ impl McpHost {
 mod tests {
     use super::*;
     use protoclaw_sdk_tool::ToolSdkError;
-    
 
     struct EchoTool;
 

@@ -60,7 +60,6 @@ pub trait Channel: Send + 'static {
 mod tests {
     use super::*;
     use protoclaw_sdk_types::{PermissionOption, PermissionResponse};
-    
 
     struct MockChannel;
 

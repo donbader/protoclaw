@@ -117,7 +117,6 @@ mod tests {
     use super::*;
     use protoclaw_core::ManagerHandle;
     use protoclaw_core::{AgentStatusInfo, AgentsCommand};
-    
 
     #[test]
     fn when_debug_http_channel_created_then_instance_initialized() {

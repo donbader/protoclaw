@@ -44,7 +44,7 @@ mod tests {
         LocalWorkspaceConfig, ProtoclawConfig, SupervisorConfig, ToolConfig, ToolsManagerConfig,
         WorkspaceConfig,
     };
-    
+
     use std::collections::HashMap;
 
     fn make_config(

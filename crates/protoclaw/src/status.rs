@@ -86,7 +86,7 @@ pub async fn run_status(port: u16) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     use serde_json::json;
 
     #[test]

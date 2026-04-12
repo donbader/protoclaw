@@ -60,7 +60,6 @@ impl AsRef<str> for SessionKey {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
 
     #[test]
     fn when_session_key_created_then_formatted_as_channel_slash_peer() {

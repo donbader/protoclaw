@@ -77,7 +77,6 @@ impl JsonRpcResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
 
     #[test]
     fn when_creating_request_then_jsonrpc_field_is_2_0() {

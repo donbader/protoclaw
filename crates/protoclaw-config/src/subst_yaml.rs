@@ -72,7 +72,6 @@ fn coerce_substituted_strings(value: &mut serde_yaml::Value) {
 mod tests {
     use super::*;
     use figment::Figment;
-    
 
     #[test]
     fn when_yaml_contains_env_var_reference_then_substituted_from_env() {

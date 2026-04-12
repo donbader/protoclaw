@@ -358,7 +358,7 @@ impl AgentConnection {
 mod tests {
     use super::*;
     use protoclaw_config::{LocalWorkspaceConfig, WorkspaceConfig};
-    
+
     use std::collections::HashMap;
 
     fn mock_agent_config() -> AgentConfig {

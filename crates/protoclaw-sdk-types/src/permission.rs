@@ -49,7 +49,6 @@ pub struct ChannelRequestPermission {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
 
     #[test]
     fn when_serializing_permission_option_then_uses_camel_case() {
