@@ -904,7 +904,7 @@ impl AgentsManager {
     /// method never propagates failures so that `start()` is not blocked by
     /// stale-container cleanup.
     async fn cleanup_stale_containers(&self) {
-        use bollard::container::{
+        use bollard::query_parameters::{
             ListContainersOptions, RemoveContainerOptions, StopContainerOptions,
         };
 
@@ -935,7 +935,7 @@ impl AgentsManager {
             );
             let opts = ListContainersOptions {
                 all: true,
-                filters,
+                filters: Some(filters),
                 ..Default::default()
             };
             let containers = match docker.list_containers(Some(opts)).await {
@@ -953,7 +953,7 @@ impl AgentsManager {
                 };
                 tracing::info!(container_id = %id, agent = %name, "cleanup: removing stale container");
                 if let Err(e) = docker
-                    .stop_container(&id, Some(StopContainerOptions { t: 5 }))
+                    .stop_container(&id, Some(StopContainerOptions { t: Some(5), ..Default::default() }))
                     .await
                 {
                     tracing::warn!(container_id = %id, error = %e, "cleanup: stop failed, proceeding to remove");

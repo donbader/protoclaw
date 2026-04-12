@@ -5,12 +5,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use bollard::Docker;
-use bollard::container::{
-    AttachContainerOptions, Config, CreateContainerOptions, NetworkingConfig,
-    RemoveContainerOptions, StartContainerOptions, StopContainerOptions, WaitContainerOptions,
+use bollard::models::{ContainerCreateBody, EndpointSettings, HostConfig, NetworkingConfig};
+use bollard::query_parameters::{
+    AttachContainerOptions, CreateContainerOptions, CreateImageOptions, RemoveContainerOptions,
+    StartContainerOptions, StopContainerOptions, WaitContainerOptions,
 };
-use bollard::image::CreateImageOptions;
-use bollard::models::{EndpointSettings, HostConfig};
 use futures::StreamExt;
 use protoclaw_config::parse::{parse_cpu_limit, parse_memory_limit};
 use protoclaw_config::types::{DockerWorkspaceConfig, PullPolicy};
@@ -44,7 +43,7 @@ impl DockerBackend {
         args: &[String],
         labels: HashMap<String, String>,
         host_config: HostConfig,
-    ) -> Config<String> {
+    ) -> ContainerCreateBody {
         let env: Vec<String> = config
             .env
             .iter()
@@ -59,11 +58,11 @@ impl DockerBackend {
             let mut endpoints = HashMap::new();
             endpoints.insert(net.clone(), EndpointSettings::default());
             NetworkingConfig {
-                endpoints_config: endpoints,
+                endpoints_config: Some(endpoints),
             }
         });
 
-        Config {
+        ContainerCreateBody {
             image: Some(config.image.clone()),
             hostname: None,
             attach_stdin: Some(true),
@@ -84,11 +83,11 @@ impl DockerBackend {
     async fn create_and_start_container(
         docker: &Docker,
         container_name: &str,
-        container_config: Config<String>,
+        container_config: ContainerCreateBody,
     ) -> Result<String, AgentsError> {
         let create_opts = CreateContainerOptions {
-            name: container_name,
-            platform: None,
+            name: Some(container_name.to_string()),
+            ..Default::default()
         };
         let created = docker
             .create_container(Some(create_opts), container_config)
@@ -99,7 +98,7 @@ impl DockerBackend {
         info!(container_id = %container_id, container_name = %container_name, "Created Docker container");
 
         docker
-            .start_container(&container_id, None::<StartContainerOptions<String>>)
+            .start_container(&container_id, None::<StartContainerOptions>)
             .await
             .map_err(|e| AgentsError::DockerError(e.to_string()))?;
         info!(container_id = %container_id, "Started Docker container");
@@ -111,12 +110,12 @@ impl DockerBackend {
         docker: &Docker,
         container_id: &str,
     ) -> Result<AttachedStreams, AgentsError> {
-        let attach_opts = AttachContainerOptions::<String> {
-            stdin: Some(true),
-            stdout: Some(true),
-            stderr: Some(true),
-            stream: Some(true),
-            logs: Some(false),
+        let attach_opts = AttachContainerOptions {
+            stdin: true,
+            stdout: true,
+            stderr: true,
+            stream: true,
+            logs: false,
             detach_keys: None,
         };
         let attach = docker
@@ -248,12 +247,8 @@ async fn pull_image_if_needed(
 
 async fn do_pull(docker: &Docker, image: &str) -> Result<(), AgentsError> {
     let opts = CreateImageOptions {
-        from_image: image,
-        from_src: "",
-        repo: "",
-        tag: "",
-        platform: "",
-        changes: vec![],
+        from_image: Some(image.to_string()),
+        ..Default::default()
     };
     let mut stream = docker.create_image(Some(opts), None, None);
     while let Some(item) = stream.next().await {
@@ -295,7 +290,7 @@ impl ProcessBackend for DockerBackend {
         Box::pin(async move {
             if let Some(id) = &self.container_id {
                 let id = id.clone();
-                let stop_opts = StopContainerOptions { t: 10 };
+                let stop_opts = StopContainerOptions { t: Some(10), ..Default::default() };
                 if let Err(e) = self.docker.stop_container(&id, Some(stop_opts)).await {
                     warn!(container_id = %id, error = %e, "Failed to stop container (continuing to remove)");
                 }
@@ -325,7 +320,7 @@ impl ProcessBackend for DockerBackend {
                 let id = id.clone();
                 let mut stream = self
                     .docker
-                    .wait_container(&id, None::<WaitContainerOptions<String>>);
+                    .wait_container(&id, None::<WaitContainerOptions>);
                 match stream.next().await {
                     Some(Ok(resp)) => resp.status_code,
                     Some(Err(e)) => {
