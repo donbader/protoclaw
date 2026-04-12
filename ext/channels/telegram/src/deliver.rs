@@ -193,6 +193,29 @@ async fn thought_emoji(state: &SharedState) -> String {
     state.thought_emoji.read().await.clone()
 }
 
+pub(crate) fn format_tool_call_update_text(
+    display_name: &str,
+    status: &str,
+    output: Option<&str>,
+) -> String {
+    let emoji = match status {
+        "completed" => "✅",
+        "failed" => "❌",
+        "in_progress" => "⏳",
+        _ => "🔧",
+    };
+    if status == "failed"
+        && let Some(err) = output
+    {
+        return format!(
+            "{emoji} <code>{}</code>\n<pre>{}</pre>",
+            escape_html(display_name),
+            escape_html(err)
+        );
+    }
+    format!("{emoji} <code>{}</code>", escape_html(display_name))
+}
+
 pub async fn deliver_to_chat(
     bot: &Bot,
     state: &Arc<SharedState>,
@@ -790,7 +813,7 @@ pub async fn deliver_to_chat(
             name,
             tool_call_id,
             status,
-            ..
+            output,
         } => {
             let (tracked_msg_id, tracked_name) = {
                 let turns = state.turns.read().await;
@@ -812,13 +835,7 @@ pub async fn deliver_to_chat(
                 "tool".to_string()
             };
 
-            let emoji = match status.as_str() {
-                "completed" => "✅",
-                "failed" => "❌",
-                "in_progress" => "⏳",
-                _ => "🔧",
-            };
-            let text = format!("{emoji} <code>{}</code>", escape_html(&display_name));
+            let text = format_tool_call_update_text(&display_name, &status, output.as_deref());
 
             if tracked_msg_id != 0 {
                 let _ = retry_telegram_op("edit_tool_call_update", chat_id, || {
@@ -863,6 +880,7 @@ pub async fn deliver_to_chat(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
     use std::sync::Arc;
 
     #[test]
@@ -932,6 +950,57 @@ mod tests {
         assert!(
             state.turns.read().await.get(&12345).is_some(),
             "unknown update types must not destroy active turns"
+        );
+    }
+
+    #[rstest]
+    #[case::failed_with_output("failed", Some("path outside allowed directory"), true)]
+    #[case::failed_without_output("failed", None, false)]
+    #[case::completed_with_output("completed", Some("file contents"), false)]
+    #[case::in_progress("in_progress", None, false)]
+    fn when_tool_call_update_formatted_then_error_details_shown_only_on_failure(
+        #[case] status: &str,
+        #[case] output: Option<&str>,
+        #[case] expect_output_in_text: bool,
+    ) {
+        let text = format_tool_call_update_text("fs/read_text_file", status, output);
+        if expect_output_in_text {
+            assert!(
+                text.contains("path outside allowed directory"),
+                "failed tool with output must include error details, got: {text}"
+            );
+            assert!(
+                text.contains("<pre>"),
+                "error details must be wrapped in <pre> tag, got: {text}"
+            );
+        } else if let Some(out) = output {
+            assert!(
+                !text.contains(out),
+                "non-failed status must not include output text, got: {text}"
+            );
+        }
+        assert!(
+            text.contains("fs/read_text_file"),
+            "tool name must always be present, got: {text}"
+        );
+    }
+
+    #[rstest]
+    fn when_tool_call_update_failed_then_emoji_is_cross() {
+        let text = format_tool_call_update_text("my_tool", "failed", Some("err"));
+        assert!(text.starts_with("❌"), "failed status must use ❌ emoji, got: {text}");
+    }
+
+    #[rstest]
+    fn when_tool_call_update_failed_with_html_in_output_then_escaped() {
+        let text = format_tool_call_update_text("tool", "failed", Some("<script>alert(1)</script>"));
+        assert!(
+            !text.contains("<script>"),
+            "HTML in error output must be escaped, got: {text}"
+        );
+        assert!(
+            text.contains("&lt;script&gt;"),
+            "angle brackets must be escaped, got: {text}"
         );
     }
 }
