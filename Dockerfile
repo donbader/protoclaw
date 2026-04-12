@@ -13,8 +13,8 @@ FROM chef AS builder
 COPY --from=planner /build/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json
 COPY . .
-RUN cargo build --release --bin protoclaw
 RUN cargo build --release \
+    --bin protoclaw \
     --bin telegram-channel \
     --bin debug-http \
     --bin mock-agent \
