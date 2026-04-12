@@ -382,6 +382,9 @@ pub struct SupervisorConfig {
     /// Rolling window in seconds over which manager crash attempts are counted.
     #[serde(default = "default_restart_window")]
     pub restart_window_secs: u64,
+    /// TCP port for the admin HTTP server (`/health`, `/metrics`). Default: 3000.
+    #[serde(default = "default_admin_port")]
+    pub admin_port: u16,
 }
 
 /// Deserialize a map where values may have been coerced from strings to integers/bools
@@ -447,6 +450,9 @@ fn default_max_restarts() -> u32 {
 fn default_restart_window() -> u64 {
     60
 }
+fn default_admin_port() -> u16 {
+    3000
+}
 fn default_acp_timeout_secs() -> u64 {
     30
 }
@@ -490,6 +496,7 @@ impl Default for SupervisorConfig {
             health_check_interval_secs: default_health_interval(),
             max_restarts: default_max_restarts(),
             restart_window_secs: default_restart_window(),
+            admin_port: default_admin_port(),
         }
     }
 }
