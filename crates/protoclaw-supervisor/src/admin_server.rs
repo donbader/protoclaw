@@ -24,9 +24,16 @@ pub async fn start(port: u16, health: SharedHealth) {
         .route("/metrics", get(metrics_handler))
         .with_state(state);
 
-    let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{port}"))
-        .await
-        .expect("failed to bind admin server");
+    let listener = match tokio::net::TcpListener::bind(format!("127.0.0.1:{port}")).await {
+        Ok(l) => l,
+        Err(e) => {
+            tracing::warn!(
+                port,
+                "admin server failed to bind, health/metrics endpoints unavailable: {e}"
+            );
+            return;
+        }
+    };
 
     tracing::info!(port, "admin server listening");
 
