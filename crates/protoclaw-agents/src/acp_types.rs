@@ -161,6 +161,7 @@ pub enum ToolCallStatus {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "sessionUpdate", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum SessionUpdateType {
     AgentMessageChunk {
         #[serde(default)]
@@ -222,14 +223,17 @@ pub enum SessionUpdateType {
         #[serde(default)]
         commands: serde_json::Value,
     },
+    /// Extension type — not part of core ACP. Carries the agent's current operating mode.
     CurrentModeUpdate {
         #[serde(default)]
         mode: Option<String>,
     },
+    /// Extension type — not part of core ACP. Carries config option updates from the agent.
     ConfigOptionUpdate {
         #[serde(default, flatten)]
         extra: serde_json::Map<String, serde_json::Value>,
     },
+    /// Extension type — not part of core ACP. Carries session metadata updates from the agent.
     SessionInfoUpdate {
         #[serde(default, flatten)]
         extra: serde_json::Map<String, serde_json::Value>,

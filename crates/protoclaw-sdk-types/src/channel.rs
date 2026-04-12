@@ -269,7 +269,7 @@ impl ContentKind {
 }
 
 /// Extract displayable text from `update["content"]`.
-/// Handles OpenCode's `{"type": "text", "text": "actual text"}` wrapper,
+/// Handles content-part object format `{type, text}`,
 /// plain string values, and falls back to empty string.
 fn extract_content_text(update: &serde_json::Value) -> String {
     match update.get("content") {

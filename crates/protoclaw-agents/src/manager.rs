@@ -681,9 +681,9 @@ impl AgentsManager {
             SessionUpdateType::UsageUpdate { .. } => "usage_update",
             SessionUpdateType::UserMessageChunk { .. } => "user_message_chunk",
             SessionUpdateType::AvailableCommandsUpdate { .. } => "available_commands_update",
-            SessionUpdateType::CurrentModeUpdate { .. } => "current_mode_update",
-            SessionUpdateType::ConfigOptionUpdate { .. } => "config_option_update",
-            SessionUpdateType::SessionInfoUpdate { .. } => "session_info_update",
+            SessionUpdateType::CurrentModeUpdate { .. } => "extension:current_mode",
+            SessionUpdateType::ConfigOptionUpdate { .. } => "extension:config_option",
+            SessionUpdateType::SessionInfoUpdate { .. } => "extension:session_info",
         }
     }
 
