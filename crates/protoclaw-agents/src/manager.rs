@@ -129,6 +129,8 @@ pub struct AgentsManager {
     log_level: Option<String>,
     /// Persistent session store. Defaults to [`NoopSessionStore`].
     session_store: std::sync::Arc<dyn DynSessionStore>,
+    /// TTL for expired session cleanup at boot (seconds). Default: 7 days.
+    session_ttl_secs: i64,
 }
 
 impl AgentsManager {
@@ -160,6 +162,7 @@ impl AgentsManager {
             update_seq: AtomicU64::new(0),
             log_level: None,
             session_store: std::sync::Arc::new(NoopSessionStore),
+            session_ttl_secs: 7 * 24 * 3600,
         }
     }
 
@@ -180,6 +183,11 @@ impl AgentsManager {
 
     pub fn with_session_store(mut self, store: std::sync::Arc<dyn DynSessionStore>) -> Self {
         self.session_store = store;
+        self
+    }
+
+    pub fn with_session_ttl_secs(mut self, ttl: i64) -> Self {
+        self.session_ttl_secs = ttl;
         self
     }
 
@@ -1079,7 +1087,13 @@ impl AgentsManager {
     }
 
     async fn shutdown_all(&mut self) {
+        let store = self.session_store.clone();
         for slot in &mut self.slots {
+            for session_key in slot.session_map.keys() {
+                if let Err(e) = store.mark_closed(&session_key.to_string()).await {
+                    tracing::warn!(session_key = %session_key, error = %e, "failed to mark session closed in store");
+                }
+            }
             if let Some(conn) = &slot.connection {
                 for acp_id in slot.session_map.values() {
                     let params = serde_json::json!({ "sessionId": acp_id });
@@ -1387,6 +1401,18 @@ impl Manager for AgentsManager {
 
             let slot = self.build_started_slot(name, config).await?;
             self.slots.push(slot);
+        }
+
+        let deleted = self
+            .session_store
+            .delete_expired(self.session_ttl_secs)
+            .await
+            .unwrap_or_else(|e| {
+                tracing::warn!(error = %e, "failed to delete expired sessions from store");
+                0
+            });
+        if deleted > 0 {
+            tracing::info!(deleted, "expired sessions cleaned up at boot");
         }
 
         let open_sessions = self
