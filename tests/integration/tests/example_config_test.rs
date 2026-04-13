@@ -46,8 +46,7 @@ fn given_fake_agent_example_yaml_when_loaded_then_has_one_mock_agent() {
 #[test]
 fn given_fake_agent_example_yaml_when_loaded_then_has_debug_http_and_telegram_channels() {
     let yaml_path = workspace_root().join("examples/01-fake-agent-telegram-bot/anyclaw.yaml");
-    let config =
-        anyclaw_config::AnyclawConfig::load(Some(yaml_path.to_str().unwrap())).unwrap();
+    let config = anyclaw_config::AnyclawConfig::load(Some(yaml_path.to_str().unwrap())).unwrap();
 
     assert_eq!(
         config.channels_manager.channels.len(),
@@ -89,8 +88,7 @@ fn given_real_agent_example_yaml_when_loaded_then_has_opencode_agent() {
 #[test]
 fn given_real_agent_example_yaml_when_loaded_then_has_two_channels_with_correct_routing() {
     let yaml_path = workspace_root().join("examples/02-real-agents-telegram-bot/anyclaw.yaml");
-    let config =
-        anyclaw_config::AnyclawConfig::load(Some(yaml_path.to_str().unwrap())).unwrap();
+    let config = anyclaw_config::AnyclawConfig::load(Some(yaml_path.to_str().unwrap())).unwrap();
 
     assert_eq!(
         config.channels_manager.channels.len(),

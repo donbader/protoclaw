@@ -22,11 +22,11 @@ pub mod testing;
 /// The [`Channel`] trait that channel authors implement.
 pub mod trait_def;
 
+pub use anyclaw_sdk_types::{
+    ChannelAckConfig, ChannelCapabilities, ChannelSendMessage, DeliverMessage, PeerInfo,
+};
 pub use broker::PermissionBroker;
 pub use content::content_to_string;
 pub use error::ChannelSdkError;
 pub use harness::ChannelHarness;
-pub use anyclaw_sdk_types::{
-    ChannelAckConfig, ChannelCapabilities, ChannelSendMessage, DeliverMessage, PeerInfo,
-};
 pub use trait_def::Channel;

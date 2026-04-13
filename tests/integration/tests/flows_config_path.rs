@@ -8,14 +8,12 @@ async fn given_config_written_to_temp_path_when_loaded_and_supervisor_booted_the
     let config = mock_agent_config();
     let yaml = serde_yaml::to_string(&config).expect("serialize config to yaml");
 
-    let temp_path =
-        std::env::temp_dir().join(format!("anyclaw-test-{}.yaml", std::process::id()));
+    let temp_path = std::env::temp_dir().join(format!("anyclaw-test-{}.yaml", std::process::id()));
     std::fs::write(&temp_path, &yaml).expect("write temp config file");
 
     let path_str = temp_path.to_str().expect("temp path is valid UTF-8");
 
-    let loaded =
-        AnyclawConfig::load(Some(path_str)).expect("config should load from custom path");
+    let loaded = AnyclawConfig::load(Some(path_str)).expect("config should load from custom path");
 
     let (cancel, handle, port) = boot_supervisor_with_port(loaded).await;
 

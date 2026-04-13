@@ -196,8 +196,8 @@ mod tests {
     #[rstest]
     fn when_resolve_all_called_then_docker_entrypoint_resolved() {
         use crate::{
-            AgentConfig, AgentsManagerConfig, ChannelsManagerConfig, DockerWorkspaceConfig,
-            AnyclawConfig, PullPolicy, StringOrArray, SupervisorConfig, ToolsManagerConfig,
+            AgentConfig, AgentsManagerConfig, AnyclawConfig, ChannelsManagerConfig,
+            DockerWorkspaceConfig, PullPolicy, StringOrArray, SupervisorConfig, ToolsManagerConfig,
             WorkspaceConfig,
         };
         use std::collections::HashMap;

@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
+use anyclaw_core::HealthSnapshot;
 use axum::{Router, extract::State, response::IntoResponse, routing::get};
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
-use anyclaw_core::HealthSnapshot;
 use tokio::sync::RwLock;
 
 type SharedHealth = Arc<RwLock<HealthSnapshot>>;

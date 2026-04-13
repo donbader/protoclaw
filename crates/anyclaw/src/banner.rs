@@ -31,9 +31,8 @@ pub fn format_banner(config: &AnyclawConfig, config_path: &str) -> String {
 mod tests {
     use super::*;
     use anyclaw_config::{
-        AgentConfig, AgentsManagerConfig, ChannelConfig, ChannelsManagerConfig,
-        LocalWorkspaceConfig, AnyclawConfig, SupervisorConfig, ToolConfig, ToolsManagerConfig,
-        WorkspaceConfig,
+        AgentConfig, AgentsManagerConfig, AnyclawConfig, ChannelConfig, ChannelsManagerConfig,
+        LocalWorkspaceConfig, SupervisorConfig, ToolConfig, ToolsManagerConfig, WorkspaceConfig,
     };
 
     use std::collections::HashMap;

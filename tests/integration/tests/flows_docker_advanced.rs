@@ -82,12 +82,7 @@ async fn given_stale_container_exists_when_supervisor_starts_then_stale_containe
     );
 
     let check = std::process::Command::new("docker")
-        .args([
-            "ps",
-            "-aq",
-            "--filter",
-            "name=anyclaw-stale-test-container",
-        ])
+        .args(["ps", "-aq", "--filter", "name=anyclaw-stale-test-container"])
         .output()
         .expect("docker ps failed");
     assert!(
@@ -101,12 +96,7 @@ async fn given_stale_container_exists_when_supervisor_starts_then_stale_containe
     tokio::time::sleep(Duration::from_secs(2)).await;
 
     let check_after = std::process::Command::new("docker")
-        .args([
-            "ps",
-            "-aq",
-            "--filter",
-            "name=anyclaw-stale-test-container",
-        ])
+        .args(["ps", "-aq", "--filter", "name=anyclaw-stale-test-container"])
         .output()
         .expect("docker ps failed");
     assert!(

@@ -10,8 +10,8 @@
 //! | example_01_docker_compose_valid| Fake-agent docker-compose.yml syntax            |
 //! | example_02_docker_compose_valid| Real-agent docker-compose.yml syntax            |
 
-use figment::Jail;
 use anyclaw_config::AnyclawConfig;
+use figment::Jail;
 
 #[test]
 fn given_example_01_yaml_when_loaded_via_figment_jail_then_config_parses() {
