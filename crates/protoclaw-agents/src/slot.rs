@@ -5,9 +5,9 @@ use protoclaw_config::AgentConfig;
 use protoclaw_core::{CrashTracker, ExponentialBackoff, SessionKey, SlotLifecycle};
 use tokio_util::sync::CancellationToken;
 
-use crate::PendingPermission;
 use crate::acp_types::InitializeResult;
 use crate::connection::AgentConnection;
+use crate::PendingPermission;
 
 pub struct AgentSlot {
     pub(crate) name: String,
@@ -71,12 +71,11 @@ mod tests {
         AgentConfig {
             workspace: protoclaw_config::WorkspaceConfig::Local(
                 protoclaw_config::LocalWorkspaceConfig {
-                    binary: "test-binary".to_string(),
+                    binary: "test-binary".into(),
                     working_dir: None,
                     env: HashMap::new(),
                 },
             ),
-            args: vec![],
             enabled,
             tools: vec![],
             acp_timeout_secs: None,
@@ -181,12 +180,11 @@ mod tests {
         AgentConfig {
             workspace: protoclaw_config::WorkspaceConfig::Local(
                 protoclaw_config::LocalWorkspaceConfig {
-                    binary: "test-binary".to_string(),
+                    binary: "test-binary".into(),
                     working_dir: None,
                     env: HashMap::new(),
                 },
             ),
-            args: vec![],
             enabled: true,
             tools: vec![],
             acp_timeout_secs: None,

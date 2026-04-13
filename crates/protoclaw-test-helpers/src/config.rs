@@ -17,12 +17,11 @@ pub fn mock_agent_config_with_options(
         protoclaw_config::AgentConfig {
             workspace: protoclaw_config::WorkspaceConfig::Local(
                 protoclaw_config::LocalWorkspaceConfig {
-                    binary: mock_agent_path().to_string_lossy().to_string(),
+                    binary: mock_agent_path().to_string_lossy().to_string().into(),
                     working_dir: None,
                     env: HashMap::new(),
                 },
             ),
-            args: vec![],
             enabled: true,
             tools: vec![],
             acp_timeout_secs: None,
@@ -80,12 +79,11 @@ pub fn sdk_channel_config() -> protoclaw_config::ProtoclawConfig {
         protoclaw_config::AgentConfig {
             workspace: protoclaw_config::WorkspaceConfig::Local(
                 protoclaw_config::LocalWorkspaceConfig {
-                    binary: mock_agent_path().to_string_lossy().to_string(),
+                    binary: mock_agent_path().to_string_lossy().to_string().into(),
                     working_dir: None,
                     env: HashMap::new(),
                 },
             ),
-            args: vec![],
             enabled: true,
             tools: vec![],
             acp_timeout_secs: None,
@@ -158,12 +156,11 @@ pub fn sdk_tool_config() -> protoclaw_config::ProtoclawConfig {
         protoclaw_config::AgentConfig {
             workspace: protoclaw_config::WorkspaceConfig::Local(
                 protoclaw_config::LocalWorkspaceConfig {
-                    binary: mock_agent_path().to_string_lossy().to_string(),
+                    binary: mock_agent_path().to_string_lossy().to_string().into(),
                     working_dir: None,
                     env: HashMap::new(),
                 },
             ),
-            args: vec![],
             enabled: true,
             tools: vec!["echo".into()],
             acp_timeout_secs: None,
@@ -282,12 +279,11 @@ pub fn wasm_tool_config() -> protoclaw_config::ProtoclawConfig {
         protoclaw_config::AgentConfig {
             workspace: protoclaw_config::WorkspaceConfig::Local(
                 protoclaw_config::LocalWorkspaceConfig {
-                    binary: mock_agent_path().to_string_lossy().to_string(),
+                    binary: mock_agent_path().to_string_lossy().to_string().into(),
                     working_dir: None,
                     env: HashMap::new(),
                 },
             ),
-            args: vec![],
             enabled: true,
             tools: vec!["wasm-echo".into()],
             acp_timeout_secs: None,
@@ -365,12 +361,11 @@ pub fn multi_tool_config() -> protoclaw_config::ProtoclawConfig {
         protoclaw_config::AgentConfig {
             workspace: protoclaw_config::WorkspaceConfig::Local(
                 protoclaw_config::LocalWorkspaceConfig {
-                    binary: mock_agent_path().to_string_lossy().to_string(),
+                    binary: mock_agent_path().to_string_lossy().to_string().into(),
                     working_dir: None,
                     env: HashMap::new(),
                 },
             ),
-            args: vec![],
             enabled: true,
             tools: vec!["echo".into(), "echo-2".into()],
             acp_timeout_secs: None,
@@ -464,12 +459,11 @@ pub fn invalid_tool_config() -> protoclaw_config::ProtoclawConfig {
         protoclaw_config::AgentConfig {
             workspace: protoclaw_config::WorkspaceConfig::Local(
                 protoclaw_config::LocalWorkspaceConfig {
-                    binary: mock_agent_path().to_string_lossy().to_string(),
+                    binary: mock_agent_path().to_string_lossy().to_string().into(),
                     working_dir: None,
                     env: HashMap::new(),
                 },
             ),
-            args: vec![],
             enabled: true,
             tools: vec!["bad-tool".into()],
             acp_timeout_secs: None,
@@ -567,7 +561,6 @@ pub fn docker_agent_config_with_options(
                     working_dir: None,
                 },
             ),
-            args: vec![],
             enabled: true,
             tools: vec![],
             acp_timeout_secs: None,
@@ -713,7 +706,7 @@ mod tests {
         match &agent.workspace {
             protoclaw_config::WorkspaceConfig::Local(local) => {
                 assert!(
-                    local.binary.contains("mock-agent"),
+                    local.binary.to_string().contains("mock-agent"),
                     "binary: {}",
                     local.binary
                 );

@@ -1,6 +1,97 @@
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashMap;
 use std::path::PathBuf;
+
+/// A config value that can be either a plain string or an array of strings.
+///
+/// In YAML:
+/// ```yaml
+/// binary: "opencode"          # string form → ["opencode"]
+/// binary: ["opencode", "acp"] # array form → ["opencode", "acp"]
+/// ```
+///
+/// The first element is the executable; remaining elements are prepended arguments.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StringOrArray(pub Vec<String>);
+
+impl StringOrArray {
+    /// Return all elements as a slice.
+    pub fn as_slice(&self) -> &[String] {
+        &self.0
+    }
+
+    /// Return the first element (the command), if any.
+    pub fn first(&self) -> Option<&str> {
+        self.0.first().map(|s| s.as_str())
+    }
+
+    /// Split into (command, args). Panics if the vec is empty.
+    pub fn command_and_args(&self) -> (&str, &[String]) {
+        let (cmd, rest) = self
+            .0
+            .split_first()
+            .expect("StringOrArray must contain at least one element");
+        (cmd.as_str(), rest)
+    }
+}
+
+impl From<String> for StringOrArray {
+    fn from(s: String) -> Self {
+        StringOrArray(vec![s])
+    }
+}
+
+impl From<&str> for StringOrArray {
+    fn from(s: &str) -> Self {
+        StringOrArray(vec![s.to_string()])
+    }
+}
+
+impl std::fmt::Display for StringOrArray {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut first = true;
+        for s in &self.0 {
+            if !first {
+                write!(f, " ")?;
+            }
+            write!(f, "{s}")?;
+            first = false;
+        }
+        Ok(())
+    }
+}
+
+impl<'de> Deserialize<'de> for StringOrArray {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum RawStringOrArray {
+            Single(String),
+            Array(Vec<String>),
+        }
+
+        match RawStringOrArray::deserialize(deserializer)? {
+            RawStringOrArray::Single(s) => Ok(StringOrArray(vec![s])),
+            RawStringOrArray::Array(v) => Ok(StringOrArray(v)),
+        }
+    }
+}
+
+impl Serialize for StringOrArray {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        if self.0.len() == 1 {
+            serializer.serialize_str(&self.0[0])
+        } else {
+            self.0.serialize(serializer)
+        }
+    }
+}
 
 /// Embedded defaults YAML — loaded as base layer in Figment.
 pub const DEFAULTS_YAML: &str = include_str!("defaults.yaml");
@@ -170,7 +261,7 @@ impl<'de> serde::Deserialize<'de> for PullPolicy {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct LocalWorkspaceConfig {
-    pub binary: String,
+    pub binary: StringOrArray,
     #[serde(default)]
     pub working_dir: Option<PathBuf>,
     #[serde(default, deserialize_with = "deserialize_string_map")]
@@ -181,7 +272,7 @@ pub struct LocalWorkspaceConfig {
 pub struct DockerWorkspaceConfig {
     pub image: String,
     #[serde(default)]
-    pub entrypoint: Option<String>,
+    pub entrypoint: Option<StringOrArray>,
     #[serde(default)]
     pub volumes: Vec<String>,
     #[serde(default, deserialize_with = "deserialize_string_map")]
@@ -214,8 +305,6 @@ pub enum WorkspaceConfig {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AgentConfig {
     pub workspace: WorkspaceConfig,
-    #[serde(default)]
-    pub args: Vec<String>,
     #[serde(default = "default_true")]
     pub enabled: bool,
     #[serde(default)]
@@ -554,8 +643,6 @@ agents_manager:
         binary: "opencode"
         env:
           ANTHROPIC_API_KEY: "sk-test"
-      args:
-        - "acp"
       tools:
         - "system-info"
         - "filesystem"
@@ -569,12 +656,11 @@ agents_manager:
         assert_eq!(config.agents_manager.agents.len(), 2);
         let oc = &config.agents_manager.agents["opencode"];
         if let WorkspaceConfig::Local(ref local) = oc.workspace {
-            assert_eq!(local.binary, "opencode");
+            assert_eq!(local.binary, StringOrArray(vec!["opencode".into()]));
             assert_eq!(local.env["ANTHROPIC_API_KEY"], "sk-test");
         } else {
             panic!("expected Local workspace");
         }
-        assert_eq!(oc.args, vec!["acp"]);
         assert!(oc.enabled);
         assert_eq!(oc.tools, vec!["system-info", "filesystem"]);
         let cc = &config.agents_manager.agents["claude-code"];
@@ -756,7 +842,6 @@ workspace:
         let config: AgentConfig = serde_yaml::from_str(yaml).unwrap();
         assert!(config.enabled);
         assert!(config.tools.is_empty());
-        assert!(config.args.is_empty());
         assert!(config.acp_timeout_secs.is_none());
         assert!(config.backoff.is_none());
         assert!(config.crash_tracker.is_none());
@@ -880,7 +965,7 @@ env:
         let ws: WorkspaceConfig = serde_yaml::from_str(yaml).unwrap();
         match ws {
             WorkspaceConfig::Local(local) => {
-                assert_eq!(local.binary, "opencode");
+                assert_eq!(local.binary, StringOrArray(vec!["opencode".into()]));
                 assert_eq!(local.working_dir, Some(PathBuf::from("/tmp")));
                 assert_eq!(local.env["MY_KEY"], "val");
             }
@@ -894,7 +979,7 @@ env:
         let ws: WorkspaceConfig = serde_yaml::from_str(yaml).unwrap();
         match ws {
             WorkspaceConfig::Local(local) => {
-                assert_eq!(local.binary, "agent");
+                assert_eq!(local.binary, StringOrArray(vec!["agent".into()]));
                 assert!(local.working_dir.is_none());
                 assert!(local.env.is_empty());
             }
@@ -913,7 +998,7 @@ agents_manager:
     opencode:
       workspace:
         type: local
-        binary: "@built-in/agents/opencode-wrapper"
+        binary: "@built-in/agents/acp-bridge"
         env:
           OPENCODE_API_KEY: "test"
       tools:
@@ -1137,21 +1222,18 @@ workspace:
   working_dir: "/tmp"
   env:
     MY_KEY: "val"
-args:
-  - "acp"
 tools:
   - "system-info"
 "#;
         let config: AgentConfig = serde_yaml::from_str(yaml).unwrap();
         match &config.workspace {
             WorkspaceConfig::Local(local) => {
-                assert_eq!(local.binary, "opencode");
+                assert_eq!(local.binary, StringOrArray(vec!["opencode".into()]));
                 assert_eq!(local.working_dir, Some(PathBuf::from("/tmp")));
                 assert_eq!(local.env["MY_KEY"], "val");
             }
             _ => panic!("expected Local variant"),
         }
-        assert_eq!(config.args, vec!["acp"]);
         assert_eq!(config.tools, vec!["system-info"]);
         assert!(config.enabled);
     }
@@ -1164,8 +1246,6 @@ workspace:
   image: "protoclaw/opencode:latest"
   memory_limit: "512m"
   cpu_limit: "1.5"
-args:
-  - "acp"
 "#;
         let config: AgentConfig = serde_yaml::from_str(yaml).unwrap();
         match &config.workspace {
@@ -1176,6 +1256,83 @@ args:
             }
             _ => panic!("expected Docker variant"),
         }
-        assert_eq!(config.args, vec!["acp"]);
+    }
+
+    #[test]
+    fn when_binary_is_string_then_parses_to_single_element_vec() {
+        let yaml = "type: local\nbinary: \"opencode\"";
+        let ws: WorkspaceConfig = serde_yaml::from_str(yaml).unwrap();
+        match ws {
+            WorkspaceConfig::Local(local) => {
+                assert_eq!(local.binary, StringOrArray(vec!["opencode".into()]));
+                assert_eq!(local.binary.command_and_args(), ("opencode", &[][..]));
+            }
+            _ => panic!("expected Local variant"),
+        }
+    }
+
+    #[test]
+    fn when_binary_is_array_then_parses_to_multi_element_vec() {
+        let yaml = "type: local\nbinary: [\"opencode\", \"acp\", \"--verbose\"]";
+        let ws: WorkspaceConfig = serde_yaml::from_str(yaml).unwrap();
+        match ws {
+            WorkspaceConfig::Local(local) => {
+                assert_eq!(
+                    local.binary,
+                    StringOrArray(vec!["opencode".into(), "acp".into(), "--verbose".into()])
+                );
+                let (cmd, args) = local.binary.command_and_args();
+                assert_eq!(cmd, "opencode");
+                assert_eq!(args, &["acp", "--verbose"]);
+            }
+            _ => panic!("expected Local variant"),
+        }
+    }
+
+    #[test]
+    fn when_entrypoint_is_string_then_parses_to_single_element() {
+        let yaml = "type: docker\nimage: \"my-agent:latest\"\nentrypoint: \"/usr/bin/agent\"";
+        let ws: WorkspaceConfig = serde_yaml::from_str(yaml).unwrap();
+        match ws {
+            WorkspaceConfig::Docker(d) => {
+                assert_eq!(
+                    d.entrypoint,
+                    Some(StringOrArray(vec!["/usr/bin/agent".into()]))
+                );
+            }
+            _ => panic!("expected Docker variant"),
+        }
+    }
+
+    #[test]
+    fn when_entrypoint_is_array_then_parses_to_multi_element() {
+        let yaml =
+            "type: docker\nimage: \"my-agent:latest\"\nentrypoint: [\"/usr/bin/agent\", \"serve\"]";
+        let ws: WorkspaceConfig = serde_yaml::from_str(yaml).unwrap();
+        match ws {
+            WorkspaceConfig::Docker(d) => {
+                assert_eq!(
+                    d.entrypoint,
+                    Some(StringOrArray(vec!["/usr/bin/agent".into(), "serve".into()]))
+                );
+            }
+            _ => panic!("expected Docker variant"),
+        }
+    }
+
+    #[test]
+    fn when_string_or_array_serialized_single_then_emits_string() {
+        let val = StringOrArray(vec!["opencode".into()]);
+        let yaml = serde_yaml::to_string(&val).unwrap();
+        assert!(yaml.contains("opencode"));
+        assert!(!yaml.contains('['));
+    }
+
+    #[test]
+    fn when_string_or_array_serialized_multi_then_emits_array() {
+        let val = StringOrArray(vec!["opencode".into(), "acp".into()]);
+        let yaml = serde_yaml::to_string(&val).unwrap();
+        assert!(yaml.contains("opencode"));
+        assert!(yaml.contains("acp"));
     }
 }

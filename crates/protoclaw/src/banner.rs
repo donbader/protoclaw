@@ -4,19 +4,10 @@ pub fn format_banner(config: &ProtoclawConfig, config_path: &str) -> String {
     let mut out = format!("protoclaw v{}\n", env!("CARGO_PKG_VERSION"));
     for (name, agent) in &config.agents_manager.agents {
         let binary_display = match &agent.workspace {
-            WorkspaceConfig::Local(local) => local.binary.clone(),
+            WorkspaceConfig::Local(local) => local.binary.to_string(),
             WorkspaceConfig::Docker(docker) => format!("docker:{}", docker.image),
         };
-        out.push_str(&format!(
-            "  Agent:    {} [{}] (args: {})\n",
-            name,
-            binary_display,
-            if agent.args.is_empty() {
-                "(none)".to_string()
-            } else {
-                agent.args.join(" ")
-            }
-        ));
+        out.push_str(&format!("  Agent:    {} [{}]\n", name, binary_display));
     }
     if config.agents_manager.agents.is_empty() {
         out.push_str("  Agent:    (none configured)\n");
@@ -57,11 +48,10 @@ mod tests {
             "default".to_string(),
             AgentConfig {
                 workspace: WorkspaceConfig::Local(LocalWorkspaceConfig {
-                    binary: agent_binary.to_string(),
+                    binary: agent_binary.into(),
                     working_dir: None,
                     env: HashMap::new(),
                 }),
-                args: vec![],
                 enabled: true,
                 tools: vec![],
                 acp_timeout_secs: None,

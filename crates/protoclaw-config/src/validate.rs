@@ -115,10 +115,10 @@ fn validate_local_agent(
     local: &crate::LocalWorkspaceConfig,
     errors: &mut Vec<ValidationError>,
 ) {
-    if !binary_exists(&local.binary) {
+    if !binary_exists(&local.binary.0[0]) {
         errors.push(ValidationError::BinaryNotFound {
             field: format!("agents_manager.agents.{name}.workspace.binary"),
-            binary: local.binary.clone(),
+            binary: local.binary.0[0].clone(),
         });
     }
     if let Some(path) = &local.working_dir
@@ -220,8 +220,8 @@ mod tests {
     use super::*;
     use crate::{
         AgentConfig, AgentsManagerConfig, ChannelConfig, ChannelsManagerConfig,
-        DockerWorkspaceConfig, LocalWorkspaceConfig, LogFormat, PullPolicy, SupervisorConfig,
-        ToolType, ToolsManagerConfig, WorkspaceConfig,
+        DockerWorkspaceConfig, LocalWorkspaceConfig, LogFormat, PullPolicy, StringOrArray,
+        SupervisorConfig, ToolType, ToolsManagerConfig, WorkspaceConfig,
     };
     use rstest::rstest;
     use std::collections::HashMap;
@@ -233,11 +233,10 @@ mod tests {
             "default".to_string(),
             AgentConfig {
                 workspace: WorkspaceConfig::Local(LocalWorkspaceConfig {
-                    binary: "echo".to_string(),
+                    binary: StringOrArray::from("echo"),
                     working_dir: None,
                     env: HashMap::new(),
                 }),
-                args: vec![],
                 enabled: true,
                 tools: vec![],
                 acp_timeout_secs: None,
@@ -283,7 +282,7 @@ mod tests {
             .unwrap()
             .workspace
         {
-            local.binary = "nonexistent-xyz-99999".to_string();
+            local.binary = StringOrArray::from("nonexistent-xyz-99999");
         }
         let result = validate_config(&config);
         let has_error = result.errors.iter().any(|e| {
@@ -420,7 +419,6 @@ mod tests {
                     pull_policy: PullPolicy::IfNotPresent,
                     working_dir: None,
                 }),
-                args: vec![],
                 enabled: true,
                 tools: vec![],
                 acp_timeout_secs: None,
@@ -463,7 +461,6 @@ mod tests {
                     pull_policy: PullPolicy::IfNotPresent,
                     working_dir: None,
                 }),
-                args: vec![],
                 enabled: true,
                 tools: vec![],
                 acp_timeout_secs: None,
@@ -505,7 +502,6 @@ mod tests {
                     pull_policy: PullPolicy::IfNotPresent,
                     working_dir: None,
                 }),
-                args: vec![],
                 enabled: true,
                 tools: vec![],
                 acp_timeout_secs: None,
@@ -547,7 +543,6 @@ mod tests {
                     pull_policy: PullPolicy::IfNotPresent,
                     working_dir: None,
                 }),
-                args: vec![],
                 enabled: true,
                 tools: vec![],
                 acp_timeout_secs: None,

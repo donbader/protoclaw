@@ -6,8 +6,10 @@ const LEGACY_ALIASES: &[(&str, &str)] = &[
     ("debug-http", "channels/debug-http"),
     ("system-info", "tools/system-info"),
     ("opencode", "agents/opencode"),
-    // Categorized but renamed — old binary name kept as alias
-    ("agents/opencode", "agents/opencode-wrapper"),
+    // Categorized but renamed — old binary names kept as aliases
+    ("agents/opencode", "agents/acp-bridge"),
+    ("agents/opencode-wrapper", "agents/acp-bridge"),
+    ("acp", "agents/acp-bridge"),
 ];
 
 /// Resolve a binary path, expanding `@built-in/` prefix against extensions_dir.
@@ -56,11 +58,11 @@ pub fn resolve_all_binary_paths(config: &mut crate::ProtoclawConfig) {
     for agent in config.agents_manager.agents.values_mut() {
         match &mut agent.workspace {
             crate::WorkspaceConfig::Local(local) => {
-                local.binary = resolve_binary_path(&local.binary, &ext);
+                local.binary.0[0] = resolve_binary_path(&local.binary.0[0], &ext);
             }
             crate::WorkspaceConfig::Docker(docker) => {
                 if let Some(ref mut ep) = docker.entrypoint {
-                    *ep = resolve_binary_path(ep, &ext);
+                    ep.0[0] = resolve_binary_path(&ep.0[0], &ext);
                 }
             }
         }
@@ -108,7 +110,23 @@ mod tests {
     fn when_binary_has_categorized_legacy_alias_then_resolves_via_alias() {
         assert_eq!(
             resolve_binary_path("@built-in/agents/opencode", "/usr/local/bin"),
-            "/usr/local/bin/agents/opencode-wrapper"
+            "/usr/local/bin/agents/acp-bridge"
+        );
+    }
+
+    #[rstest]
+    fn when_binary_has_opencode_wrapper_alias_then_resolves_to_acp_bridge() {
+        assert_eq!(
+            resolve_binary_path("@built-in/agents/opencode-wrapper", "/usr/local/bin"),
+            "/usr/local/bin/agents/acp-bridge"
+        );
+    }
+
+    #[rstest]
+    fn when_binary_has_flat_acp_alias_then_resolves_to_acp_bridge() {
+        assert_eq!(
+            resolve_binary_path("@built-in/acp", "/usr/local/bin"),
+            "/usr/local/bin/agents/acp-bridge"
         );
     }
 
@@ -138,15 +156,20 @@ mod tests {
 
     #[test]
     fn when_resolving_local_workspace_binary_then_built_in_prefix_expanded() {
-        use crate::{DockerWorkspaceConfig, LocalWorkspaceConfig, PullPolicy, WorkspaceConfig};
+        use crate::{
+            DockerWorkspaceConfig, LocalWorkspaceConfig, PullPolicy, StringOrArray, WorkspaceConfig,
+        };
 
         let mut local = LocalWorkspaceConfig {
-            binary: "@built-in/agents/mock-agent".to_string(),
+            binary: StringOrArray(vec!["@built-in/agents/mock-agent".to_string()]),
             working_dir: None,
             env: std::collections::HashMap::new(),
         };
-        local.binary = resolve_binary_path(&local.binary, "/usr/local/bin");
-        assert_eq!(local.binary, "/usr/local/bin/agents/mock-agent");
+        local.binary.0[0] = resolve_binary_path(&local.binary.0[0], "/usr/local/bin");
+        assert_eq!(
+            local.binary,
+            StringOrArray(vec!["/usr/local/bin/agents/mock-agent".into()])
+        );
 
         let docker = DockerWorkspaceConfig {
             image: "my-agent:latest".to_string(),
@@ -163,7 +186,7 @@ mod tests {
         assert_eq!(docker.image, "my-agent:latest");
 
         let workspace = WorkspaceConfig::Local(LocalWorkspaceConfig {
-            binary: "@built-in/tools/other".to_string(),
+            binary: StringOrArray(vec!["@built-in/tools/other".to_string()]),
             working_dir: None,
             env: std::collections::HashMap::new(),
         });
@@ -174,7 +197,8 @@ mod tests {
     fn when_resolve_all_called_then_docker_entrypoint_resolved() {
         use crate::{
             AgentConfig, AgentsManagerConfig, ChannelsManagerConfig, DockerWorkspaceConfig,
-            ProtoclawConfig, PullPolicy, SupervisorConfig, ToolsManagerConfig, WorkspaceConfig,
+            ProtoclawConfig, PullPolicy, StringOrArray, SupervisorConfig, ToolsManagerConfig,
+            WorkspaceConfig,
         };
         use std::collections::HashMap;
 
@@ -190,7 +214,9 @@ mod tests {
                     AgentConfig {
                         workspace: WorkspaceConfig::Docker(DockerWorkspaceConfig {
                             image: "my-agent:latest".into(),
-                            entrypoint: Some("@built-in/agents/opencode-wrapper".into()),
+                            entrypoint: Some(StringOrArray(vec![
+                                "@built-in/agents/opencode-wrapper".into(),
+                            ])),
                             volumes: vec![],
                             env: HashMap::new(),
                             memory_limit: None,
@@ -200,7 +226,6 @@ mod tests {
                             pull_policy: PullPolicy::default(),
                             working_dir: None,
                         }),
-                        args: vec![],
                         enabled: true,
                         tools: vec![],
                         backoff: None,
@@ -221,8 +246,8 @@ mod tests {
         match &agent.workspace {
             WorkspaceConfig::Docker(d) => {
                 assert_eq!(
-                    d.entrypoint.as_deref(),
-                    Some("/usr/local/bin/agents/opencode-wrapper")
+                    d.entrypoint.as_ref().map(|ep| ep.0[0].as_str()),
+                    Some("/usr/local/bin/agents/acp-bridge")
                 );
             }
             _ => panic!("expected Docker workspace"),

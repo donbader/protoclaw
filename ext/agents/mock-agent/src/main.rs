@@ -191,6 +191,22 @@ async fn handle_initialize(stdout: &mut tokio::io::Stdout, id: Option<Value>, ms
         }
     });
     write_message(stdout, &resp).await;
+
+    let commands_update = json!({
+        "jsonrpc": "2.0",
+        "method": "session/update",
+        "params": {
+            "sessionId": "__global__",
+            "update": {
+                "sessionUpdate": "available_commands_update",
+                "commands": [
+                    { "name": "help", "description": "Show available commands" },
+                    { "name": "status", "description": "Show agent status" }
+                ]
+            }
+        }
+    });
+    write_message(stdout, &commands_update).await;
 }
 
 async fn handle_session_new<W: AsyncWrite + Unpin>(

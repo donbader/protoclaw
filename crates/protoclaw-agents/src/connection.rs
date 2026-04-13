@@ -42,8 +42,9 @@ async fn build_backend(
         WorkspaceConfig::Local(local) => {
             let work_dir = local.working_dir.as_deref().unwrap_or(Path::new("."));
 
-            let mut cmd = Command::new(&local.binary);
-            cmd.args(&config.args)
+            let (cmd_name, cmd_args) = local.binary.command_and_args();
+            let mut cmd = Command::new(cmd_name);
+            cmd.args(cmd_args)
                 .stdin(std::process::Stdio::piped())
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::piped())
@@ -55,7 +56,7 @@ async fn build_backend(
             }
             let child = cmd
                 .spawn()
-                .map_err(|e| AgentsError::SpawnFailed(format!("{}: {e}", local.binary)))?;
+                .map_err(|e| AgentsError::SpawnFailed(format!("{}: {e}", cmd_name)))?;
 
             let mut backend: Box<dyn ProcessBackend> = Box::new(LocalBackend::new(child));
             let stdin: Box<dyn tokio::io::AsyncWrite + Unpin + Send> =
@@ -68,7 +69,7 @@ async fn build_backend(
         }
         WorkspaceConfig::Docker(docker_config) => {
             let mut backend: Box<dyn ProcessBackend> =
-                Box::new(DockerBackend::spawn(docker_config, name, &config.args).await?);
+                Box::new(DockerBackend::spawn(docker_config, name).await?);
             let stdin: Box<dyn tokio::io::AsyncWrite + Unpin + Send> =
                 backend.take_stdin().expect("stdin was attached");
             let stdout: Box<dyn tokio::io::AsyncRead + Unpin + Send> =
@@ -358,6 +359,7 @@ impl AgentConnection {
 mod tests {
     use super::*;
     use protoclaw_config::{LocalWorkspaceConfig, WorkspaceConfig};
+    use protoclaw_config::types::StringOrArray;
 
     use std::collections::HashMap;
 
@@ -374,11 +376,10 @@ mod tests {
 
         AgentConfig {
             workspace: WorkspaceConfig::Local(LocalWorkspaceConfig {
-                binary: target_dir.to_string_lossy().to_string(),
+                binary: StringOrArray::from(target_dir.to_string_lossy().as_ref()),
                 working_dir: None,
                 env: HashMap::new(),
             }),
-            args: vec![],
             enabled: true,
             tools: vec![],
             acp_timeout_secs: None,
@@ -400,11 +401,10 @@ mod tests {
     async fn when_nonexistent_binary_spawned_then_returns_error() {
         let config = AgentConfig {
             workspace: WorkspaceConfig::Local(LocalWorkspaceConfig {
-                binary: "nonexistent-binary-xyz-12345".to_string(),
+                binary: StringOrArray::from("nonexistent-binary-xyz-12345"),
                 working_dir: None,
                 env: HashMap::new(),
             }),
-            args: vec![],
             enabled: true,
             tools: vec![],
             acp_timeout_secs: None,

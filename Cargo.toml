@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/*", "tests/integration", "ext/channels/debug-http", "ext/channels/telegram", "ext/channels/sdk-test-channel", "ext/agents/mock-agent", "ext/agents/opencode-wrapper", "ext/tools/sdk-test-tool", "examples/01-fake-agent-telegram-bot/tools/system-info"]
+members = ["crates/*", "tests/integration", "ext/channels/debug-http", "ext/channels/telegram", "ext/channels/sdk-test-channel", "ext/agents/mock-agent", "ext/tools/sdk-test-tool", "examples/01-fake-agent-telegram-bot/tools/system-info"]
 
 [workspace.package]
 edition = "2024"

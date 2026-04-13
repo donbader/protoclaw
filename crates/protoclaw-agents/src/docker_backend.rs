@@ -40,7 +40,6 @@ impl DockerBackend {
 
     fn build_container_config(
         config: &DockerWorkspaceConfig,
-        args: &[String],
         labels: HashMap<String, String>,
         host_config: HostConfig,
     ) -> ContainerCreateBody {
@@ -50,9 +49,7 @@ impl DockerBackend {
             .map(|(k, v)| format!("{}={}", k, v))
             .collect();
 
-        let entrypoint = config.entrypoint.as_ref().map(|ep| vec![ep.clone()]);
-
-        let cmd = (!args.is_empty()).then(|| args.to_vec());
+        let entrypoint = config.entrypoint.as_ref().map(|ep| ep.0.clone());
 
         let networking_config = config.network.as_ref().map(|net| {
             let mut endpoints = HashMap::new();
@@ -71,7 +68,7 @@ impl DockerBackend {
             tty: Some(false),
             open_stdin: Some(true),
             env: if env.is_empty() { None } else { Some(env) },
-            cmd,
+            cmd: None,
             entrypoint,
             labels: Some(labels),
             host_config: Some(host_config),
@@ -186,7 +183,6 @@ impl DockerBackend {
     pub async fn spawn(
         config: &DockerWorkspaceConfig,
         agent_name: &str,
-        args: &[String],
     ) -> Result<Self, AgentsError> {
         let docker = Self::connect(config)?;
         pull_image_if_needed(&docker, &config.image, &config.pull_policy).await?;
@@ -194,7 +190,7 @@ impl DockerBackend {
         let cname = container_name(agent_name);
         let labels = container_labels(agent_name);
         let host_config = build_host_config(config)?;
-        let container_config = Self::build_container_config(config, args, labels, host_config);
+        let container_config = Self::build_container_config(config, labels, host_config);
         let container_id =
             Self::create_and_start_container(&docker, &cname, container_config).await?;
         let attached = Self::attach_container_streams(&docker, &container_id).await?;

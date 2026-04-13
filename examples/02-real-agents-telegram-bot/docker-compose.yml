@@ -25,11 +25,6 @@ services:
       - "8080:8080"
     volumes:
       - ./protoclaw.yaml:/workspace/protoclaw.yaml:ro
-    environment:
-      - LOG_LEVEL=debug
-      - PORT=8080
-      - HOST=0.0.0.0
-      - DOCKER_HOST=tcp://socket-proxy:2375
     env_file:
       - .env
     networks:

@@ -12,6 +12,8 @@
 //! Enums marked `#[non_exhaustive]` will have new variants added; match arms must include `_`.
 #![warn(missing_docs)]
 
+/// ACP (Agent Client Protocol) wire types for supervisor↔agent communication.
+pub mod acp;
 /// Channel protocol wire types (capabilities, initialize, deliver, send, ack, content).
 pub mod channel;
 /// Agent→channel bridge events routed through the supervisor.
@@ -21,6 +23,7 @@ pub mod permission;
 /// Session routing key encoding channel + conversation identity.
 pub mod session_key;
 
+pub use acp::*;
 pub use channel::*;
 pub use channel_event::*;
 pub use permission::*;

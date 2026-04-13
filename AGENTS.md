@@ -14,14 +14,15 @@ protoclaw/
 │   ├── protoclaw-tools/            # MCP host, WASM sandbox, tools manager
 │   ├── protoclaw-config/           # Figment-based config loading (protoclaw.yaml)
 │   ├── protoclaw-jsonrpc/          # JSON-RPC 2.0 codec + types (LinesCodec-based)
-│   ├── protoclaw-sdk-types/        # Shared SDK types (capabilities, permissions)
+│   ├── protoclaw-sdk-types/        # Shared SDK types (capabilities, permissions, ACP wire types)
 │   ├── protoclaw-sdk-agent/        # SDK: AgentAdapter trait + GenericAcpAdapter
 │   ├── protoclaw-sdk-channel/      # SDK: Channel trait + ChannelHarness
 │   ├── protoclaw-sdk-tool/         # SDK: Tool trait + ToolServer
 │   └── protoclaw-test-helpers/     # Shared test utilities (dev-dependency)
 ├── ext/                            # External binaries (spawned as subprocesses)
 │   ├── agents/
-│   │   └── mock-agent/             # Mock ACP agent binary (echo + thinking simulation)
+│   │   ├── mock-agent/             # Mock ACP agent binary (echo + thinking simulation + commands)
+│   │   └── acp-bridge/             # Generic ACP↔HTTP bridge (translates stdio JSON-RPC to REST+SSE)
 │   └── channels/
 │       ├── telegram/               # Telegram channel implementation
 │       └── debug-http/             # Debug HTTP channel (minimal)
@@ -39,7 +40,7 @@ protoclaw/
 | Add CLI command | `crates/protoclaw/src/cli.rs` | Clap derive, dispatched from `main.rs` |
 | Change boot/shutdown order | `crates/protoclaw/src/supervisor.rs` | `MANAGER_ORDER` constant — read anti-patterns first |
 | Add new manager | `crates/protoclaw-core/src/manager.rs` | Implement `Manager` trait, wire in supervisor |
-| Modify ACP protocol | `crates/protoclaw-agents/src/acp_types.rs` | JSON-RPC method types for agent communication |
+| Modify ACP protocol | `crates/protoclaw-sdk-types/src/acp.rs` | Canonical location for ACP wire types; `protoclaw-agents/acp_types.rs` re-exports for backward compat |
 | Add channel type | `crates/protoclaw-channels/` + `ext/channels/` | Manager routes, binary in ext/ |
 | Add MCP tool | `crates/protoclaw-tools/src/mcp_host.rs` | McpHost manages external MCP server connections |
 | Add WASM tool | `crates/protoclaw-tools/src/wasm_runner.rs` | WasmToolRunner + WasmTool for sandboxed execution |
@@ -48,7 +49,8 @@ protoclaw/
 | Modify JSON-RPC framing | `crates/protoclaw-jsonrpc/src/codec.rs` | LinesCodec-based, line-delimited JSON |
 | Build channel SDK | `crates/protoclaw-sdk-channel/` | Channel trait + ChannelHarness |
 | Build tool SDK | `crates/protoclaw-sdk-tool/` | Tool trait + ToolServer |
-| Mock agent binary | `ext/agents/mock-agent/` | Mock ACP agent for testing (echo + thinking simulation) |
+| Mock agent binary | `ext/agents/mock-agent/` | Mock ACP agent for testing (echo + thinking simulation + commands) |
+| ACP↔HTTP bridge | `ext/agents/acp-bridge/` | Generic bridge: translates ACP stdio to HTTP REST+SSE (e.g. OpenCode serve API) |
 | Add test helper | `crates/protoclaw-test-helpers/` | Shared across all crate tests |
 | Integration tests | `tests/integration/tests/e2e.rs` | Requires `cargo build` first (needs mock-agent binary) |
 
@@ -63,13 +65,15 @@ protoclaw (binary)
 └── protoclaw-tools ───→ protoclaw-core
 
 SDK crates (for external implementors):
-├── protoclaw-sdk-types (shared types: wire types, SessionKey, ChannelEvent)
+├── protoclaw-sdk-types (shared types: wire types, SessionKey, ChannelEvent, ACP wire types)
 ├── protoclaw-sdk-agent ──→ sdk-types, jsonrpc
 ├── protoclaw-sdk-channel ─→ sdk-types, jsonrpc
 └── protoclaw-sdk-tool ───→ sdk-types
 
-Example binaries:
-└── system-info (example) ──→ sdk-tool
+Example/ext binaries:
+├── system-info (example) ──→ sdk-tool
+├── mock-agent (ext) ──→ serde_json, tokio, uuid
+└── acp-bridge (ext) ──→ sdk-types, jsonrpc, reqwest
 ```
 
 ## Conventions
@@ -146,6 +150,7 @@ fn when_decoding_non_json_input_then_returns_none(#[case] input: &str) {
 - **Do not call `run()` without `start()`**: Manager lifecycle is `start().await?` then `run(cancel).await`. Both phases required.
 - **Do not call `run()` twice**: `cmd_rx` is consumed via `.take()` on first `run()`. Second call panics.
 - **`ChannelEvent` lives in `protoclaw-sdk-types`**: Relocated from `protoclaw-core` in v5.0. `protoclaw-core` re-exports it for backward compatibility. Both agents and channels import from `protoclaw-sdk-types` directly.
+- **ACP wire types live in `protoclaw-sdk-types`**: Relocated from `protoclaw-agents` in v0.3.1. `protoclaw-agents/acp_types.rs` re-exports for backward compatibility. The bridge and SDK consumers import from `protoclaw-sdk-types::acp` directly.
 - **Do not remove the 50ms sleep in `poll_channels()`**: It prevents busy-looping in the channel polling select.
 - **Do not access `binary`/`env`/`working_dir` on `AgentConfig` directly**: These fields moved into `WorkspaceConfig::Local`. Match on `agent.workspace` to extract them.
 - **No `std::env::var` in channel/tool binaries**: Runtime config flows through the initialize handshake (`ChannelInitializeParams.options`). CLI entry points (`main.rs`, `init.rs`, `status.rs`) are exempt.
@@ -217,3 +222,12 @@ Check which AGENTS.md files exist in the affected directories and their parents.
 - Extension type naming in `session_update_type_name()` renamed: `"current_mode_update"` → `"extension:current_mode"`, `"config_option_update"` → `"extension:config_option"`, `"session_info_update"` → `"extension:session_info"`; `#[non_exhaustive]` added to `SessionUpdateType`; `CurrentModeUpdate`, `ConfigOptionUpdate`, `SessionInfoUpdate` variants documented as extension types
 - `ContentKind` and `ChannelEvent` (in `protoclaw-sdk-types`) are now `#[non_exhaustive]` — external match arms must include a wildcard `_ =>` arm; wildcard arms added to `telegram/deliver.rs` and `protoclaw-channels/src/manager.rs`
 - Stability disclaimer added to all four SDK crate doc roots (`protoclaw-sdk-types`, `protoclaw-sdk-agent`, `protoclaw-sdk-channel`, `protoclaw-sdk-tool`)
+
+## v0.3.1 Changes
+
+- ACP wire types relocated from `protoclaw-agents/src/acp_types.rs` to `protoclaw-sdk-types/src/acp.rs` — canonical import is `protoclaw_sdk_types::acp::*`; `protoclaw-agents/acp_types.rs` re-exports for backward compatibility
+- `session_update_type_name()` in `protoclaw-agents/src/manager.rs` gained `_ => "unknown"` wildcard arm — required because `SessionUpdateType` is `#[non_exhaustive]` and now lives in an external crate
+- Legacy aliases updated in `protoclaw-config/src/resolve.rs`: `agents/opencode` → `agents/acp-bridge`, `agents/opencode-wrapper` → `agents/acp-bridge`, `acp` → `agents/acp-bridge`
+- `ext/agents/acp-bridge/` added — generic ACP↔HTTP bridge binary translating stdio JSON-RPC 2.0 to OpenCode's HTTP REST+SSE serve API; depends only on `protoclaw-jsonrpc` and `protoclaw-sdk-types` (zero core coupling)
+- `ext/agents/opencode-wrapper/` removed — replaced by `acp-bridge`; legacy alias preserves backward compat for existing configs
+- mock-agent sends `available_commands_update` notification after initialize — includes demo `help` and `status` commands; provides end-to-end test path for command registration

@@ -1,8 +1,7 @@
-# Protoclaw Real Agent Example — Docker Workspace (default)
-# Opencode runs in an isolated container managed by protoclaw via bollard.
-# API keys are baked into the agent image via .opencode/opencode.json
-# To switch to local workspace: disable opencode, enable opencode-local,
-# update channel agent fields, and add volume mounts back to docker-compose.yml.
+# Protoclaw Real Agent Example — Docker Workspace
+# OpenCode runs in an isolated container managed by protoclaw via bollard.
+# The agent uses direct ACP mode (opencode acp) — no wrapper binary needed.
+# See README.md for switching to Claude Code or Kiro.
 
 log_level: "debug"
 extensions_dir: "/usr/local/bin"
@@ -10,12 +9,11 @@ extensions_dir: "/usr/local/bin"
 agents_manager:
   acp_timeout_secs: 120
   agents:
-    # Docker workspace (default) — opencode runs in isolated container
     opencode:
       workspace:
         type: docker
         image: "protoclaw-opencode-agent:latest"
-        entrypoint: "@built-in/agents/opencode-wrapper"
+        entrypoint: ["opencode", "acp"]
         docker_host: "tcp://socket-proxy:2375"
         network: "protoclaw-external"
         working_dir: "/home/node"
@@ -24,31 +22,6 @@ agents_manager:
           XDG_DATA_HOME: "/home/node/.local/share"
       pull_policy: "Never"
       enabled: true
-      tools:
-        - "system-info"
-    # Local workspace (opt-in — for development without Docker agent containers)
-    opencode-local:
-      workspace:
-        type: local
-        binary: "@built-in/agents/opencode-wrapper"
-        env:
-          XDG_CONFIG_HOME: "/home/protoclaw/.config"
-          XDG_DATA_HOME: "/home/protoclaw/.local/share"
-      args:
-        - "acp"
-      enabled: false
-      tools:
-        - "system-info"
-    # Claude Code (disabled — see README to switch)
-    claude-code:
-      workspace:
-        type: local
-        binary: "claude"
-        env:
-          CLAUDE_CONFIG_DIR: "/home/protoclaw/.claude"
-      args:
-        - "--acp"
-      enabled: false
       tools:
         - "system-info"
 

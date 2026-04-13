@@ -77,13 +77,11 @@ supervisor:
             let config = ProtoclawConfig::load(Some("protoclaw.yaml")).unwrap();
             assert_eq!(config.agents_manager.agents.len(), 1);
             match &config.agents_manager.agents["default"].workspace {
-                WorkspaceConfig::Local(local) => assert_eq!(local.binary, "opencode"),
+                WorkspaceConfig::Local(local) => {
+                    assert_eq!(local.binary, crate::StringOrArray::from("opencode"))
+                }
                 _ => panic!("expected Local variant"),
             }
-            assert_eq!(
-                config.agents_manager.agents["default"].args,
-                vec!["--headless"]
-            );
             assert_eq!(config.channels_manager.channels.len(), 1);
             assert!(config.channels_manager.channels.contains_key("debug-http"));
             assert_eq!(config.tools_manager.tools.len(), 1);
@@ -176,7 +174,9 @@ supervisor:
             )?;
             let config = ProtoclawConfig::load(Some("protoclaw.yaml")).unwrap();
             match &config.agents_manager.agents["default"].workspace {
-                WorkspaceConfig::Local(local) => assert_eq!(local.binary, "opencode"),
+                WorkspaceConfig::Local(local) => {
+                    assert_eq!(local.binary, crate::StringOrArray::from("opencode"))
+                }
                 _ => panic!("expected Local variant"),
             }
             assert!(config.channels_manager.channels.is_empty());

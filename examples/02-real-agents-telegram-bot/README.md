@@ -1,6 +1,6 @@
 # Example 02: Real Agent Bot
 
-A protoclaw bot with a real AI agent (OpenCode + Claude). The agent runs in an isolated Docker container — config and API keys baked into the image via `.opencode/opencode.json`.
+A protoclaw bot with a real AI agent. OpenCode runs in an isolated Docker container using direct ACP mode (`opencode acp`) — no wrapper binary needed.
 
 ## Quick Start
 
@@ -27,12 +27,6 @@ SSE events stream back with the agent's response.
 ```
 
 Tests cover: health check, message acceptance, SSE streaming, result delivery, and message merging (5 rapid messages → fewer agent turns). Takes ~2 minutes due to real AI response times.
-
-Local workspace mode (agent runs as subprocess, no Docker container):
-
-```sh
-./test.sh --local
-```
 
 ## Add Telegram
 
@@ -62,8 +56,8 @@ Local workspace mode (agent runs as subprocess, no Docker container):
         │ spawns via bollard
         ▼
    ┌──────────────┐
-   │ opencode     │  agent container
-   │ agent        │  (opencode + wrapper)
+   │ opencode acp │  agent container
+   │              │  (opencode direct ACP mode)
    └──────────────┘
 ```
 
@@ -75,23 +69,34 @@ The [docker-socket-proxy](https://github.com/Tecnativa/docker-socket-proxy) rest
 
 ## Switching Agents
 
-Three agents ship in `protoclaw.yaml`. OpenCode Docker workspace is enabled by default.
+OpenCode is the default agent. To use a different agent:
 
-| | OpenCode (Docker) | OpenCode (Local) | Claude Code |
-|---|---|---|---|
-| Workspace | `docker` | `local` | `local` |
-| Binary | `opencode-wrapper` | `@built-in/agents/opencode` | `claude` |
-| Config | Baked into image (if `.opencode/` present) | Volume-mounted | Volume-mounted |
+### Claude Code
 
-To switch, edit `protoclaw.yaml`: disable the current agent, enable the new one, update channel `agent` fields. See comments in the YAML for details.
+1. Build a claude-code agent image (replace the opencode-agent stage in Dockerfile):
+   ```dockerfile
+   FROM node:20-slim AS opencode-agent
+   RUN npm install -g @anthropic-ai/claude-code --omit=dev
+   USER node
+   WORKDIR /home/node
+   ENTRYPOINT ["claude", "--acp"]
+   ```
+2. Update `protoclaw.yaml`: change `entrypoint: ["opencode", "acp"]` to `entrypoint: ["claude", "--acp"]`
+3. Rebuild: `docker compose up --build -d`
+
+### Kiro
+
+1. Build a kiro agent image (replace the opencode-agent stage in Dockerfile with Kiro CLI installation)
+2. Update `protoclaw.yaml`: change `entrypoint: ["opencode", "acp"]` to `entrypoint: ["kiro", "--acp"]` (verify Kiro's ACP flag)
+3. Rebuild: `docker compose up --build -d`
 
 ## Files
 
 | File | Purpose |
 |------|---------|
-| `Dockerfile` | Multi-stage: pulls ghcr.io base + opencode/claude-code targets + agent image |
+| `Dockerfile` | Multi-stage: pulls ghcr.io base + opencode target + agent image |
 | `docker-compose.yml` | Socket-proxy + protoclaw + agent image build |
 | `protoclaw.yaml` | Agent, channel, tool, and supervisor config |
 | `.opencode/` | OpenCode config baked into agent image (gitignored — create your own or omit) |
 | `.env.example` | Environment template |
-| `test.sh` | E2E tests (`--local` for local workspace) |
+| `test.sh` | E2E tests (Docker-only) |

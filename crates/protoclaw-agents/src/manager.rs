@@ -681,6 +681,7 @@ impl AgentsManager {
             SessionUpdateType::CurrentModeUpdate { .. } => "extension:current_mode",
             SessionUpdateType::ConfigOptionUpdate { .. } => "extension:config_option",
             SessionUpdateType::SessionInfoUpdate { .. } => "extension:session_info",
+            _ => "unknown",
         }
     }
 
@@ -1402,12 +1403,11 @@ mod tests {
         AgentConfig {
             workspace: protoclaw_config::WorkspaceConfig::Local(
                 protoclaw_config::LocalWorkspaceConfig {
-                    binary: target_dir.to_string_lossy().to_string(),
+                    binary: target_dir.to_string_lossy().to_string().into(),
                     working_dir: None,
                     env: HashMap::new(),
                 },
             ),
-            args: vec![],
             enabled: true,
             tools: vec![],
             acp_timeout_secs: None,
@@ -1431,12 +1431,11 @@ mod tests {
         AgentConfig {
             workspace: protoclaw_config::WorkspaceConfig::Local(
                 protoclaw_config::LocalWorkspaceConfig {
-                    binary: target_dir.to_string_lossy().to_string(),
+                    binary: target_dir.to_string_lossy().to_string().into(),
                     working_dir: Some(working_dir.to_path_buf()),
                     env: HashMap::new(),
                 },
             ),
-            args: vec![],
             enabled: true,
             tools: vec![],
             acp_timeout_secs: None,
@@ -2233,12 +2232,11 @@ mod tests {
         AgentConfig {
             workspace: protoclaw_config::WorkspaceConfig::Local(
                 protoclaw_config::LocalWorkspaceConfig {
-                    binary: target_dir.to_string_lossy().to_string(),
+                    binary: target_dir.to_string_lossy().to_string().into(),
                     working_dir: None,
                     env: HashMap::new(),
                 },
             ),
-            args: vec![],
             enabled: true,
             tools: vec![],
             acp_timeout_secs: None,

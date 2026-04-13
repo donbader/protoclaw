@@ -21,7 +21,10 @@ fn given_fake_agent_example_yaml_when_loaded_then_has_one_mock_agent() {
         .expect("missing 'mock' agent");
     match &mock.workspace {
         protoclaw_config::WorkspaceConfig::Local(local) => {
-            assert_eq!(local.binary, "@built-in/agents/mock-agent");
+            assert_eq!(
+                local.binary,
+                protoclaw_config::StringOrArray::from("@built-in/agents/mock-agent")
+            );
         }
         other => panic!("expected Local workspace, got {other:?}"),
     }
@@ -82,7 +85,10 @@ fn given_real_agent_example_yaml_when_loaded_then_has_opencode_and_claude_agents
         .expect("missing 'opencode-local' agent");
     match &opencode_local.workspace {
         protoclaw_config::WorkspaceConfig::Local(local) => {
-            assert_eq!(local.binary, "@built-in/agents/opencode-wrapper");
+            assert_eq!(
+                local.binary,
+                protoclaw_config::StringOrArray::from("@built-in/agents/acp-bridge")
+            );
         }
         other => panic!("expected Local workspace, got {other:?}"),
     }
@@ -95,7 +101,10 @@ fn given_real_agent_example_yaml_when_loaded_then_has_opencode_and_claude_agents
         .expect("missing 'claude-code' agent");
     match &claude.workspace {
         protoclaw_config::WorkspaceConfig::Local(local) => {
-            assert_eq!(local.binary, "claude");
+            assert_eq!(
+                local.binary,
+                protoclaw_config::StringOrArray::from("claude")
+            );
         }
         other => panic!("expected Local workspace, got {other:?}"),
     }

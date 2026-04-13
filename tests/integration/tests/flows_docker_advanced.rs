@@ -208,12 +208,11 @@ async fn given_local_and_docker_agents_when_messages_sent_then_both_respond() {
         protoclaw_config::AgentConfig {
             workspace: protoclaw_config::WorkspaceConfig::Local(
                 protoclaw_config::LocalWorkspaceConfig {
-                    binary: mock_agent_path().to_string_lossy().to_string(),
+                    binary: mock_agent_path().to_string_lossy().to_string().into(),
                     working_dir: None,
                     env: HashMap::new(),
                 },
             ),
-            args: vec![],
             enabled: true,
             tools: vec![],
             acp_timeout_secs: None,

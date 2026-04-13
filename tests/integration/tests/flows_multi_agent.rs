@@ -88,12 +88,11 @@ fn build_two_agent_config(channel_routes_to: &str) -> protoclaw_config::Protocla
         protoclaw_config::AgentConfig {
             workspace: protoclaw_config::WorkspaceConfig::Local(
                 protoclaw_config::LocalWorkspaceConfig {
-                    binary: mock_agent_path().to_string_lossy().to_string(),
+                    binary: mock_agent_path().to_string_lossy().to_string().into(),
                     working_dir: None,
                     env: HashMap::new(),
                 },
             ),
-            args: vec![],
             enabled: true,
             tools: vec![],
             acp_timeout_secs: None,
@@ -107,12 +106,11 @@ fn build_two_agent_config(channel_routes_to: &str) -> protoclaw_config::Protocla
         protoclaw_config::AgentConfig {
             workspace: protoclaw_config::WorkspaceConfig::Local(
                 protoclaw_config::LocalWorkspaceConfig {
-                    binary: mock_agent_path().to_string_lossy().to_string(),
+                    binary: mock_agent_path().to_string_lossy().to_string().into(),
                     working_dir: None,
                     env: HashMap::new(),
                 },
             ),
-            args: vec![],
             enabled: true,
             tools: vec![],
             acp_timeout_secs: None,
