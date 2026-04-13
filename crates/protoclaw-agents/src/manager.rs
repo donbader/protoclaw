@@ -1189,7 +1189,7 @@ impl AgentsManager {
         let store = self.session_store.clone();
         for slot in &mut self.slots {
             for session_key in slot.session_map.keys() {
-                if let Err(e) = store.mark_closed(&session_key.to_string()).await {
+                if let Err(e) = store.mark_closed(session_key.as_ref()).await {
                     tracing::warn!(session_key = %session_key, error = %e, "failed to mark session closed in store");
                 }
             }
@@ -3162,5 +3162,100 @@ mod tests {
 
         m.shutdown_all().await;
         tools_task.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_start_called_with_sqlite_store_then_expired_sessions_deleted() {
+        use protoclaw_core::{PersistedSession, SqliteSessionStore};
+
+        let store_arc: std::sync::Arc<dyn protoclaw_core::DynSessionStore> =
+            std::sync::Arc::new(
+                SqliteSessionStore::open_in_memory().expect("in-memory sqlite failed"),
+            );
+
+        let old_session = PersistedSession {
+            session_key: "old-key".to_string(),
+            agent_name: "default".to_string(),
+            acp_session_id: "acp-old-1".to_string(),
+            created_at: 1,
+            last_active_at: 1,
+            closed: false,
+        };
+        store_arc.upsert_session(&old_session).await.expect("upsert failed");
+
+        let before = store_arc.load_open_sessions().await.expect("load failed");
+        assert_eq!(before.len(), 1, "old session should exist before start");
+
+        let (handle, rx) = make_tools_handle();
+        let tools_task = tokio::spawn(serve_tools_urls(rx));
+
+        let mut m = AgentsManager::new(mock_agents_manager_config(), handle)
+            .with_session_store(store_arc.clone())
+            .with_session_ttl_secs(1);
+
+        m.start().await.expect("start failed");
+
+        let after = store_arc.load_open_sessions().await.expect("load after failed");
+        assert!(
+            after.is_empty(),
+            "expired session should have been deleted at boot, but got: {after:?}"
+        );
+
+        m.shutdown_all().await;
+        tools_task.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_shutdown_all_called_then_active_sessions_marked_closed() {
+        use protoclaw_core::{PersistedSession, SqliteSessionStore};
+
+        let store = SqliteSessionStore::open_in_memory().expect("in-memory sqlite failed");
+        let store_arc: std::sync::Arc<dyn protoclaw_core::DynSessionStore> =
+            std::sync::Arc::new(store);
+
+        let (handle, rx) = make_tools_handle();
+        let tools_task = tokio::spawn(serve_tools_urls(rx));
+
+        let mut m = AgentsManager::new(mock_agents_manager_config(), handle)
+            .with_session_store(store_arc.clone());
+
+        m.start().await.expect("start failed");
+
+        let session_key = m.slots[0]
+            .session_map
+            .keys()
+            .next()
+            .cloned()
+            .expect("slot should have a default session key");
+
+        let acp_id = m.slots[0]
+            .session_map
+            .get(&session_key)
+            .cloned()
+            .expect("slot should have a default acp session id");
+
+        let persisted = PersistedSession {
+            session_key: session_key.to_string(),
+            agent_name: "default".to_string(),
+            acp_session_id: acp_id,
+            created_at: 1_000_000,
+            last_active_at: 1_000_100,
+            closed: false,
+        };
+        store_arc.upsert_session(&persisted).await.expect("upsert failed");
+
+        let before = store_arc.load_open_sessions().await.expect("load failed");
+        assert_eq!(before.len(), 1, "session should be open before shutdown");
+
+        m.shutdown_all().await;
+        tools_task.abort();
+
+        let after = store_arc.load_open_sessions().await.expect("load after failed");
+        assert!(
+            after.is_empty(),
+            "session should be marked closed after shutdown_all, but got: {after:?}"
+        );
     }
 }
