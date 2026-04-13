@@ -458,6 +458,7 @@ fn create_manager(
                 default_agent,
             )
             .with_agents_handle(agents_handle)
+            .with_permission_timeout(config.supervisor.permission_timeout_secs)
             .with_log_level(config.log_level.clone());
             if let Some(rx) = channel_events_rx {
                 cm = cm.with_channel_events_rx(rx);
@@ -541,6 +542,7 @@ mod tests {
                 max_restarts: 5,
                 restart_window_secs: 60,
                 admin_port: 3000,
+                permission_timeout_secs: None,
             },
             log_level: "info".into(),
             log_format: protoclaw_config::LogFormat::Pretty,

@@ -61,6 +61,7 @@ pub struct ChannelsManager {
     channel_configs: HashMap<String, ChannelConfig>,
     init_timeout_secs: u64,
     exit_timeout_secs: u64,
+    permission_timeout_secs: Option<u64>,
     log_level: Option<String>,
     slots: Vec<ChannelSlot>,
     cmd_rx: Option<mpsc::Receiver<ChannelsCommand>>,
@@ -84,6 +85,7 @@ impl ChannelsManager {
             channel_configs,
             init_timeout_secs,
             exit_timeout_secs,
+            permission_timeout_secs: None,
             log_level: None,
             slots: Vec::new(),
             cmd_rx: Some(cmd_rx),
@@ -108,6 +110,11 @@ impl ChannelsManager {
 
     pub fn with_agents_handle(mut self, handle: ManagerHandle<AgentsCommand>) -> Self {
         self.agents_handle = Some(handle);
+        self
+    }
+
+    pub fn with_permission_timeout(mut self, timeout_secs: Option<u64>) -> Self {
+        self.permission_timeout_secs = timeout_secs;
         self
     }
 
@@ -273,8 +280,30 @@ impl ChannelsManager {
                                 if let Some(agents_handle) = self.agents_handle.clone() {
                                     let req_id = request_id.clone();
                                     let channel_name = slot.name.clone();
+                                    let timeout_secs = self.permission_timeout_secs;
                                     tokio::spawn(async move {
-                                        if let Ok(resp_val) = rx.await {
+                                        let result = if let Some(secs) = timeout_secs {
+                                            match tokio::time::timeout(
+                                                Duration::from_secs(secs),
+                                                rx,
+                                            ).await {
+                                                Ok(Ok(resp_val)) => Some(resp_val),
+                                                Ok(Err(_)) => None,
+                                                Err(_elapsed) => {
+                                                    tracing::warn!(
+                                                        channel = %channel_name,
+                                                        request_id = %req_id,
+                                                        elapsed_secs = secs,
+                                                        "permission response timed out, auto-denying"
+                                                    );
+                                                    None
+                                                }
+                                            }
+                                        } else {
+                                            rx.await.ok()
+                                        };
+
+                                        if let Some(resp_val) = result {
                                             let option_id = resp_val["optionId"]
                                                 .as_str()
                                                 .or_else(|| resp_val["result"]["optionId"].as_str())
@@ -285,6 +314,14 @@ impl ChannelsManager {
                                                 .send(AgentsCommand::RespondPermission {
                                                     request_id: req_id,
                                                     option_id,
+                                                })
+                                                .await;
+                                        } else {
+                                            tracing::info!(request_id = %req_id, "sending auto-deny to agent");
+                                            let _ = agents_handle
+                                                .send(AgentsCommand::RespondPermission {
+                                                    request_id: req_id,
+                                                    option_id: "denied".to_string(),
                                                 })
                                                 .await;
                                         }

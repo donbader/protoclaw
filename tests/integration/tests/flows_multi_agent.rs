@@ -153,6 +153,7 @@ fn build_two_agent_config(channel_routes_to: &str) -> protoclaw_config::Protocla
             max_restarts: 3,
             restart_window_secs: 60,
             admin_port: 3000,
+            permission_timeout_secs: None,
         },
         log_level: "info".into(),
         log_format: protoclaw_config::LogFormat::Pretty,
