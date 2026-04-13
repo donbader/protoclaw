@@ -328,8 +328,10 @@ impl AgentsManager {
                                 "jsonrpc": "2.0",
                                 "id": perm.request.get("id").cloned().unwrap_or(serde_json::Value::Null),
                                 "result": {
-                                    "requestId": request_id,
-                                    "optionId": option_id,
+                                    "outcome": {
+                                        "outcome": "selected",
+                                        "optionId": option_id,
+                                    }
                                 }
                             });
                             let _ = conn.send_raw(resp).await;
@@ -2750,5 +2752,82 @@ mod tests {
 
         m.shutdown_all().await;
         tools_task.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_permission_responded_then_acp_format_sent_to_agent() {
+        use tokio::io::AsyncBufReadExt;
+
+        let (handle, _rx) = make_tools_handle();
+        let mut m = AgentsManager::new(mock_agents_manager_config_with(HashMap::new()), handle);
+
+        let (channels_tx, _channels_rx) = mpsc::channel::<ChannelEvent>(16);
+        m.channels_sender = Some(channels_tx);
+
+        let cancel = CancellationToken::new();
+        let mut slot = AgentSlot::new("test-agent".into(), mock_agent_config(), &cancel);
+        let session_key = SessionKey::new("telegram", "direct", "u1");
+        let acp_session_id = "acp-perm-format".to_string();
+        slot.session_map
+            .insert(session_key.clone(), acp_session_id.clone());
+        slot.reverse_map
+            .insert(acp_session_id.clone(), session_key.clone());
+
+        // Wire up a real connection with a readable stdin pipe
+        let (stdin_write, stdin_read) = tokio::io::duplex(64 * 1024);
+        let (stdout_write, _stdout_read) = tokio::io::duplex(64 * 1024);
+        let (_stderr_write, stderr_read) = tokio::io::duplex(64 * 1024);
+        slot.connection = Some(AgentConnection::from_parts(
+            Box::new(crate::connection::test_support::MockBackend::new(true)),
+            Box::new(stdin_write),
+            Box::new(stdout_write),
+            Box::new(stderr_read),
+            "test-agent",
+            None,
+        ));
+
+        // Store a pending permission with original request id=0
+        let original_request = serde_json::json!({"id": 0, "method": "session/request_permission"});
+        slot.pending_permissions.insert(
+            "0".to_string(),
+            PendingPermission {
+                request: original_request,
+                description: "external_directory".into(),
+                options: vec![],
+                _received_at: std::time::Instant::now(),
+            },
+        );
+        m.slots.push(slot);
+
+        // Send RespondPermission
+        m.handle_command(AgentsCommand::RespondPermission {
+            request_id: "0".to_string(),
+            option_id: "once".to_string(),
+        })
+        .await;
+
+        // Read what was written to agent stdin
+        let mut reader = tokio::io::BufReader::new(stdin_read);
+        let mut line = String::new();
+        tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            reader.read_line(&mut line),
+        )
+        .await
+        .expect("timeout reading agent stdin")
+        .expect("read error");
+
+        let written: serde_json::Value = serde_json::from_str(line.trim()).expect("invalid JSON");
+
+        // ACP wire format per @agentclientprotocol/sdk@0.16.1
+        assert_eq!(written["jsonrpc"], "2.0");
+        assert_eq!(written["id"], 0);
+        assert_eq!(written["result"]["outcome"]["outcome"], "selected");
+        assert_eq!(written["result"]["outcome"]["optionId"], "once");
+        assert!(
+            written["result"]["requestId"].is_null(),
+            "requestId must not be in result"
+        );
     }
 }

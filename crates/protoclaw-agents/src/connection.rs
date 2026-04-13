@@ -244,6 +244,36 @@ impl AgentConnection {
         Self::spawn_inner(config, name, None, None).await
     }
 
+    #[cfg(test)]
+    pub fn from_parts(
+        backend: Box<dyn ProcessBackend>,
+        stdin: Box<dyn tokio::io::AsyncWrite + Unpin + Send>,
+        stdout: Box<dyn tokio::io::AsyncRead + Unpin + Send>,
+        stderr: Box<dyn tokio::io::AsyncRead + Unpin + Send>,
+        name: &str,
+        bridge: Option<(usize, mpsc::Sender<SlotIncoming>)>,
+    ) -> Self {
+        let pending_requests: Arc<Mutex<HashMap<u64, oneshot::Sender<serde_json::Value>>>> =
+            Arc::new(Mutex::new(HashMap::new()));
+        let next_id = Arc::new(AtomicU64::new(1));
+        let (stdin_tx, stdin_rx) = mpsc::channel::<serde_json::Value>(64);
+        let (local_incoming_tx, incoming_rx) = init_incoming_channels(&bridge);
+        let writer_handle = spawn_writer_task(stdin, stdin_rx);
+        let reader_handle =
+            spawn_reader_task(stdout, pending_requests.clone(), bridge, local_incoming_tx);
+        let stderr_handle = spawn_stderr_task(name, stderr);
+        Self {
+            backend,
+            stdin_tx,
+            incoming_rx,
+            pending_requests,
+            next_id,
+            reader_handle,
+            writer_handle,
+            stderr_handle,
+        }
+    }
+
     pub(crate) async fn spawn_with_bridge(
         config: &AgentConfig,
         name: &str,
@@ -366,10 +396,58 @@ impl AgentConnection {
 }
 
 #[cfg(test)]
+pub(crate) mod test_support {
+    use super::*;
+    use std::future::Future;
+    use std::pin::Pin;
+
+    pub(crate) struct MockBackend {
+        alive: bool,
+    }
+
+    impl MockBackend {
+        pub(crate) fn new(alive: bool) -> Self {
+            Self { alive }
+        }
+    }
+
+    impl ProcessBackend for MockBackend {
+        fn is_alive(&mut self) -> bool {
+            self.alive
+        }
+        fn take_stdin(&mut self) -> Option<Box<dyn tokio::io::AsyncWrite + Unpin + Send>> {
+            None
+        }
+        fn take_stdout(&mut self) -> Option<Box<dyn tokio::io::AsyncRead + Unpin + Send>> {
+            None
+        }
+        fn take_stderr(&mut self) -> Option<Box<dyn tokio::io::AsyncRead + Unpin + Send>> {
+            None
+        }
+        fn kill(&mut self) -> Pin<Box<dyn Future<Output = Result<(), AgentsError>> + Send + '_>> {
+            self.alive = false;
+            Box::pin(async { Ok(()) })
+        }
+        fn wait(
+            &mut self,
+        ) -> Pin<Box<dyn Future<Output = Result<std::process::ExitStatus, AgentsError>> + Send + '_>>
+        {
+            Box::pin(async {
+                std::process::Command::new("true")
+                    .status()
+                    .map_err(AgentsError::Io)
+            })
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
+    use super::test_support::MockBackend;
     use super::*;
     use protoclaw_config::types::StringOrArray;
     use protoclaw_config::{LocalWorkspaceConfig, WorkspaceConfig};
+    use rstest::rstest;
 
     use std::collections::HashMap;
 
@@ -473,48 +551,6 @@ mod tests {
         conn.kill().await.unwrap();
     }
 
-    use std::future::Future;
-    use std::pin::Pin;
-
-    struct MockBackend {
-        alive: bool,
-    }
-
-    impl MockBackend {
-        fn new(alive: bool) -> Self {
-            Self { alive }
-        }
-    }
-
-    impl ProcessBackend for MockBackend {
-        fn is_alive(&mut self) -> bool {
-            self.alive
-        }
-        fn take_stdin(&mut self) -> Option<Box<dyn tokio::io::AsyncWrite + Unpin + Send>> {
-            None
-        }
-        fn take_stdout(&mut self) -> Option<Box<dyn tokio::io::AsyncRead + Unpin + Send>> {
-            None
-        }
-        fn take_stderr(&mut self) -> Option<Box<dyn tokio::io::AsyncRead + Unpin + Send>> {
-            None
-        }
-        fn kill(&mut self) -> Pin<Box<dyn Future<Output = Result<(), AgentsError>> + Send + '_>> {
-            self.alive = false;
-            Box::pin(async { Ok(()) })
-        }
-        fn wait(
-            &mut self,
-        ) -> Pin<Box<dyn Future<Output = Result<std::process::ExitStatus, AgentsError>> + Send + '_>>
-        {
-            Box::pin(async {
-                std::process::Command::new("true")
-                    .status()
-                    .map_err(AgentsError::Io)
-            })
-        }
-    }
-
     #[tokio::test]
     async fn when_mock_backend_started_then_reports_alive() {
         let mut backend = MockBackend::new(true);
@@ -527,5 +563,61 @@ mod tests {
     async fn when_mock_backend_used_as_trait_object_then_works_correctly() {
         let mut backend: Box<dyn ProcessBackend> = Box::new(MockBackend::new(true));
         assert!(backend.is_alive());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_send_raw_called_then_exact_json_written_to_stdin() {
+        use tokio::io::AsyncBufReadExt;
+
+        let (stdin_write, stdin_read) = tokio::io::duplex(64 * 1024);
+        let (stdout_write, _stdout_read) = tokio::io::duplex(64 * 1024);
+        let (_stderr_write, stderr_read) = tokio::io::duplex(64 * 1024);
+
+        let conn = AgentConnection::from_parts(
+            Box::new(MockBackend::new(true)),
+            Box::new(stdin_write),
+            Box::new(stdout_write),
+            Box::new(stderr_read),
+            "test-agent",
+            None,
+        );
+
+        // ACP permission response format per @agentclientprotocol/sdk@0.16.1:
+        // result.outcome.outcome = "selected" | "cancelled"
+        // result.outcome.optionId = string (when selected)
+        let permission_response = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 0,
+            "result": {
+                "outcome": {
+                    "outcome": "selected",
+                    "optionId": "once",
+                }
+            }
+        });
+
+        conn.send_raw(permission_response).await.unwrap();
+
+        let mut reader = tokio::io::BufReader::new(stdin_read);
+        let mut line = String::new();
+        tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            reader.read_line(&mut line),
+        )
+        .await
+        .expect("timeout reading stdin")
+        .expect("read error");
+
+        let written: serde_json::Value = serde_json::from_str(line.trim()).expect("invalid JSON");
+        assert_eq!(written["jsonrpc"], "2.0");
+        assert_eq!(written["id"], 0);
+        assert_eq!(written["result"]["outcome"]["outcome"], "selected");
+        assert_eq!(written["result"]["outcome"]["optionId"], "once");
+        // Must NOT have requestId at result level
+        assert!(
+            written["result"]["requestId"].is_null(),
+            "requestId should not be in result"
+        );
     }
 }
