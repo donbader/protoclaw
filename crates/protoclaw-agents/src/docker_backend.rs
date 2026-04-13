@@ -107,6 +107,7 @@ impl DockerBackend {
     async fn attach_container_streams(
         docker: &Docker,
         container_id: &str,
+        agent_name: &str,
     ) -> Result<AttachedStreams, AgentsError> {
         let attach_opts = AttachContainerOptions {
             stdin: true,
@@ -124,25 +125,16 @@ impl DockerBackend {
         let (stdout_write, stdout_read) = tokio::io::duplex(64 * 1024);
         let (stderr_write, stderr_read) = tokio::io::duplex(64 * 1024);
 
-        let (stdin_tx, mut stdin_rx) = tokio::io::duplex(64 * 1024);
-        let mut bollard_stdin = attach.input;
-        tokio::spawn(async move {
-            let mut buf = [0u8; 4096];
-            loop {
-                use tokio::io::AsyncReadExt;
-                match stdin_rx.read(&mut buf).await {
-                    Ok(0) | Err(_) => break,
-                    Ok(n) => {
-                        if bollard_stdin.write_all(&buf[..n]).await.is_err() {
-                            break;
-                        }
-                        if bollard_stdin.flush().await.is_err() {
-                            break;
-                        }
-                    }
-                }
-            }
-        });
+        let (stdin_tx, stdin_rx) = tokio::io::duplex(64 * 1024);
+        let bollard_stdin = attach.input;
+        let stdin_container_id = container_id.to_string();
+        let stdin_agent_name = agent_name.to_string();
+        tokio::spawn(stdin_bridge_loop(
+            stdin_rx,
+            bollard_stdin,
+            stdin_container_id,
+            stdin_agent_name,
+        ));
 
         let alive_flag = Arc::new(AtomicBool::new(true));
         let alive_for_demux = Arc::clone(&alive_flag);
@@ -197,7 +189,7 @@ impl DockerBackend {
         let container_config = Self::build_container_config(config, labels, host_config);
         let container_id =
             Self::create_and_start_container(&docker, &cname, container_config).await?;
-        let attached = Self::attach_container_streams(&docker, &container_id).await?;
+        let attached = Self::attach_container_streams(&docker, &container_id, agent_name).await?;
 
         Ok(DockerBackend {
             docker,
@@ -355,6 +347,41 @@ impl ProcessBackend for DockerBackend {
                 .status()
                 .map_err(AgentsError::Io)
         })
+    }
+}
+
+async fn stdin_bridge_loop(
+    mut reader: impl AsyncRead + Unpin,
+    mut writer: impl AsyncWrite + Unpin,
+    container_id: String,
+    agent_name: String,
+) {
+    use tokio::io::AsyncReadExt;
+    let mut buf = [0u8; 4096];
+    loop {
+        match reader.read(&mut buf).await {
+            Ok(0) | Err(_) => break,
+            Ok(n) => {
+                if let Err(e) = writer.write_all(&buf[..n]).await {
+                    warn!(
+                        error = %e,
+                        container_id = %container_id,
+                        agent = %agent_name,
+                        "bollard stdin write failed"
+                    );
+                    break;
+                }
+                if let Err(e) = writer.flush().await {
+                    warn!(
+                        error = %e,
+                        container_id = %container_id,
+                        agent = %agent_name,
+                        "bollard stdin flush failed"
+                    );
+                    break;
+                }
+            }
+        }
     }
 }
 
@@ -601,5 +628,100 @@ mod tests {
             backend.container_name.as_deref(),
             Some("protoclaw-test-agent-abcd1234")
         );
+    }
+
+    struct FailingWriter;
+
+    impl tokio::io::AsyncWrite for FailingWriter {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+            _buf: &[u8],
+        ) -> std::task::Poll<std::io::Result<usize>> {
+            std::task::Poll::Ready(Err(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "mock write failure",
+            )))
+        }
+        fn poll_flush(
+            self: Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<std::io::Result<()>> {
+            std::task::Poll::Ready(Ok(()))
+        }
+        fn poll_shutdown(
+            self: Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<std::io::Result<()>> {
+            std::task::Poll::Ready(Ok(()))
+        }
+    }
+
+    struct FailingFlusher;
+
+    impl tokio::io::AsyncWrite for FailingFlusher {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+            buf: &[u8],
+        ) -> std::task::Poll<std::io::Result<usize>> {
+            std::task::Poll::Ready(Ok(buf.len()))
+        }
+        fn poll_flush(
+            self: Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<std::io::Result<()>> {
+            std::task::Poll::Ready(Err(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "mock flush failure",
+            )))
+        }
+        fn poll_shutdown(
+            self: Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<std::io::Result<()>> {
+            std::task::Poll::Ready(Ok(()))
+        }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_stdin_write_fails_then_bridge_exits() {
+        use tokio::io::AsyncWriteExt;
+        let (mut tx, rx) = tokio::io::duplex(1024);
+        let writer = FailingWriter;
+
+        let handle = tokio::spawn(stdin_bridge_loop(
+            rx,
+            writer,
+            "container-abc".to_string(),
+            "test-agent".to_string(),
+        ));
+
+        tx.write_all(b"hello").await.unwrap();
+
+        let result = tokio::time::timeout(std::time::Duration::from_secs(2), handle).await;
+        assert!(result.is_ok(), "bridge should exit after write failure");
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_stdin_flush_fails_then_bridge_exits() {
+        use tokio::io::AsyncWriteExt;
+        let (mut tx, rx) = tokio::io::duplex(1024);
+        let writer = FailingFlusher;
+
+        let handle = tokio::spawn(stdin_bridge_loop(
+            rx,
+            writer,
+            "container-abc".to_string(),
+            "test-agent".to_string(),
+        ));
+
+        tx.write_all(b"hello").await.unwrap();
+
+        // Bridge should exit due to flush failure
+        let result = tokio::time::timeout(std::time::Duration::from_secs(2), handle).await;
+        assert!(result.is_ok(), "bridge should exit after flush failure");
     }
 }
