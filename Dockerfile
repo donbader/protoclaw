@@ -21,8 +21,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --bin telegram-channel \
     --bin debug-http \
     --bin mock-agent \
-    --bin system-info \
-    --bin opencode-wrapper
+    --bin system-info
 
 # Stage 4: Core runtime — protoclaw only (static, no OS packages)
 FROM gcr.io/distroless/static-debian12:nonroot AS core
@@ -34,7 +33,6 @@ ENTRYPOINT ["protoclaw"]
 FROM gcr.io/distroless/static-debian12:nonroot AS builder-export
 COPY --from=builder /build/target/release/protoclaw /usr/local/bin/protoclaw
 COPY --from=builder /build/target/release/mock-agent /usr/local/bin/agents/mock-agent
-COPY --from=builder /build/target/release/opencode-wrapper /usr/local/bin/agents/opencode-wrapper
 COPY --from=builder /build/target/release/telegram-channel /usr/local/bin/channels/telegram
 COPY --from=builder /build/target/release/debug-http /usr/local/bin/channels/debug-http
 COPY --from=builder /build/target/release/system-info /usr/local/bin/tools/system-info
