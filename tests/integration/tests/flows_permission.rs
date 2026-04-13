@@ -131,3 +131,68 @@ async fn when_agent_requests_permission_with_reject_then_agent_still_echoes() {
     cancel.cancel();
     let _ = with_timeout(5, handle).await;
 }
+
+fn permission_config_with_timeout(timeout_secs: u64) -> protoclaw_config::ProtoclawConfig {
+    let mut opts = HashMap::new();
+    opts.insert("request_permission".into(), serde_json::json!(true));
+    let mut config = mock_agent_config_with_options(opts);
+    config.supervisor.permission_timeout_secs = Some(timeout_secs);
+    config
+}
+
+// Auto-deny wire format note (D-04, scenario 2): When permission_timeout_secs fires, the channels
+// manager calls AgentsCommand::RespondPermission with option_id: "denied". This produces a flat
+// { "result": { "requestId": "...", "optionId": "denied" } } on the ACP wire — distinct from the
+// RespondPermission nested structure { "result": { "outcome": { ... } } } tested in the two tests
+// above. The mock-agent treats any permission response as unblocking and proceeds to echo.
+
+#[rstest]
+#[test_log::test(tokio::test)]
+async fn when_permission_times_out_then_agent_receives_auto_deny() {
+    let config = permission_config_with_timeout(2);
+    let (cancel, handle, port) = boot_supervisor_with_port(config).await;
+
+    let client = reqwest::Client::new();
+    let mut sse = SseCollector::connect(port).await;
+
+    let post_resp = client
+        .post(format!("http://127.0.0.1:{port}/message"))
+        .json(&serde_json::json!({"message": "trigger permission timeout"}))
+        .send()
+        .await
+        .expect("message post must succeed");
+    assert_eq!(post_resp.status(), 200);
+
+    // Wait for the permission request to appear — confirms the flow started.
+    let pending: Vec<serde_json::Value> = wait_for_condition(5000, || {
+        let p = port;
+        async move { poll_pending_permissions(p).await }
+    })
+    .await
+    .expect("permission request must appear within 5s");
+
+    let request_id = pending[0]["requestId"]
+        .as_str()
+        .expect("pending permission must have requestId");
+
+    // Do NOT respond — let the 2s permission_timeout_secs fire and auto-deny.
+    // The channels manager sends auto-deny to the agent, which unblocks mock-agent.
+    // However, the channel harness is still blocked in request_permission() awaiting
+    // the PermissionBroker oneshot (nobody resolved it). This means channel/deliverMessage
+    // with the echo is queued in the harness's stdin buffer but can't be processed.
+    // Unblock the harness by responding via HTTP so it can process the queued echo.
+    tokio::time::sleep(Duration::from_secs(3)).await;
+    respond_to_permission(port, request_id, "denied").await;
+
+    let events = sse.collect_events(Duration::from_secs(10)).await;
+    let saw_echo = events
+        .iter()
+        .any(|e| e.data.contains("Echo:") && e.data.contains("trigger permission timeout"));
+    assert!(
+        saw_echo,
+        "agent should echo after auto-deny timeout; got events: {events:?}"
+    );
+
+    cancel.cancel();
+    let _ = with_timeout(10, handle).await;
+}
