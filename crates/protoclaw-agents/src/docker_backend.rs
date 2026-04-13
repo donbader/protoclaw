@@ -22,6 +22,7 @@ use crate::error::AgentsError;
 pub struct DockerBackend {
     docker: Docker,
     container_id: Option<String>,
+    container_name: Option<String>,
     alive: Arc<AtomicBool>,
     stdin: Mutex<Option<Box<dyn AsyncWrite + Unpin + Send>>>,
     stdout: Mutex<Option<Box<dyn AsyncRead + Unpin + Send>>>,
@@ -98,7 +99,7 @@ impl DockerBackend {
             .start_container(&container_id, None::<StartContainerOptions>)
             .await
             .map_err(|e| AgentsError::DockerError(e.to_string()))?;
-        info!(container_id = %container_id, "Started Docker container");
+        info!(container_id = %container_id, container_name = %container_name, "Started Docker container");
 
         Ok(container_id)
     }
@@ -201,6 +202,7 @@ impl DockerBackend {
         Ok(DockerBackend {
             docker,
             container_id: Some(container_id),
+            container_name: Some(cname),
             alive: attached.alive_flag,
             stdin: Mutex::new(Some(attached.stdin)),
             stdout: Mutex::new(Some(attached.stdout)),
@@ -289,12 +291,13 @@ impl ProcessBackend for DockerBackend {
         Box::pin(async move {
             if let Some(id) = &self.container_id {
                 let id = id.clone();
+                let cname = self.container_name.as_deref().unwrap_or("unknown");
                 let stop_opts = StopContainerOptions {
                     t: Some(10),
                     ..Default::default()
                 };
                 if let Err(e) = self.docker.stop_container(&id, Some(stop_opts)).await {
-                    warn!(container_id = %id, error = %e, "Failed to stop container (continuing to remove)");
+                    warn!(container_id = %id, container_name = %cname, error = %e, "Failed to stop container (continuing to remove)");
                 }
                 self.docker
                     .remove_container(
@@ -306,7 +309,7 @@ impl ProcessBackend for DockerBackend {
                     )
                     .await
                     .map_err(|e| AgentsError::DockerError(e.to_string()))?;
-                info!(container_id = %id, "Removed Docker container");
+                info!(container_id = %id, container_name = %cname, "Removed Docker container");
             }
             self.alive.store(false, Ordering::SeqCst);
             Ok(())
@@ -320,6 +323,7 @@ impl ProcessBackend for DockerBackend {
         Box::pin(async move {
             let exit_code: i64 = if let Some(id) = &self.container_id {
                 let id = id.clone();
+                let cname = self.container_name.as_deref().unwrap_or("unknown");
                 let mut stream = self
                     .docker
                     .wait_container(&id, None::<WaitContainerOptions>);
@@ -332,7 +336,7 @@ impl ProcessBackend for DockerBackend {
                         if let Some(code) = parse_exit_code_from_error(&msg) {
                             code
                         } else {
-                            warn!(error = %e, "wait_container stream error, treating as exit 1");
+                            warn!(error = %e, container_name = %cname, "wait_container stream error, treating as exit 1");
                             1
                         }
                     }
@@ -580,5 +584,22 @@ mod tests {
         #[case] expected: Option<i64>,
     ) {
         assert_eq!(parse_exit_code_from_error(msg), expected);
+    }
+
+    #[rstest]
+    fn when_docker_backend_constructed_then_container_name_is_stored() {
+        let backend = DockerBackend {
+            docker: Docker::connect_with_local_defaults().unwrap(),
+            container_id: Some("abc123".to_string()),
+            container_name: Some("protoclaw-test-agent-abcd1234".to_string()),
+            alive: Arc::new(AtomicBool::new(true)),
+            stdin: Mutex::new(None),
+            stdout: Mutex::new(None),
+            stderr: Mutex::new(None),
+        };
+        assert_eq!(
+            backend.container_name.as_deref(),
+            Some("protoclaw-test-agent-abcd1234")
+        );
     }
 }
