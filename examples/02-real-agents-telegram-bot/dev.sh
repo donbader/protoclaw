@@ -57,7 +57,7 @@ cmd_rebuild() {
     echo "Building protoclaw binaries (incremental)..."
     local start=$SECONDS
     docker exec "$BUILDER_CONTAINER" \
-        cargo build --release --locked \
+        cargo build --locked \
         --bin protoclaw \
         --bin telegram-channel \
         --bin debug-http \
@@ -73,10 +73,10 @@ cmd_rebuild() {
     echo "Copying binaries into container..."
     local tmpdir
     tmpdir=$(mktemp -d)
-    docker cp "$BUILDER_CONTAINER:/build/target/release/protoclaw" "$tmpdir/protoclaw"
-    docker cp "$BUILDER_CONTAINER:/build/target/release/telegram-channel" "$tmpdir/telegram-channel"
-    docker cp "$BUILDER_CONTAINER:/build/target/release/debug-http" "$tmpdir/debug-http"
-    docker cp "$BUILDER_CONTAINER:/build/target/release/system-info" "$tmpdir/system-info"
+    docker cp "$BUILDER_CONTAINER:/build/target/debug/protoclaw" "$tmpdir/protoclaw"
+    docker cp "$BUILDER_CONTAINER:/build/target/debug/telegram-channel" "$tmpdir/telegram-channel"
+    docker cp "$BUILDER_CONTAINER:/build/target/debug/debug-http" "$tmpdir/debug-http"
+    docker cp "$BUILDER_CONTAINER:/build/target/debug/system-info" "$tmpdir/system-info"
     docker cp "$tmpdir/protoclaw" "$container:/usr/local/bin/protoclaw"
     docker cp "$tmpdir/telegram-channel" "$container:/usr/local/bin/channels/telegram"
     docker cp "$tmpdir/debug-http" "$container:/usr/local/bin/channels/debug-http"
