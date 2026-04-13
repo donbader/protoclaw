@@ -28,7 +28,8 @@ pub(crate) struct PendingPermission {
     pub request: serde_json::Value,
     pub description: String,
     pub options: Vec<PermissionOption>,
-    pub _received_at: std::time::Instant,
+    #[allow(dead_code)] // Used by permission timeout logging (channels manager reads elapsed time)
+    pub received_at: std::time::Instant,
 }
 
 pub(crate) struct SlotIncoming {
@@ -842,7 +843,7 @@ impl AgentsManager {
                     request: request.clone(),
                     description,
                     options,
-                    _received_at: std::time::Instant::now(),
+                    received_at: std::time::Instant::now(),
                 },
             );
         } else {
@@ -2795,7 +2796,7 @@ mod tests {
                 request: original_request,
                 description: "external_directory".into(),
                 options: vec![],
-                _received_at: std::time::Instant::now(),
+                received_at: std::time::Instant::now(),
             },
         );
         m.slots.push(slot);

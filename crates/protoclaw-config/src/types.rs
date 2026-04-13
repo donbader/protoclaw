@@ -474,6 +474,9 @@ pub struct SupervisorConfig {
     /// TCP port for the admin HTTP server (`/health`, `/metrics`). Default: 3000.
     #[serde(default = "default_admin_port")]
     pub admin_port: u16,
+    /// Optional permission response timeout. None = block indefinitely (default).
+    #[serde(default)]
+    pub permission_timeout_secs: Option<u64>,
 }
 
 /// Deserialize a map where values may have been coerced from strings to integers/bools
@@ -586,6 +589,7 @@ impl Default for SupervisorConfig {
             max_restarts: default_max_restarts(),
             restart_window_secs: default_restart_window(),
             admin_port: default_admin_port(),
+            permission_timeout_secs: None,
         }
     }
 }
@@ -603,6 +607,7 @@ impl ProtoclawConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     #[test]
     fn when_no_log_level_set_then_defaults_to_info_with_noise_filters() {
@@ -1336,5 +1341,19 @@ workspace:
         let yaml = serde_yaml::to_string(&val).unwrap();
         assert!(yaml.contains("opencode"));
         assert!(yaml.contains("acp"));
+    }
+
+    #[rstest]
+    fn when_supervisor_has_permission_timeout_then_parses_to_some() {
+        let yaml = "permission_timeout_secs: 30";
+        let config: SupervisorConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(config.permission_timeout_secs, Some(30));
+    }
+
+    #[rstest]
+    fn when_supervisor_has_no_permission_timeout_then_defaults_to_none() {
+        let yaml = "";
+        let config: SupervisorConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(config.permission_timeout_secs, None);
     }
 }
