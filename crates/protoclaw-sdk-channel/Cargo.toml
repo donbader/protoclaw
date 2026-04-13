@@ -1,6 +1,6 @@
 [package]
 name = "protoclaw-sdk-channel"
-version = "0.2.5"
+version = "0.2.6"
 description = "Channel SDK for protoclaw — build messaging channel integrations"
 edition.workspace = true
 rust-version.workspace = true

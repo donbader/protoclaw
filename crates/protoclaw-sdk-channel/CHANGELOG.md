@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.6](https://github.com/donbader/protoclaw/compare/protoclaw-sdk-channel-v0.2.5...protoclaw-sdk-channel-v0.2.6) - 2026-04-13
+
+### Added
+
+- *(dx)* log noise filtering, permission tracing, dev.sh rebuild helper
+
 ## [0.2.5](https://github.com/donbader/protoclaw/compare/protoclaw-sdk-channel-v0.2.4...protoclaw-sdk-channel-v0.2.5) - 2026-04-13
 
 ### Other
