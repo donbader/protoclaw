@@ -331,7 +331,7 @@ impl AgentsManager {
                                     "optionId": option_id,
                                 }
                             });
-                            let _ = conn.send_notification("_raw_response", resp).await;
+                            let _ = conn.send_raw(resp).await;
                         }
                         break;
                     }
@@ -860,7 +860,7 @@ impl AgentsManager {
                         "optionId": auto_option,
                     }
                 });
-                let _ = conn.send_notification("_raw_response", resp).await;
+                let _ = conn.send_raw(resp).await;
             }
         }
     }
@@ -930,7 +930,7 @@ impl AgentsManager {
                 "id": request.get("id").cloned().unwrap_or(serde_json::Value::Null),
                 "result": result,
             });
-            let _ = conn.send_notification("_raw_response", resp).await;
+            let _ = conn.send_raw(resp).await;
         }
     }
 
@@ -946,7 +946,7 @@ impl AgentsManager {
                 "id": request.get("id").cloned().unwrap_or(serde_json::Value::Null),
                 "error": { "code": code, "message": message },
             });
-            let _ = conn.send_notification("_raw_response", resp).await;
+            let _ = conn.send_raw(resp).await;
         }
     }
 

@@ -331,6 +331,15 @@ impl AgentConnection {
         Ok(())
     }
 
+    pub async fn send_raw(&self, msg: serde_json::Value) -> Result<(), AgentsError> {
+        self.stdin_tx
+            .send(msg)
+            .await
+            .map_err(|_| AgentsError::ConnectionClosed)?;
+
+        Ok(())
+    }
+
     /// Take ownership of the incoming message receiver.
     /// Used by AgentsManager to merge all agent streams into a single channel.
     /// Panics if called more than once (receiver already taken).
