@@ -14,9 +14,6 @@ coverage/
 .idea/
 .vscode/
 
-# Local dev overrides
-docker-compose.override.yml
-
 # WASM artifacts
 *.wasm
 .worktrees/

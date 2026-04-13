@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 WORKSPACE_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 BUILDER_IMAGE="lukemathwalker/cargo-chef:latest-rust-1.94-alpine"
 BUILDER_CONTAINER="protoclaw-dev-builder"
-COMPOSE_PROJECT="02-real-agents-telegram-bot"
+COMPOSE_DEV="-f docker-compose.yml -f docker-compose.dev.yml"
 
 usage() {
     cat <<EOF
@@ -46,8 +46,8 @@ ensure_builder() {
 
 cmd_up() {
     cd "$SCRIPT_DIR"
-    docker compose build
-    docker compose up -d
+    docker compose $COMPOSE_DEV build
+    docker compose $COMPOSE_DEV up -d
     echo "Up. Use './dev.sh logs' to follow output."
 }
 
@@ -64,7 +64,7 @@ cmd_rebuild() {
         --bin system-info
 
     local container
-    container=$(cd "$SCRIPT_DIR" && docker compose ps -q protoclaw 2>/dev/null || true)
+    container=$(cd "$SCRIPT_DIR" && docker compose $COMPOSE_DEV ps -q protoclaw 2>/dev/null || true)
     if [ -z "$container" ]; then
         echo "Protoclaw container not running. Use './dev.sh up' first."
         exit 1
@@ -85,7 +85,7 @@ cmd_rebuild() {
 
     echo "Restarting protoclaw..."
     cd "$SCRIPT_DIR"
-    docker compose restart protoclaw
+    docker compose $COMPOSE_DEV restart protoclaw
 
     local elapsed=$((SECONDS - start))
     echo "Done in ${elapsed}s."
@@ -93,18 +93,18 @@ cmd_rebuild() {
 
 cmd_logs() {
     cd "$SCRIPT_DIR"
-    docker compose logs protoclaw -f --since 0s 2>&1 | grep -viE "pool.*idle|reuse idle|hyper_util.*pool|hyper_util.*connect"
+    docker compose $COMPOSE_DEV logs protoclaw -f --since 0s
 }
 
 cmd_down() {
     cd "$SCRIPT_DIR"
-    docker compose down
+    docker compose $COMPOSE_DEV down
     echo "Stopped. Builder container preserved (run 'docker rm -f $BUILDER_CONTAINER' to remove)."
 }
 
 cmd_shell() {
     cd "$SCRIPT_DIR"
-    docker compose exec protoclaw /bin/sh
+    docker compose $COMPOSE_DEV exec protoclaw /bin/sh
 }
 
 case "${1:-help}" in

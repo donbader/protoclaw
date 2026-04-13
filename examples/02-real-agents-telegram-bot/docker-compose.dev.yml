@@ -1,0 +1,15 @@
+# Local dev override: build protoclaw from workspace source instead of ghcr.io
+# NOT auto-loaded. Use via: ./dev.sh up
+# Or manually: docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+services:
+  protoclaw:
+    build:
+      context: ../..
+      dockerfile: examples/02-real-agents-telegram-bot/Dockerfile.dev-builder
+      target: example-02-opencode
+
+  opencode-agent-image:
+    build:
+      context: ../..
+      dockerfile: examples/02-real-agents-telegram-bot/Dockerfile.dev-builder
+      target: opencode-agent
