@@ -447,8 +447,10 @@
   Plans:
   - [ ] 93-01-PLAN.md — Supervisor store construction + boot cleanup + shutdown persistence
   - [ ] 93-02-PLAN.md — Persist session on create + update last_active on prompt
-- [ ] **Phase 94: Error Delivery & Audit** — ERR-01, ERR-02
+- [ ] **Phase 94: Error Delivery & Audit** (1 plan) — ERR-01, ERR-02
   - Depends on: Phase 92 (error delivery triggers on recovery failure paths)
+  Plans:
+  - [ ] 94-01-PLAN.md — Structured audit tracing + error delivery to channels
 
 <details>
 <summary>✅ v0.3.1 Config Schema Modernization & Example 02 Simplification — SHIPPED 2026-04-13</summary>

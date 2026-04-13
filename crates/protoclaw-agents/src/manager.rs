@@ -595,8 +595,6 @@ impl AgentsManager {
         agent_name: &str,
         session_key: &SessionKey,
     ) -> Result<(), AgentsError> {
-        tracing::info!(agent = %agent_name, session_key = %session_key, "session missing from map, attempting recovery");
-
         let acp_timeout = Self::acp_timeout_for(&self.slots[slot_idx].config, &self.manager_config);
 
         let stale_acp_id = self.slots[slot_idx]
@@ -609,6 +607,15 @@ impl AgentsManager {
             .as_ref()
             .and_then(|c| c.load_session)
             .unwrap_or(false);
+
+        tracing::info!(
+            agent = %agent_name,
+            session_key = %session_key,
+            has_stale_acp_id = stale_acp_id.is_some(),
+            supports_load = supports_load,
+            step = "recovery_started",
+            "session recovery initiated"
+        );
 
         if supports_load && let Some(acp_id) = stale_acp_id {
             let params = match serde_json::to_value(SessionLoadParams {
@@ -630,19 +637,72 @@ impl AgentsManager {
                 && let Ok(Ok(resp)) = tokio::time::timeout(acp_timeout, rx).await
                 && resp.get("sessionId").is_some()
             {
-                tracing::info!(agent = %agent_name, session_key = %session_key, "session recovered via session/load");
+                tracing::info!(
+                    agent = %agent_name,
+                    session_key = %session_key,
+                    step = "load_attempted",
+                    success = true,
+                    "session/load succeeded"
+                );
+                tracing::info!(
+                    agent = %agent_name,
+                    session_key = %session_key,
+                    step = "recovery_outcome",
+                    outcome = "loaded",
+                    "session recovery complete"
+                );
                 let slot = &mut self.slots[slot_idx];
                 slot.stale_sessions.remove(session_key);
                 slot.session_map.insert(session_key.clone(), acp_id.clone());
                 slot.reverse_map.insert(acp_id, session_key.clone());
                 return Ok(());
             }
-            tracing::info!(agent = %agent_name, session_key = %session_key, "session/load rejected, creating fresh session");
+            tracing::info!(
+                agent = %agent_name,
+                session_key = %session_key,
+                step = "load_attempted",
+                success = false,
+                "session/load rejected, falling back to create"
+            );
         }
 
         self.slots[slot_idx].stale_sessions.remove(session_key);
-        let acp_session_id = self.create_session(agent_name, session_key.clone()).await?;
-        tracing::info!(agent = %agent_name, session_key = %session_key, acp_session_id = %acp_session_id, "session created for self-healed prompt");
+        let acp_session_id = match self.create_session(agent_name, session_key.clone()).await {
+            Ok(id) => id,
+            Err(e) => {
+                tracing::info!(
+                    agent = %agent_name,
+                    session_key = %session_key,
+                    step = "create_attempted",
+                    success = false,
+                    error = %e,
+                    "session creation failed during recovery"
+                );
+                tracing::info!(
+                    agent = %agent_name,
+                    session_key = %session_key,
+                    step = "recovery_outcome",
+                    outcome = "failed",
+                    "session recovery exhausted all attempts"
+                );
+                return Err(e);
+            }
+        };
+        tracing::info!(
+            agent = %agent_name,
+            session_key = %session_key,
+            acp_session_id = %acp_session_id,
+            step = "create_attempted",
+            success = true,
+            "session created for recovery"
+        );
+        tracing::info!(
+            agent = %agent_name,
+            session_key = %session_key,
+            step = "recovery_outcome",
+            outcome = "created",
+            "session recovery complete"
+        );
         Ok(())
     }
 
