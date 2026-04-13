@@ -1,4 +1,5 @@
 use std::future::Future;
+use std::pin::Pin;
 
 use thiserror::Error;
 
@@ -69,6 +70,73 @@ pub trait SessionStore: Send + Sync + 'static {
         &self,
         max_age_secs: i64,
     ) -> impl Future<Output = Result<u64, SessionStoreError>> + Send;
+}
+
+/// Object-safe alias for [`SessionStore`]. Use `Arc<dyn DynSessionStore>` for runtime dispatch.
+/// Implementors write `impl SessionStore for X`; the blanket impl provides `DynSessionStore` automatically.
+pub trait DynSessionStore: Send + Sync + 'static {
+    fn load_open_sessions<'a>(
+        &'a self,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<PersistedSession>, SessionStoreError>> + Send + 'a>>;
+
+    fn upsert_session<'a>(
+        &'a self,
+        session: &'a PersistedSession,
+    ) -> Pin<Box<dyn Future<Output = Result<(), SessionStoreError>> + Send + 'a>>;
+
+    fn mark_closed<'a>(
+        &'a self,
+        session_key: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<(), SessionStoreError>> + Send + 'a>>;
+
+    fn update_last_active<'a>(
+        &'a self,
+        session_key: &'a str,
+        timestamp: i64,
+    ) -> Pin<Box<dyn Future<Output = Result<(), SessionStoreError>> + Send + 'a>>;
+
+    fn delete_expired<'a>(
+        &'a self,
+        max_age_secs: i64,
+    ) -> Pin<Box<dyn Future<Output = Result<u64, SessionStoreError>> + Send + 'a>>;
+}
+
+impl<T: SessionStore> DynSessionStore for T {
+    fn load_open_sessions<'a>(
+        &'a self,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<PersistedSession>, SessionStoreError>> + Send + 'a>>
+    {
+        Box::pin(SessionStore::load_open_sessions(self))
+    }
+
+    fn upsert_session<'a>(
+        &'a self,
+        session: &'a PersistedSession,
+    ) -> Pin<Box<dyn Future<Output = Result<(), SessionStoreError>> + Send + 'a>> {
+        Box::pin(SessionStore::upsert_session(self, session))
+    }
+
+    fn mark_closed<'a>(
+        &'a self,
+        session_key: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<(), SessionStoreError>> + Send + 'a>> {
+        Box::pin(SessionStore::mark_closed(self, session_key))
+    }
+
+    fn update_last_active<'a>(
+        &'a self,
+        session_key: &'a str,
+        timestamp: i64,
+    ) -> Pin<Box<dyn Future<Output = Result<(), SessionStoreError>> + Send + 'a>> {
+        Box::pin(SessionStore::update_last_active(self, session_key, timestamp))
+    }
+
+    fn delete_expired<'a>(
+        &'a self,
+        max_age_secs: i64,
+    ) -> Pin<Box<dyn Future<Output = Result<u64, SessionStoreError>> + Send + 'a>> {
+        Box::pin(SessionStore::delete_expired(self, max_age_secs))
+    }
 }
 
 /// A no-op [`SessionStore`] that discards all writes and returns empty reads.
