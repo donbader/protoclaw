@@ -135,6 +135,9 @@ impl DockerBackend {
                         if bollard_stdin.write_all(&buf[..n]).await.is_err() {
                             break;
                         }
+                        if bollard_stdin.flush().await.is_err() {
+                            break;
+                        }
                     }
                 }
             }

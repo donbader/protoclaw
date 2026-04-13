@@ -26,7 +26,7 @@ Manages the agent subprocess lifecycle and implements the ACP (Agent Client Prot
 | `session/request_permission` | agent→client | Agent requests user permission |
 | `fs/read_text_file` | agent→client | Agent requests file read |
 | `fs/write_text_file` | agent→client | Agent requests file write |
-| `_raw_response` | internal | Sentinel method to bypass framing — sends pre-built JSON-RPC response directly to agent stdin |
+| `_raw_response` | internal | Removed in v0.3.1 — replaced by `AgentConnection::send_raw()` which writes pre-built JSON-RPC directly to stdin without method envelope |
 | `__jsonrpc_error` | internal | Sentinel method used in `AgentConnection` reader task to forward ACP-level JSON-RPC errors from the agent back to the manager as typed `AcpError` variants |
 
 ## Tracing Instrumentation
@@ -80,10 +80,10 @@ This keeps `ContentKind` in `protoclaw-sdk-types` agent-agnostic — it only rea
 - Do not reintroduce `spawn_incoming_bridge()` or any intermediate forwarding channel between `AgentConnection` and the manager's `incoming_rx` — the two-hop latency causes premature `SessionComplete` when `try_recv()` sees an empty channel while events are still in the bridge queue.
 - Do not send `SessionComplete` from the streaming path (`handle_incoming`) — it races with the RPC response and can cause duplicate completions that skip queued messages.
 - Do not skip the `incoming_rx` drain in `handle_prompt_completion` — without it, `select!` can process the RPC response before all streaming events are forwarded, causing lost updates.
-- `_raw_response` is a hack — it sends pre-built JSON-RPC directly to stdin, bypassing normal request/response framing. Do not use it for new methods.
+- `_raw_response` sentinel removed in v0.3.1 — replaced by `AgentConnection::send_raw()` which writes pre-built JSON-RPC directly to stdin without wrapping in a method envelope. Do not reintroduce `_raw_response`.
+- Permission responses go through `send_raw()` because they're responses to agent-initiated requests, not client-initiated ones.
 - `__jsonrpc_error` is a read-side sentinel — the connection reader task uses it to forward errors without losing the error context. Do not repurpose it.
 - `cmd_rx.take().expect("cmd_rx must exist")` — consumed once at `run()` start. Never call `run()` twice.
-- Permission responses go through `_raw_response` because they're responses to agent-initiated requests, not client-initiated ones.
 - Use `unwrap_or_else(|| { tracing::warn!(...); Default::default() })` rather than bare `unwrap_or_default()` when falling back silently — the tracing call makes the fallback visible in logs.
 - Constructor uses `drain()` instead of `clone().into_iter()` when consuming maps to initialize session state — avoids unnecessary clones of large maps.
 
@@ -93,3 +93,10 @@ This keeps `ContentKind` in `protoclaw-sdk-types` agent-agnostic — it only rea
 - `#[tracing::instrument]` added to `initialize_agent()` and `create_session()`
 - `unwrap_or_default()` → `unwrap_or_else(|| { tracing::warn!(...); Default::default() })` on silent fallback paths
 - `CrashTracker` per agent slot; `disabled` flag set on crash loop to stop respawn
+
+## v0.3.1 Changes
+
+- `AgentConnection::send_raw()` added — writes raw JSON-RPC to agent stdin without method envelope
+- `_raw_response` sentinel removed — all 4 call sites replaced with `send_raw()`
+- Permission `request_id` extraction falls back to JSON-RPC `id` field when `params.requestId` is missing or empty
+- Permission response tracing added: `permission response received from channel` and `permission response sent to agent`

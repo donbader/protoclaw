@@ -83,7 +83,7 @@ Example/ext binaries:
 - **unwrap() rule**: `.expect("reason")` for true invariants (piped stdio, consumed-once fields). Bare `.unwrap()` only in tests. Use `?` for fallible paths.
 - **Module structure**: Flat `lib.rs` with `pub mod` + `pub use` re-exports. No `mod.rs` files.
 - **Manager communication**: `tokio::sync::mpsc` channels via `ManagerHandle<C>`. No shared mutable state between managers.
-- **Config layering**: Defaults → YAML file → env vars (`PROTOCLAW_` prefix, `__` separator). Top-level fields: `log_level` (default "info"), `extensions_dir` (default "/usr/local/bin"). `@built-in/{agents,channels,tools}/<name>` binary prefix resolved against `extensions_dir` in supervisor before manager construction. Legacy flat paths (e.g. `@built-in/mock-agent`) supported via built-in aliases with deprecation warnings.
+- **Config layering**: Defaults → YAML file → env vars (`PROTOCLAW_` prefix, `__` separator). Top-level fields: `log_level` (default `"info,hyper=warn,reqwest=warn,h2=warn,hyper_util=warn,tower=warn"`, accepts full `EnvFilter` directive syntax), `extensions_dir` (default "/usr/local/bin"). `@built-in/{agents,channels,tools}/<name>` binary prefix resolved against `extensions_dir` in supervisor before manager construction. Legacy flat paths (e.g. `@built-in/mock-agent`) supported via built-in aliases with deprecation warnings.
 - **Tracing**: Use `tracing` spans/events, not `println!` or `log` crate. Exception: CLI entry points (`main.rs`, `init.rs`, `status.rs`) may use `println!`/`eprintln!` for user-facing output before tracing is initialized.
 - **Test framework**: `rstest = "0.23"` is a `[dev-dependency]` in every workspace crate. Use `#[rstest]` for all new and migrated tests.
 - **BDD test naming**: Tests use `when_action_then_result` or `given_precondition_when_action_then_result` naming. No `test_` prefix. No `it_` prefix.
@@ -231,3 +231,15 @@ Check which AGENTS.md files exist in the affected directories and their parents.
 - `ext/agents/acp-bridge/` added — generic ACP↔HTTP bridge binary translating stdio JSON-RPC 2.0 to OpenCode's HTTP REST+SSE serve API; depends only on `protoclaw-jsonrpc` and `protoclaw-sdk-types` (zero core coupling)
 - `ext/agents/opencode-wrapper/` removed — replaced by `acp-bridge`; legacy alias preserves backward compat for existing configs
 - mock-agent sends `available_commands_update` notification after initialize — includes demo `help` and `status` commands; provides end-to-end test path for command registration
+- `StringOrArray` config type added — `binary`/`entrypoint` fields accept string or array in YAML
+- `AgentConfig.args` field removed — args merged into `binary`/`entrypoint` array (breaking change)
+- `LocalWorkspaceConfig.binary`: `String` → `StringOrArray`; `DockerWorkspaceConfig.entrypoint`: `Option<String>` → `Option<StringOrArray>`
+- Permission flow fixed: `request_id` falls back to JSON-RPC `id` field when `params.requestId` missing (OpenCode compat)
+- `channel/requestPermission` changed from notification to request — harness now returns response via JSON-RPC id
+- `_raw_response` sentinel replaced with `AgentConnection::send_raw()` — writes directly to agent stdin without method envelope
+- Default `log_level` now suppresses hyper/reqwest/h2/tower noise: `"info,hyper=warn,reqwest=warn,h2=warn,hyper_util=warn,tower=warn"`
+- `log_level` config field accepts full `EnvFilter` directive syntax (e.g. `"debug,hyper=warn"`)
+- Permission flow tracing added at every handoff point (agents manager, channels manager, harness, telegram dispatcher, telegram permissions)
+- `dev.sh` helper added to Example 02 for fast incremental rebuilds via persistent builder container
+- `Dockerfile.dev-builder` added to Example 02 for local source builds with cargo-chef caching
+- Example 02 simplified: 3-stage Dockerfile, single opencode agent with `entrypoint: ["opencode", "acp"]`, Docker-only test.sh

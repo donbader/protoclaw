@@ -33,6 +33,7 @@ ensure_builder() {
             -v "protoclaw-cargo-git:/usr/local/cargo/git" \
             -v "protoclaw-target:/build/target" \
             -v "$WORKSPACE_ROOT:/build/src:ro" \
+            -e "CARGO_TARGET_DIR=/build/target" \
             -w /build/src \
             "$BUILDER_IMAGE" \
             sleep infinity
@@ -70,10 +71,17 @@ cmd_rebuild() {
     fi
 
     echo "Copying binaries into container..."
-    docker cp "$BUILDER_CONTAINER:/build/src/target/release/protoclaw" "$container:/usr/local/bin/protoclaw"
-    docker cp "$BUILDER_CONTAINER:/build/src/target/release/telegram-channel" "$container:/usr/local/bin/channels/telegram"
-    docker cp "$BUILDER_CONTAINER:/build/src/target/release/debug-http" "$container:/usr/local/bin/channels/debug-http"
-    docker cp "$BUILDER_CONTAINER:/build/src/target/release/system-info" "$container:/usr/local/bin/tools/system-info"
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    docker cp "$BUILDER_CONTAINER:/build/target/release/protoclaw" "$tmpdir/protoclaw"
+    docker cp "$BUILDER_CONTAINER:/build/target/release/telegram-channel" "$tmpdir/telegram-channel"
+    docker cp "$BUILDER_CONTAINER:/build/target/release/debug-http" "$tmpdir/debug-http"
+    docker cp "$BUILDER_CONTAINER:/build/target/release/system-info" "$tmpdir/system-info"
+    docker cp "$tmpdir/protoclaw" "$container:/usr/local/bin/protoclaw"
+    docker cp "$tmpdir/telegram-channel" "$container:/usr/local/bin/channels/telegram"
+    docker cp "$tmpdir/debug-http" "$container:/usr/local/bin/channels/debug-http"
+    docker cp "$tmpdir/system-info" "$container:/usr/local/bin/tools/system-info"
+    rm -rf "$tmpdir"
 
     echo "Restarting protoclaw..."
     cd "$SCRIPT_DIR"

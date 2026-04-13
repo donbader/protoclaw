@@ -20,7 +20,7 @@ Manages channel subprocesses with per-channel crash isolation and session-keyed 
 | `channel/sendMessage` | channel→manager | Inbound user message with `PeerInfo` |
 | `channel/respondPermission` | channel→manager | User's permission response |
 | `channel/deliverMessage` | manager→channel | Outbound agent update to channel |
-| `channel/requestPermission` | manager→channel | Forward permission request to user |
+| `channel/requestPermission` | manager→channel | Forward permission request to user (JSON-RPC **request** with id, not notification — since v0.3.1) |
 
 ## Routing Model
 
@@ -97,3 +97,8 @@ Key type: `SessionKey` (`"{channel}:{kind}:{peer_id}"`) is the queue key.
 - `#[tracing::instrument]` added to `start()` and `spawn_and_initialize()`
 - `unwrap_or_default()` → `unwrap_or_else(|| { tracing::warn!(...); Default::default() })` on silent fallback paths
 - `CrashTracker` per channel slot; `disabled` flag set on crash loop to stop respawn
+
+## v0.3.1 Changes
+
+- `channel/requestPermission` changed from notification to request — channels manager now uses `send_request()` and spawns a task to await the response and forward it to `AgentsCommand::RespondPermission`
+- Permission routing tracing added: `permission routed to channel` and `permission response from channel, forwarding to agents`

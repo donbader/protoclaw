@@ -332,6 +332,7 @@ impl AgentConnection {
     }
 
     pub async fn send_raw(&self, msg: serde_json::Value) -> Result<(), AgentsError> {
+        tracing::debug!(raw = %msg, "send_raw to agent stdin");
         self.stdin_tx
             .send(msg)
             .await

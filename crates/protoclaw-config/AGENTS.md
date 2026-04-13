@@ -19,7 +19,7 @@ Figment-based layered configuration for protoclaw. Loads from embedded defaults 
 
 ```rust
 pub struct ProtoclawConfig {
-    pub log_level: String,           // default: "info"
+    pub log_level: String,           // default: "info,hyper=warn,reqwest=warn,h2=warn,hyper_util=warn,tower=warn"
     pub extensions_dir: String,      // default: "/usr/local/bin"
     pub agents_manager: AgentsManagerConfig,
     pub channels_manager: ChannelsManagerConfig,
@@ -104,3 +104,10 @@ Returns `ValidationResult { errors, warnings }` — caller decides whether to ab
 - New duration config fields: `exit_timeout_secs`, `turn_timeout_secs`, `rate_limit_delay_secs`
 - `serde_yaml` replaced with `serde_yaml` 0.10 (yaml_serde) for YAML deserialization
 - `SubstYaml` fails loudly on missing env vars (no silent empty-string fallback)
+
+## v0.3.1 Changes
+
+- Default `log_level` changed to `"info,hyper=warn,reqwest=warn,h2=warn,hyper_util=warn,tower=warn"` — suppresses noisy HTTP client crates
+- `log_level` field accepts full `tracing_subscriber::EnvFilter` directive syntax
+- `StringOrArray` config type added for `binary`/`entrypoint` fields
+- `AgentConfig.args` field removed
