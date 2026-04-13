@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use protoclaw_config::{ProtoclawConfig, resolve_all_binary_paths};
+use protoclaw_config::{ProtoclawConfig, SessionStoreConfig, resolve_all_binary_paths};
 use protoclaw_core::{
     CrashAction, CrashTracker, ExponentialBackoff, HealthSnapshot, HealthStatus, Manager,
     ManagerError, ManagerHandle, SlotLifecycle,
@@ -420,6 +420,27 @@ impl Supervisor {
     }
 }
 
+fn build_session_store(
+    config: &SessionStoreConfig,
+) -> std::sync::Arc<dyn protoclaw_core::DynSessionStore> {
+    match config {
+        SessionStoreConfig::None => std::sync::Arc::new(protoclaw_core::NoopSessionStore),
+        SessionStoreConfig::Sqlite(sqlite_cfg) => {
+            let result = match &sqlite_cfg.path {
+                Some(path) => protoclaw_core::SqliteSessionStore::open(path),
+                None => protoclaw_core::SqliteSessionStore::open_in_memory(),
+            };
+            match result {
+                Ok(s) => std::sync::Arc::new(s),
+                Err(e) => {
+                    tracing::error!(error = %e, "failed to open session store, falling back to noop");
+                    std::sync::Arc::new(protoclaw_core::NoopSessionStore)
+                }
+            }
+        }
+    }
+}
+
 fn create_manager(
     name: &str,
     config: &ProtoclawConfig,
@@ -440,8 +461,13 @@ fn create_manager(
         }
         "agents" => {
             let handle = protoclaw_core::ManagerHandle::new(tools_tx.clone());
+            let session_store = build_session_store(&config.session_store);
             let mut agents = AgentsManager::new(config.agents_manager.clone(), handle)
-                .with_log_level(config.log_level.clone());
+                .with_log_level(config.log_level.clone())
+                .with_session_store(session_store);
+            if let SessionStoreConfig::Sqlite(ref sqlite_cfg) = config.session_store {
+                agents = agents.with_session_ttl_secs(i64::from(sqlite_cfg.ttl_days) * 86400);
+            }
             if let Some(tx) = channel_events_tx {
                 agents = agents.with_channels_sender(tx);
             }
@@ -547,6 +573,7 @@ mod tests {
             log_level: "info".into(),
             log_format: protoclaw_config::LogFormat::Pretty,
             extensions_dir: "/usr/local/bin".into(),
+            session_store: Default::default(),
         }
     }
 

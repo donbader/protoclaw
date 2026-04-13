@@ -109,6 +109,43 @@ pub enum LogFormat {
     Json,
 }
 
+/// SQLite-backed session store configuration.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+pub struct SqliteStoreConfig {
+    /// Path to the SQLite database file. Defaults to an in-memory database when absent.
+    #[serde(default)]
+    pub path: Option<String>,
+    /// How many days of inactivity before a session is eligible for expiry cleanup.
+    #[serde(default = "default_ttl_days")]
+    pub ttl_days: u32,
+}
+
+impl Default for SqliteStoreConfig {
+    fn default() -> Self {
+        Self {
+            path: None,
+            ttl_days: default_ttl_days(),
+        }
+    }
+}
+
+fn default_ttl_days() -> u32 {
+    7
+}
+
+/// Selects the session persistence backend.
+///
+/// Configured under `session_store.type` in `protoclaw.yaml`.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Default)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum SessionStoreConfig {
+    /// No session persistence (default). Sessions are not saved across restarts.
+    #[default]
+    None,
+    /// Persist sessions to a SQLite database.
+    Sqlite(SqliteStoreConfig),
+}
+
 /// Top-level protoclaw configuration.
 ///
 /// Loaded from layered providers: defaults → YAML file → environment variables.
@@ -129,6 +166,8 @@ pub struct ProtoclawConfig {
     pub tools_manager: ToolsManagerConfig,
     #[serde(default)]
     pub supervisor: SupervisorConfig,
+    #[serde(alias = "session-store", default)]
+    pub session_store: SessionStoreConfig,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

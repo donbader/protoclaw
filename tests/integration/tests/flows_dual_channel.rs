@@ -152,5 +152,6 @@ fn build_dual_channel_config() -> protoclaw_config::ProtoclawConfig {
         log_level: "info".into(),
         log_format: protoclaw_config::LogFormat::Pretty,
         extensions_dir: "/usr/local/bin".into(),
+        session_store: Default::default(),
     }
 }

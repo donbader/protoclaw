@@ -21,6 +21,10 @@ pub struct AgentSlot {
     pub(crate) session_map: HashMap<SessionKey, String>,
     pub(crate) reverse_map: HashMap<String, SessionKey>,
     pub(crate) pending_permissions: HashMap<String, PendingPermission>,
+    /// Sessions that were active before a crash. Populated by draining `session_map`
+    /// when an agent process exits. Used by `prompt_session` to attempt `session/load`
+    /// recovery before falling back to creating a fresh session.
+    pub(crate) stale_sessions: HashMap<SessionKey, String>,
 }
 
 impl AgentSlot {
@@ -49,6 +53,7 @@ impl AgentSlot {
             session_map: HashMap::new(),
             reverse_map: HashMap::new(),
             pending_permissions: HashMap::new(),
+            stale_sessions: HashMap::new(),
         }
     }
 
@@ -97,6 +102,7 @@ mod tests {
         assert!(slot.session_map.is_empty());
         assert!(slot.reverse_map.is_empty());
         assert!(slot.pending_permissions.is_empty());
+        assert!(slot.stale_sessions.is_empty());
     }
 
     #[test]

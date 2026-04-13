@@ -14,7 +14,7 @@ use crate::slot::{AgentSlot, find_slot_by_name};
 use protoclaw_config::{AgentConfig, AgentsManagerConfig, WorkspaceConfig};
 use protoclaw_core::{
     AgentStatusInfo, AgentsCommand, CrashAction, Manager, ManagerError, ManagerHandle,
-    McpServerUrl, PendingPermissionInfo, SessionKey, ToolsCommand, constants,
+    McpServerUrl, PendingPermissionInfo, PersistedSession, SessionKey, ToolsCommand, constants,
 };
 use protoclaw_sdk_agent::{DynAgentAdapter, GenericAcpAdapter};
 use protoclaw_sdk_types::{ChannelEvent, PermissionOption};
@@ -23,6 +23,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::connection::{AgentConnection, IncomingMessage};
 use crate::error::AgentsError;
+use protoclaw_core::{DynSessionStore, NoopSessionStore};
 
 pub(crate) struct PendingPermission {
     pub request: serde_json::Value,
@@ -126,6 +127,10 @@ pub struct AgentsManager {
     streaming_completed: HashSet<SessionKey>,
     update_seq: AtomicU64,
     log_level: Option<String>,
+    /// Persistent session store. Defaults to [`NoopSessionStore`].
+    session_store: std::sync::Arc<dyn DynSessionStore>,
+    /// TTL for expired session cleanup at boot (seconds). Default: 7 days.
+    session_ttl_secs: i64,
 }
 
 impl AgentsManager {
@@ -156,6 +161,8 @@ impl AgentsManager {
             streaming_completed: HashSet::new(),
             update_seq: AtomicU64::new(0),
             log_level: None,
+            session_store: std::sync::Arc::new(NoopSessionStore),
+            session_ttl_secs: 7 * 24 * 3600,
         }
     }
 
@@ -171,6 +178,16 @@ impl AgentsManager {
 
     pub fn with_channels_sender(mut self, sender: mpsc::Sender<ChannelEvent>) -> Self {
         self.channels_sender = Some(sender);
+        self
+    }
+
+    pub fn with_session_store(mut self, store: std::sync::Arc<dyn DynSessionStore>) -> Self {
+        self.session_store = store;
+        self
+    }
+
+    pub fn with_session_ttl_secs(mut self, ttl: i64) -> Self {
+        self.session_ttl_secs = ttl;
         self
     }
 
@@ -455,20 +472,46 @@ impl AgentsManager {
         let slot = &mut self.slots[slot_idx];
         slot.session_map
             .insert(session_key.clone(), acp_session_id.clone());
-        slot.reverse_map.insert(acp_session_id.clone(), session_key);
+        slot.reverse_map
+            .insert(acp_session_id.clone(), session_key.clone());
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let persisted = PersistedSession {
+            session_key: session_key.to_string(),
+            agent_name: agent_name.to_string(),
+            acp_session_id: acp_session_id.clone(),
+            created_at: now,
+            last_active_at: now,
+            closed: false,
+        };
+        if let Err(e) = self.session_store.upsert_session(&persisted).await {
+            tracing::warn!(
+                agent = %agent_name,
+                session_key = %session_key,
+                error = %e,
+                "failed to persist new session to store"
+            );
+        }
 
         tracing::info!(agent = %agent_name, session_key = %acp_session_id, "multi-session created");
         Ok(acp_session_id)
     }
 
     async fn prompt_session(
-        &self,
+        &mut self,
         agent_name: &str,
         session_key: &SessionKey,
         message: &str,
     ) -> Result<(), AgentsError> {
         let slot_idx = find_slot_by_name(&self.slots, agent_name)
             .ok_or_else(|| AgentsError::AgentNotFound(agent_name.to_string()))?;
+
+        if !self.slots[slot_idx].session_map.contains_key(session_key) {
+            self.heal_session(slot_idx, agent_name, session_key).await?;
+        }
 
         let slot = &self.slots[slot_idx];
         let acp_session_id = slot
@@ -487,6 +530,24 @@ impl AgentsManager {
         })?;
 
         let response_rx = conn.send_request("session/prompt", params).await?;
+
+        {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
+            let sk_string = session_key.to_string();
+            let store = self.session_store.clone();
+            tokio::spawn(async move {
+                if let Err(e) = store.update_last_active(&sk_string, now).await {
+                    tracing::warn!(
+                        session_key = %sk_string,
+                        error = %e,
+                        "failed to update last_active in store"
+                    );
+                }
+            });
+        }
 
         {
             let completion_tx = self.completion_tx.clone();
@@ -523,6 +584,126 @@ impl AgentsManager {
             });
         }
 
+        Ok(())
+    }
+
+    /// Attempt to recover a missing session before a prompt:
+    /// 1. Try `session/load` if the agent supports it and a stale ACP session ID exists.
+    /// 2. Fall back to `create_session` otherwise.
+    async fn heal_session(
+        &mut self,
+        slot_idx: usize,
+        agent_name: &str,
+        session_key: &SessionKey,
+    ) -> Result<(), AgentsError> {
+        let acp_timeout = Self::acp_timeout_for(&self.slots[slot_idx].config, &self.manager_config);
+
+        let stale_acp_id = self.slots[slot_idx]
+            .stale_sessions
+            .get(session_key)
+            .cloned();
+
+        let supports_load = self.slots[slot_idx]
+            .agent_capabilities
+            .as_ref()
+            .and_then(|c| c.load_session)
+            .unwrap_or(false);
+
+        tracing::info!(
+            agent = %agent_name,
+            session_key = %session_key,
+            has_stale_acp_id = stale_acp_id.is_some(),
+            supports_load = supports_load,
+            step = "recovery_started",
+            "session recovery initiated"
+        );
+
+        if supports_load && let Some(acp_id) = stale_acp_id {
+            let params = match serde_json::to_value(SessionLoadParams {
+                session_id: acp_id.clone(),
+            }) {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::warn!(agent = %agent_name, error = %e, "failed to serialize session/load params");
+                    serde_json::Value::default()
+                }
+            };
+
+            let conn = self.slots[slot_idx]
+                .connection
+                .as_ref()
+                .ok_or(AgentsError::ConnectionClosed)?;
+
+            if let Ok(rx) = conn.send_request("session/load", params).await
+                && let Ok(Ok(resp)) = tokio::time::timeout(acp_timeout, rx).await
+                && resp.get("sessionId").is_some()
+            {
+                tracing::info!(
+                    agent = %agent_name,
+                    session_key = %session_key,
+                    step = "load_attempted",
+                    success = true,
+                    "session/load succeeded"
+                );
+                tracing::info!(
+                    agent = %agent_name,
+                    session_key = %session_key,
+                    step = "recovery_outcome",
+                    outcome = "loaded",
+                    "session recovery complete"
+                );
+                let slot = &mut self.slots[slot_idx];
+                slot.stale_sessions.remove(session_key);
+                slot.session_map.insert(session_key.clone(), acp_id.clone());
+                slot.reverse_map.insert(acp_id, session_key.clone());
+                return Ok(());
+            }
+            tracing::info!(
+                agent = %agent_name,
+                session_key = %session_key,
+                step = "load_attempted",
+                success = false,
+                "session/load rejected, falling back to create"
+            );
+        }
+
+        self.slots[slot_idx].stale_sessions.remove(session_key);
+        let acp_session_id = match self.create_session(agent_name, session_key.clone()).await {
+            Ok(id) => id,
+            Err(e) => {
+                tracing::info!(
+                    agent = %agent_name,
+                    session_key = %session_key,
+                    step = "create_attempted",
+                    success = false,
+                    error = %e,
+                    "session creation failed during recovery"
+                );
+                tracing::info!(
+                    agent = %agent_name,
+                    session_key = %session_key,
+                    step = "recovery_outcome",
+                    outcome = "failed",
+                    "session recovery exhausted all attempts"
+                );
+                return Err(e);
+            }
+        };
+        tracing::info!(
+            agent = %agent_name,
+            session_key = %session_key,
+            acp_session_id = %acp_session_id,
+            step = "create_attempted",
+            success = true,
+            "session created for recovery"
+        );
+        tracing::info!(
+            agent = %agent_name,
+            session_key = %session_key,
+            step = "recovery_outcome",
+            outcome = "created",
+            "session recovery complete"
+        );
         Ok(())
     }
 
@@ -1006,7 +1187,13 @@ impl AgentsManager {
     }
 
     async fn shutdown_all(&mut self) {
+        let store = self.session_store.clone();
         for slot in &mut self.slots {
+            for session_key in slot.session_map.keys() {
+                if let Err(e) = store.mark_closed(session_key.as_ref()).await {
+                    tracing::warn!(session_key = %session_key, error = %e, "failed to mark session closed in store");
+                }
+            }
             if let Some(conn) = &slot.connection {
                 for acp_id in slot.session_map.values() {
                     let params = serde_json::json!({ "sessionId": acp_id });
@@ -1107,7 +1294,7 @@ impl AgentsManager {
             return false;
         }
 
-        let Some(first_acp_id) = slot.session_map.values().next().cloned() else {
+        let Some(first_acp_id) = slot.stale_sessions.values().next().cloned() else {
             return false;
         };
         let params = serde_json::to_value(SessionLoadParams {
@@ -1127,6 +1314,10 @@ impl AgentsManager {
         match tokio::time::timeout(acp_timeout, rx).await {
             Ok(Ok(resp)) if resp.get("sessionId").is_some() => {
                 tracing::info!(agent = %agent_name, "session restored via session/load");
+                // Move stale sessions back into session_map — the agent confirmed it
+                // recognises the old ACP session IDs in the new process.
+                let slot = &mut self.slots[slot_idx];
+                slot.session_map.extend(slot.stale_sessions.drain());
                 slot.lifecycle.backoff.reset();
                 true
             }
@@ -1138,6 +1329,12 @@ impl AgentsManager {
     }
 
     async fn restore_or_start_session(&mut self, slot_idx: usize, agent_name: &str) {
+        // Drain session_map into stale_sessions so they survive the crash boundary.
+        // try_restore_session reads from stale_sessions; prompt_session uses them for
+        // self-healing on the next prompt if session/load isn't attempted here.
+        let slot = &mut self.slots[slot_idx];
+        slot.stale_sessions.extend(slot.session_map.drain());
+
         let acp_timeout = Self::acp_timeout_for(&self.slots[slot_idx].config, &self.manager_config);
         if self
             .try_restore_session(slot_idx, agent_name, acp_timeout)
@@ -1149,9 +1346,6 @@ impl AgentsManager {
         let slot = &mut self.slots[slot_idx];
         match Self::start_session(slot, &self.tools_handle, acp_timeout).await {
             Ok(session_id) => {
-                // Clear stale session IDs from the crashed process — they are
-                // no longer valid in the newly spawned agent.
-                slot.session_map.clear();
                 slot.reverse_map.clear();
                 Self::register_default_session(slot, agent_name, session_id);
                 slot.lifecycle.backoff.reset();
@@ -1305,6 +1499,43 @@ impl Manager for AgentsManager {
 
             let slot = self.build_started_slot(name, config).await?;
             self.slots.push(slot);
+        }
+
+        let deleted = self
+            .session_store
+            .delete_expired(self.session_ttl_secs)
+            .await
+            .unwrap_or_else(|e| {
+                tracing::warn!(error = %e, "failed to delete expired sessions from store");
+                0
+            });
+        if deleted > 0 {
+            tracing::info!(deleted, "expired sessions cleaned up at boot");
+        }
+
+        let open_sessions = self
+            .session_store
+            .load_open_sessions()
+            .await
+            .unwrap_or_else(|e| {
+                tracing::warn!(error = %e, "failed to load open sessions from store, starting fresh");
+                vec![]
+            });
+        for session in open_sessions {
+            if let Some(idx) = find_slot_by_name(&self.slots, &session.agent_name) {
+                let key: protoclaw_core::SessionKey =
+                    session.session_key.parse().unwrap_or_else(|_| {
+                        protoclaw_core::SessionKey::new(
+                            &session.agent_name,
+                            "restored",
+                            &session.acp_session_id,
+                        )
+                    });
+                self.slots[idx]
+                    .stale_sessions
+                    .entry(key)
+                    .or_insert(session.acp_session_id);
+            }
         }
 
         tracing::info!(
@@ -2829,6 +3060,241 @@ mod tests {
         assert!(
             written["result"]["requestId"].is_null(),
             "requestId must not be in result"
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_stale_sessions_populated_from_store_then_slot_stale_map_contains_them() {
+        use protoclaw_core::{
+            DynSessionStore, NoopSessionStore, PersistedSession, SessionStoreError,
+        };
+        use std::future::Future;
+        use std::pin::Pin;
+
+        struct StubStore {
+            sessions: Vec<PersistedSession>,
+        }
+
+        impl protoclaw_core::SessionStore for StubStore {
+            fn load_open_sessions(
+                &self,
+            ) -> impl Future<Output = Result<Vec<PersistedSession>, SessionStoreError>> + Send
+            {
+                let sessions = self.sessions.clone();
+                async move { Ok(sessions) }
+            }
+            fn upsert_session(
+                &self,
+                _: &PersistedSession,
+            ) -> impl Future<Output = Result<(), SessionStoreError>> + Send {
+                async { Ok(()) }
+            }
+            fn mark_closed(
+                &self,
+                _: &str,
+            ) -> impl Future<Output = Result<(), SessionStoreError>> + Send {
+                async { Ok(()) }
+            }
+            fn update_last_active(
+                &self,
+                _: &str,
+                _: i64,
+            ) -> impl Future<Output = Result<(), SessionStoreError>> + Send {
+                async { Ok(()) }
+            }
+            fn delete_expired(
+                &self,
+                _: i64,
+            ) -> impl Future<Output = Result<u64, SessionStoreError>> + Send {
+                async { Ok(0) }
+            }
+        }
+
+        let session_key_str = SessionKey::new("telegram", "direct", "alice").to_string();
+        let store = std::sync::Arc::new(StubStore {
+            sessions: vec![PersistedSession {
+                session_key: session_key_str.clone(),
+                agent_name: "default".to_string(),
+                acp_session_id: "stale-acp-111".to_string(),
+                created_at: 1_000_000,
+                last_active_at: 1_000_100,
+                closed: false,
+            }],
+        });
+
+        let (handle, rx) = make_tools_handle();
+        let tools_task = tokio::spawn(serve_tools_urls(rx));
+
+        let mut m =
+            AgentsManager::new(mock_agents_manager_config(), handle).with_session_store(store);
+
+        m.start().await.unwrap();
+
+        let key = SessionKey::new("telegram", "direct", "alice");
+        assert!(
+            m.slots[0].stale_sessions.contains_key(&key),
+            "stale_sessions should contain the key loaded from store"
+        );
+        assert_eq!(
+            m.slots[0].stale_sessions.get(&key).map(String::as_str),
+            Some("stale-acp-111"),
+        );
+
+        m.shutdown_all().await;
+        tools_task.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_agent_rejects_session_load_then_heal_session_falls_back_to_create() {
+        let mut config = mock_agent_config();
+        config
+            .options
+            .insert("reject_load".into(), serde_json::json!(true));
+
+        let (handle, rx) = make_tools_handle();
+        let tools_task = tokio::spawn(serve_tools_urls(rx));
+
+        let mut m = AgentsManager::new(
+            mock_agents_manager_config_with(HashMap::from([("default".into(), config)])),
+            handle,
+        );
+        m.start().await.unwrap();
+
+        let session_key = SessionKey::new("telegram", "direct", "bob");
+        m.slots[0]
+            .stale_sessions
+            .insert(session_key.clone(), "stale-acp-old".to_string());
+
+        let result = m.heal_session(0, "default", &session_key).await;
+        assert!(
+            result.is_ok(),
+            "heal_session should succeed via fallback: {result:?}"
+        );
+
+        assert!(
+            m.slots[0].session_map.contains_key(&session_key),
+            "session_map must contain the new session after heal"
+        );
+        assert!(
+            !m.slots[0].stale_sessions.contains_key(&session_key),
+            "stale_sessions must be cleared after successful heal"
+        );
+
+        let acp_id = m.slots[0].session_map.get(&session_key).unwrap();
+        assert_ne!(
+            acp_id, "stale-acp-old",
+            "session_map must have new id, not stale"
+        );
+
+        m.shutdown_all().await;
+        tools_task.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_start_called_with_sqlite_store_then_expired_sessions_deleted() {
+        use protoclaw_core::{PersistedSession, SqliteSessionStore};
+
+        let store_arc: std::sync::Arc<dyn protoclaw_core::DynSessionStore> = std::sync::Arc::new(
+            SqliteSessionStore::open_in_memory().expect("in-memory sqlite failed"),
+        );
+
+        let old_session = PersistedSession {
+            session_key: "old-key".to_string(),
+            agent_name: "default".to_string(),
+            acp_session_id: "acp-old-1".to_string(),
+            created_at: 1,
+            last_active_at: 1,
+            closed: false,
+        };
+        store_arc
+            .upsert_session(&old_session)
+            .await
+            .expect("upsert failed");
+
+        let before = store_arc.load_open_sessions().await.expect("load failed");
+        assert_eq!(before.len(), 1, "old session should exist before start");
+
+        let (handle, rx) = make_tools_handle();
+        let tools_task = tokio::spawn(serve_tools_urls(rx));
+
+        let mut m = AgentsManager::new(mock_agents_manager_config(), handle)
+            .with_session_store(store_arc.clone())
+            .with_session_ttl_secs(1);
+
+        m.start().await.expect("start failed");
+
+        let after = store_arc
+            .load_open_sessions()
+            .await
+            .expect("load after failed");
+        assert!(
+            after.is_empty(),
+            "expired session should have been deleted at boot, but got: {after:?}"
+        );
+
+        m.shutdown_all().await;
+        tools_task.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_shutdown_all_called_then_active_sessions_marked_closed() {
+        use protoclaw_core::{PersistedSession, SqliteSessionStore};
+
+        let store = SqliteSessionStore::open_in_memory().expect("in-memory sqlite failed");
+        let store_arc: std::sync::Arc<dyn protoclaw_core::DynSessionStore> =
+            std::sync::Arc::new(store);
+
+        let (handle, rx) = make_tools_handle();
+        let tools_task = tokio::spawn(serve_tools_urls(rx));
+
+        let mut m = AgentsManager::new(mock_agents_manager_config(), handle)
+            .with_session_store(store_arc.clone());
+
+        m.start().await.expect("start failed");
+
+        let session_key = m.slots[0]
+            .session_map
+            .keys()
+            .next()
+            .cloned()
+            .expect("slot should have a default session key");
+
+        let acp_id = m.slots[0]
+            .session_map
+            .get(&session_key)
+            .cloned()
+            .expect("slot should have a default acp session id");
+
+        let persisted = PersistedSession {
+            session_key: session_key.to_string(),
+            agent_name: "default".to_string(),
+            acp_session_id: acp_id,
+            created_at: 1_000_000,
+            last_active_at: 1_000_100,
+            closed: false,
+        };
+        store_arc
+            .upsert_session(&persisted)
+            .await
+            .expect("upsert failed");
+
+        let before = store_arc.load_open_sessions().await.expect("load failed");
+        assert_eq!(before.len(), 1, "session should be open before shutdown");
+
+        m.shutdown_all().await;
+        tools_task.abort();
+
+        let after = store_arc
+            .load_open_sessions()
+            .await
+            .expect("load after failed");
+        assert!(
+            after.is_empty(),
+            "session should be marked closed after shutdown_all, but got: {after:?}"
         );
     }
 }

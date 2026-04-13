@@ -17,3 +17,7 @@ supervisor:
   health_check_interval_secs: 5
   max_restarts: 5
   restart_window_secs: 60
+
+session_store:
+  type: none
+

@@ -46,6 +46,8 @@ protoclaw/
 | Add WASM tool | `crates/protoclaw-tools/src/wasm_runner.rs` | WasmToolRunner + WasmTool for sandboxed execution |
 | Build demo tool | `examples/01-fake-agent-telegram-bot/tools/system-info/` | Workspace member, uses protoclaw-sdk-tool |
 | Change config schema | `crates/protoclaw-config/src/types.rs` | Serde structs (`WorkspaceConfig` enum, `AgentConfig`), update tests in `lib.rs` |
+| Change session persistence | `crates/protoclaw-core/src/session_store.rs` | SessionStore trait, DynSessionStore, PersistedSession, NoopSessionStore |
+| Change SQLite store impl | `crates/protoclaw-core/src/sqlite_session_store.rs` | SqliteSessionStore (rusqlite, bundled) |
 | Modify JSON-RPC framing | `crates/protoclaw-jsonrpc/src/codec.rs` | LinesCodec-based, line-delimited JSON |
 | Build channel SDK | `crates/protoclaw-sdk-channel/` | Channel trait + ChannelHarness |
 | Build tool SDK | `crates/protoclaw-sdk-tool/` | Tool trait + ToolServer |
@@ -270,3 +272,17 @@ Check which AGENTS.md files exist in the affected directories and their parents.
 - **`protoclaw-test-helpers` `test_support` module**: `poll.rs` added with the `wait_for_condition` async helper. Polls an async condition closure at ~100ms intervals until it returns `Some(T)` or the timeout expires. Returns `Some(T)` on success, `None` on timeout. Used in E2E permission tests. Full module list: `config`, `handles`, `paths`, `poll`, `ports`, `sse`, `supervisor`, `timeout`.
 
 - **PermissionBroker auto-deny gap (known limitation)**: When `permission_timeout_secs` fires, the channels manager sends auto-deny to the agent via `AgentsCommand::RespondPermission`, but does NOT resolve the channel's `PermissionBroker` oneshot sender. The channel harness remains blocked until its own internal timeout fires. This is a known limitation — unifying the auto-deny path to also resolve the broker oneshot is a future cleanup. See `crates/protoclaw-channels/AGENTS.md` for the full description.
+
+## v0.3.3 Changes
+
+- **Session persistence**: Pluggable session store so sessions survive agent crashes and protoclaw restarts. `SessionStore` trait (native async fn in trait) + `DynSessionStore` (object-safe `Pin<Box>` wrapper with blanket impl) in `protoclaw-core/src/session_store.rs`. `NoopSessionStore` is the default when no store is configured.
+- **SQLite backend**: `SqliteSessionStore` in `protoclaw-core/src/sqlite_session_store.rs` — uses `rusqlite` with `bundled` feature (no system SQLite dependency). `Arc<Mutex<Connection>>` + `tokio::task::spawn_blocking` pattern because `rusqlite::Connection` is not `Send` across await points. WAL journal mode, auto-creates schema on open.
+- **SessionStoreConfig**: Tagged enum in `protoclaw-config/src/types.rs` — `type: none` (default) or `type: sqlite` with optional `path` and `ttl_days` (default 7). Added to `ProtoclawConfig` as `session_store` field with `#[serde(default)]`.
+- **Supervisor store wiring**: `build_session_store()` in `protoclaw-supervisor/src/lib.rs` matches on `SessionStoreConfig`, constructs the store, and passes it to `AgentsManager` via `.with_session_store()`. Falls back to `NoopSessionStore` on open failure (logged, not fatal).
+- **Boot cleanup**: `AgentsManager::start()` calls `delete_expired(session_ttl_secs)` before `load_open_sessions()` — prunes stale sessions at boot. `session_ttl_secs` field (default 7 days) with `.with_session_ttl_secs()` builder.
+- **Session loading at boot**: `start()` calls `load_open_sessions()` and populates `stale_sessions` on matching agent slots — enables `heal_session()` to attempt `session/load` on the next prompt.
+- **Crash recovery**: `restore_or_start_session()` drains `session_map` into `stale_sessions` on crash. `try_restore_session()` reads from `stale_sessions` and moves them back to `session_map` on successful `session/load`. `heal_session()` in `prompt_session()` tries load from stale, falls back to `create_session`.
+- **Lifecycle persistence**: `create_session()` calls `upsert_session(closed=false)` after success. `prompt_session()` spawns background `update_last_active()`. `shutdown_all()` calls `mark_closed()` for each session before `session/close`. All store failures are logged (`tracing::warn`) but never block runtime operations.
+- **Error delivery (ERR-01)**: `dispatch_to_agent()` in channels manager delivers `channel/deliverMessage` to the originating channel when `PromptSession` fails — users see error messages instead of silence.
+- **Structured audit tracing (ERR-02)**: `heal_session()` emits `tracing::info!` events with structured fields at each recovery step: `step="recovery_started"`, `step="load_attempted"` (with `success`), `step="create_attempted"` (with `success`), `step="recovery_outcome"` (with `outcome` = `"loaded"` / `"created"` / `"failed"`).
+- **`stale_sessions` field on `AgentSlot`**: `HashMap<SessionKey, String>` — populated by draining `session_map` on crash, consumed by `heal_session()` and `try_restore_session()` for recovery.

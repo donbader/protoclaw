@@ -715,9 +715,45 @@ impl ChannelsManager {
             }
             Ok(Err(e)) => {
                 tracing::warn!(session_key = %session_key, error = %e, "PromptSession failed");
+                if let Some(entry) = self.routing_table.get(session_key)
+                    && let Some(conn) = &self.slots[entry.slot_index].connection
+                {
+                    let error_params = serde_json::json!({
+                        "sessionId": entry.acp_session_id,
+                        "content": format!("⚠️ Session recovery failed: {e}"),
+                    });
+                    if let Err(notify_err) = conn
+                        .send_notification("channel/deliverMessage", error_params)
+                        .await
+                    {
+                        tracing::warn!(
+                            session_key = %session_key,
+                            error = %notify_err,
+                            "failed to deliver recovery error to channel"
+                        );
+                    }
+                }
             }
             Err(_) => {
                 tracing::warn!(session_key = %session_key, "PromptSession reply dropped");
+                if let Some(entry) = self.routing_table.get(session_key)
+                    && let Some(conn) = &self.slots[entry.slot_index].connection
+                {
+                    let error_params = serde_json::json!({
+                        "sessionId": entry.acp_session_id,
+                        "content": "⚠️ Session recovery failed: internal error (reply dropped)",
+                    });
+                    if let Err(notify_err) = conn
+                        .send_notification("channel/deliverMessage", error_params)
+                        .await
+                    {
+                        tracing::warn!(
+                            session_key = %session_key,
+                            error = %notify_err,
+                            "failed to deliver recovery error to channel"
+                        );
+                    }
+                }
             }
         }
     }
