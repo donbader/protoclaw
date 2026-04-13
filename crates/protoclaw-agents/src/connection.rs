@@ -358,8 +358,8 @@ impl AgentConnection {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use protoclaw_config::{LocalWorkspaceConfig, WorkspaceConfig};
     use protoclaw_config::types::StringOrArray;
+    use protoclaw_config::{LocalWorkspaceConfig, WorkspaceConfig};
 
     use std::collections::HashMap;
 
