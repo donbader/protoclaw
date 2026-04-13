@@ -257,6 +257,7 @@ mod tests {
             channels_manager: ChannelsManagerConfig::default(),
             tools_manager: ToolsManagerConfig::default(),
             supervisor: SupervisorConfig::default(),
+            session_store: Default::default(),
         }
     }
 

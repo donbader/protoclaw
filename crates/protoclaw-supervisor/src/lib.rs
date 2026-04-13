@@ -547,6 +547,7 @@ mod tests {
             log_level: "info".into(),
             log_format: protoclaw_config::LogFormat::Pretty,
             extensions_dir: "/usr/local/bin".into(),
+            session_store: Default::default(),
         }
     }
 

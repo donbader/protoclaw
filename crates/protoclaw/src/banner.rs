@@ -115,6 +115,7 @@ mod tests {
                 ..Default::default()
             },
             supervisor: SupervisorConfig::default(),
+            session_store: Default::default(),
         }
     }
 

@@ -69,6 +69,7 @@ pub fn mock_agent_config_with_options(
         log_level: "info".into(),
         log_format: protoclaw_config::LogFormat::Pretty,
         extensions_dir: "/usr/local/bin".into(),
+        session_store: Default::default(),
     }
 }
 
@@ -147,6 +148,7 @@ pub fn sdk_channel_config() -> protoclaw_config::ProtoclawConfig {
         log_level: "info".into(),
         log_format: protoclaw_config::LogFormat::Pretty,
         extensions_dir: "/usr/local/bin".into(),
+        session_store: Default::default(),
     }
 }
 
@@ -164,7 +166,7 @@ pub fn sdk_tool_config() -> protoclaw_config::ProtoclawConfig {
                 },
             ),
             enabled: true,
-            tools: vec!["echo".into()],
+            tools: vec!["sdk-test-tool".into()],
             acp_timeout_secs: None,
             backoff: None,
             crash_tracker: None,
@@ -191,7 +193,7 @@ pub fn sdk_tool_config() -> protoclaw_config::ProtoclawConfig {
 
     let mut tools = HashMap::new();
     tools.insert(
-        "echo".to_string(),
+        "sdk-test-tool".to_string(),
         protoclaw_config::ToolConfig {
             tool_type: protoclaw_config::ToolType::Mcp,
             binary: Some(sdk_test_tool_path().to_string_lossy().to_string()),
@@ -229,6 +231,7 @@ pub fn sdk_tool_config() -> protoclaw_config::ProtoclawConfig {
         log_level: "info".into(),
         log_format: protoclaw_config::LogFormat::Pretty,
         extensions_dir: "/usr/local/bin".into(),
+        session_store: Default::default(),
     }
 }
 
@@ -353,6 +356,7 @@ pub fn wasm_tool_config() -> protoclaw_config::ProtoclawConfig {
         log_level: "info".into(),
         log_format: protoclaw_config::LogFormat::Pretty,
         extensions_dir: "/usr/local/bin".into(),
+        session_store: Default::default(),
     }
 }
 
@@ -450,6 +454,7 @@ pub fn multi_tool_config() -> protoclaw_config::ProtoclawConfig {
         log_level: "info".into(),
         log_format: protoclaw_config::LogFormat::Pretty,
         extensions_dir: "/usr/local/bin".into(),
+        session_store: Default::default(),
     }
 }
 
@@ -535,6 +540,7 @@ pub fn invalid_tool_config() -> protoclaw_config::ProtoclawConfig {
         log_level: "info".into(),
         log_format: protoclaw_config::LogFormat::Pretty,
         extensions_dir: "/usr/local/bin".into(),
+        session_store: Default::default(),
     }
 }
 
@@ -614,6 +620,7 @@ pub fn docker_agent_config_with_options(
         log_level: "info".into(),
         log_format: protoclaw_config::LogFormat::Pretty,
         extensions_dir: "/usr/local/bin".into(),
+        session_store: Default::default(),
     }
 }
 
