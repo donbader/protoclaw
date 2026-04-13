@@ -192,7 +192,7 @@ mod tests {
     #[tokio::test]
     async fn when_noop_load_open_sessions_called_then_returns_empty_vec() {
         let store = NoopSessionStore;
-        let result = store.load_open_sessions().await;
+        let result = SessionStore::load_open_sessions(&store).await;
         assert!(result.is_ok());
         assert!(result.unwrap().is_empty());
     }
@@ -203,7 +203,7 @@ mod tests {
         given_a_persisted_session: PersistedSession,
     ) {
         let store = NoopSessionStore;
-        let result = store.upsert_session(&given_a_persisted_session).await;
+        let result = SessionStore::upsert_session(&store, &given_a_persisted_session).await;
         assert!(result.is_ok());
     }
 
@@ -211,7 +211,7 @@ mod tests {
     #[tokio::test]
     async fn when_noop_mark_closed_called_then_returns_ok() {
         let store = NoopSessionStore;
-        let result = store.mark_closed("key-1").await;
+        let result = SessionStore::mark_closed(&store, "key-1").await;
         assert!(result.is_ok());
     }
 
@@ -219,7 +219,7 @@ mod tests {
     #[tokio::test]
     async fn when_noop_update_last_active_called_then_returns_ok() {
         let store = NoopSessionStore;
-        let result = store.update_last_active("key-1", 9_999_999).await;
+        let result = SessionStore::update_last_active(&store, "key-1", 9_999_999).await;
         assert!(result.is_ok());
     }
 
@@ -227,7 +227,7 @@ mod tests {
     #[tokio::test]
     async fn when_noop_delete_expired_called_then_returns_zero() {
         let store = NoopSessionStore;
-        let result = store.delete_expired(7 * 24 * 3600).await;
+        let result = SessionStore::delete_expired(&store, 7 * 24 * 3600).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 0);
     }
