@@ -102,3 +102,11 @@ Key type: `SessionKey` (`"{channel}:{kind}:{peer_id}"`) is the queue key.
 
 - `channel/requestPermission` changed from notification to request — channels manager now uses `send_request()` and spawns a task to await the response and forward it to `AgentsCommand::RespondPermission`
 - Permission routing tracing added: `permission routed to channel` and `permission response from channel, forwarding to agents`
+
+## v0.3.2 Changes
+
+- **`permission_timeout_secs`**: Optional field on `ChannelsManager` (set via `ChannelsManagerConfig`). When set, the spawned permission task races the channel's `channel/respondPermission` response against a `tokio::time::timeout`. If the timeout fires first, auto-deny is sent to the agent (`optionId: "denied"`). When `None`, the task waits indefinitely for the channel to respond.
+
+- **`route_permission_event()`**: Private method on `ChannelsManager` that routes a permission request from an agent to the appropriate channel subprocess. Looks up the session key in the routing table, calls `conn.send_request("channel/requestPermission", params)` to send the JSON-RPC request, then spawns a `tokio::spawn` task to await the response. The spawned task handles the timeout race and forwards the result via `AgentsCommand::RespondPermission` to the agents manager.
+
+- **PermissionBroker auto-deny gap (known limitation)**: When `permission_timeout_secs` fires, the spawned task sends `AgentsCommand::RespondPermission` with `optionId: "denied"` to the agents manager — which notifies the agent correctly. However, the task does NOT resolve the `PermissionBroker` oneshot sender held in the channel harness (`protoclaw-sdk-channel`). The harness remains blocked on `broker.await` until its own internal timeout fires. This means the channel harness and the agent are notified on different timelines after auto-deny. Unifying the auto-deny path to also resolve the broker oneshot is a future cleanup — for now, write E2E tests to account for the harness unblocking after the harness-side timeout, not the manager-side one.

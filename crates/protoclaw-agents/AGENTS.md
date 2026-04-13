@@ -100,3 +100,24 @@ This keeps `ContentKind` in `protoclaw-sdk-types` agent-agnostic — it only rea
 - `_raw_response` sentinel removed — all 4 call sites replaced with `send_raw()`
 - Permission `request_id` extraction falls back to JSON-RPC `id` field when `params.requestId` is missing or empty
 - Permission response tracing added: `permission response received from channel` and `permission response sent to agent`
+
+## v0.3.2 Changes
+
+- **`send_raw()` bypass pattern**: `AgentConnection::send_raw(msg: serde_json::Value)` writes a raw `serde_json::Value` directly to agent stdin without wrapping it in a JSON-RPC method envelope. Logs exact JSON at DEBUG level (`"send_raw to agent stdin"`). Used whenever the caller owns the full wire format — primarily permission responses, which are JSON-RPC responses to agent-initiated requests rather than client-initiated ones. Do not use `send()` for permission responses; it wraps the payload in a method envelope the agent won't expect.
+
+- **`RespondPermission` command**: `AgentsCommand::RespondPermission { request_id, option_id }` — dispatched by the channels manager on both the user-response path and the auto-deny timeout path. The handler in `manager.rs` looks up the pending permission by `request_id`, then calls `send_raw()` with the full permission response JSON. `option_id: "denied"` is the auto-deny value.
+
+- **Permission wire format**: The exact JSON the agent receives after a `channel/requestPermission` request:
+  ```json
+  {
+    "jsonrpc": "2.0",
+    "id": "<original_request_id>",
+    "result": {
+      "outcome": {
+        "outcome": "selected",
+        "optionId": "<option_id>"
+      }
+    }
+  }
+  ```
+  The `id` field comes from `perm.request.get("id")` — the JSON-RPC id of the original `channel/requestPermission` request that the agent sent. The `request_id` string used for routing (stored in `pending_permissions`) falls back to the JSON-RPC `id` field when `params.requestId` is missing (OpenCode compat).
