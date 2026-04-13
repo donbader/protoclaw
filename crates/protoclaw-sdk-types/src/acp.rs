@@ -10,6 +10,7 @@ use std::collections::HashMap;
 /// Capabilities advertised by the supervisor to the agent during `initialize`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ClientCapabilities {
+    /// Experimental capability extensions; omitted when not set.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub experimental: Option<serde_json::Value>,
 }
@@ -17,9 +18,12 @@ pub struct ClientCapabilities {
 /// Parameters for the `initialize` request (supervisor → agent).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct InitializeParams {
+    /// ACP protocol version the supervisor is requesting.
     #[serde(rename = "protocolVersion")]
     pub protocol_version: u32,
+    /// Capabilities the supervisor is advertising to the agent.
     pub capabilities: ClientCapabilities,
+    /// Arbitrary runtime options forwarded from `protoclaw.yaml`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub options: Option<HashMap<String, serde_json::Value>>,
 }
@@ -27,8 +31,10 @@ pub struct InitializeParams {
 /// MCP transport capabilities advertised by the agent.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct McpCapabilities {
+    /// Whether the agent supports HTTP-based MCP transport.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub http: Option<bool>,
+    /// Whether the agent supports SSE-based MCP transport.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sse: Option<bool>,
 }
@@ -36,8 +42,10 @@ pub struct McpCapabilities {
 /// Prompt feature capabilities advertised by the agent.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PromptCapabilities {
+    /// Whether the agent supports embedded context in prompts.
     #[serde(rename = "embeddedContext", skip_serializing_if = "Option::is_none")]
     pub embedded_context: Option<bool>,
+    /// Whether the agent supports image content in prompts.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub image: Option<bool>,
 }
@@ -45,10 +53,13 @@ pub struct PromptCapabilities {
 /// Session management capabilities advertised by the agent.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SessionCapabilities {
+    /// Fork capability descriptor; present if the agent supports `session/fork`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fork: Option<serde_json::Value>,
+    /// List capability descriptor; present if the agent supports `session/list`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub list: Option<serde_json::Value>,
+    /// Resume capability descriptor; present if the agent supports `session/load`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resume: Option<serde_json::Value>,
 }
@@ -56,14 +67,19 @@ pub struct SessionCapabilities {
 /// Result returned by the agent in response to `initialize`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct InitializeResult {
+    /// ACP protocol version the agent has accepted.
     #[serde(rename = "protocolVersion")]
     pub protocol_version: u32,
+    /// Whether the agent requests session history to be loaded on startup.
     #[serde(rename = "loadSession", skip_serializing_if = "Option::is_none")]
     pub load_session: Option<bool>,
+    /// MCP transport capabilities supported by the agent.
     #[serde(rename = "mcpCapabilities", skip_serializing_if = "Option::is_none")]
     pub mcp_capabilities: Option<McpCapabilities>,
+    /// Prompt feature capabilities supported by the agent.
     #[serde(rename = "promptCapabilities", skip_serializing_if = "Option::is_none")]
     pub prompt_capabilities: Option<PromptCapabilities>,
+    /// Session management capabilities supported by the agent.
     #[serde(
         rename = "sessionCapabilities",
         skip_serializing_if = "Option::is_none"
@@ -74,16 +90,23 @@ pub struct InitializeResult {
 /// Describes a single MCP server to be passed to the agent on `session/new`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct McpServerInfo {
+    /// Human-readable name identifying this MCP server.
     pub name: String,
+    /// Transport type, e.g. `"stdio"` or `"sse"`.
     #[serde(rename = "type")]
     pub server_type: String,
+    /// URL for HTTP/SSE transports; empty for stdio.
     pub url: String,
+    /// Executable path for stdio transport.
     #[serde(default)]
     pub command: String,
+    /// Command-line arguments for stdio transport.
     #[serde(default)]
     pub args: Vec<String>,
+    /// Environment variables for stdio transport.
     #[serde(default)]
     pub env: Vec<String>,
+    /// HTTP headers for HTTP/SSE transports, as `[name, value]` pairs.
     #[serde(default)]
     pub headers: Vec<Vec<String>>,
 }
@@ -91,9 +114,12 @@ pub struct McpServerInfo {
 /// Parameters for the `session/new` request (supervisor → agent).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SessionNewParams {
+    /// Optional client-provided session ID; agent may use it or generate its own.
     #[serde(rename = "sessionId", skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
+    /// Working directory the agent should use for this session.
     pub cwd: String,
+    /// MCP servers available to the agent for this session.
     #[serde(rename = "mcpServers", default)]
     pub mcp_servers: Vec<McpServerInfo>,
 }
@@ -101,6 +127,7 @@ pub struct SessionNewParams {
 /// Result returned by the agent in response to `session/new`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SessionNewResult {
+    /// Session ID assigned by the agent for the new session.
     #[serde(rename = "sessionId")]
     pub session_id: String,
 }
@@ -109,8 +136,16 @@ pub struct SessionNewResult {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum ContentPart {
-    Text { text: String },
-    Image { url: String },
+    /// Plain text content.
+    Text {
+        /// The text string.
+        text: String,
+    },
+    /// Image content referenced by URL.
+    Image {
+        /// URL pointing to the image resource.
+        url: String,
+    },
 }
 
 impl ContentPart {
@@ -123,14 +158,17 @@ impl ContentPart {
 /// Parameters for the `session/prompt` request (supervisor → agent).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SessionPromptParams {
+    /// ID of the session to send the prompt to.
     #[serde(rename = "sessionId")]
     pub session_id: String,
+    /// Content parts forming the prompt message.
     pub prompt: Vec<ContentPart>,
 }
 
 /// Parameters for the `session/cancel` request (supervisor → agent).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SessionCancelParams {
+    /// ID of the session whose active operation should be cancelled.
     #[serde(rename = "sessionId")]
     pub session_id: String,
 }
@@ -138,6 +176,7 @@ pub struct SessionCancelParams {
 /// Parameters for the `session/fork` request (supervisor → agent).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SessionForkParams {
+    /// ID of the session to fork.
     #[serde(rename = "sessionId")]
     pub session_id: String,
 }
@@ -145,6 +184,7 @@ pub struct SessionForkParams {
 /// Result returned by the agent in response to `session/fork`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SessionForkResult {
+    /// ID of the newly forked session.
     #[serde(rename = "sessionId")]
     pub session_id: String,
 }
@@ -156,14 +196,17 @@ pub struct SessionListParams {}
 /// Result returned by the agent in response to `session/list`.
 #[derive(Debug, Deserialize, PartialEq)]
 pub struct SessionListResult {
+    /// List of sessions currently known to the agent.
     pub sessions: Vec<SessionInfo>,
 }
 
 /// Metadata for a single session returned in `SessionListResult`.
 #[derive(Debug, Deserialize, PartialEq)]
 pub struct SessionInfo {
+    /// Unique identifier for this session.
     #[serde(rename = "sessionId")]
     pub session_id: String,
+    /// Arbitrary agent-defined metadata for this session.
     #[serde(default)]
     pub metadata: serde_json::Value,
 }
@@ -171,6 +214,7 @@ pub struct SessionInfo {
 /// Parameters for the `session/load` request (supervisor → agent).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SessionLoadParams {
+    /// ID of the session to load/resume.
     #[serde(rename = "sessionId")]
     pub session_id: String,
 }
@@ -179,9 +223,13 @@ pub struct SessionLoadParams {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum ToolCallStatus {
+    /// Tool call has been queued but not yet started.
     Pending,
+    /// Tool call is currently executing.
     InProgress,
+    /// Tool call finished successfully.
     Completed,
+    /// Tool call terminated with an error.
     Failed,
 }
 
@@ -190,78 +238,111 @@ pub enum ToolCallStatus {
 #[serde(tag = "sessionUpdate", rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum SessionUpdateType {
+    /// A chunk of the agent's outgoing message text.
     AgentMessageChunk {
+        /// Partial message content for this chunk.
         #[serde(default)]
         content: serde_json::Value,
+        /// Optional message ID grouping chunks belonging to the same message.
         #[serde(rename = "messageId", default)]
         message_id: Option<String>,
     },
+    /// A chunk of the agent's internal reasoning/thought stream.
     AgentThoughtChunk {
+        /// Partial thought content for this chunk.
         #[serde(default)]
         content: serde_json::Value,
+        /// Optional message ID grouping chunks belonging to the same thought.
         #[serde(rename = "messageId", default)]
         message_id: Option<String>,
     },
+    /// Notification that the agent is initiating a tool call.
     ToolCall {
+        /// Unique identifier for this tool call invocation.
         #[serde(rename = "toolCallId", default)]
         tool_call_id: Option<String>,
+        /// Name of the tool being called.
         #[serde(default)]
         name: Option<String>,
+        /// Input arguments passed to the tool.
         #[serde(default)]
         input: Option<serde_json::Value>,
     },
+    /// Status update for an in-progress tool call.
     ToolCallUpdate {
+        /// Identifier of the tool call being updated.
         #[serde(rename = "toolCallId")]
         tool_call_id: String,
+        /// Name of the tool, if known at update time.
         #[serde(skip_serializing_if = "Option::is_none")]
         name: Option<String>,
+        /// Current execution status of the tool call.
         #[serde(default)]
         status: Option<ToolCallStatus>,
+        /// Input arguments, if available at update time.
         #[serde(skip_serializing_if = "Option::is_none")]
         input: Option<serde_json::Value>,
+        /// Output produced by the tool call, if completed.
         #[serde(skip_serializing_if = "Option::is_none")]
         output: Option<String>,
     },
+    /// Agent's execution plan or reasoning outline.
     Plan {
+        /// Plan content emitted by the agent.
         #[serde(default)]
         content: serde_json::Value,
     },
+    /// Token usage statistics for the current session turn.
     UsageUpdate {
+        /// Number of input tokens consumed.
         #[serde(rename = "inputTokens", skip_serializing_if = "Option::is_none")]
         input_tokens: Option<u64>,
+        /// Number of output tokens generated.
         #[serde(rename = "outputTokens", skip_serializing_if = "Option::is_none")]
         output_tokens: Option<u64>,
+        /// Number of tokens read from the prompt cache.
         #[serde(rename = "cacheReadTokens", skip_serializing_if = "Option::is_none")]
         cache_read_tokens: Option<u64>,
+        /// Number of tokens written to the prompt cache.
         #[serde(rename = "cacheWriteTokens", skip_serializing_if = "Option::is_none")]
         cache_write_tokens: Option<u64>,
     },
+    /// Final result produced by the agent for this prompt turn.
     Result {
+        /// The agent's concluding response content, if any.
         #[serde(skip_serializing_if = "Option::is_none")]
         content: Option<String>,
     },
+    /// A chunk of the user's message being echoed back.
     UserMessageChunk {
+        /// Partial user message content for this chunk.
         #[serde(default)]
         content: serde_json::Value,
+        /// Optional message ID grouping chunks belonging to the same user message.
         #[serde(rename = "messageId", default)]
         message_id: Option<String>,
     },
+    /// Current list of slash-commands the agent exposes to the channel.
     AvailableCommandsUpdate {
+        /// Command descriptors; schema is agent-defined.
         #[serde(default)]
         commands: serde_json::Value,
     },
     /// Extension type — not part of core ACP. Carries the agent's current operating mode.
     CurrentModeUpdate {
+        /// The agent's current mode identifier.
         #[serde(default)]
         mode: Option<String>,
     },
     /// Extension type — not part of core ACP. Carries config option updates from the agent.
     ConfigOptionUpdate {
+        /// Flattened map of config option key-value pairs.
         #[serde(default, flatten)]
         extra: serde_json::Map<String, serde_json::Value>,
     },
     /// Extension type — not part of core ACP. Carries session metadata updates from the agent.
     SessionInfoUpdate {
+        /// Flattened map of session metadata key-value pairs.
         #[serde(default, flatten)]
         extra: serde_json::Map<String, serde_json::Value>,
     },
@@ -270,8 +351,10 @@ pub enum SessionUpdateType {
 /// A streaming update event sent by the agent via `session/update`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SessionUpdateEvent {
+    /// ID of the session this update belongs to.
     #[serde(rename = "sessionId")]
     pub session_id: String,
+    /// The update payload, discriminated by `sessionUpdate` tag.
     pub update: SessionUpdateType,
 }
 
