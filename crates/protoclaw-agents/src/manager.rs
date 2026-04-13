@@ -322,6 +322,7 @@ impl AgentsManager {
             } => {
                 for slot in &mut self.slots {
                     if let Some(perm) = slot.pending_permissions.remove(&request_id) {
+                        tracing::info!(agent = %slot.name(), %request_id, %option_id, "permission response received from channel");
                         if let Some(conn) = slot.connection.as_ref() {
                             let resp = serde_json::json!({
                                 "jsonrpc": "2.0",
@@ -332,6 +333,7 @@ impl AgentsManager {
                                 }
                             });
                             let _ = conn.send_raw(resp).await;
+                            tracing::info!(agent = %slot.name(), %request_id, "permission response sent to agent");
                         }
                         break;
                     }

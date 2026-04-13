@@ -498,7 +498,7 @@ where
 }
 
 fn default_log_level() -> String {
-    "info".into()
+    "info,hyper=warn,reqwest=warn,h2=warn,hyper_util=warn,tower=warn".into()
 }
 fn default_extensions_dir() -> String {
     "/usr/local/bin".into()
@@ -605,10 +605,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn when_no_log_level_set_then_defaults_to_info() {
+    fn when_no_log_level_set_then_defaults_to_info_with_noise_filters() {
         let yaml = "";
         let config: ProtoclawConfig = serde_yaml::from_str(yaml).unwrap();
-        assert_eq!(config.log_level, "info");
+        assert!(config.log_level.starts_with("info,"));
+        assert!(config.log_level.contains("hyper=warn"));
     }
 
     #[test]
@@ -813,7 +814,8 @@ tools_manager:
     #[test]
     fn when_parsing_defaults_yaml_then_all_expected_values_present() {
         let config: ProtoclawConfig = serde_yaml::from_str(DEFAULTS_YAML).unwrap();
-        assert_eq!(config.log_level, "info");
+        assert!(config.log_level.starts_with("info,"));
+        assert!(config.log_level.contains("hyper=warn"));
         assert_eq!(config.log_format, LogFormat::Pretty);
         assert_eq!(config.extensions_dir, "/usr/local/bin");
         assert_eq!(config.supervisor.shutdown_timeout_secs, 30);

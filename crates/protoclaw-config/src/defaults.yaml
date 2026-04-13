@@ -1,4 +1,4 @@
-log_level: "info"
+log_level: "info,hyper=warn,reqwest=warn,h2=warn,hyper_util=warn,tower=warn"
 log_format: "pretty"
 extensions_dir: "/usr/local/bin"
 

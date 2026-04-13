@@ -3,7 +3,7 @@
 # The agent uses direct ACP mode (opencode acp) — no wrapper binary needed.
 # See README.md for switching to Claude Code or Kiro.
 
-log_level: "debug"
+log_level: "debug,hyper=warn,reqwest=warn,h2=warn,hyper_util=warn,tower=warn"
 extensions_dir: "/usr/local/bin"
 
 agents_manager:

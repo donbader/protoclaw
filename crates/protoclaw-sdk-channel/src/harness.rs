@@ -134,7 +134,9 @@ impl<C: Channel> ChannelHarness<C> {
             }
             "channel/requestPermission" => {
                 if let Ok(req) = serde_json::from_value::<ChannelRequestPermission>(params) {
+                    tracing::debug!(request_id = %req.request_id, description = %req.description, "permission request dispatched to channel");
                     let resp = self.channel.request_permission(req).await?;
+                    tracing::debug!(request_id = %resp.request_id, option_id = %resp.option_id, "permission response ready");
                     if let Some(req_id) = id {
                         return Ok(Some(serde_json::json!({
                             "jsonrpc": "2.0",

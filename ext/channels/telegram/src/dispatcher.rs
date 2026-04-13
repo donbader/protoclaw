@@ -80,6 +80,8 @@ async fn handle_callback_query(
         None => return Ok(()),
     };
 
+    tracing::info!(%request_id, %option_id, "callback query received");
+
     let query_id = q.id.clone();
     let bot_clone = bot.clone();
     let _ = crate::deliver::retry_telegram_op("answer_callback_query", 0, || {

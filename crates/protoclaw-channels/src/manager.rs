@@ -269,14 +269,18 @@ impl ChannelsManager {
                         });
                         match conn.send_request("channel/requestPermission", params).await {
                             Ok(rx) => {
+                                tracing::info!(channel = %slot.name, %request_id, "permission routed to channel");
                                 if let Some(agents_handle) = self.agents_handle.clone() {
                                     let req_id = request_id.clone();
+                                    let channel_name = slot.name.clone();
                                     tokio::spawn(async move {
                                         if let Ok(resp_val) = rx.await {
-                                            let option_id = resp_val["result"]["optionId"]
+                                            let option_id = resp_val["optionId"]
                                                 .as_str()
+                                                .or_else(|| resp_val["result"]["optionId"].as_str())
                                                 .unwrap_or("once")
                                                 .to_string();
+                                            tracing::info!(channel = %channel_name, request_id = %req_id, %option_id, "permission response from channel, forwarding to agents");
                                             let _ = agents_handle
                                                 .send(AgentsCommand::RespondPermission {
                                                     request_id: req_id,
@@ -403,14 +407,18 @@ impl ChannelsManager {
                 });
                 match conn.send_request("channel/requestPermission", params).await {
                     Ok(rx) => {
+                        tracing::info!(channel = %slot.name, session_key = %session_key, request_id = %request_id, "permission routed to channel");
                         if let Some(agents_handle) = self.agents_handle.clone() {
                             let req_id = request_id.to_string();
+                            let channel_name = slot.name.clone();
                             tokio::spawn(async move {
                                 if let Ok(resp_val) = rx.await {
-                                    let option_id = resp_val["result"]["optionId"]
+                                    let option_id = resp_val["optionId"]
                                         .as_str()
+                                        .or_else(|| resp_val["result"]["optionId"].as_str())
                                         .unwrap_or("once")
                                         .to_string();
+                                    tracing::info!(channel = %channel_name, request_id = %req_id, %option_id, "permission response from channel, forwarding to agents");
                                     let _ = agents_handle
                                         .send(AgentsCommand::RespondPermission {
                                             request_id: req_id,

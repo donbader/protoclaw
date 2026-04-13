@@ -27,6 +27,7 @@ pub fn parse_callback_data(data: &str) -> Option<(&str, &str)> {
 }
 
 pub async fn process_callback(request_id: &str, option_id: &str, state: &SharedState) {
+    tracing::info!(%request_id, %option_id, "permission broker resolving");
     state
         .permission_broker
         .lock()
