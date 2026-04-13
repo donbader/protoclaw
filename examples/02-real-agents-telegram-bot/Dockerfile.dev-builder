@@ -1,0 +1,68 @@
+# Dev builder: compile protoclaw from workspace source instead of ghcr.io
+# Used by docker-compose.override.yml for local development
+#
+# Build context must be the workspace root (../../ from this file)
+# Produces the same targets as Dockerfile (example-02-opencode, opencode-agent)
+
+FROM lukemathwalker/cargo-chef:latest-rust-1.94-alpine AS chef
+WORKDIR /build
+
+FROM chef AS planner
+COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
+
+FROM chef AS builder
+COPY --from=planner /build/recipe.json recipe.json
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    cargo chef cook --release --locked --recipe-path recipe.json
+COPY . .
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    cargo build --release --locked \
+    --bin protoclaw \
+    --bin telegram-channel \
+    --bin debug-http \
+    --bin system-info
+
+# --- Below here is identical to Dockerfile (just references local builder) ---
+
+FROM node:20-slim@sha256:f93745c153377ee2fbbdd6e24efcd03cd2e86d6ab1d8aa9916a3790c40313a55 AS opencode-deps
+RUN npm install -g opencode-ai@latest --omit=dev && \
+    find /usr/local/lib/node_modules \
+      -name "*.md" -o -name "*.map" -o -name "*.ts" -o -name "LICENSE*" \
+      -o -name "CHANGELOG*" -o -name "*.d.ts" | xargs rm -f 2>/dev/null && \
+    find /usr/local/lib/node_modules \
+      -type d \( -name "test" -o -name "tests" -o -name "__tests__" \
+      -o -name "docs" -o -name ".github" \) | xargs rm -rf 2>/dev/null; \
+    true
+
+FROM node:20-slim@sha256:f93745c153377ee2fbbdd6e24efcd03cd2e86d6ab1d8aa9916a3790c40313a55 AS example-02-opencode
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY --from=opencode-deps /usr/local/lib/node_modules /usr/local/lib/node_modules
+COPY --from=opencode-deps /usr/local/bin /usr/local/bin
+COPY --from=builder /build/target/release/protoclaw /usr/local/bin/protoclaw
+COPY --from=builder /build/target/release/debug-http /usr/local/bin/channels/debug-http
+COPY --from=builder /build/target/release/telegram-channel /usr/local/bin/channels/telegram
+COPY --from=builder /build/target/release/system-info /usr/local/bin/tools/system-info
+WORKDIR /workspace
+ENTRYPOINT ["protoclaw"]
+
+FROM node:20-slim@sha256:f93745c153377ee2fbbdd6e24efcd03cd2e86d6ab1d8aa9916a3790c40313a55 AS opencode-agent
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY --from=opencode-deps /usr/local/lib/node_modules /usr/local/lib/node_modules
+COPY --from=opencode-deps /usr/local/bin /usr/local/bin
+RUN mkdir -p /home/node/.config/opencode
+COPY examples/02-real-agents-telegram-bot/README.md examples/02-real-agents-telegram-bot/.opencode* /tmp/build-staging/
+RUN if [ -f /tmp/build-staging/opencode.json ]; then \
+      cp /tmp/build-staging/opencode.json /home/node/.config/opencode/ && \
+      cp /tmp/build-staging/package*.json /home/node/.config/opencode/ 2>/dev/null || true; \
+    fi && rm -rf /tmp/build-staging
+RUN if [ -f /home/node/.config/opencode/package.json ]; then \
+      cd /home/node/.config/opencode && npm install --omit=dev; \
+    fi
+USER node
+WORKDIR /home/node
+ENTRYPOINT ["opencode", "acp"]

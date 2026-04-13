@@ -267,15 +267,33 @@ impl ChannelsManager {
                             "description": description,
                             "options": options,
                         });
-                        if let Err(e) = conn
-                            .send_notification("channel/requestPermission", params)
-                            .await
-                        {
-                            tracing::warn!(
-                                channel = %slot.name,
-                                error = %e,
-                                "failed to route permission"
-                            );
+                        match conn.send_request("channel/requestPermission", params).await {
+                            Ok(rx) => {
+                                if let Some(agents_handle) = self.agents_handle.clone() {
+                                    let req_id = request_id.clone();
+                                    tokio::spawn(async move {
+                                        if let Ok(resp_val) = rx.await {
+                                            let option_id = resp_val["result"]["optionId"]
+                                                .as_str()
+                                                .unwrap_or("once")
+                                                .to_string();
+                                            let _ = agents_handle
+                                                .send(AgentsCommand::RespondPermission {
+                                                    request_id: req_id,
+                                                    option_id,
+                                                })
+                                                .await;
+                                        }
+                                    });
+                                }
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    channel = %slot.name,
+                                    error = %e,
+                                    "failed to route permission"
+                                );
+                            }
                         }
                     }
                 } else {
@@ -383,16 +401,34 @@ impl ChannelsManager {
                     "description": description,
                     "options": options,
                 });
-                if let Err(e) = conn
-                    .send_notification("channel/requestPermission", params)
-                    .await
-                {
-                    tracing::warn!(
-                        channel = %slot.name,
-                        session_key = %session_key,
-                        error = %e,
-                        "failed to route permission from agent"
-                    );
+                match conn.send_request("channel/requestPermission", params).await {
+                    Ok(rx) => {
+                        if let Some(agents_handle) = self.agents_handle.clone() {
+                            let req_id = request_id.to_string();
+                            tokio::spawn(async move {
+                                if let Ok(resp_val) = rx.await {
+                                    let option_id = resp_val["result"]["optionId"]
+                                        .as_str()
+                                        .unwrap_or("once")
+                                        .to_string();
+                                    let _ = agents_handle
+                                        .send(AgentsCommand::RespondPermission {
+                                            request_id: req_id,
+                                            option_id,
+                                        })
+                                        .await;
+                                }
+                            });
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            channel = %slot.name,
+                            session_key = %session_key,
+                            error = %e,
+                            "failed to route permission from agent"
+                        );
+                    }
                 }
             }
         } else {
