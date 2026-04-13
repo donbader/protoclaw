@@ -14,7 +14,7 @@ use crate::slot::{AgentSlot, find_slot_by_name};
 use protoclaw_config::{AgentConfig, AgentsManagerConfig, WorkspaceConfig};
 use protoclaw_core::{
     AgentStatusInfo, AgentsCommand, CrashAction, Manager, ManagerError, ManagerHandle,
-    McpServerUrl, PendingPermissionInfo, SessionKey, ToolsCommand, constants,
+    McpServerUrl, PendingPermissionInfo, PersistedSession, SessionKey, ToolsCommand, constants,
 };
 use protoclaw_sdk_agent::{DynAgentAdapter, GenericAcpAdapter};
 use protoclaw_sdk_types::{ChannelEvent, PermissionOption};
@@ -472,7 +472,28 @@ impl AgentsManager {
         let slot = &mut self.slots[slot_idx];
         slot.session_map
             .insert(session_key.clone(), acp_session_id.clone());
-        slot.reverse_map.insert(acp_session_id.clone(), session_key);
+        slot.reverse_map.insert(acp_session_id.clone(), session_key.clone());
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let persisted = PersistedSession {
+            session_key: session_key.to_string(),
+            agent_name: agent_name.to_string(),
+            acp_session_id: acp_session_id.clone(),
+            created_at: now,
+            last_active_at: now,
+            closed: false,
+        };
+        if let Err(e) = self.session_store.upsert_session(&persisted).await {
+            tracing::warn!(
+                agent = %agent_name,
+                session_key = %session_key,
+                error = %e,
+                "failed to persist new session to store"
+            );
+        }
 
         tracing::info!(agent = %agent_name, session_key = %acp_session_id, "multi-session created");
         Ok(acp_session_id)
@@ -508,6 +529,24 @@ impl AgentsManager {
         })?;
 
         let response_rx = conn.send_request("session/prompt", params).await?;
+
+        {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
+            let sk_string = session_key.to_string();
+            let store = self.session_store.clone();
+            tokio::spawn(async move {
+                if let Err(e) = store.update_last_active(&sk_string, now).await {
+                    tracing::warn!(
+                        session_key = %sk_string,
+                        error = %e,
+                        "failed to update last_active in store"
+                    );
+                }
+            });
+        }
 
         {
             let completion_tx = self.completion_tx.clone();
