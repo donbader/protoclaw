@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0](https://github.com/donbader/protoclaw/compare/protoclaw-sdk-types-v0.3.0...protoclaw-sdk-types-v0.4.0) - 2026-04-13
+
+### Added
+
+- *(config)* [**breaking**] replace args field with StringOrArray, update Example 02 for direct ACP spawn
+
+### Fixed
+
+- *(agents)* handle OpenCode permission request schema mismatch
+
+### Other
+
+- *(sdk-types)* add missing field-level doc comments to ACP wire types
+
 ## [0.3.0](https://github.com/donbader/protoclaw/compare/protoclaw-sdk-types-v0.2.3...protoclaw-sdk-types-v0.3.0) - 2026-04-12
 
 ### Added
