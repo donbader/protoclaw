@@ -30,8 +30,8 @@ where
 mod tests {
     use super::*;
     use rstest::rstest;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[rstest]
     #[tokio::test]
@@ -47,13 +47,7 @@ mod tests {
         let cc = call_count.clone();
         let result = wait_for_condition(5000, move || {
             let count = cc.fetch_add(1, Ordering::SeqCst);
-            async move {
-                if count >= 2 {
-                    Some("ok")
-                } else {
-                    None
-                }
-            }
+            async move { if count >= 2 { Some("ok") } else { None } }
         })
         .await;
         assert_eq!(result, Some("ok"));

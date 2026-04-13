@@ -286,7 +286,9 @@ impl ChannelsManager {
                                             match tokio::time::timeout(
                                                 Duration::from_secs(secs),
                                                 rx,
-                                            ).await {
+                                            )
+                                            .await
+                                            {
                                                 Ok(Ok(resp_val)) => Some(resp_val),
                                                 Ok(Err(_)) => None,
                                                 Err(_elapsed) => {
@@ -451,10 +453,8 @@ impl ChannelsManager {
                             let timeout_secs = self.permission_timeout_secs;
                             tokio::spawn(async move {
                                 let result = if let Some(secs) = timeout_secs {
-                                    match tokio::time::timeout(
-                                        Duration::from_secs(secs),
-                                        rx,
-                                    ).await {
+                                    match tokio::time::timeout(Duration::from_secs(secs), rx).await
+                                    {
                                         Ok(Ok(resp_val)) => Some(resp_val),
                                         Ok(Err(_)) => None,
                                         Err(_elapsed) => {
