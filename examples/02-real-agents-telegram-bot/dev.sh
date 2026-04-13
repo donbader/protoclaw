@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Contributor-only tool — not required for running the bot.
+# See README.md for production quickstart (docker compose up).
+# This script provides fast incremental rebuilds from local source.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -10,6 +13,9 @@ COMPOSE_DEV="-f docker-compose.yml -f docker-compose.dev.yml"
 usage() {
     cat <<EOF
 Usage: ./dev.sh [command]
+
+Contributor-only tool — not required for running the bot.
+See README.md for production quickstart (docker compose up).
 
 Commands:
   up        Build (if needed) and start containers

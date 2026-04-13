@@ -100,3 +100,24 @@ OpenCode is the default agent. To use a different agent:
 | `.opencode/` | OpenCode config baked into agent image (gitignored — create your own or omit) |
 | `.env.example` | Environment template |
 | `test.sh` | E2E tests (Docker-only) |
+| `dev.sh` | Contributor-only: incremental rebuild helper (persistent builder container) |
+| `docker-compose.dev.yml` | Contributor-only: dev build override (builds from workspace source) |
+| `Dockerfile.dev-builder` | Contributor-only: local source build with cargo-chef caching |
+
+## Development
+
+> **Contributor-only** — these tools are for developing protoclaw itself, not for running the bot. See [Quick Start](#quick-start) for production usage.
+
+### Local Source Builds
+
+For iterating on protoclaw source code, use the dev tooling:
+
+```sh
+./dev.sh up        # Build from source + start containers
+./dev.sh rebuild   # Incremental rebuild + restart (~30s)
+./dev.sh logs      # Follow protoclaw logs
+./dev.sh down      # Stop containers (builder preserved)
+./dev.sh shell     # Shell into protoclaw container
+```
+
+This uses `docker-compose.dev.yml` (override) and `Dockerfile.dev-builder` (cargo-chef cached builds). Neither is loaded by the default `docker compose up`.
