@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use protoclaw_integration_tests::{
+use anyclaw_integration_tests::{
     SseCollector, boot_supervisor_with_port, invalid_tool_config, multi_tool_config,
     sdk_tool_config, with_timeout,
 };
@@ -102,8 +102,8 @@ async fn when_disabled_tool_configured_then_supervisor_boots_normally() {
     let mut config = sdk_tool_config();
     config.tools_manager.tools.insert(
         "disabled-tool".to_string(),
-        protoclaw_config::ToolConfig {
-            tool_type: protoclaw_config::ToolType::Mcp,
+        anyclaw_config::ToolConfig {
+            tool_type: anyclaw_config::ToolType::Mcp,
             binary: Some("/nonexistent/disabled-tool-xyz".into()),
             args: vec![],
             enabled: false,

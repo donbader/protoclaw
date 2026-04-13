@@ -1,4 +1,4 @@
-FROM ghcr.io/donbader/protoclaw-builder:latest AS builder
+FROM ghcr.io/donbader/anyclaw-builder:latest AS builder
 
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=builder /usr/local/bin/agents/mock-agent /usr/local/bin/agents/mock-agent

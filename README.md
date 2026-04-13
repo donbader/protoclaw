@@ -1,20 +1,20 @@
-# protoclaw
+# anyclaw
 
-[![CI](https://github.com/donbader/protoclaw/actions/workflows/ci.yml/badge.svg)](https://github.com/donbader/protoclaw/actions/workflows/ci.yml)
-[![crates.io](https://img.shields.io/crates/v/protoclaw-sdk-types.svg)](https://crates.io/crates/protoclaw-sdk-types)
-[![docs.rs](https://img.shields.io/docsrs/protoclaw-sdk-types)](https://docs.rs/protoclaw-sdk-types)
-[![MSRV](https://img.shields.io/badge/MSRV-1.94-blue)](https://github.com/donbader/protoclaw/blob/main/Cargo.toml)
+[![CI](https://github.com/donbader/anyclaw/actions/workflows/ci.yml/badge.svg)](https://github.com/donbader/anyclaw/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/anyclaw-sdk-types.svg)](https://crates.io/crates/anyclaw-sdk-types)
+[![docs.rs](https://img.shields.io/docsrs/anyclaw-sdk-types)](https://docs.rs/anyclaw-sdk-types)
+[![MSRV](https://img.shields.io/badge/MSRV-1.94-blue)](https://github.com/donbader/anyclaw/blob/main/Cargo.toml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](LICENSE-MIT)
 
-Infrastructure sidecar that connects AI agents to messaging channels and tools. You bring the agent; protoclaw handles the plumbing.
+Infrastructure sidecar that connects AI agents to messaging channels and tools. You bring the agent; anyclaw handles the plumbing.
 
-> ⚠️ **Unstable** — protoclaw is under active development. APIs, config format, and protocol details may change between releases.
+> ⚠️ **Unstable** — anyclaw is under active development. APIs, config format, and protocol details may change between releases.
 
-## What is protoclaw?
+## What is anyclaw?
 
-Protoclaw is not an AI assistant — it's the infrastructure layer that any agent can plug into. It manages the lifecycle of agent subprocesses, routes messages between channels (Telegram, HTTP) and agents via the ACP protocol (JSON-RPC 2.0 over stdio), and provides tool access through MCP servers and WASM sandboxes.
+Anyclaw is not an AI assistant — it's the infrastructure layer that any agent can plug into. It manages the lifecycle of agent subprocesses, routes messages between channels (Telegram, HTTP) and agents via the ACP protocol (JSON-RPC 2.0 over stdio), and provides tool access through MCP servers and WASM sandboxes.
 
-It runs as a sidecar alongside your agent binary. You bring the AI logic; protoclaw handles crash recovery, message routing, config loading, and subprocess supervision.
+It runs as a sidecar alongside your agent binary. You bring the AI logic; anyclaw handles crash recovery, message routing, config loading, and subprocess supervision.
 
 ## Architecture
 
@@ -43,11 +43,11 @@ Boot order is `tools → agents → channels` because agents need tool URLs duri
 
 ## Quickstart
 
-The fastest way to see protoclaw in action is the fake-agent example, which bundles a mock ACP agent, the debug-http channel, and a demo MCP tool:
+The fastest way to see anyclaw in action is the fake-agent example, which bundles a mock ACP agent, the debug-http channel, and a demo MCP tool:
 
 ```bash
-git clone https://github.com/donbader/protoclaw.git
-cd protoclaw/examples/01-fake-agent-telegram-bot
+git clone https://github.com/donbader/anyclaw.git
+cd anyclaw/examples/01-fake-agent-telegram-bot
 cp .env.example .env
 # Edit .env with your Telegram bot token
 docker compose up
@@ -61,10 +61,10 @@ Build your own agents, channels, and tools using the SDK crates:
 
 | Crate | Description | docs.rs |
 |-------|-------------|---------|
-| `protoclaw-sdk-types` | Shared types for the protoclaw SDK | [docs](https://docs.rs/protoclaw-sdk-types) |
-| `protoclaw-sdk-agent` | Build ACP-compatible agents | [docs](https://docs.rs/protoclaw-sdk-agent) |
-| `protoclaw-sdk-channel` | Build messaging channel integrations | [docs](https://docs.rs/protoclaw-sdk-channel) |
-| `protoclaw-sdk-tool` | Build MCP-compatible tool servers | [docs](https://docs.rs/protoclaw-sdk-tool) |
+| `anyclaw-sdk-types` | Shared types for the anyclaw SDK | [docs](https://docs.rs/anyclaw-sdk-types) |
+| `anyclaw-sdk-agent` | Build ACP-compatible agents | [docs](https://docs.rs/anyclaw-sdk-agent) |
+| `anyclaw-sdk-channel` | Build messaging channel integrations | [docs](https://docs.rs/anyclaw-sdk-channel) |
+| `anyclaw-sdk-tool` | Build MCP-compatible tool servers | [docs](https://docs.rs/anyclaw-sdk-tool) |
 
 The `ChannelHarness` and `ToolServer` in the channel and tool SDKs handle all JSON-RPC framing, the initialize handshake, and message routing. You only implement the `Channel` or `Tool` trait with your business logic.
 
@@ -94,13 +94,13 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## Inspiration
 
-Protoclaw draws inspiration from these projects:
+Anyclaw draws inspiration from these projects:
 
 - [nanoclaw](https://github.com/qwibitai/nanoclaw) — a lightweight TypeScript personal AI assistant that bridges messaging channels to Claude agents in isolated containers. Established the core pattern of agents connected to channels with isolation as a first-class concern.
 - [openclaw](https://github.com/openclaw/openclaw) — a feature-rich TypeScript personal AI assistant gateway with 20+ channel integrations and an ACP bridge. Demonstrated that a gateway/sidecar pattern cleanly separates channel routing from agent logic.
 - [ironclaw](https://github.com/nearai/ironclaw) — a Rust personal AI assistant with WASM-sandboxed tools, MCP support, and PostgreSQL-backed memory. Proved out WASM tool sandboxing and channel abstraction in Rust.
 
-Where these projects are complete AI assistants, protoclaw takes their architectural ideas — channel abstraction, tool sandboxing, protocol-driven communication — and applies them as a standalone infrastructure layer that any agent can plug into.
+Where these projects are complete AI assistants, anyclaw takes their architectural ideas — channel abstraction, tool sandboxing, protocol-driven communication — and applies them as a standalone infrastructure layer that any agent can plug into.
 
 ## License
 

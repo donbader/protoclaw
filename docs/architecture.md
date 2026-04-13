@@ -1,10 +1,10 @@
 # Architecture
 
-System overview and design of the protoclaw supervisor.
+System overview and design of the anyclaw supervisor.
 
 ## Overview
 
-Protoclaw is an infrastructure sidecar: it runs alongside your AI agent binary and handles subprocess management, message routing, crash recovery, and tool access. You bring the intelligence; protoclaw handles the plumbing.
+Anyclaw is an infrastructure sidecar: it runs alongside your AI agent binary and handles subprocess management, message routing, crash recovery, and tool access. You bring the intelligence; anyclaw handles the plumbing.
 
 ```
                         ┌─────────────────────────────────┐
@@ -35,8 +35,8 @@ Each manager owns one subprocess domain. Communication between managers is exclu
 
 Starts and monitors MCP servers and WASM tool runners. Holds the tool URLs that agents need during `session/new` to discover available tools. Must boot first.
 
-- **MCP host** (`protoclaw-tools/src/mcp_host.rs`): Manages connections to external MCP server processes.
-- **WASM runner** (`protoclaw-tools/src/wasm_runner.rs`): Executes WASM tools in an isolated sandbox.
+- **MCP host** (`anyclaw-tools/src/mcp_host.rs`): Manages connections to external MCP server processes.
+- **WASM runner** (`anyclaw-tools/src/wasm_runner.rs`): Executes WASM tools in an isolated sandbox.
 
 ### AgentsManager
 
@@ -75,7 +75,7 @@ AgentsManager                           ChannelsManager
      │───────────────────────────────────────►│
 ```
 
-Reply channels use `tokio::oneshot`. The `AgentDispatch` trait in `protoclaw-channels` abstracts agent interaction without creating a crate dependency on `protoclaw-agents`.
+Reply channels use `tokio::oneshot`. The `AgentDispatch` trait in `anyclaw-channels` abstracts agent interaction without creating a crate dependency on `anyclaw-agents`.
 
 ## Boot and Shutdown Order
 
@@ -107,28 +107,28 @@ A crash in any subprocess doesn't affect others. A Telegram channel crash doesn'
 ## Crate Dependency Flow
 
 ```
-protoclaw (binary)
-├── protoclaw-config
-├── protoclaw-core
-├── protoclaw-agents ──→ protoclaw-core, protoclaw-jsonrpc
-├── protoclaw-channels ─→ protoclaw-core, protoclaw-jsonrpc, protoclaw-sdk-types
-└── protoclaw-tools ───→ protoclaw-core
+anyclaw (binary)
+├── anyclaw-config
+├── anyclaw-core
+├── anyclaw-agents ──→ anyclaw-core, anyclaw-jsonrpc
+├── anyclaw-channels ─→ anyclaw-core, anyclaw-jsonrpc, anyclaw-sdk-types
+└── anyclaw-tools ───→ anyclaw-core
 
 SDK crates (for external implementors):
-├── protoclaw-sdk-types  (leaf — no internal deps)
-├── protoclaw-sdk-agent ──→ sdk-types, jsonrpc
-├── protoclaw-sdk-channel ─→ sdk-types, jsonrpc
-└── protoclaw-sdk-tool ───→ sdk-types
+├── anyclaw-sdk-types  (leaf — no internal deps)
+├── anyclaw-sdk-agent ──→ sdk-types, jsonrpc
+├── anyclaw-sdk-channel ─→ sdk-types, jsonrpc
+└── anyclaw-sdk-tool ───→ sdk-types
 ```
 
-`protoclaw-sdk-types` is the dependency-free leaf crate. All shared wire types (`ChannelEvent`, `SessionKey`, channel wire types) live there to avoid circular dependencies between `protoclaw-agents` and `protoclaw-channels`.
+`anyclaw-sdk-types` is the dependency-free leaf crate. All shared wire types (`ChannelEvent`, `SessionKey`, channel wire types) live there to avoid circular dependencies between `anyclaw-agents` and `anyclaw-channels`.
 
 ## Config System
 
 Config uses Figment with three layers (later layers override earlier ones):
 
 1. **Defaults** — compiled-in defaults (`log_level: "info"`, `extensions_dir: "/usr/local/bin"`)
-2. **YAML file** — `protoclaw.yaml` in the working directory
-3. **Environment variables** — `PROTOCLAW_` prefix, `__` as separator (e.g., `PROTOCLAW_LOG_LEVEL`)
+2. **YAML file** — `anyclaw.yaml` in the working directory
+3. **Environment variables** — `ANYCLAW_` prefix, `__` as separator (e.g., `ANYCLAW_LOG_LEVEL`)
 
 `@built-in/{agents,channels,tools}/<name>` binary paths in config are resolved against `extensions_dir` by the supervisor before managers are constructed. Legacy flat paths (e.g. `@built-in/mock-agent`) are supported via built-in aliases with deprecation warnings.

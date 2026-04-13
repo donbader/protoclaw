@@ -1,0 +1,27 @@
+[package]
+name = "anyclaw-agents"
+version = "0.1.0"
+publish = false
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyclaw-core = { workspace = true }
+anyclaw-config = { workspace = true }
+anyclaw-jsonrpc = { workspace = true }
+anyclaw-sdk-agent = { workspace = true }
+anyclaw-sdk-types = { workspace = true }
+tokio = { workspace = true, default-features = false, features = ["fs", "io-util", "macros", "net", "process", "rt", "rt-multi-thread", "sync", "time"] }
+tokio-util = { workspace = true }
+futures = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+bollard = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+tokio-test = { workspace = true }
+tempfile = { workspace = true }
+rstest = { workspace = true }

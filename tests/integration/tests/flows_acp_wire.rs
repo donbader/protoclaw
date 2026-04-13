@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use protoclaw_integration_tests::{
+use anyclaw_integration_tests::{
     SseCollector, boot_supervisor_with_port, mock_agent_config, with_timeout,
 };
 
@@ -58,7 +58,7 @@ async fn when_message_sent_then_acp_prompt_array_format_produces_echo_response()
 async fn given_agent_emits_non_json_startup_noise_when_message_sent_then_agent_still_responds() {
     let mut config = mock_agent_config();
     let agent = config.agents_manager.agents.get_mut("default").unwrap();
-    if let protoclaw_config::WorkspaceConfig::Local(ref mut local) = agent.workspace {
+    if let anyclaw_config::WorkspaceConfig::Local(ref mut local) = agent.workspace {
         local.binary.0.push("--noisy-startup".into());
     }
 

@@ -1,0 +1,22 @@
+[package]
+name = "anyclaw-config"
+version = "0.1.0"
+publish = false
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+figment.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+serde_yaml.workspace = true
+subst.workspace = true
+anyclaw-sdk-types = { path = "../anyclaw-sdk-types" }
+
+[dev-dependencies]
+figment = { workspace = true, features = ["test"] }
+tempfile.workspace = true
+serde_yaml.workspace = true
+rstest.workspace = true

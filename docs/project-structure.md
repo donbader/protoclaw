@@ -1,24 +1,24 @@
 # Project Structure
 
-Workspace layout and navigation guide for the protoclaw codebase.
+Workspace layout and navigation guide for the anyclaw codebase.
 
 ## Workspace Layout
 
 ```
-protoclaw/
+anyclaw/
 ├── crates/                         # Core workspace crates (12 total)
-│   ├── protoclaw/                  # Binary: CLI + Supervisor (entry point)
-│   ├── protoclaw-core/             # Shared: Manager trait, backoff, crash tracker, message types
-│   ├── protoclaw-agents/           # ACP protocol layer, agent subprocess management
-│   ├── protoclaw-channels/         # Channel subprocess routing + lifecycle
-│   ├── protoclaw-tools/            # MCP host, WASM sandbox, tools manager
-│   ├── protoclaw-config/           # Figment-based config loading (protoclaw.yaml)
-│   ├── protoclaw-jsonrpc/          # JSON-RPC 2.0 codec + types (LinesCodec-based)
-│   ├── protoclaw-sdk-types/        # Shared SDK types (capabilities, permissions)
-│   ├── protoclaw-sdk-agent/        # SDK: AgentAdapter trait + GenericAcpAdapter
-│   ├── protoclaw-sdk-channel/      # SDK: Channel trait + ChannelHarness
-│   ├── protoclaw-sdk-tool/         # SDK: Tool trait + ToolServer
-│   └── protoclaw-test-helpers/     # Shared test utilities (dev-dependency)
+│   ├── anyclaw/                  # Binary: CLI + Supervisor (entry point)
+│   ├── anyclaw-core/             # Shared: Manager trait, backoff, crash tracker, message types
+│   ├── anyclaw-agents/           # ACP protocol layer, agent subprocess management
+│   ├── anyclaw-channels/         # Channel subprocess routing + lifecycle
+│   ├── anyclaw-tools/            # MCP host, WASM sandbox, tools manager
+│   ├── anyclaw-config/           # Figment-based config loading (anyclaw.yaml)
+│   ├── anyclaw-jsonrpc/          # JSON-RPC 2.0 codec + types (LinesCodec-based)
+│   ├── anyclaw-sdk-types/        # Shared SDK types (capabilities, permissions)
+│   ├── anyclaw-sdk-agent/        # SDK: AgentAdapter trait + GenericAcpAdapter
+│   ├── anyclaw-sdk-channel/      # SDK: Channel trait + ChannelHarness
+│   ├── anyclaw-sdk-tool/         # SDK: Tool trait + ToolServer
+│   └── anyclaw-test-helpers/     # Shared test utilities (dev-dependency)
 ├── ext/                            # External binaries (spawned as subprocesses)
 │   ├── agents/
 │   │   └── mock-agent/             # Mock ACP agent binary (echo + thinking simulation)
@@ -33,45 +33,45 @@ protoclaw/
 │   └── project-structure.md        # This file
 ├── examples/telegram-bot/          # Example config + docker-compose (no Rust source)
 └── examples/01-fake-agent-telegram-bot/  # Runnable example (Docker, mock-agent, debug-http)
-    └── tools/system-info/          # Demo MCP tool binary (uses protoclaw-sdk-tool)
+    └── tools/system-info/          # Demo MCP tool binary (uses anyclaw-sdk-tool)
 ```
 
 ## Where to Look
 
 | Task | Location | Notes |
 |------|----------|-------|
-| Add CLI command | `crates/protoclaw/src/cli.rs` | Clap derive, dispatched from `main.rs` |
-| Change boot/shutdown order | `crates/protoclaw/src/supervisor.rs` | `MANAGER_ORDER` constant — read anti-patterns first |
-| Add new manager | `crates/protoclaw-core/src/manager.rs` | Implement `Manager` trait, wire in supervisor |
-| Modify ACP protocol | `crates/protoclaw-agents/src/acp_types.rs` | JSON-RPC method types for agent communication |
-| Add channel type | `crates/protoclaw-channels/` + `ext/channels/` | Manager routes, binary in ext/ |
-| Add MCP tool | `crates/protoclaw-tools/src/mcp_host.rs` | McpHost manages external MCP server connections |
-| Add WASM tool | `crates/protoclaw-tools/src/wasm_runner.rs` | WasmToolRunner + WasmTool for sandboxed execution |
-| Build demo tool | `examples/01-fake-agent-telegram-bot/tools/system-info/` | Workspace member, uses protoclaw-sdk-tool |
-| Change config schema | `crates/protoclaw-config/src/types.rs` | Serde structs (`WorkspaceConfig` enum, `AgentConfig`) |
-| Modify JSON-RPC framing | `crates/protoclaw-jsonrpc/src/codec.rs` | LinesCodec-based, line-delimited JSON |
-| Build a channel (SDK) | `crates/protoclaw-sdk-channel/` | Channel trait + ChannelHarness |
-| Build a tool (SDK) | `crates/protoclaw-sdk-tool/` | Tool trait + ToolServer |
+| Add CLI command | `crates/anyclaw/src/cli.rs` | Clap derive, dispatched from `main.rs` |
+| Change boot/shutdown order | `crates/anyclaw/src/supervisor.rs` | `MANAGER_ORDER` constant — read anti-patterns first |
+| Add new manager | `crates/anyclaw-core/src/manager.rs` | Implement `Manager` trait, wire in supervisor |
+| Modify ACP protocol | `crates/anyclaw-agents/src/acp_types.rs` | JSON-RPC method types for agent communication |
+| Add channel type | `crates/anyclaw-channels/` + `ext/channels/` | Manager routes, binary in ext/ |
+| Add MCP tool | `crates/anyclaw-tools/src/mcp_host.rs` | McpHost manages external MCP server connections |
+| Add WASM tool | `crates/anyclaw-tools/src/wasm_runner.rs` | WasmToolRunner + WasmTool for sandboxed execution |
+| Build demo tool | `examples/01-fake-agent-telegram-bot/tools/system-info/` | Workspace member, uses anyclaw-sdk-tool |
+| Change config schema | `crates/anyclaw-config/src/types.rs` | Serde structs (`WorkspaceConfig` enum, `AgentConfig`) |
+| Modify JSON-RPC framing | `crates/anyclaw-jsonrpc/src/codec.rs` | LinesCodec-based, line-delimited JSON |
+| Build a channel (SDK) | `crates/anyclaw-sdk-channel/` | Channel trait + ChannelHarness |
+| Build a tool (SDK) | `crates/anyclaw-sdk-tool/` | Tool trait + ToolServer |
 | Mock agent binary | `ext/agents/mock-agent/` | Mock ACP agent for testing |
-| Add test helper | `crates/protoclaw-test-helpers/` | Shared across all crate tests |
+| Add test helper | `crates/anyclaw-test-helpers/` | Shared across all crate tests |
 | Integration tests | `tests/integration/tests/e2e.rs` | Requires `cargo build` first |
 
 ## Internal vs SDK Crates
 
 The workspace has two categories of crates with different audiences.
 
-**Internal crates** (in `crates/protoclaw*` without `sdk-` prefix) are the supervisor implementation. External implementors should not depend on these directly.
+**Internal crates** (in `crates/anyclaw*` without `sdk-` prefix) are the supervisor implementation. External implementors should not depend on these directly.
 
-**SDK crates** (the four `protoclaw-sdk-*` crates) are public API for building integrations:
+**SDK crates** (the four `anyclaw-sdk-*` crates) are public API for building integrations:
 
 | Crate | Audience | Key types |
 |-------|----------|-----------|
-| `protoclaw-sdk-types` | All SDK users | `ChannelEvent`, `SessionKey`, wire types |
-| `protoclaw-sdk-agent` | Agent implementors | `AgentAdapter`, `GenericAcpAdapter` |
-| `protoclaw-sdk-channel` | Channel implementors | `Channel` trait, `ChannelHarness` |
-| `protoclaw-sdk-tool` | Tool implementors | `Tool` trait, `ToolServer` |
+| `anyclaw-sdk-types` | All SDK users | `ChannelEvent`, `SessionKey`, wire types |
+| `anyclaw-sdk-agent` | Agent implementors | `AgentAdapter`, `GenericAcpAdapter` |
+| `anyclaw-sdk-channel` | Channel implementors | `Channel` trait, `ChannelHarness` |
+| `anyclaw-sdk-tool` | Tool implementors | `Tool` trait, `ToolServer` |
 
-`protoclaw-sdk-types` is the dependency-free leaf crate. If you're building a channel and a tool that need to share types, depend only on `protoclaw-sdk-types`.
+`anyclaw-sdk-types` is the dependency-free leaf crate. If you're building a channel and a tool that need to share types, depend only on `anyclaw-sdk-types`.
 
 ## Test Conventions
 

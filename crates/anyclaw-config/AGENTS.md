@@ -1,0 +1,113 @@
+# anyclaw-config — Configuration Loading
+
+Figment-based layered configuration for anyclaw. Loads from embedded defaults → YAML file → environment variables. Provides typed config structs, binary path resolution, and semantic validation.
+
+## Files
+
+| File | Purpose |
+|------|---------|
+| `types.rs` | All config structs (`AnyclawConfig`, `AgentConfig`, `ChannelConfig`, `ToolConfig`, `SupervisorConfig`, etc.) with serde defaults |
+| `lib.rs` | `AnyclawConfig::load()` — Figment layered loading |
+| `resolve.rs` | `resolve_binary_path()` — `@built-in/{agents,channels,tools}/<name>` → `extensions_dir`, with legacy alias support |
+| `validate.rs` | `validate_config()` — binary existence, working dir checks |
+| `error.rs` | `ConfigError` enum (thiserror) |
+| `parse.rs` | `parse_memory_limit()`, `parse_cpu_limit()` — K8s-style string to Docker-native units |
+| `subst_yaml.rs` | YAML provider with environment variable substitution |
+| `defaults.yaml` | Embedded defaults loaded as Figment base layer |
+
+## Key Types
+
+```rust
+pub struct AnyclawConfig {
+    pub log_level: String,           // default: "info,hyper=warn,reqwest=warn,h2=warn,hyper_util=warn,tower=warn"
+    pub extensions_dir: String,      // default: "/usr/local/bin"
+    pub agents_manager: AgentsManagerConfig,
+    pub channels_manager: ChannelsManagerConfig,
+    pub tools_manager: ToolsManagerConfig,
+    pub supervisor: SupervisorConfig,
+}
+```
+
+Manager configs use named `HashMap`s — entity names are map keys (no `name` field in structs):
+- `AgentsManagerConfig { acp_timeout_secs: u64, shutdown_grace_ms: u64, agents: HashMap<String, AgentConfig> }`
+- `ChannelsManagerConfig { init_timeout_secs: u64, exit_timeout_secs: u64, channels: HashMap<String, ChannelConfig> }`
+- `ToolsManagerConfig { tools: HashMap<String, ToolConfig>, tools_server_host: String }`
+
+Per-entity override types:
+- `BackoffConfig { base_delay_ms: u64, max_delay_secs: u64 }` — optional on `AgentConfig` and `ChannelConfig`
+- `CrashTrackerConfig { max_crashes: u32, window_secs: u64 }` — optional on `AgentConfig` and `ChannelConfig`
+- `AgentConfig.acp_timeout_secs: Option<u64>` — overrides manager-level default when set
+- `AgentConfig.workspace: WorkspaceConfig` — tagged enum, see below
+- `ChannelConfig.init_timeout_secs: Option<u64>` — overrides manager-level default when set
+- `ChannelConfig.exit_timeout_secs: Option<u64>` — graceful shutdown wait per channel; overrides manager-level `exit_timeout_secs` when set
+
+`WorkspaceConfig` — tagged enum (`#[serde(tag = "type")]`):
+- `WorkspaceConfig::Local(LocalWorkspaceConfig)` — `binary` (required), `working_dir` (optional), `env` (optional)
+- `WorkspaceConfig::Docker(DockerWorkspaceConfig)` — `image` (required), `entrypoint`, `volumes`, `env`, `memory_limit`, `cpu_limit`, `docker_host`, `network`, `pull_policy`, `working_dir` (optional, path inside the container sent as `cwd` in ACP `session/new`)
+
+`PullPolicy` — enum: `Always`, `IfNotPresent` (default), `Never`. Config-only; pull logic deferred to Docker runtime phase.
+
+## SubstYaml Env Substitution
+
+`SubstYaml` is a custom Figment provider that loads the YAML file and expands `${VAR}` or `${VAR:-default}` placeholders using environment variables. **Missing variables without a default value cause a hard error** — `SubstYaml` fails loudly rather than silently falling back to an empty string. This ensures misconfigured deployments are caught at startup.
+
+## Loading Order
+
+```rust
+Figment::from(Yaml::string(DEFAULTS_YAML))    // 1. Embedded defaults
+    .merge(SubstYaml::file(path))               // 2. User YAML file (with env substitution)
+    .merge(Env::prefixed("ANYCLAW_").split("__"))  // 3. Environment variables
+    .extract()
+```
+
+Env var override format: `ANYCLAW_SUPERVISOR__SHUTDOWN_TIMEOUT_SECS=60` (double underscore = nesting).
+
+## Binary Resolution
+
+`resolve_binary_path()` expands `@built-in/` prefix against `extensions_dir`:
+- Canonical: `@built-in/agents/mock-agent` + `/usr/local/bin` → `/usr/local/bin/agents/mock-agent`
+- Canonical: `@built-in/channels/telegram` + `/usr/local/bin` → `/usr/local/bin/channels/telegram`
+- Legacy flat paths (e.g. `@built-in/mock-agent`) are resolved via built-in aliases with a deprecation warning.
+- Absolute paths and relative names pass through unchanged.
+
+`resolve_all_binary_paths()` applies resolution to all binary paths in the config at once:
+- Local agent `binary` fields
+- Docker agent `entrypoint` fields
+- Channel `binary` fields
+- Tool `binary` fields
+
+Called by Supervisor before manager construction — managers receive resolved paths.
+
+## Validation
+
+`validate_config()` checks:
+- Local agents: binary exists (absolute path check or PATH lookup), `working_dir` exists
+- Docker agents: `memory_limit` parses, `cpu_limit` parses, `docker_host` URI format, `volumes` syntax
+- Channel binaries exist
+- Tool binaries exist (if specified)
+
+Returns `ValidationResult { errors, warnings }` — caller decides whether to abort.
+
+## Anti-Patterns (this crate)
+
+- **Don't use `anyhow`** — use `ConfigError` for all error paths
+- **Don't skip validation** — `validate_config()` catches runtime failures at boot time
+- **Don't hardcode defaults outside serde** — all defaults live in `defaults.yaml` or `#[serde(default = "...")]` functions in `types.rs`
+- **Don't add `name` fields to entity structs** — names come from HashMap keys (manager-hierarchy pattern)
+- **Don't use `${VAR}` without a default for optional config** — missing env vars fail loudly at load time; use `${VAR:-default}` if the value is optional
+
+## v5.1 Changes
+
+- Snake_case key normalization: `agents-manager` → `agents_manager` via serde alias (and similarly for `channels-manager`, `tools-manager`)
+- Figment env var override layer removed from default loading path
+- Hostname/IP validation for `tools_server_host` (`InvalidToolsServerHost` error variant)
+- New duration config fields: `exit_timeout_secs`, `turn_timeout_secs`, `rate_limit_delay_secs`
+- `serde_yaml` replaced with `serde_yaml` 0.10 (yaml_serde) for YAML deserialization
+- `SubstYaml` fails loudly on missing env vars (no silent empty-string fallback)
+
+## v0.3.1 Changes
+
+- Default `log_level` changed to `"info,hyper=warn,reqwest=warn,h2=warn,hyper_util=warn,tower=warn"` — suppresses noisy HTTP client crates
+- `log_level` field accepts full `tracing_subscriber::EnvFilter` directive syntax
+- `StringOrArray` config type added for `binary`/`entrypoint` fields
+- `AgentConfig.args` field removed

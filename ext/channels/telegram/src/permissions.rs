@@ -1,4 +1,4 @@
-use protoclaw_sdk_types::PermissionOption;
+use anyclaw_sdk_types::PermissionOption;
 use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup};
 
 use crate::state::SharedState;

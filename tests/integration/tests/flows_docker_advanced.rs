@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use protoclaw_integration_tests::{
+use anyclaw_integration_tests::{
     SseCollector, boot_supervisor_with_port, build_mock_agent_docker_image,
     cleanup_test_containers, docker_agent_config, docker_agent_config_with_options,
     mock_agent_path, with_timeout,
@@ -66,12 +66,12 @@ async fn given_stale_container_exists_when_supervisor_starts_then_stale_containe
         .args([
             "create",
             "--name",
-            "protoclaw-stale-test-container",
+            "anyclaw-stale-test-container",
             "--label",
-            "protoclaw.managed=true",
+            "anyclaw.managed=true",
             "--label",
-            "protoclaw.agent=docker-agent",
-            "protoclaw-mock-agent:test",
+            "anyclaw.agent=docker-agent",
+            "anyclaw-mock-agent:test",
         ])
         .output()
         .expect("failed to create stale container");
@@ -86,7 +86,7 @@ async fn given_stale_container_exists_when_supervisor_starts_then_stale_containe
             "ps",
             "-aq",
             "--filter",
-            "name=protoclaw-stale-test-container",
+            "name=anyclaw-stale-test-container",
         ])
         .output()
         .expect("docker ps failed");
@@ -105,7 +105,7 @@ async fn given_stale_container_exists_when_supervisor_starts_then_stale_containe
             "ps",
             "-aq",
             "--filter",
-            "name=protoclaw-stale-test-container",
+            "name=anyclaw-stale-test-container",
         ])
         .output()
         .expect("docker ps failed");
@@ -134,7 +134,7 @@ async fn when_docker_agent_configured_with_resource_limits_then_container_has_li
         .agents
         .get_mut("docker-agent")
         .unwrap();
-    if let protoclaw_config::WorkspaceConfig::Docker(ref mut docker) = agent.workspace {
+    if let anyclaw_config::WorkspaceConfig::Docker(ref mut docker) = agent.workspace {
         docker.memory_limit = Some("64m".to_string());
         docker.cpu_limit = Some("0.5".to_string());
     }
@@ -159,7 +159,7 @@ async fn when_docker_agent_configured_with_resource_limits_then_container_has_li
                 let mut f = HashMap::new();
                 f.insert(
                     "label".to_string(),
-                    vec!["protoclaw.managed=true".to_string()],
+                    vec!["anyclaw.managed=true".to_string()],
                 );
                 f
             }),
@@ -170,7 +170,7 @@ async fn when_docker_agent_configured_with_resource_limits_then_container_has_li
 
     assert!(
         !containers.is_empty(),
-        "should have at least one running protoclaw container"
+        "should have at least one running anyclaw container"
     );
     let container_id = containers[0].id.as_ref().expect("container id");
     let inspect = docker
@@ -205,9 +205,9 @@ async fn given_local_and_docker_agents_when_messages_sent_then_both_respond() {
     let mut config = docker_agent_config();
     config.agents_manager.agents.insert(
         "local-agent".to_string(),
-        protoclaw_config::AgentConfig {
-            workspace: protoclaw_config::WorkspaceConfig::Local(
-                protoclaw_config::LocalWorkspaceConfig {
+        anyclaw_config::AgentConfig {
+            workspace: anyclaw_config::WorkspaceConfig::Local(
+                anyclaw_config::LocalWorkspaceConfig {
                     binary: mock_agent_path().to_string_lossy().to_string().into(),
                     working_dir: None,
                     env: HashMap::new(),

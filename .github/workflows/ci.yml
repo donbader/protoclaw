@@ -104,4 +104,4 @@ jobs:
       - name: Build test binaries
         run: cargo build --locked --bin mock-agent --bin debug-http
       - name: Run Docker integration tests
-        run: cargo test --locked -p protoclaw-integration-tests -- --ignored --test-threads=1
+        run: cargo test --locked -p anyclaw-integration-tests -- --ignored --test-threads=1

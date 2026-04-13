@@ -9,7 +9,7 @@ mod turn;
 
 use std::sync::Arc;
 
-use protoclaw_sdk_channel::ChannelHarness;
+use anyclaw_sdk_channel::ChannelHarness;
 
 use crate::channel::TelegramChannel;
 use crate::state::SharedState;

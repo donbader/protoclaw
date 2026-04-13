@@ -1,11 +1,11 @@
 <!-- GSD:project-start source:PROJECT.md -->
 ## Project
 
-**Protoclaw**
+**Anyclaw**
 
-Infrastructure sidecar that connects AI agents to the outside world. Protoclaw wraps any ACP-speaking agent process (opencode, claude-code, gemini-cli) and gives it channels to talk to users (Telegram, Slack, Discord) and tools to act on the world (MCP servers, WASM-sandboxed tools). The agent is a black box — protoclaw just keeps the pipes connected.
+Infrastructure sidecar that connects AI agents to the outside world. Anyclaw wraps any ACP-speaking agent process (opencode, claude-code, gemini-cli) and gives it channels to talk to users (Telegram, Slack, Discord) and tools to act on the world (MCP servers, WASM-sandboxed tools). The agent is a black box — anyclaw just keeps the pipes connected.
 
-**Core Value:** The agent must stay alive, connected to channels, and able to call tools — regardless of crashes, restarts, or network issues. Protoclaw is infrastructure plumbing, not AI logic.
+**Core Value:** The agent must stay alive, connected to channels, and able to call tools — regardless of crashes, restarts, or network issues. Anyclaw is infrastructure plumbing, not AI logic.
 
 ### Constraints
 
@@ -83,7 +83,7 @@ Infrastructure sidecar that connects AI agents to the outside world. Protoclaw w
 | JSON-RPC (ACP layer) | Hand-rolled on serde_json | jsonrpsee | jsonrpsee is designed for HTTP/WebSocket JSON-RPC servers. ACP is stdio-based with custom message types (session/new, session/update). jsonrpsee's transport model doesn't fit. Thin custom layer on serde_json + tokio-util codecs is simpler and more correct. |
 | Config | figment | config-rs | config-rs works but figment has better ergonomics, stronger typing, and is more actively maintained (23M downloads). figment's provider model maps cleanly to our layered config needs. |
 | Config format | TOML | YAML | TOML is the Rust ecosystem standard (Cargo.toml). Simpler, less error-prone than YAML's implicit typing. Users expect TOML in Rust tools. |
-| Error handling | thiserror + anyhow | eyre + color-eyre | eyre is excellent for CLI apps with pretty error reports. But protoclaw is a sidecar/daemon — errors go to logs, not terminals. thiserror's typed enums are better for programmatic error handling between managers. |
+| Error handling | thiserror + anyhow | eyre + color-eyre | eyre is excellent for CLI apps with pretty error reports. But anyclaw is a sidecar/daemon — errors go to logs, not terminals. thiserror's typed enums are better for programmatic error handling between managers. |
 | Concurrency map | dashmap | std RwLock<HashMap> | dashmap provides lock-free reads which matter for the hot path (routing messages to channels). RwLock contention under concurrent reads is measurable at scale. |
 | Tracing | tracing | log + env_logger | `tracing` provides spans (request lifecycle tracking across async boundaries), structured fields, and layers. `log` is fire-and-forget events only. For a multi-manager system with async message routing, spans are essential for debugging. |
 ## What NOT to Use
@@ -94,15 +94,15 @@ Infrastructure sidecar that connects AI agents to the outside world. Protoclaw w
 | wasmer | Less standards-compliant WASI, weaker fuel/epoch metering for sandboxing. Package registry focus doesn't match our embedding use case. | Wasmtime |
 | tower-lsp / tower-lsp-server | Designed for LSP (Language Server Protocol), not general JSON-RPC. Would require fighting the LSP-specific abstractions to implement ACP. | Custom ACP protocol layer |
 | tonic / gRPC | ACP is JSON-RPC 2.0 over stdio, not gRPC. Wrong protocol entirely. Adding protobuf serialization adds complexity for zero benefit. | serde_json for JSON-RPC |
-| actix-web / axum (for core) | Protoclaw's primary communication is stdio pipes, not HTTP. Adding a web framework for the core is unnecessary weight. Only consider axum if adding a debug-http channel later. | Tokio TCP/HTTP only where needed |
+| actix-web / axum (for core) | Anyclaw's primary communication is stdio pipes, not HTTP. Adding a web framework for the core is unnecessary weight. Only consider axum if adding a debug-http channel later. | Tokio TCP/HTTP only where needed |
 | slog | Older structured logging crate. tracing has won the ecosystem — better async support, span model, and subscriber ecosystem. | tracing |
-| dotenv / dotenvy | Environment-only config is too limited. Protoclaw needs layered config (file + env + defaults). | figment with env provider |
+| dotenv / dotenvy | Environment-only config is too limited. Anyclaw needs layered config (file + env + defaults). | figment with env provider |
 ## Stack Patterns by Variant
 - Hand-roll JSON-RPC 2.0 types with serde: `Request`, `Response`, `Notification` structs
 - Use `tokio-util::codec::LinesCodec` over piped stdin/stdout for line-delimited JSON framing
 - Keep it thin — ACP has ~6 methods, not worth a framework dependency
 - Pattern: `tokio::process::Command` spawns agent → take stdin/stdout → wrap in codec → `Stream<Item=JsonRpcMessage>` + `Sink<JsonRpcMessage>`
-- Same JSON-RPC 2.0 framing as ACP but protoclaw is the server, channel is the client
+- Same JSON-RPC 2.0 framing as ACP but anyclaw is the server, channel is the client
 - Each channel subprocess gets its own `tokio::process::Child` with piped stdio
 - Use `tokio::sync::mpsc` channels to bridge subprocess I/O to the Channels Manager's routing logic
 - Pattern: one `tokio::spawn` per channel subprocess handling its read loop, one for write loop
@@ -166,11 +166,11 @@ Check which AGENTS.md files exist in the affected directories and their parents.
 AGENTS.md locations:
 - `./AGENTS.md` — root project knowledge base
 - `./crates/AGENTS.md` — crate overview + SDK grouping
-- `./crates/protoclaw/AGENTS.md` — binary, supervisor, CLI
-- `./crates/protoclaw-core/AGENTS.md` — Manager trait, backoff, ChannelEvent
-- `./crates/protoclaw-agents/AGENTS.md` — ACP protocol, agent lifecycle
-- `./crates/protoclaw-channels/AGENTS.md` — channel routing, crash isolation
-- `./crates/protoclaw-tools/AGENTS.md` — MCP host, WASM sandbox
+- `./crates/anyclaw/AGENTS.md` — binary, supervisor, CLI
+- `./crates/anyclaw-core/AGENTS.md` — Manager trait, backoff, ChannelEvent
+- `./crates/anyclaw-agents/AGENTS.md` — ACP protocol, agent lifecycle
+- `./crates/anyclaw-channels/AGENTS.md` — channel routing, crash isolation
+- `./crates/anyclaw-tools/AGENTS.md` — MCP host, WASM sandbox
 - `./ext/channels/AGENTS.md` — external channel binaries
 <!-- GSD:conventions-end -->
 

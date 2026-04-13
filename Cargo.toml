@@ -6,16 +6,16 @@ members = ["crates/*", "tests/integration", "ext/channels/debug-http", "ext/chan
 edition = "2024"
 rust-version = "1.94"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/donbader/protoclaw"
-homepage = "https://github.com/donbader/protoclaw"
+repository = "https://github.com/donbader/anyclaw"
+homepage = "https://github.com/donbader/anyclaw"
 
 [workspace.dependencies]
-protoclaw-agents = { path = "crates/protoclaw-agents" }
-protoclaw-jsonrpc = { path = "crates/protoclaw-jsonrpc" }
-protoclaw-tools = { path = "crates/protoclaw-tools" }
-protoclaw-core = { path = "crates/protoclaw-core" }
-protoclaw-config = { path = "crates/protoclaw-config" }
-protoclaw-supervisor = { path = "crates/protoclaw-supervisor" }
+anyclaw-agents = { path = "crates/anyclaw-agents" }
+anyclaw-jsonrpc = { path = "crates/anyclaw-jsonrpc" }
+anyclaw-tools = { path = "crates/anyclaw-tools" }
+anyclaw-core = { path = "crates/anyclaw-core" }
+anyclaw-config = { path = "crates/anyclaw-config" }
+anyclaw-supervisor = { path = "crates/anyclaw-supervisor" }
 tokio = { version = "1.50", default-features = false }
 tokio-util = { version = "0.7", features = ["codec"] }
 futures = "0.3"
@@ -33,12 +33,12 @@ tokio-test = "0.4"
 tempfile = "3"
 axum = "0.8"
 tokio-stream = { version = "0.1", features = ["sync"] }
-protoclaw-channels = { path = "crates/protoclaw-channels" }
-protoclaw-sdk-types = { path = "crates/protoclaw-sdk-types", version = "0.4.0" }
-protoclaw-sdk-channel = { path = "crates/protoclaw-sdk-channel", version = "0.2.6" }
-protoclaw-sdk-tool = { path = "crates/protoclaw-sdk-tool", version = "0.2.5" }
-protoclaw-sdk-agent = { path = "crates/protoclaw-sdk-agent", version = "0.2.5" }
-protoclaw-test-helpers = { path = "crates/protoclaw-test-helpers" }
+anyclaw-channels = { path = "crates/anyclaw-channels" }
+anyclaw-sdk-types = { path = "crates/anyclaw-sdk-types", version = "0.4.0" }
+anyclaw-sdk-channel = { path = "crates/anyclaw-sdk-channel", version = "0.2.6" }
+anyclaw-sdk-tool = { path = "crates/anyclaw-sdk-tool", version = "0.2.5" }
+anyclaw-sdk-agent = { path = "crates/anyclaw-sdk-agent", version = "0.2.5" }
+anyclaw-test-helpers = { path = "crates/anyclaw-test-helpers" }
 wasmtime = "43"
 wasmtime-wasi = "43"
 rstest = "0.26"

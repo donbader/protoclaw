@@ -1,4 +1,4 @@
-# Dev builder: compile protoclaw from workspace source instead of ghcr.io
+# Dev builder: compile anyclaw from workspace source instead of ghcr.io
 # Used by docker-compose.override.yml for local development
 #
 # Build context must be the workspace root (../../ from this file)
@@ -20,7 +20,7 @@ COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     cargo build --locked \
-    --bin protoclaw \
+    --bin anyclaw \
     --bin telegram-channel \
     --bin debug-http \
     --bin system-info
@@ -42,12 +42,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY --from=opencode-deps /usr/local/lib/node_modules /usr/local/lib/node_modules
 COPY --from=opencode-deps /usr/local/bin /usr/local/bin
-COPY --from=builder /build/target/debug/protoclaw /usr/local/bin/protoclaw
+COPY --from=builder /build/target/debug/anyclaw /usr/local/bin/anyclaw
 COPY --from=builder /build/target/debug/debug-http /usr/local/bin/channels/debug-http
 COPY --from=builder /build/target/debug/telegram-channel /usr/local/bin/channels/telegram
 COPY --from=builder /build/target/debug/system-info /usr/local/bin/tools/system-info
 WORKDIR /workspace
-ENTRYPOINT ["protoclaw"]
+ENTRYPOINT ["anyclaw"]
 
 FROM node:20-slim@sha256:f93745c153377ee2fbbdd6e24efcd03cd2e86d6ab1d8aa9916a3790c40313a55 AS opencode-agent
 RUN apt-get update && apt-get install -y --no-install-recommends \

@@ -26,7 +26,7 @@ cleanup() {
   [ -n "$SSE_PID" ] && kill "$SSE_PID" 2>/dev/null || true
   printf "\nTearing down...\n"
   docker compose down --timeout 10 2>/dev/null || true
-  [ -f protoclaw.yaml.bak ] && mv protoclaw.yaml.bak protoclaw.yaml
+  [ -f anyclaw.yaml.bak ] && mv anyclaw.yaml.bak anyclaw.yaml
 }
 trap cleanup EXIT
 
@@ -38,11 +38,11 @@ fi
 if [ "$DOCKER_MODE" = true ]; then
   printf "Building mock-agent Docker image...\n"
   docker compose --profile build-only build
-  cp protoclaw.yaml protoclaw.yaml.bak
+  cp anyclaw.yaml anyclaw.yaml.bak
   sed -e '/mock-docker:/,/enabled:/{s/enabled: false/enabled: true/}' \
       -e 's/agent: "mock"/agent: "mock-docker"/g' \
-      protoclaw.yaml.bak > protoclaw.yaml
-  printf "Patched protoclaw.yaml for Docker workspace mode\n"
+      anyclaw.yaml.bak > anyclaw.yaml
+  printf "Patched anyclaw.yaml for Docker workspace mode\n"
 fi
 
 printf "Building and starting containers...\n"

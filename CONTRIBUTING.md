@@ -1,4 +1,4 @@
-# Contributing to protoclaw
+# Contributing to anyclaw
 
 Thank you for your interest in contributing! This document covers the development workflow, test commands, and PR process.
 
@@ -8,7 +8,7 @@ This project follows the [Rust Code of Conduct](https://www.rust-lang.org/polici
 
 ## Getting Started
 
-Looking for somewhere to start? Check out issues labeled [`E-help-wanted`](https://github.com/donbader/protoclaw/labels/E-help-wanted) or [`E-easy`](https://github.com/donbader/protoclaw/labels/E-easy).
+Looking for somewhere to start? Check out issues labeled [`E-help-wanted`](https://github.com/donbader/anyclaw/labels/E-help-wanted) or [`E-easy`](https://github.com/donbader/anyclaw/labels/E-easy).
 
 ## Development Workflow
 
@@ -47,7 +47,7 @@ cargo fmt --all -- --check
 
 ```sh
 cargo build --bin mock-agent --bin debug-http --bin sdk-test-tool --bin sdk-test-channel
-cargo test -p protoclaw-integration-tests
+cargo test -p anyclaw-integration-tests
 ```
 
 ### Test Conventions

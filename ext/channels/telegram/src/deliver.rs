@@ -1,8 +1,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use protoclaw_sdk_channel::ChannelSdkError;
-use protoclaw_sdk_types::ContentKind;
+use anyclaw_sdk_channel::ChannelSdkError;
+use anyclaw_sdk_types::ContentKind;
 use teloxide::payloads::{EditMessageTextSetters, SendMessageSetters};
 use teloxide::prelude::*;
 use teloxide::types::{ChatId, MessageId, ParseMode};

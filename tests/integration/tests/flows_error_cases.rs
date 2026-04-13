@@ -1,4 +1,4 @@
-use protoclaw_integration_tests::{boot_supervisor_with_port, mock_agent_config, with_timeout};
+use anyclaw_integration_tests::{boot_supervisor_with_port, mock_agent_config, with_timeout};
 use rstest::rstest;
 
 #[rstest]

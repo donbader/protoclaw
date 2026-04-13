@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use protoclaw_sdk_channel::{Channel, ChannelCapabilities, ChannelSdkError, ChannelSendMessage};
-use protoclaw_sdk_types::{
+use anyclaw_sdk_channel::{Channel, ChannelCapabilities, ChannelSdkError, ChannelSendMessage};
+use anyclaw_sdk_types::{
     AckLifecycleNotification, AckNotification, ChannelInitializeParams, ChannelRequestPermission,
     DeliverMessage, PermissionResponse, SessionCreated,
 };
@@ -330,7 +330,7 @@ impl Channel for TelegramChannel {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use protoclaw_sdk_channel::ChannelAckConfig;
+    use anyclaw_sdk_channel::ChannelAckConfig;
 
     fn make_channel() -> TelegramChannel {
         let state = Arc::new(SharedState::new());

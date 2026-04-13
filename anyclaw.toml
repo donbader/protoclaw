@@ -1,0 +1,30 @@
+# Anyclaw configuration
+# See: https://github.com/user/anyclaw for documentation
+
+# Agent process — the ACP-speaking AI agent
+[agent]
+binary = "opencode"
+args = ["acp"]
+working_dir = "."
+
+[agent.env]
+OPENCODE_ENABLE_QUESTION_TOOL = "1"
+
+# Channel subprocesses — user-facing interfaces
+[[channels]]
+name = "debug-http"
+binary = "anyclaw-debug-http"
+args = ["--port", "3000"]
+
+# MCP tool servers — tools the agent can use
+[[mcp_servers]]
+name = "filesystem"
+binary = "mcp-server-filesystem"
+args = ["--root", "."]
+
+# Supervisor settings
+[supervisor]
+shutdown_timeout_secs = 30
+health_check_interval_secs = 5
+max_restarts = 5
+restart_window_secs = 60

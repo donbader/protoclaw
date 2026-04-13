@@ -1,0 +1,69 @@
+# Anyclaw Fake Agent Example
+# Uses the mock agent — no AI API keys needed.
+# See README.md for setup instructions.
+
+log_level: "debug"
+extensions_dir: "/usr/local/bin"
+
+agents_manager:
+  agents:
+    mock:
+      workspace:
+        type: local
+        binary: "@built-in/agents/mock-agent"
+      options:
+        thinking: true
+        thinking_time_ms: 3000
+      tools:
+        - "system-info"
+    # Docker workspace agent (opt-in — disabled by default)
+    # To use Docker workspace instead of local:
+    # 1. Set mock-docker.enabled: true (below)
+    # 2. Set mock.enabled: false (above) — or remove it
+    # 3. Change channel agent fields from "mock" to "mock-docker"
+    mock-docker:
+      enabled: false
+      workspace:
+        type: docker
+        image: "anyclaw-mock-agent:latest"
+        docker_host: "tcp://socket-proxy:2375"
+        network: "anyclaw-internal"
+      options:
+        thinking: true
+        thinking_time_ms: 3000
+      tools:
+        - "system-info"
+
+channels_manager:
+  channels:
+    debug-http:
+      binary: "@built-in/channels/debug-http"
+      agent: "mock"
+      options:
+        HOST: "0.0.0.0"
+        PORT: "8080"
+      ack:
+        reaction: false
+        typing: false
+    telegram:
+      binary: "@built-in/channels/telegram"
+      enabled: "${TELEGRAM_ENABLED:false}"
+      agent: "mock"
+      options:
+        TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:}"
+      ack:
+        reaction: true
+        reaction_emoji: "👀"
+        typing: true
+        reaction_lifecycle: "remove"
+
+tools_manager:
+  tools:
+    system-info:
+      binary: "@built-in/tools/system-info"
+
+supervisor:
+  shutdown_timeout_secs: 30
+  health_check_interval_secs: 5
+  max_restarts: 5
+  restart_window_secs: 60

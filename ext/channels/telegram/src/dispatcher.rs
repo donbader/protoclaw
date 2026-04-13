@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use protoclaw_sdk_channel::ChannelSdkError;
-use protoclaw_sdk_types::ChannelSendMessage;
+use anyclaw_sdk_channel::ChannelSdkError;
+use anyclaw_sdk_types::ChannelSendMessage;
 use teloxide::prelude::*;
 use teloxide::types::{Chat, ChatId, ChatKind, InlineKeyboardMarkup, MessageId, PublicChatKind};
 

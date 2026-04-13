@@ -1,14 +1,14 @@
 [package]
-name = "protoclaw-integration-tests"
+name = "anyclaw-integration-tests"
 version = "0.1.0"
 publish = false
 edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-protoclaw-supervisor = { workspace = true }
-protoclaw-config = { workspace = true }
-protoclaw-test-helpers = { workspace = true }
+anyclaw-supervisor = { workspace = true }
+anyclaw-config = { workspace = true }
+anyclaw-test-helpers = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "sync", "time"] }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }

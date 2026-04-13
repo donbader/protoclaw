@@ -1,4 +1,4 @@
-FROM ghcr.io/donbader/protoclaw-builder:latest AS builder
+FROM ghcr.io/donbader/anyclaw-builder:latest AS builder
 
 # Deps stage: opencode-ai with pruned node_modules
 # node:20-slim
@@ -12,19 +12,19 @@ RUN npm install -g opencode-ai@latest --omit=dev && \
       -o -name "docs" -o -name ".github" \) | xargs rm -rf 2>/dev/null; \
     true
 
-# OpenCode target — protoclaw + ext/ binaries + Node.js + opencode-ai
+# OpenCode target — anyclaw + ext/ binaries + Node.js + opencode-ai
 # node:20-slim
 FROM node:20-slim@sha256:f93745c153377ee2fbbdd6e24efcd03cd2e86d6ab1d8aa9916a3790c40313a55 AS example-02-opencode
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY --from=opencode-deps /usr/local/lib/node_modules /usr/local/lib/node_modules
 COPY --from=opencode-deps /usr/local/bin /usr/local/bin
-COPY --from=builder /usr/local/bin/protoclaw /usr/local/bin/protoclaw
+COPY --from=builder /usr/local/bin/anyclaw /usr/local/bin/anyclaw
 COPY --from=builder /usr/local/bin/channels/debug-http /usr/local/bin/channels/debug-http
 COPY --from=builder /usr/local/bin/channels/telegram /usr/local/bin/channels/telegram
 COPY --from=builder /usr/local/bin/tools/system-info /usr/local/bin/tools/system-info
 WORKDIR /workspace
-ENTRYPOINT ["protoclaw"]
+ENTRYPOINT ["anyclaw"]
 
 # OpenCode agent image (for Docker workspace mode)
 # node:20-slim

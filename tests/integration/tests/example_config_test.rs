@@ -9,9 +9,9 @@ fn workspace_root() -> PathBuf {
 
 #[test]
 fn given_fake_agent_example_yaml_when_loaded_then_has_one_mock_agent() {
-    let yaml_path = workspace_root().join("examples/01-fake-agent-telegram-bot/protoclaw.yaml");
-    let config = protoclaw_config::ProtoclawConfig::load(Some(yaml_path.to_str().unwrap()))
-        .unwrap_or_else(|e| panic!("failed to load protoclaw.yaml: {e}"));
+    let yaml_path = workspace_root().join("examples/01-fake-agent-telegram-bot/anyclaw.yaml");
+    let config = anyclaw_config::AnyclawConfig::load(Some(yaml_path.to_str().unwrap()))
+        .unwrap_or_else(|e| panic!("failed to load anyclaw.yaml: {e}"));
 
     assert_eq!(config.agents_manager.agents.len(), 2);
     let mock = config
@@ -20,10 +20,10 @@ fn given_fake_agent_example_yaml_when_loaded_then_has_one_mock_agent() {
         .get("mock")
         .expect("missing 'mock' agent");
     match &mock.workspace {
-        protoclaw_config::WorkspaceConfig::Local(local) => {
+        anyclaw_config::WorkspaceConfig::Local(local) => {
             assert_eq!(
                 local.binary,
-                protoclaw_config::StringOrArray::from("@built-in/agents/mock-agent")
+                anyclaw_config::StringOrArray::from("@built-in/agents/mock-agent")
             );
         }
         other => panic!("expected Local workspace, got {other:?}"),
@@ -36,8 +36,8 @@ fn given_fake_agent_example_yaml_when_loaded_then_has_one_mock_agent() {
         .expect("missing 'mock-docker' agent");
     assert!(!mock_docker.enabled);
     match &mock_docker.workspace {
-        protoclaw_config::WorkspaceConfig::Docker(docker) => {
-            assert_eq!(docker.image, "protoclaw-mock-agent:latest");
+        anyclaw_config::WorkspaceConfig::Docker(docker) => {
+            assert_eq!(docker.image, "anyclaw-mock-agent:latest");
         }
         other => panic!("expected Docker workspace, got {other:?}"),
     }
@@ -45,9 +45,9 @@ fn given_fake_agent_example_yaml_when_loaded_then_has_one_mock_agent() {
 
 #[test]
 fn given_fake_agent_example_yaml_when_loaded_then_has_debug_http_and_telegram_channels() {
-    let yaml_path = workspace_root().join("examples/01-fake-agent-telegram-bot/protoclaw.yaml");
+    let yaml_path = workspace_root().join("examples/01-fake-agent-telegram-bot/anyclaw.yaml");
     let config =
-        protoclaw_config::ProtoclawConfig::load(Some(yaml_path.to_str().unwrap())).unwrap();
+        anyclaw_config::AnyclawConfig::load(Some(yaml_path.to_str().unwrap())).unwrap();
 
     assert_eq!(
         config.channels_manager.channels.len(),
@@ -60,9 +60,9 @@ fn given_fake_agent_example_yaml_when_loaded_then_has_debug_http_and_telegram_ch
 
 #[test]
 fn given_real_agent_example_yaml_when_loaded_then_has_opencode_agent() {
-    let yaml_path = workspace_root().join("examples/02-real-agents-telegram-bot/protoclaw.yaml");
-    let config = protoclaw_config::ProtoclawConfig::load(Some(yaml_path.to_str().unwrap()))
-        .unwrap_or_else(|e| panic!("failed to load protoclaw.yaml: {e}"));
+    let yaml_path = workspace_root().join("examples/02-real-agents-telegram-bot/anyclaw.yaml");
+    let config = anyclaw_config::AnyclawConfig::load(Some(yaml_path.to_str().unwrap()))
+        .unwrap_or_else(|e| panic!("failed to load anyclaw.yaml: {e}"));
 
     assert_eq!(config.agents_manager.agents.len(), 1);
     let opencode = config
@@ -71,11 +71,11 @@ fn given_real_agent_example_yaml_when_loaded_then_has_opencode_agent() {
         .get("opencode")
         .expect("missing 'opencode' agent");
     match &opencode.workspace {
-        protoclaw_config::WorkspaceConfig::Docker(docker) => {
-            assert_eq!(docker.image, "protoclaw-opencode-agent:latest");
+        anyclaw_config::WorkspaceConfig::Docker(docker) => {
+            assert_eq!(docker.image, "anyclaw-opencode-agent:latest");
             assert_eq!(
                 docker.entrypoint,
-                Some(protoclaw_config::StringOrArray(vec![
+                Some(anyclaw_config::StringOrArray(vec![
                     "opencode".into(),
                     "acp".into()
                 ]))
@@ -88,9 +88,9 @@ fn given_real_agent_example_yaml_when_loaded_then_has_opencode_agent() {
 
 #[test]
 fn given_real_agent_example_yaml_when_loaded_then_has_two_channels_with_correct_routing() {
-    let yaml_path = workspace_root().join("examples/02-real-agents-telegram-bot/protoclaw.yaml");
+    let yaml_path = workspace_root().join("examples/02-real-agents-telegram-bot/anyclaw.yaml");
     let config =
-        protoclaw_config::ProtoclawConfig::load(Some(yaml_path.to_str().unwrap())).unwrap();
+        anyclaw_config::AnyclawConfig::load(Some(yaml_path.to_str().unwrap())).unwrap();
 
     assert_eq!(
         config.channels_manager.channels.len(),

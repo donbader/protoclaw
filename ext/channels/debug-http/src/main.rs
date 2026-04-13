@@ -6,11 +6,11 @@ use axum::extract::{Path, State};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Json};
 use axum::routing::{get, post};
-use protoclaw_sdk_channel::{
+use anyclaw_sdk_channel::{
     Channel, ChannelCapabilities, ChannelHarness, ChannelSdkError, ChannelSendMessage,
     PermissionBroker, content_to_string,
 };
-use protoclaw_sdk_types::{
+use anyclaw_sdk_types::{
     ChannelRequestPermission, ContentKind, DeliverMessage, PeerInfo, PermissionResponse,
 };
 use serde::Deserialize;
@@ -75,7 +75,7 @@ impl Channel for DebugHttpChannel {
 
     async fn on_initialize(
         &mut self,
-        params: protoclaw_sdk_types::ChannelInitializeParams,
+        params: anyclaw_sdk_types::ChannelInitializeParams,
     ) -> Result<(), ChannelSdkError> {
         if let Some(host) = params.options.get("HOST").and_then(|v| v.as_str()) {
             self.host = host.to_string();
@@ -549,7 +549,7 @@ mod tests {
             request_id: "perm-1".into(),
             session_id: "s1".into(),
             description: "Allow?".into(),
-            options: vec![protoclaw_sdk_types::PermissionOption {
+            options: vec![anyclaw_sdk_types::PermissionOption {
                 option_id: "allow".into(),
                 label: "Allow".into(),
             }],

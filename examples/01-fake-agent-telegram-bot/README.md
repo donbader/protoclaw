@@ -1,6 +1,6 @@
 # Example 01: Fake Agent Bot
 
-A working protoclaw bot with zero API keys. The mock agent echoes messages back with simulated thinking, showing the full flow: channel → agent → tool → channel.
+A working anyclaw bot with zero API keys. The mock agent echoes messages back with simulated thinking, showing the full flow: channel → agent → tool → channel.
 
 ## Quick Start
 
@@ -9,7 +9,7 @@ cp .env.example .env
 docker compose up
 ```
 
-Uses pre-built images from `ghcr.io/donbader/protoclaw-builder` — no Rust compilation needed.
+Uses pre-built images from `ghcr.io/donbader/anyclaw-builder` — no Rust compilation needed.
 
 Send a message:
 
@@ -57,10 +57,10 @@ Docker workspace mode (spawns mock-agent in a separate container via bollard):
 
 ```
 ┌──────────────────────────────────────────────────┐
-│  protoclaw container                             │
+│  anyclaw container                             │
 │                                                  │
 │  ┌────────────┐  stdio  ┌──────────────┐        │
-│  │ protoclaw  │────────→│ mock-agent   │        │
+│  │ anyclaw  │────────→│ mock-agent   │        │
 │  │ supervisor │         │ (echo+think) │        │
 │  │            │────┐    └──────────────┘        │
 │  └────────────┘    │                             │
@@ -74,13 +74,13 @@ Docker workspace mode (spawns mock-agent in a separate container via bollard):
 └──────────────────────────────────────────────────┘
 ```
 
-Protoclaw also connects to a [docker-socket-proxy](https://github.com/Tecnativa/docker-socket-proxy) for the optional Docker workspace mode (see `--docker` flag).
+Anyclaw also connects to a [docker-socket-proxy](https://github.com/Tecnativa/docker-socket-proxy) for the optional Docker workspace mode (see `--docker` flag).
 
 ## Docker Workspace (Optional)
 
 By default the mock agent runs as a local subprocess. To run it in an isolated container instead:
 
-1. Edit `protoclaw.yaml`:
+1. Edit `anyclaw.yaml`:
    - Set `mock-docker.enabled: true`
    - Set `mock.enabled: false`
    - Change channel `agent` fields from `"mock"` to `"mock-docker"`
@@ -95,8 +95,8 @@ Security: socket proxy restricts Docker API to containers/images only. Agent con
 
 | File | Purpose |
 |------|---------|
-| `docker-compose.yml` | Protoclaw + socket-proxy (uses ghcr.io images) |
-| `protoclaw.yaml` | Agent, channel, tool, and supervisor config |
+| `docker-compose.yml` | Anyclaw + socket-proxy (uses ghcr.io images) |
+| `anyclaw.yaml` | Agent, channel, tool, and supervisor config |
 | `.env.example` | Environment template |
 | `test.sh` | E2E tests (`--docker` for Docker workspace) |
 | `tools/system-info/` | Demo MCP tool binary |

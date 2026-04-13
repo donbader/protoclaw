@@ -11,8 +11,8 @@ path = "src/main.rs"
 
 [dependencies]
 teloxide = { version = "0.17", default-features = false, features = ["macros", "rustls", "ctrlc_handler"] }
-protoclaw-sdk-channel = { workspace = true }
-protoclaw-sdk-types = { workspace = true }
+anyclaw-sdk-channel = { workspace = true }
+anyclaw-sdk-types = { workspace = true }
 regex = "1"
 serde = { workspace = true }
 serde_json = { workspace = true }

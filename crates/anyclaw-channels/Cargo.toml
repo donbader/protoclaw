@@ -1,0 +1,27 @@
+[package]
+name = "anyclaw-channels"
+version = "0.1.0"
+publish = false
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyclaw-core = { workspace = true }
+anyclaw-config = { workspace = true }
+anyclaw-sdk-types = { workspace = true }
+anyclaw-jsonrpc = { workspace = true }
+axum = { workspace = true }
+tokio = { workspace = true, default-features = false, features = ["io-util", "macros", "net", "process", "rt", "rt-multi-thread", "sync", "time"] }
+tokio-stream = { workspace = true }
+tokio-util = { workspace = true }
+futures = { workspace = true }
+uuid = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+tokio-test = { workspace = true }
+rstest = { workspace = true }

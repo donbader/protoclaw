@@ -1,8 +1,8 @@
-use protoclaw_sdk_channel::{
+use anyclaw_sdk_channel::{
     Channel, ChannelCapabilities, ChannelHarness, ChannelSdkError, ChannelSendMessage,
     DeliverMessage, PeerInfo,
 };
-use protoclaw_sdk_types::{ChannelRequestPermission, PermissionResponse};
+use anyclaw_sdk_types::{ChannelRequestPermission, PermissionResponse};
 use tokio::sync::mpsc;
 
 struct SdkTestChannel {

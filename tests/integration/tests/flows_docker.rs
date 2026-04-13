@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use protoclaw_integration_tests::{
+use anyclaw_integration_tests::{
     SseCollector, boot_supervisor_with_port, build_mock_agent_docker_image,
     cleanup_test_containers, docker_agent_config, with_timeout,
 };
@@ -67,13 +67,13 @@ async fn when_docker_agent_running_and_supervisor_cancelled_then_container_remov
     assert!(result.is_ok());
 
     let output = std::process::Command::new("docker")
-        .args(["ps", "-aq", "--filter", "label=protoclaw.managed=true"])
+        .args(["ps", "-aq", "--filter", "label=anyclaw.managed=true"])
         .output()
         .expect("docker ps failed");
     let remaining = String::from_utf8_lossy(&output.stdout);
     assert!(
         remaining.trim().is_empty(),
-        "no protoclaw containers should remain after shutdown, found: {remaining}"
+        "no anyclaw containers should remain after shutdown, found: {remaining}"
     );
 }
 

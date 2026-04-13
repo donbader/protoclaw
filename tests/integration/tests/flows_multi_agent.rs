@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use protoclaw_integration_tests::{
+use anyclaw_integration_tests::{
     SseCollector, boot_supervisor_with_port, debug_http_path, mock_agent_path, with_timeout,
 };
 
@@ -81,13 +81,13 @@ async fn given_two_agents_when_channel_routes_to_nonexistent_agent_then_no_echo_
     assert!(result.is_ok(), "supervisor should exit cleanly");
 }
 
-fn build_two_agent_config(channel_routes_to: &str) -> protoclaw_config::ProtoclawConfig {
+fn build_two_agent_config(channel_routes_to: &str) -> anyclaw_config::AnyclawConfig {
     let mut agents = HashMap::new();
     agents.insert(
         "agent-a".to_string(),
-        protoclaw_config::AgentConfig {
-            workspace: protoclaw_config::WorkspaceConfig::Local(
-                protoclaw_config::LocalWorkspaceConfig {
+        anyclaw_config::AgentConfig {
+            workspace: anyclaw_config::WorkspaceConfig::Local(
+                anyclaw_config::LocalWorkspaceConfig {
                     binary: mock_agent_path().to_string_lossy().to_string().into(),
                     working_dir: None,
                     env: HashMap::new(),
@@ -103,9 +103,9 @@ fn build_two_agent_config(channel_routes_to: &str) -> protoclaw_config::Protocla
     );
     agents.insert(
         "agent-b".to_string(),
-        protoclaw_config::AgentConfig {
-            workspace: protoclaw_config::WorkspaceConfig::Local(
-                protoclaw_config::LocalWorkspaceConfig {
+        anyclaw_config::AgentConfig {
+            workspace: anyclaw_config::WorkspaceConfig::Local(
+                anyclaw_config::LocalWorkspaceConfig {
                     binary: mock_agent_path().to_string_lossy().to_string().into(),
                     working_dir: None,
                     env: HashMap::new(),
@@ -123,7 +123,7 @@ fn build_two_agent_config(channel_routes_to: &str) -> protoclaw_config::Protocla
     let mut channels = HashMap::new();
     channels.insert(
         "debug-http".to_string(),
-        protoclaw_config::ChannelConfig {
+        anyclaw_config::ChannelConfig {
             binary: debug_http_path().to_string_lossy().to_string(),
             args: vec![],
             enabled: true,
@@ -137,17 +137,17 @@ fn build_two_agent_config(channel_routes_to: &str) -> protoclaw_config::Protocla
         },
     );
 
-    protoclaw_config::ProtoclawConfig {
-        agents_manager: protoclaw_config::AgentsManagerConfig {
+    anyclaw_config::AnyclawConfig {
+        agents_manager: anyclaw_config::AgentsManagerConfig {
             agents,
             ..Default::default()
         },
-        channels_manager: protoclaw_config::ChannelsManagerConfig {
+        channels_manager: anyclaw_config::ChannelsManagerConfig {
             channels,
             ..Default::default()
         },
-        tools_manager: protoclaw_config::ToolsManagerConfig::default(),
-        supervisor: protoclaw_config::SupervisorConfig {
+        tools_manager: anyclaw_config::ToolsManagerConfig::default(),
+        supervisor: anyclaw_config::SupervisorConfig {
             shutdown_timeout_secs: 5,
             health_check_interval_secs: 1,
             max_restarts: 3,
@@ -156,7 +156,7 @@ fn build_two_agent_config(channel_routes_to: &str) -> protoclaw_config::Protocla
             permission_timeout_secs: None,
         },
         log_level: "info".into(),
-        log_format: protoclaw_config::LogFormat::Pretty,
+        log_format: anyclaw_config::LogFormat::Pretty,
         extensions_dir: "/usr/local/bin".into(),
         session_store: Default::default(),
     }

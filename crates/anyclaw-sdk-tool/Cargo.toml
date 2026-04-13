@@ -1,0 +1,25 @@
+[package]
+name = "anyclaw-sdk-tool"
+version = "0.2.5"
+description = "Tool SDK for anyclaw — build MCP-compatible tool servers"
+edition.workspace = true
+rust-version.workspace = true
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/donbader/anyclaw"
+homepage = "https://github.com/donbader/anyclaw"
+readme = "README.md"
+keywords = ["agent", "mcp", "acp", "sdk"]
+categories = ["network-programming"]
+
+[dependencies]
+anyclaw-sdk-types = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, default-features = false, features = ["io-util", "macros", "rt-multi-thread"] }
+thiserror = { workspace = true }
+schemars = "1"
+rmcp = { version = "1.4", features = ["server", "transport-io"] }
+tracing = { workspace = true }
+
+[dev-dependencies]
+rstest = { workspace = true }

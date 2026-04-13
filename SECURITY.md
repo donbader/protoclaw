@@ -4,7 +4,7 @@
 
 **Please do not report security vulnerabilities through public GitHub issues.**
 
-To report a vulnerability privately, use [GitHub Security Advisories](https://github.com/donbader/protoclaw/security/advisories/new).
+To report a vulnerability privately, use [GitHub Security Advisories](https://github.com/donbader/anyclaw/security/advisories/new).
 
 Please include as much detail as possible: description of the issue, steps to reproduce, potential impact, and any suggested mitigations.
 
@@ -15,7 +15,7 @@ You can expect an acknowledgement within 3 business days. We will work with you 
 Once a fix is available, we will:
 
 1. Release a patched version
-2. Publish a [GitHub Security Advisory](https://github.com/donbader/protoclaw/security/advisories)
+2. Publish a [GitHub Security Advisory](https://github.com/donbader/anyclaw/security/advisories)
 3. Submit an advisory to the [RustSec Advisory Database](https://rustsec.org/) if applicable
 
 ## Supported Versions

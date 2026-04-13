@@ -1,4 +1,4 @@
-# Protoclaw Design Principles
+# Anyclaw Design Principles
 
 Design rationale and failure modes. Root AGENTS.md tells you WHAT exists; this doc tells you WHY.
 
@@ -35,14 +35,14 @@ Separating them means each can crash and recover independently. A Telegram chann
 
 ### Why External Channel/Tool Binaries?
 
-- **Language freedom** — Channel implementors don't need Rust. Write a Telegram bot in Python, a Slack bot in TypeScript — as long as it speaks JSON-RPC over stdio, protoclaw can manage it.
+- **Language freedom** — Channel implementors don't need Rust. Write a Telegram bot in Python, a Slack bot in TypeScript — as long as it speaks JSON-RPC over stdio, anyclaw can manage it.
 - **SDK crates provide the harness** — `ChannelHarness` and `ToolServer` handle all the JSON-RPC framing, initialize handshake, and message routing. Implementors only write business logic (the `Channel` or `Tool` trait).
 - **Crash isolation** — A buggy channel binary crashes without affecting other channels or the agent. The supervisor restarts it independently.
 - **Deployment flexibility** — Channel binaries can be pre-built, distributed separately, or resolved at runtime via `@built-in/` prefix against `extensions_dir`.
 
-### Why ChannelEvent Lives in protoclaw-sdk-types
+### Why ChannelEvent Lives in anyclaw-sdk-types
 
-`ChannelEvent` is the agents→channels message type (deliver message, route permission). Both `protoclaw-agents` and `protoclaw-channels` need it. Putting it in either crate would create a circular dependency. As of v5.0, `ChannelEvent` (and `SessionKey`) live in `protoclaw-sdk-types` — the dependency-free leaf crate shared by all SDK and internal crates. `protoclaw-core` re-exports both types for backward compatibility.
+`ChannelEvent` is the agents→channels message type (deliver message, route permission). Both `anyclaw-agents` and `anyclaw-channels` need it. Putting it in either crate would create a circular dependency. As of v5.0, `ChannelEvent` (and `SessionKey`) live in `anyclaw-sdk-types` — the dependency-free leaf crate shared by all SDK and internal crates. `anyclaw-core` re-exports both types for backward compatibility.
 
 ## Failure Mode Catalog
 
@@ -108,15 +108,15 @@ Without it, the `select!` loop busy-spins when no messages are pending. The slee
 
 v5.0 established clear crate boundary rules:
 
-1. **SDK types are the canonical source** — `ChannelEvent`, `SessionKey`, and all channel wire types live in `protoclaw-sdk-types`. Internal crates may re-export for convenience but must not duplicate definitions.
-2. **No cross-manager imports** — Managers communicate only via `ManagerHandle<C>` commands. The `AgentDispatch` trait in `protoclaw-channels` abstracts agent interaction without importing `protoclaw-agents`.
+1. **SDK types are the canonical source** — `ChannelEvent`, `SessionKey`, and all channel wire types live in `anyclaw-sdk-types`. Internal crates may re-export for convenience but must not duplicate definitions.
+2. **No cross-manager imports** — Managers communicate only via `ManagerHandle<C>` commands. The `AgentDispatch` trait in `anyclaw-channels` abstracts agent interaction without importing `anyclaw-agents`.
 3. **No `std::env::var` in channel/tool binaries** — Runtime configuration flows through the initialize handshake (`ChannelInitializeParams.options`). The supervisor forwards `ChannelConfig.options` as the single config source. CLI entry points (`main.rs`, `init.rs`, `status.rs`) are exempt.
 
 ### Config-Driven Operation
 
 Channel subprocesses receive all configuration through the JSON-RPC initialize handshake, not environment variables:
 
-1. `protoclaw.yaml` defines `options: HashMap<String, Value>` per channel
+1. `anyclaw.yaml` defines `options: HashMap<String, Value>` per channel
 2. Supervisor forwards options in `ChannelInitializeParams.options`
 3. Channel reads config in `on_initialize()`, not at construction time
 4. This makes channels testable (no env setup) and deployable (config is explicit)

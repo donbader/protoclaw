@@ -17,24 +17,24 @@ COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     cargo build --release --locked \
-    --bin protoclaw \
+    --bin anyclaw \
     --bin telegram-channel \
     --bin debug-http \
     --bin mock-agent \
     --bin system-info
 
-# Stage 4: Core runtime — protoclaw only (static, no OS packages)
+# Stage 4: Core runtime — anyclaw only (static, no OS packages)
 FROM gcr.io/distroless/static-debian12:nonroot AS core
-COPY --from=builder /build/target/release/protoclaw /usr/local/bin/protoclaw
+COPY --from=builder /build/target/release/anyclaw /usr/local/bin/anyclaw
 WORKDIR /workspace
-ENTRYPOINT ["protoclaw"]
+ENTRYPOINT ["anyclaw"]
 
-# Stage 5: Builder export — protoclaw + all ext/ binaries in categorized paths
+# Stage 5: Builder export — anyclaw + all ext/ binaries in categorized paths
 FROM gcr.io/distroless/static-debian12:nonroot AS builder-export
-COPY --from=builder /build/target/release/protoclaw /usr/local/bin/protoclaw
+COPY --from=builder /build/target/release/anyclaw /usr/local/bin/anyclaw
 COPY --from=builder /build/target/release/mock-agent /usr/local/bin/agents/mock-agent
 COPY --from=builder /build/target/release/telegram-channel /usr/local/bin/channels/telegram
 COPY --from=builder /build/target/release/debug-http /usr/local/bin/channels/debug-http
 COPY --from=builder /build/target/release/system-info /usr/local/bin/tools/system-info
 WORKDIR /workspace
-ENTRYPOINT ["protoclaw"]
+ENTRYPOINT ["anyclaw"]

@@ -1,6 +1,6 @@
 //! Validation tests for example configuration files.
 //!
-//! Ensures every example's protoclaw.yaml parses against the current config schema
+//! Ensures every example's anyclaw.yaml parses against the current config schema
 //! and every docker-compose.yml is syntactically valid.
 //!
 //! | Test                           | Validates                                      |
@@ -11,7 +11,7 @@
 //! | example_02_docker_compose_valid| Real-agent docker-compose.yml syntax            |
 
 use figment::Jail;
-use protoclaw_config::ProtoclawConfig;
+use anyclaw_config::AnyclawConfig;
 
 #[test]
 fn given_example_01_yaml_when_loaded_via_figment_jail_then_config_parses() {
@@ -20,12 +20,12 @@ fn given_example_01_yaml_when_loaded_via_figment_jail_then_config_parses() {
         jail.set_env("TELEGRAM_ENABLED", "false");
 
         jail.create_file(
-            "protoclaw.yaml",
-            include_str!("../../../examples/01-fake-agent-telegram-bot/protoclaw.yaml"),
+            "anyclaw.yaml",
+            include_str!("../../../examples/01-fake-agent-telegram-bot/anyclaw.yaml"),
         )?;
 
         let config =
-            ProtoclawConfig::load(Some("protoclaw.yaml")).expect("example 01 config should parse");
+            AnyclawConfig::load(Some("anyclaw.yaml")).expect("example 01 config should parse");
 
         assert!(config.agents_manager.agents.contains_key("mock"));
         assert!(config.channels_manager.channels.contains_key("debug-http"));
@@ -43,12 +43,12 @@ fn given_example_02_yaml_when_loaded_via_figment_jail_then_config_parses() {
         jail.set_env("TELEGRAM_ENABLED", "false");
 
         jail.create_file(
-            "protoclaw.yaml",
-            include_str!("../../../examples/02-real-agents-telegram-bot/protoclaw.yaml"),
+            "anyclaw.yaml",
+            include_str!("../../../examples/02-real-agents-telegram-bot/anyclaw.yaml"),
         )?;
 
         let config =
-            ProtoclawConfig::load(Some("protoclaw.yaml")).expect("example 02 config should parse");
+            AnyclawConfig::load(Some("anyclaw.yaml")).expect("example 02 config should parse");
 
         assert!(config.agents_manager.agents.contains_key("opencode"));
         assert_eq!(config.agents_manager.agents.len(), 1);

@@ -1,0 +1,19 @@
+[package]
+name = "anyclaw-sdk-types"
+version = "0.4.0"
+description = "Shared types for the anyclaw agent-channel-tool SDK"
+edition.workspace = true
+rust-version.workspace = true
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/donbader/anyclaw"
+homepage = "https://github.com/donbader/anyclaw"
+readme = "README.md"
+keywords = ["agent", "mcp", "acp", "sdk"]
+categories = ["network-programming"]
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+rstest.workspace = true

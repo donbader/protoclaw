@@ -1,4 +1,4 @@
-use protoclaw_sdk_types::PeerInfo;
+use anyclaw_sdk_types::PeerInfo;
 
 /// Convert a Telegram chat_id and chat type string into a PeerInfo.
 ///

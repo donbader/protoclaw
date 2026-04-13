@@ -11,17 +11,17 @@ git_tag_enable = true
 # Publish in dependency order: sdk-types first (no SDK deps),
 # then the crates that depend on it.
 [[package]]
-name = "protoclaw-sdk-types"
+name = "anyclaw-sdk-types"
 publish = true
 
 [[package]]
-name = "protoclaw-sdk-agent"
+name = "anyclaw-sdk-agent"
 publish = true
 
 [[package]]
-name = "protoclaw-sdk-channel"
+name = "anyclaw-sdk-channel"
 publish = true
 
 [[package]]
-name = "protoclaw-sdk-tool"
+name = "anyclaw-sdk-tool"
 publish = true

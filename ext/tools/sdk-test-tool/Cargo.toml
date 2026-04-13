@@ -10,6 +10,6 @@ name = "sdk-test-tool"
 path = "src/main.rs"
 
 [dependencies]
-protoclaw-sdk-tool = { workspace = true }
+anyclaw-sdk-tool = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

@@ -1,4 +1,4 @@
-pub use protoclaw_test_helpers::{
+pub use anyclaw_test_helpers::{
     SseCollector, SseEvent, boot_supervisor_with_port, build_mock_agent_docker_image,
     cleanup_test_containers, debug_http_path, docker_agent_config,
     docker_agent_config_with_options, invalid_tool_config, make_handle, mock_agent_config,

@@ -21,14 +21,14 @@ Keep `Dockerfile.dev-builder` for cold builds. Add a `dev.sh` helper script in `
 1. On first run: `docker compose build` (uses Dockerfile.dev-builder via override)
 2. On subsequent runs with `--rebuild` flag:
    - Starts a persistent builder container with workspace source mounted + cargo registry/target cache volumes
-   - Runs `cargo build --release --bin protoclaw --bin telegram-channel --bin debug-http --bin system-info` inside it
-   - `docker cp` binaries into the running protoclaw container
-   - Restarts the protoclaw container
+   - Runs `cargo build --release --bin anyclaw --bin telegram-channel --bin debug-http --bin system-info` inside it
+   - `docker cp` binaries into the running anyclaw container
+   - Restarts the anyclaw container
 
 Cache volumes:
-- `protoclaw-cargo-registry` → `/usr/local/cargo/registry`
-- `protoclaw-cargo-git` → `/usr/local/cargo/git`
-- `protoclaw-target` → `/build/target`
+- `anyclaw-cargo-registry` → `/usr/local/cargo/registry`
+- `anyclaw-cargo-git` → `/usr/local/cargo/git`
+- `anyclaw-target` → `/build/target`
 
 The builder container image is `lukemathwalker/cargo-chef:latest-rust-1.94-alpine` (same as Dockerfile.dev-builder).
 
@@ -36,7 +36,7 @@ The builder container image is `lukemathwalker/cargo-chef:latest-rust-1.94-alpin
 
 **Goal:** Suppress noisy crates without recompiling.
 
-Add `log_filter` field to `SupervisorConfig` in `protoclaw-config/src/types.rs`:
+Add `log_filter` field to `SupervisorConfig` in `anyclaw-config/src/types.rs`:
 
 ```yaml
 supervisor:
@@ -45,7 +45,7 @@ supervisor:
 
 - Default: `"info,hyper=warn,reqwest=warn,h2=warn,hyper_util=warn,tower=warn"`
 - Applied as `tracing_subscriber::EnvFilter` in `main.rs`
-- `PROTOCLAW_SUPERVISOR__LOG_FILTER` env var override works via Figment
+- `ANYCLAW_SUPERVISOR__LOG_FILTER` env var override works via Figment
 - Channel subprocesses: pass `log_filter` in `ChannelInitializeParams.options` so channels can apply the same filter to their own tracing subscriber
 - `RUST_LOG` env var takes precedence if set (standard convention)
 
@@ -64,7 +64,7 @@ Events to add (all at INFO level with structured fields):
 - `RoutePermission` command: `tracing::info!(channel, session_key, request_id, "permission routed to channel")`
 - Spawned response task: `tracing::info!(request_id, option_id, "permission response received from channel, forwarding to agents")`
 
-**harness.rs (protoclaw-sdk-channel):**
+**harness.rs (anyclaw-sdk-channel):**
 - `channel/requestPermission` dispatch: `tracing::debug!(request_id, "permission request dispatched to channel")`
 - After response: `tracing::debug!(request_id, "permission response ready, returning to harness")`
 
@@ -79,14 +79,14 @@ Events to add (all at INFO level with structured fields):
 | File | Change |
 |------|--------|
 | `examples/02-real-agents-telegram-bot/dev.sh` | New: helper script for fast rebuilds |
-| `crates/protoclaw-config/src/types.rs` | Add `log_filter` to `SupervisorConfig` |
-| `crates/protoclaw/src/main.rs` | Apply `log_filter` to tracing subscriber |
-| `crates/protoclaw-agents/src/manager.rs` | Add permission response tracing |
-| `crates/protoclaw-channels/src/manager.rs` | Add permission routing tracing |
-| `crates/protoclaw-sdk-channel/src/harness.rs` | Add permission dispatch tracing |
+| `crates/anyclaw-config/src/types.rs` | Add `log_filter` to `SupervisorConfig` |
+| `crates/anyclaw/src/main.rs` | Apply `log_filter` to tracing subscriber |
+| `crates/anyclaw-agents/src/manager.rs` | Add permission response tracing |
+| `crates/anyclaw-channels/src/manager.rs` | Add permission routing tracing |
+| `crates/anyclaw-sdk-channel/src/harness.rs` | Add permission dispatch tracing |
 | `ext/channels/telegram/src/dispatcher.rs` | Add callback query tracing |
 | `ext/channels/telegram/src/permissions.rs` | Add broker resolution tracing |
-| `examples/02-real-agents-telegram-bot/protoclaw.yaml` | Add `log_filter` config |
+| `examples/02-real-agents-telegram-bot/anyclaw.yaml` | Add `log_filter` config |
 
 ## Success Criteria
 

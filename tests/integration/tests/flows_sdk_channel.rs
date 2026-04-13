@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use protoclaw_integration_tests::{
+use anyclaw_integration_tests::{
     SseCollector, boot_supervisor_with_port, sdk_channel_config, with_timeout,
 };
 

@@ -104,6 +104,255 @@ dependencies = [
 ]
 
 [[package]]
+name = "anyclaw"
+version = "0.1.0"
+dependencies = [
+ "anyclaw-config",
+ "anyclaw-core",
+ "anyclaw-supervisor",
+ "anyhow",
+ "clap",
+ "reqwest",
+ "rstest",
+ "serde_json",
+ "temp-env",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "yaml_serde",
+]
+
+[[package]]
+name = "anyclaw-agents"
+version = "0.1.0"
+dependencies = [
+ "anyclaw-config",
+ "anyclaw-core",
+ "anyclaw-jsonrpc",
+ "anyclaw-sdk-agent",
+ "anyclaw-sdk-types",
+ "bollard",
+ "futures",
+ "rstest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-test",
+ "tokio-util",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "anyclaw-channels"
+version = "0.1.0"
+dependencies = [
+ "anyclaw-config",
+ "anyclaw-core",
+ "anyclaw-jsonrpc",
+ "anyclaw-sdk-types",
+ "axum",
+ "futures",
+ "reqwest",
+ "rstest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-stream",
+ "tokio-test",
+ "tokio-util",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "anyclaw-config"
+version = "0.1.0"
+dependencies = [
+ "anyclaw-sdk-types",
+ "figment",
+ "rstest",
+ "serde",
+ "serde_json",
+ "subst",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tracing",
+ "yaml_serde",
+]
+
+[[package]]
+name = "anyclaw-core"
+version = "0.1.0"
+dependencies = [
+ "anyclaw-sdk-types",
+ "rstest",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "anyclaw-integration-tests"
+version = "0.1.0"
+dependencies = [
+ "anyclaw-config",
+ "anyclaw-supervisor",
+ "anyclaw-test-helpers",
+ "anyhow",
+ "bollard",
+ "figment",
+ "reqwest",
+ "rstest",
+ "serde_json",
+ "test-log",
+ "tokio",
+ "tokio-stream",
+ "tokio-test",
+ "tokio-util",
+ "tracing-subscriber",
+ "yaml_serde",
+]
+
+[[package]]
+name = "anyclaw-jsonrpc"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "rstest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
+name = "anyclaw-sdk-agent"
+version = "0.2.5"
+dependencies = [
+ "anyclaw-sdk-types",
+ "rstest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
+name = "anyclaw-sdk-channel"
+version = "0.2.6"
+dependencies = [
+ "anyclaw-sdk-types",
+ "rstest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "anyclaw-sdk-tool"
+version = "0.2.5"
+dependencies = [
+ "anyclaw-sdk-types",
+ "rmcp",
+ "rstest",
+ "schemars 1.2.1",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "anyclaw-sdk-types"
+version = "0.4.0"
+dependencies = [
+ "rstest",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "anyclaw-supervisor"
+version = "0.1.0"
+dependencies = [
+ "anyclaw-agents",
+ "anyclaw-channels",
+ "anyclaw-config",
+ "anyclaw-core",
+ "anyclaw-tools",
+ "axum",
+ "metrics",
+ "metrics-exporter-prometheus",
+ "rstest",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
+name = "anyclaw-test-helpers"
+version = "0.1.0"
+dependencies = [
+ "anyclaw-config",
+ "anyclaw-core",
+ "anyclaw-supervisor",
+ "anyhow",
+ "bytes",
+ "futures-core",
+ "reqwest",
+ "rstest",
+ "serde_json",
+ "tempfile",
+ "test-log",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "tracing-subscriber",
+ "wat",
+]
+
+[[package]]
+name = "anyclaw-tools"
+version = "0.1.0"
+dependencies = [
+ "anyclaw-config",
+ "anyclaw-core",
+ "anyclaw-sdk-tool",
+ "axum",
+ "futures",
+ "metrics",
+ "rmcp",
+ "rstest",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-test",
+ "tokio-util",
+ "tracing",
+ "wasmtime",
+ "wasmtime-wasi",
+ "wat",
+]
+
+[[package]]
 name = "anyhow"
 version = "1.0.102"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -805,9 +1054,9 @@ dependencies = [
 name = "debug-http"
 version = "0.1.0"
 dependencies = [
+ "anyclaw-sdk-channel",
+ "anyclaw-sdk-types",
  "axum",
- "protoclaw-sdk-channel",
- "protoclaw-sdk-types",
  "serde",
  "serde_json",
  "tokio",
@@ -2316,255 +2565,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "protoclaw"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "protoclaw-config",
- "protoclaw-core",
- "protoclaw-supervisor",
- "reqwest",
- "rstest",
- "serde_json",
- "temp-env",
- "tempfile",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "yaml_serde",
-]
-
-[[package]]
-name = "protoclaw-agents"
-version = "0.1.0"
-dependencies = [
- "bollard",
- "futures",
- "protoclaw-config",
- "protoclaw-core",
- "protoclaw-jsonrpc",
- "protoclaw-sdk-agent",
- "protoclaw-sdk-types",
- "rstest",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "tokio-test",
- "tokio-util",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "protoclaw-channels"
-version = "0.1.0"
-dependencies = [
- "axum",
- "futures",
- "protoclaw-config",
- "protoclaw-core",
- "protoclaw-jsonrpc",
- "protoclaw-sdk-types",
- "reqwest",
- "rstest",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tokio-stream",
- "tokio-test",
- "tokio-util",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "protoclaw-config"
-version = "0.1.0"
-dependencies = [
- "figment",
- "protoclaw-sdk-types",
- "rstest",
- "serde",
- "serde_json",
- "subst",
- "tempfile",
- "thiserror 2.0.18",
- "tracing",
- "yaml_serde",
-]
-
-[[package]]
-name = "protoclaw-core"
-version = "0.1.0"
-dependencies = [
- "protoclaw-sdk-types",
- "rstest",
- "rusqlite",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tokio-util",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "protoclaw-integration-tests"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bollard",
- "figment",
- "protoclaw-config",
- "protoclaw-supervisor",
- "protoclaw-test-helpers",
- "reqwest",
- "rstest",
- "serde_json",
- "test-log",
- "tokio",
- "tokio-stream",
- "tokio-test",
- "tokio-util",
- "tracing-subscriber",
- "yaml_serde",
-]
-
-[[package]]
-name = "protoclaw-jsonrpc"
-version = "0.1.0"
-dependencies = [
- "bytes",
- "rstest",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio-util",
- "tracing",
-]
-
-[[package]]
-name = "protoclaw-sdk-agent"
-version = "0.2.5"
-dependencies = [
- "protoclaw-sdk-types",
- "rstest",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
-]
-
-[[package]]
-name = "protoclaw-sdk-channel"
-version = "0.2.6"
-dependencies = [
- "protoclaw-sdk-types",
- "rstest",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "protoclaw-sdk-tool"
-version = "0.2.5"
-dependencies = [
- "protoclaw-sdk-types",
- "rmcp",
- "rstest",
- "schemars 1.2.1",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "protoclaw-sdk-types"
-version = "0.4.0"
-dependencies = [
- "rstest",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "protoclaw-supervisor"
-version = "0.1.0"
-dependencies = [
- "axum",
- "metrics",
- "metrics-exporter-prometheus",
- "protoclaw-agents",
- "protoclaw-channels",
- "protoclaw-config",
- "protoclaw-core",
- "protoclaw-tools",
- "rstest",
- "serde_json",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "tokio-util",
- "tracing",
-]
-
-[[package]]
-name = "protoclaw-test-helpers"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bytes",
- "futures-core",
- "protoclaw-config",
- "protoclaw-core",
- "protoclaw-supervisor",
- "reqwest",
- "rstest",
- "serde_json",
- "tempfile",
- "test-log",
- "tokio",
- "tokio-stream",
- "tokio-util",
- "tracing-subscriber",
- "wat",
-]
-
-[[package]]
-name = "protoclaw-tools"
-version = "0.1.0"
-dependencies = [
- "axum",
- "futures",
- "metrics",
- "protoclaw-config",
- "protoclaw-core",
- "protoclaw-sdk-tool",
- "rmcp",
- "rstest",
- "serde_json",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "tokio-test",
- "tokio-util",
- "tracing",
- "wasmtime",
- "wasmtime-wasi",
- "wat",
-]
-
-[[package]]
 name = "psm"
 version = "0.1.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3237,8 +3237,8 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 name = "sdk-test-channel"
 version = "0.1.0"
 dependencies = [
- "protoclaw-sdk-channel",
- "protoclaw-sdk-types",
+ "anyclaw-sdk-channel",
+ "anyclaw-sdk-types",
  "serde_json",
  "tokio",
 ]
@@ -3247,7 +3247,7 @@ dependencies = [
 name = "sdk-test-tool"
 version = "0.1.0"
 dependencies = [
- "protoclaw-sdk-tool",
+ "anyclaw-sdk-tool",
  "serde_json",
  "tokio",
 ]
@@ -3601,7 +3601,7 @@ dependencies = [
 name = "system-info"
 version = "0.1.0"
 dependencies = [
- "protoclaw-sdk-tool",
+ "anyclaw-sdk-tool",
  "serde_json",
  "tokio",
 ]
@@ -3644,8 +3644,8 @@ checksum = "adb6935a6f5c20170eeceb1a3835a49e12e19d792f6dd344ccc76a985ca5a6ca"
 name = "telegram-channel"
 version = "0.1.1"
 dependencies = [
- "protoclaw-sdk-channel",
- "protoclaw-sdk-types",
+ "anyclaw-sdk-channel",
+ "anyclaw-sdk-types",
  "regex",
  "rstest",
  "serde",

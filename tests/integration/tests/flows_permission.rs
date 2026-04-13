@@ -1,6 +1,6 @@
 // Permission E2E tests.
 //
-// Wire format note (D-02): The RespondPermission path in protoclaw-agents/manager.rs produces
+// Wire format note (D-02): The RespondPermission path in anyclaw-agents/manager.rs produces
 // a nested result structure: { "result": { "outcome": { "outcome": "selected", "optionId": "..." } } }
 // This is distinct from the auto-approve path which produces a flat { "result": { "requestId": "...", "optionId": "..." } }.
 // The auto-approve path fires only when no channel is routable; these tests exercise the RespondPermission path.
@@ -10,13 +10,13 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use protoclaw_integration_tests::{
+use anyclaw_integration_tests::{
     SseCollector, boot_supervisor_with_port, mock_agent_config_with_options, wait_for_condition,
     with_timeout,
 };
 use rstest::rstest;
 
-fn permission_config() -> protoclaw_config::ProtoclawConfig {
+fn permission_config() -> anyclaw_config::AnyclawConfig {
     let mut opts = HashMap::new();
     opts.insert("request_permission".into(), serde_json::json!(true));
     mock_agent_config_with_options(opts)
@@ -132,7 +132,7 @@ async fn when_agent_requests_permission_with_reject_then_agent_still_echoes() {
     let _ = with_timeout(5, handle).await;
 }
 
-fn permission_config_with_timeout(timeout_secs: u64) -> protoclaw_config::ProtoclawConfig {
+fn permission_config_with_timeout(timeout_secs: u64) -> anyclaw_config::AnyclawConfig {
     let mut opts = HashMap::new();
     opts.insert("request_permission".into(), serde_json::json!(true));
     let mut config = mock_agent_config_with_options(opts);

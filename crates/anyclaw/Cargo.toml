@@ -1,0 +1,24 @@
+[package]
+name = "anyclaw"
+version = "0.1.0"
+publish = false
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyclaw-core = { path = "../anyclaw-core" }
+anyclaw-config = { path = "../anyclaw-config" }
+anyclaw-supervisor = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+clap.workspace = true
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+serde_yaml.workspace = true
+rstest = { workspace = true }
+temp-env = { workspace = true }

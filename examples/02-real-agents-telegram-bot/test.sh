@@ -73,11 +73,11 @@ sleep 2
 printf "SSE response\n"
 curl -sf -X POST "$BASE_URL/message" \
   -H "Content-Type: application/json" \
-  -d '{"message": "Reply with exactly: PROTOCLAW_TEST_OK"}' >/dev/null
+  -d '{"message": "Reply with exactly: ANYCLAW_TEST_OK"}' >/dev/null
 
 sleep 45
 
-if grep -q "PROTOCLAW_TEST_OK\|agent_message_chunk\|data:" "$SSE_FILE"; then
+if grep -q "ANYCLAW_TEST_OK\|agent_message_chunk\|data:" "$SSE_FILE"; then
   pass "SSE stream contains agent response"
 else
   fail "SSE stream empty (got: $(head -20 "$SSE_FILE"))"
@@ -90,7 +90,7 @@ else
   fail "SSE stream missing streaming chunks"
 fi
 
-if grep -q "result\|^data: .*PROTOCLAW_TEST_OK" "$SSE_FILE"; then
+if grep -q "result\|^data: .*ANYCLAW_TEST_OK" "$SSE_FILE"; then
   pass "SSE stream contains result"
 else
   fail "SSE stream missing result"

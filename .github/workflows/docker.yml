@@ -46,7 +46,7 @@ jobs:
           context: .
           target: core
           platforms: ${{ matrix.platform }}
-          outputs: type=image,name=ghcr.io/donbader/protoclaw,push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=ghcr.io/donbader/anyclaw,push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=build-${{ matrix.platform }}
           cache-to: type=gha,scope=build-${{ matrix.platform }},mode=max
 
@@ -57,7 +57,7 @@ jobs:
           context: .
           target: builder-export
           platforms: ${{ matrix.platform }}
-          outputs: type=image,name=ghcr.io/donbader/protoclaw-builder,push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=ghcr.io/donbader/anyclaw-builder,push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=build-${{ matrix.platform }}
           cache-to: type=gha,scope=build-${{ matrix.platform }},mode=max
 
@@ -96,9 +96,9 @@ jobs:
       matrix:
         include:
           - target: core
-            image: ghcr.io/donbader/protoclaw
+            image: ghcr.io/donbader/anyclaw
           - target: builder-export
-            image: ghcr.io/donbader/protoclaw-builder
+            image: ghcr.io/donbader/anyclaw-builder
     steps:
       - name: Download amd64 digest
         uses: actions/download-artifact@v8

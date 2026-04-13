@@ -1,6 +1,6 @@
 # ext/channels/ — External Channel Binaries
 
-Channel implementations that run as subprocesses spawned by `ChannelsManager`. They communicate with protoclaw over JSON-RPC 2.0 stdio using the channel SDK (`protoclaw-sdk-channel`).
+Channel implementations that run as subprocesses spawned by `ChannelsManager`. They communicate with anyclaw over JSON-RPC 2.0 stdio using the channel SDK (`anyclaw-sdk-channel`).
 
 ## Binaries
 
@@ -16,13 +16,13 @@ These are standalone binaries, not libraries. They depend on SDK crates but are 
 ## Shared Pattern
 
 Both channels follow the same structure:
-1. Implement `Channel` trait from `protoclaw-sdk-channel`
+1. Implement `Channel` trait from `anyclaw-sdk-channel`
 2. Call `ChannelHarness::run_stdio(channel).await` in `main()`
 3. The harness handles all JSON-RPC framing, initialization handshake, and message routing
 
 ## Thought Rendering
 
-Both channels use `ContentKind::from_content(&msg.content)` from `protoclaw-sdk-types` for typed dispatch over content types:
+Both channels use `ContentKind::from_content(&msg.content)` from `anyclaw-sdk-types` for typed dispatch over content types:
 
 - `ContentKind::Thought(thought)` — thought content from the agent's reasoning process
 - `ContentKind::UserMessageChunk { text }` — user's message echoed back (includes merged prompt text)
@@ -120,14 +120,14 @@ Single `main.rs` — axum HTTP server with `SsePayload` typed broadcast for name
 1. Create `ext/channels/{name}/` with `Cargo.toml` + `src/main.rs`
 2. Add to workspace members in root `Cargo.toml`
 3. Implement `Channel` trait, use `ChannelHarness::run_stdio()`
-4. Add `ChannelConfig` entry in `protoclaw.yaml`
-5. Update `crates/protoclaw-channels/` if new routing logic needed
+4. Add `ChannelConfig` entry in `anyclaw.yaml`
+5. Update `crates/anyclaw-channels/` if new routing logic needed
 
 ### Channel trait skeleton
 
 ```rust
-use protoclaw_sdk_channel::{Channel, ChannelCapabilities, ChannelSdkError, ChannelSendMessage, PermissionBroker};
-use protoclaw_sdk_types::{ChannelRequestPermission, ContentKind, DeliverMessage, PermissionResponse};
+use anyclaw_sdk_channel::{Channel, ChannelCapabilities, ChannelSdkError, ChannelSendMessage, PermissionBroker};
+use anyclaw_sdk_types::{ChannelRequestPermission, ContentKind, DeliverMessage, PermissionResponse};
 
 #[async_trait]
 impl Channel for MyChannel {
@@ -153,7 +153,7 @@ match kind {
 ### content_to_string for displayable text
 
 ```rust
-use protoclaw_sdk_channel::content_to_string;
+use anyclaw_sdk_channel::content_to_string;
 let text = content_to_string(&msg.content); // handles OpenCode wrapper + plain strings
 ```
 
@@ -175,7 +175,7 @@ self.state.permission_broker.lock().await.resolve(&request_id, &option_id);
 ### ChannelTester for unit tests
 
 ```rust
-use protoclaw_sdk_channel::testing::ChannelTester;
+use anyclaw_sdk_channel::testing::ChannelTester;
 let mut tester = ChannelTester::new(my_channel);
 tester.initialize(None).await.unwrap();
 tester.deliver(DeliverMessage { session_id: "s1".into(), content: json!("hi") }).await.unwrap();

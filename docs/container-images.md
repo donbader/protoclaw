@@ -1,13 +1,13 @@
 # Container Images
 
-Protoclaw publishes two container images to GitHub Container Registry (ghcr.io) on every semver tag.
+Anyclaw publishes two container images to GitHub Container Registry (ghcr.io) on every semver tag.
 
 ## Images
 
 | Image | Contents | Use Case |
 |-------|----------|----------|
-| `ghcr.io/donbader/protoclaw` | protoclaw binary only (distroless) | Minimal deployments where you supply your own extensions |
-| `ghcr.io/donbader/protoclaw-builder` | protoclaw + all ext/ binaries | Ready-to-run with all built-in agents, channels, and tools |
+| `ghcr.io/donbader/anyclaw` | anyclaw binary only (distroless) | Minimal deployments where you supply your own extensions |
+| `ghcr.io/donbader/anyclaw-builder` | anyclaw + all ext/ binaries | Ready-to-run with all built-in agents, channels, and tools |
 
 ## Tags
 
@@ -49,16 +49,16 @@ A weekly cleanup workflow (`.github/workflows/ghcr-cleanup.yml`) manages image l
 Pull the builder image (includes all extensions):
 
 ```sh
-docker pull ghcr.io/donbader/protoclaw-builder:latest
+docker pull ghcr.io/donbader/anyclaw-builder:latest
 ```
 
 Use as a base for custom images:
 
 ```dockerfile
-FROM ghcr.io/donbader/protoclaw-builder:latest AS builder
+FROM ghcr.io/donbader/anyclaw-builder:latest AS builder
 
 FROM node:20-slim AS my-app
-COPY --from=builder /usr/local/bin/protoclaw /usr/local/bin/protoclaw
+COPY --from=builder /usr/local/bin/anyclaw /usr/local/bin/anyclaw
 COPY --from=builder /usr/local/bin/channels/telegram /usr/local/bin/channels/telegram
 COPY --from=builder /usr/local/bin/tools/system-info /usr/local/bin/tools/system-info
 ```
@@ -67,7 +67,7 @@ Binary layout in the builder image follows the `@built-in/` convention:
 
 ```
 /usr/local/bin/
-├── protoclaw
+├── anyclaw
 ├── agents/
 │   ├── mock-agent
 │   └── opencode-wrapper

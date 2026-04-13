@@ -13,15 +13,15 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
-      - protoclaw-internal
+      - anyclaw-internal
     restart: unless-stopped
 
-  protoclaw:
-    image: ghcr.io/donbader/protoclaw-builder:latest
+  anyclaw:
+    image: ghcr.io/donbader/anyclaw-builder:latest
     ports:
       - "8080:8080"
     volumes:
-      - ./protoclaw.yaml:/workspace/protoclaw.yaml:ro
+      - ./anyclaw.yaml:/workspace/anyclaw.yaml:ro
     environment:
       - LOG_LEVEL=debug
       - PORT=8080
@@ -30,8 +30,8 @@ services:
     env_file:
       - .env
     networks:
-      - protoclaw-internal
-      - protoclaw-external
+      - anyclaw-internal
+      - anyclaw-external
     depends_on:
       socket-proxy:
         condition: service_started
@@ -43,13 +43,13 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.mock-agent
-    image: protoclaw-mock-agent:latest
+    image: anyclaw-mock-agent:latest
     entrypoint: ["true"]
     restart: "no"
 
 networks:
-  protoclaw-internal:
-    name: protoclaw-internal
+  anyclaw-internal:
+    name: anyclaw-internal
     internal: true
-  protoclaw-external:
-    name: protoclaw-external
+  anyclaw-external:
+    name: anyclaw-external

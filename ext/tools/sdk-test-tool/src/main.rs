@@ -1,4 +1,4 @@
-use protoclaw_sdk_tool::{Tool, ToolSdkError, ToolServer};
+use anyclaw_sdk_tool::{Tool, ToolSdkError, ToolServer};
 
 struct EchoTool;
 

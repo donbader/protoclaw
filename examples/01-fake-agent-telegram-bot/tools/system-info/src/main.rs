@@ -1,4 +1,4 @@
-use protoclaw_sdk_tool::{Tool, ToolSdkError, ToolServer};
+use anyclaw_sdk_tool::{Tool, ToolSdkError, ToolServer};
 
 struct SystemInfoTool;
 
@@ -8,7 +8,7 @@ impl Tool for SystemInfoTool {
     }
 
     fn description(&self) -> &str {
-        "Returns system information about the protoclaw host"
+        "Returns system information about the anyclaw host"
     }
 
     fn input_schema(&self) -> serde_json::Value {
@@ -24,7 +24,7 @@ impl Tool for SystemInfoTool {
             "hostname": std::env::var("HOSTNAME").unwrap_or_else(|_| "unknown".into()),
             "os": std::env::consts::OS,
             "arch": std::env::consts::ARCH,
-            "protoclaw_version": env!("CARGO_PKG_VERSION")
+            "anyclaw_version": env!("CARGO_PKG_VERSION")
         }))
     }
 }
@@ -86,6 +86,6 @@ mod tests {
     async fn tool_execute_returns_version() {
         let tool = SystemInfoTool;
         let result = tool.execute(serde_json::json!({})).await.unwrap();
-        assert!(result.get("protoclaw_version").is_some());
+        assert!(result.get("anyclaw_version").is_some());
     }
 }

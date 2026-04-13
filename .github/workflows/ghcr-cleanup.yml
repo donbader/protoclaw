@@ -14,8 +14,8 @@ jobs:
     strategy:
       matrix:
         package:
-          - protoclaw
-          - protoclaw-builder
+          - anyclaw
+          - anyclaw-builder
     steps:
       - name: Delete untagged images
         uses: actions/delete-package-versions@v5
