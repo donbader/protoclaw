@@ -35,7 +35,7 @@ axum = "0.8"
 tokio-stream = { version = "0.1", features = ["sync"] }
 anyclaw-channels = { path = "crates/anyclaw-channels" }
 anyclaw-sdk-types = { path = "crates/anyclaw-sdk-types", version = "0.4.0" }
-anyclaw-sdk-channel = { path = "crates/anyclaw-sdk-channel", version = "0.2.6" }
+anyclaw-sdk-channel = { path = "crates/anyclaw-sdk-channel", version = "0.2.7" }
 anyclaw-sdk-tool = { path = "crates/anyclaw-sdk-tool", version = "0.2.5" }
 anyclaw-sdk-agent = { path = "crates/anyclaw-sdk-agent", version = "0.2.5" }
 anyclaw-test-helpers = { path = "crates/anyclaw-test-helpers" }
