@@ -2408,7 +2408,7 @@ dependencies = [
 
 [[package]]
 name = "protoclaw-sdk-agent"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "protoclaw-sdk-types",
  "rstest",
@@ -2420,7 +2420,7 @@ dependencies = [
 
 [[package]]
 name = "protoclaw-sdk-channel"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "protoclaw-sdk-types",
  "rstest",
@@ -2433,7 +2433,7 @@ dependencies = [
 
 [[package]]
 name = "protoclaw-sdk-tool"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "protoclaw-sdk-types",
  "rmcp",
@@ -2448,7 +2448,7 @@ dependencies = [
 
 [[package]]
 name = "protoclaw-sdk-types"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "rstest",
  "serde",
