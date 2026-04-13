@@ -53,6 +53,8 @@ protoclaw/
 | ACP↔HTTP bridge | `ext/agents/acp-bridge/` | Generic bridge: translates ACP stdio to HTTP REST+SSE (e.g. OpenCode serve API) |
 | Add test helper | `crates/protoclaw-test-helpers/` | Shared across all crate tests |
 | Integration tests | `tests/integration/tests/e2e.rs` | Requires `cargo build` first (needs mock-agent binary) |
+| Dev iteration (contributor) | `examples/02-real-agents-telegram-bot/dev.sh` | Contributor-only helper — incremental rebuild + restart via persistent builder container; not needed to run the bot |
+| Dev builder image (contributor) | `examples/02-real-agents-telegram-bot/Dockerfile.dev-builder` | Local source build with cargo-chef caching; contributor-only, not used by production `docker-compose.yml` |
 
 ## Crate Dependency Flow
 
@@ -243,3 +245,28 @@ Check which AGENTS.md files exist in the affected directories and their parents.
 - `dev.sh` helper added to Example 02 for fast incremental rebuilds via persistent builder container
 - `Dockerfile.dev-builder` added to Example 02 for local source builds with cargo-chef caching
 - Example 02 simplified: 3-stage Dockerfile, single opencode agent with `entrypoint: ["opencode", "acp"]`, Docker-only test.sh
+
+## v0.3.2 Changes
+
+- **ACP permission wire format**: `channel/requestPermission` is a JSON-RPC **request** (not notification) since v0.3.1. The permission response the agent receives via `send_raw()` has this exact shape:
+  ```json
+  {
+    "jsonrpc": "2.0",
+    "id": "<request_id>",
+    "result": {
+      "outcome": {
+        "outcome": "selected",
+        "optionId": "<option_id>"
+      }
+    }
+  }
+  ```
+  The `request_id` falls back to the JSON-RPC `id` field when `params.requestId` is missing or empty (OpenCode compat). Auto-deny sends `optionId: "denied"`. See `crates/protoclaw-agents/AGENTS.md` for `RespondPermission` command details.
+
+- **`send_raw` bypass pattern**: `AgentConnection::send_raw(msg: serde_json::Value)` in `crates/protoclaw-agents/src/connection.rs` writes a raw `serde_json::Value` directly to agent stdin without wrapping it in a JSON-RPC method envelope. Used for permission responses that must match the agent's expected wire format exactly. Logs the exact JSON at DEBUG level (`send_raw to agent stdin`). The `_raw_response` sentinel was removed in v0.3.1; `send_raw()` replaced all four call sites.
+
+- **Bollard stdin flush behavior**: The Docker backend's stdin bridge (`bollard::container::AttachContainerOptions`) may silently drop writes if the container's stdin pipe is broken. Write/flush failures on the agent stdin bridge emit `tracing::warn!` with the error and context, rather than panicking or silently discarding.
+
+- **`protoclaw-test-helpers` `test_support` module**: `poll.rs` added with the `wait_for_condition` async helper. Polls an async condition closure at ~100ms intervals until it returns `Some(T)` or the timeout expires. Returns `Some(T)` on success, `None` on timeout. Used in E2E permission tests. Full module list: `config`, `handles`, `paths`, `poll`, `ports`, `sse`, `supervisor`, `timeout`.
+
+- **PermissionBroker auto-deny gap (known limitation)**: When `permission_timeout_secs` fires, the channels manager sends auto-deny to the agent via `AgentsCommand::RespondPermission`, but does NOT resolve the channel's `PermissionBroker` oneshot sender. The channel harness remains blocked until its own internal timeout fires. This is a known limitation — unifying the auto-deny path to also resolve the broker oneshot is a future cleanup. See `crates/protoclaw-channels/AGENTS.md` for the full description.
