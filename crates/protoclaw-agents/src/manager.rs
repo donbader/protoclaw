@@ -472,7 +472,8 @@ impl AgentsManager {
         let slot = &mut self.slots[slot_idx];
         slot.session_map
             .insert(session_key.clone(), acp_session_id.clone());
-        slot.reverse_map.insert(acp_session_id.clone(), session_key.clone());
+        slot.reverse_map
+            .insert(acp_session_id.clone(), session_key.clone());
 
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -1316,8 +1317,7 @@ impl AgentsManager {
                 // Move stale sessions back into session_map — the agent confirmed it
                 // recognises the old ACP session IDs in the new process.
                 let slot = &mut self.slots[slot_idx];
-                slot.session_map
-                    .extend(slot.stale_sessions.drain());
+                slot.session_map.extend(slot.stale_sessions.drain());
                 slot.lifecycle.backoff.reset();
                 true
             }
@@ -1333,8 +1333,7 @@ impl AgentsManager {
         // try_restore_session reads from stale_sessions; prompt_session uses them for
         // self-healing on the next prompt if session/load isn't attempted here.
         let slot = &mut self.slots[slot_idx];
-        slot.stale_sessions
-            .extend(slot.session_map.drain());
+        slot.stale_sessions.extend(slot.session_map.drain());
 
         let acp_timeout = Self::acp_timeout_for(&self.slots[slot_idx].config, &self.manager_config);
         if self
@@ -1524,9 +1523,14 @@ impl Manager for AgentsManager {
             });
         for session in open_sessions {
             if let Some(idx) = find_slot_by_name(&self.slots, &session.agent_name) {
-                let key: protoclaw_core::SessionKey = session.session_key.parse().unwrap_or_else(|_| {
-                    protoclaw_core::SessionKey::new(&session.agent_name, "restored", &session.acp_session_id)
-                });
+                let key: protoclaw_core::SessionKey =
+                    session.session_key.parse().unwrap_or_else(|_| {
+                        protoclaw_core::SessionKey::new(
+                            &session.agent_name,
+                            "restored",
+                            &session.acp_session_id,
+                        )
+                    });
                 self.slots[idx]
                     .stale_sessions
                     .entry(key)
@@ -3062,29 +3066,47 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn when_stale_sessions_populated_from_store_then_slot_stale_map_contains_them() {
-        use protoclaw_core::{DynSessionStore, NoopSessionStore, PersistedSession, SessionStoreError};
-        use std::pin::Pin;
+        use protoclaw_core::{
+            DynSessionStore, NoopSessionStore, PersistedSession, SessionStoreError,
+        };
         use std::future::Future;
+        use std::pin::Pin;
 
         struct StubStore {
             sessions: Vec<PersistedSession>,
         }
 
         impl protoclaw_core::SessionStore for StubStore {
-            fn load_open_sessions(&self) -> impl Future<Output = Result<Vec<PersistedSession>, SessionStoreError>> + Send {
+            fn load_open_sessions(
+                &self,
+            ) -> impl Future<Output = Result<Vec<PersistedSession>, SessionStoreError>> + Send
+            {
                 let sessions = self.sessions.clone();
                 async move { Ok(sessions) }
             }
-            fn upsert_session(&self, _: &PersistedSession) -> impl Future<Output = Result<(), SessionStoreError>> + Send {
+            fn upsert_session(
+                &self,
+                _: &PersistedSession,
+            ) -> impl Future<Output = Result<(), SessionStoreError>> + Send {
                 async { Ok(()) }
             }
-            fn mark_closed(&self, _: &str) -> impl Future<Output = Result<(), SessionStoreError>> + Send {
+            fn mark_closed(
+                &self,
+                _: &str,
+            ) -> impl Future<Output = Result<(), SessionStoreError>> + Send {
                 async { Ok(()) }
             }
-            fn update_last_active(&self, _: &str, _: i64) -> impl Future<Output = Result<(), SessionStoreError>> + Send {
+            fn update_last_active(
+                &self,
+                _: &str,
+                _: i64,
+            ) -> impl Future<Output = Result<(), SessionStoreError>> + Send {
                 async { Ok(()) }
             }
-            fn delete_expired(&self, _: i64) -> impl Future<Output = Result<u64, SessionStoreError>> + Send {
+            fn delete_expired(
+                &self,
+                _: i64,
+            ) -> impl Future<Output = Result<u64, SessionStoreError>> + Send {
                 async { Ok(0) }
             }
         }
@@ -3104,8 +3126,8 @@ mod tests {
         let (handle, rx) = make_tools_handle();
         let tools_task = tokio::spawn(serve_tools_urls(rx));
 
-        let mut m = AgentsManager::new(mock_agents_manager_config(), handle)
-            .with_session_store(store);
+        let mut m =
+            AgentsManager::new(mock_agents_manager_config(), handle).with_session_store(store);
 
         m.start().await.unwrap();
 
@@ -3146,7 +3168,10 @@ mod tests {
             .insert(session_key.clone(), "stale-acp-old".to_string());
 
         let result = m.heal_session(0, "default", &session_key).await;
-        assert!(result.is_ok(), "heal_session should succeed via fallback: {result:?}");
+        assert!(
+            result.is_ok(),
+            "heal_session should succeed via fallback: {result:?}"
+        );
 
         assert!(
             m.slots[0].session_map.contains_key(&session_key),
@@ -3158,7 +3183,10 @@ mod tests {
         );
 
         let acp_id = m.slots[0].session_map.get(&session_key).unwrap();
-        assert_ne!(acp_id, "stale-acp-old", "session_map must have new id, not stale");
+        assert_ne!(
+            acp_id, "stale-acp-old",
+            "session_map must have new id, not stale"
+        );
 
         m.shutdown_all().await;
         tools_task.abort();
@@ -3169,10 +3197,9 @@ mod tests {
     async fn when_start_called_with_sqlite_store_then_expired_sessions_deleted() {
         use protoclaw_core::{PersistedSession, SqliteSessionStore};
 
-        let store_arc: std::sync::Arc<dyn protoclaw_core::DynSessionStore> =
-            std::sync::Arc::new(
-                SqliteSessionStore::open_in_memory().expect("in-memory sqlite failed"),
-            );
+        let store_arc: std::sync::Arc<dyn protoclaw_core::DynSessionStore> = std::sync::Arc::new(
+            SqliteSessionStore::open_in_memory().expect("in-memory sqlite failed"),
+        );
 
         let old_session = PersistedSession {
             session_key: "old-key".to_string(),
@@ -3182,7 +3209,10 @@ mod tests {
             last_active_at: 1,
             closed: false,
         };
-        store_arc.upsert_session(&old_session).await.expect("upsert failed");
+        store_arc
+            .upsert_session(&old_session)
+            .await
+            .expect("upsert failed");
 
         let before = store_arc.load_open_sessions().await.expect("load failed");
         assert_eq!(before.len(), 1, "old session should exist before start");
@@ -3196,7 +3226,10 @@ mod tests {
 
         m.start().await.expect("start failed");
 
-        let after = store_arc.load_open_sessions().await.expect("load after failed");
+        let after = store_arc
+            .load_open_sessions()
+            .await
+            .expect("load after failed");
         assert!(
             after.is_empty(),
             "expired session should have been deleted at boot, but got: {after:?}"
@@ -3244,7 +3277,10 @@ mod tests {
             last_active_at: 1_000_100,
             closed: false,
         };
-        store_arc.upsert_session(&persisted).await.expect("upsert failed");
+        store_arc
+            .upsert_session(&persisted)
+            .await
+            .expect("upsert failed");
 
         let before = store_arc.load_open_sessions().await.expect("load failed");
         assert_eq!(before.len(), 1, "session should be open before shutdown");
@@ -3252,7 +3288,10 @@ mod tests {
         m.shutdown_all().await;
         tools_task.abort();
 
-        let after = store_arc.load_open_sessions().await.expect("load after failed");
+        let after = store_arc
+            .load_open_sessions()
+            .await
+            .expect("load after failed");
         assert!(
             after.is_empty(),
             "session should be marked closed after shutdown_all, but got: {after:?}"

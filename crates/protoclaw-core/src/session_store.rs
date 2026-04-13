@@ -128,7 +128,11 @@ impl<T: SessionStore> DynSessionStore for T {
         session_key: &'a str,
         timestamp: i64,
     ) -> Pin<Box<dyn Future<Output = Result<(), SessionStoreError>> + Send + 'a>> {
-        Box::pin(SessionStore::update_last_active(self, session_key, timestamp))
+        Box::pin(SessionStore::update_last_active(
+            self,
+            session_key,
+            timestamp,
+        ))
     }
 
     fn delete_expired<'a>(

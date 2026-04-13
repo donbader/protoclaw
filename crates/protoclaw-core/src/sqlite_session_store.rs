@@ -11,8 +11,7 @@ pub struct SqliteSessionStore {
 
 impl SqliteSessionStore {
     pub fn open(path: &str) -> Result<Self, SessionStoreError> {
-        let conn = Connection::open(path)
-            .map_err(|e| SessionStoreError::Backend(e.to_string()))?;
+        let conn = Connection::open(path).map_err(|e| SessionStoreError::Backend(e.to_string()))?;
         Self::init_schema(&conn)?;
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
@@ -20,8 +19,8 @@ impl SqliteSessionStore {
     }
 
     pub fn open_in_memory() -> Result<Self, SessionStoreError> {
-        let conn = Connection::open_in_memory()
-            .map_err(|e| SessionStoreError::Backend(e.to_string()))?;
+        let conn =
+            Connection::open_in_memory().map_err(|e| SessionStoreError::Backend(e.to_string()))?;
         Self::init_schema(&conn)?;
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),

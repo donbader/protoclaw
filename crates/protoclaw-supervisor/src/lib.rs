@@ -420,11 +420,11 @@ impl Supervisor {
     }
 }
 
-fn build_session_store(config: &SessionStoreConfig) -> std::sync::Arc<dyn protoclaw_core::DynSessionStore> {
+fn build_session_store(
+    config: &SessionStoreConfig,
+) -> std::sync::Arc<dyn protoclaw_core::DynSessionStore> {
     match config {
-        SessionStoreConfig::None => {
-            std::sync::Arc::new(protoclaw_core::NoopSessionStore)
-        }
+        SessionStoreConfig::None => std::sync::Arc::new(protoclaw_core::NoopSessionStore),
         SessionStoreConfig::Sqlite(sqlite_cfg) => {
             let result = match &sqlite_cfg.path {
                 Some(path) => protoclaw_core::SqliteSessionStore::open(path),
