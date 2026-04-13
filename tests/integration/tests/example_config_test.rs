@@ -59,12 +59,12 @@ fn given_fake_agent_example_yaml_when_loaded_then_has_debug_http_and_telegram_ch
 }
 
 #[test]
-fn given_real_agent_example_yaml_when_loaded_then_has_opencode_and_claude_agents() {
+fn given_real_agent_example_yaml_when_loaded_then_has_opencode_agent() {
     let yaml_path = workspace_root().join("examples/02-real-agents-telegram-bot/protoclaw.yaml");
     let config = protoclaw_config::ProtoclawConfig::load(Some(yaml_path.to_str().unwrap()))
         .unwrap_or_else(|e| panic!("failed to load protoclaw.yaml: {e}"));
 
-    assert_eq!(config.agents_manager.agents.len(), 3);
+    assert_eq!(config.agents_manager.agents.len(), 1);
     let opencode = config
         .agents_manager
         .agents
@@ -73,42 +73,17 @@ fn given_real_agent_example_yaml_when_loaded_then_has_opencode_and_claude_agents
     match &opencode.workspace {
         protoclaw_config::WorkspaceConfig::Docker(docker) => {
             assert_eq!(docker.image, "protoclaw-opencode-agent:latest");
+            assert_eq!(
+                docker.entrypoint,
+                Some(protoclaw_config::StringOrArray(vec![
+                    "opencode".into(),
+                    "acp".into()
+                ]))
+            );
         }
         other => panic!("expected Docker workspace, got {other:?}"),
     }
     assert!(opencode.enabled);
-
-    let opencode_local = config
-        .agents_manager
-        .agents
-        .get("opencode-local")
-        .expect("missing 'opencode-local' agent");
-    match &opencode_local.workspace {
-        protoclaw_config::WorkspaceConfig::Local(local) => {
-            assert_eq!(
-                local.binary,
-                protoclaw_config::StringOrArray::from("@built-in/agents/acp-bridge")
-            );
-        }
-        other => panic!("expected Local workspace, got {other:?}"),
-    }
-    assert!(!opencode_local.enabled);
-
-    let claude = config
-        .agents_manager
-        .agents
-        .get("claude-code")
-        .expect("missing 'claude-code' agent");
-    match &claude.workspace {
-        protoclaw_config::WorkspaceConfig::Local(local) => {
-            assert_eq!(
-                local.binary,
-                protoclaw_config::StringOrArray::from("claude")
-            );
-        }
-        other => panic!("expected Local workspace, got {other:?}"),
-    }
-    assert!(!claude.enabled);
 }
 
 #[test]
