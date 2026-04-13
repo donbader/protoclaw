@@ -784,7 +784,14 @@ impl AgentsManager {
         request: &serde_json::Value,
         params: &serde_json::Value,
     ) {
-        let request_id = params["requestId"].as_str().unwrap_or("").to_string();
+        let request_id = params["requestId"]
+            .as_str()
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| {
+                // OpenCode uses JSON-RPC id field instead of params.requestId
+                request.get("id").map(|v| v.to_string()).unwrap_or_default()
+            });
         let description = params["description"]
             .as_str()
             .filter(|s| !s.is_empty())
@@ -2634,6 +2641,49 @@ mod tests {
             1,
             "routed permission must be stored in pending_permissions"
         );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_permission_request_has_no_request_id_then_falls_back_to_jsonrpc_id() {
+        let (handle, _rx) = make_tools_handle();
+        let mut m = AgentsManager::new(mock_agents_manager_config_with(HashMap::new()), handle);
+
+        let (channels_tx, mut channels_rx) = mpsc::channel::<ChannelEvent>(16);
+        m.channels_sender = Some(channels_tx);
+
+        let cancel = CancellationToken::new();
+        let mut slot = AgentSlot::new("test-agent".into(), mock_agent_config(), &cancel);
+        let session_key = SessionKey::new("telegram", "direct", "u1");
+        let acp_session_id = "acp-perm-fallback".to_string();
+        slot.session_map
+            .insert(session_key.clone(), acp_session_id.clone());
+        slot.reverse_map
+            .insert(acp_session_id.clone(), session_key.clone());
+        m.slots.push(slot);
+
+        let request = serde_json::json!({"id": 42, "method": "session/request_permission"});
+        let params = serde_json::json!({
+            "sessionId": acp_session_id,
+            "options": [{"optionId": "once", "label": "Allow once"}],
+            "toolCall": {"title": "external_directory", "kind": "other"}
+        });
+
+        m.handle_permission_request(0, &request, &params).await;
+
+        assert_eq!(m.slots[0].pending_permissions.len(), 1);
+        assert!(
+            m.slots[0].pending_permissions.contains_key("42"),
+            "should use JSON-RPC id as request_id when params.requestId is missing"
+        );
+
+        let event = channels_rx.try_recv().expect("should route permission");
+        match event {
+            ChannelEvent::RoutePermission { request_id, .. } => {
+                assert_eq!(request_id, "42");
+            }
+            other => panic!("expected RoutePermission, got: {other:?}"),
+        }
     }
 
     #[rstest]
