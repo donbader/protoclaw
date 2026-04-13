@@ -39,7 +39,6 @@ fn given_example_01_yaml_when_loaded_via_figment_jail_then_config_parses() {
 #[test]
 fn given_example_02_yaml_when_loaded_via_figment_jail_then_config_parses() {
     Jail::expect_with(|jail| {
-        jail.set_env("ANTHROPIC_API_KEY", "sk-test");
         jail.set_env("TELEGRAM_BOT_TOKEN", "test-token");
         jail.set_env("TELEGRAM_ENABLED", "false");
 
@@ -52,7 +51,7 @@ fn given_example_02_yaml_when_loaded_via_figment_jail_then_config_parses() {
             ProtoclawConfig::load(Some("protoclaw.yaml")).expect("example 02 config should parse");
 
         assert!(config.agents_manager.agents.contains_key("opencode"));
-        assert!(config.agents_manager.agents.contains_key("claude-code"));
+        assert_eq!(config.agents_manager.agents.len(), 1);
         assert!(config.channels_manager.channels.contains_key("debug-http"));
         assert!(config.channels_manager.channels.contains_key("telegram"));
 
