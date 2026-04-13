@@ -1,51 +1,132 @@
+// Permission E2E tests.
+//
+// Wire format note (D-02): The RespondPermission path in protoclaw-agents/manager.rs produces
+// a nested result structure: { "result": { "outcome": { "outcome": "selected", "optionId": "..." } } }
+// This is distinct from the auto-approve path which produces a flat { "result": { "requestId": "...", "optionId": "..." } }.
+// The auto-approve path fires only when no channel is routable; these tests exercise the RespondPermission path.
+// If the permission response does not reach the agent correctly, mock-agent will not continue processing
+// and will not emit the echo — so the SSE echo assertion proves the full round-trip completed.
+
 use std::collections::HashMap;
+use std::time::Duration;
 
 use protoclaw_integration_tests::{
-    boot_supervisor_with_port, mock_agent_config_with_options, with_timeout,
+    SseCollector, boot_supervisor_with_port, mock_agent_config_with_options, wait_for_condition,
+    with_timeout,
 };
+use rstest::rstest;
 
-#[test_log::test(tokio::test)]
-async fn given_agent_requests_permission_when_responded_to_then_permission_acknowledged() {
+fn permission_config() -> protoclaw_config::ProtoclawConfig {
     let mut opts = HashMap::new();
     opts.insert("request_permission".into(), serde_json::json!(true));
-    let config = mock_agent_config_with_options(opts);
-    let (cancel, handle, port) = boot_supervisor_with_port(config).await;
+    mock_agent_config_with_options(opts)
+}
 
+async fn poll_pending_permissions(port: u16) -> Option<Vec<serde_json::Value>> {
     let client = reqwest::Client::new();
-
-    let resp = client
-        .post(format!("http://127.0.0.1:{port}/message"))
-        .json(&serde_json::json!({"message": "trigger permission"}))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), 200);
-
-    tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
-
     let resp = client
         .get(format!("http://127.0.0.1:{port}/permissions/pending"))
         .send()
         .await
-        .unwrap();
-    assert_eq!(resp.status(), 200);
-    let perms: serde_json::Value = resp.json().await.unwrap();
-    let arr = perms.as_array().unwrap();
+        .ok()?;
+    let arr: Vec<serde_json::Value> = resp.json().await.ok()?;
+    if arr.is_empty() { None } else { Some(arr) }
+}
 
-    if !arr.is_empty() {
-        let request_id = arr[0]["requestId"].as_str().unwrap();
-        let resp = client
-            .post(format!(
-                "http://127.0.0.1:{port}/permissions/{request_id}/respond"
-            ))
-            .json(&serde_json::json!({"optionId": "allow_once"}))
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), 200);
-        let body: serde_json::Value = resp.json().await.unwrap();
-        assert_eq!(body["status"], "responded");
-    }
+async fn respond_to_permission(port: u16, request_id: &str, option_id: &str) {
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!(
+            "http://127.0.0.1:{port}/permissions/{request_id}/respond"
+        ))
+        .json(&serde_json::json!({ "optionId": option_id }))
+        .send()
+        .await
+        .expect("permission respond request must succeed");
+    assert_eq!(resp.status(), 200, "permission respond must return 200");
+}
+
+#[rstest]
+#[test_log::test(tokio::test)]
+async fn when_agent_requests_permission_then_response_reaches_agent_stdin() {
+    let config = permission_config();
+    let (cancel, handle, port) = boot_supervisor_with_port(config).await;
+
+    let client = reqwest::Client::new();
+    let mut sse = SseCollector::connect(port).await;
+
+    let post_resp = client
+        .post(format!("http://127.0.0.1:{port}/message"))
+        .json(&serde_json::json!({"message": "trigger permission"}))
+        .send()
+        .await
+        .expect("message post must succeed");
+    assert_eq!(post_resp.status(), 200);
+
+    let pending: Vec<serde_json::Value> = wait_for_condition(5000, || {
+        let p = port;
+        async move { poll_pending_permissions(p).await }
+    })
+    .await
+    .expect("permission request must appear within 5s");
+
+    let request_id = pending[0]["requestId"]
+        .as_str()
+        .expect("pending permission must have requestId");
+
+    respond_to_permission(port, request_id, "allow_once").await;
+
+    let events = sse.collect_events(Duration::from_secs(10)).await;
+    let saw_echo = events
+        .iter()
+        .any(|e| e.data.contains("Echo:") && e.data.contains("trigger permission"));
+    assert!(
+        saw_echo,
+        "agent should echo the message after permission is granted; got events: {events:?}"
+    );
+
+    cancel.cancel();
+    let _ = with_timeout(5, handle).await;
+}
+
+#[rstest]
+#[test_log::test(tokio::test)]
+async fn when_agent_requests_permission_with_reject_then_agent_still_echoes() {
+    let config = permission_config();
+    let (cancel, handle, port) = boot_supervisor_with_port(config).await;
+
+    let client = reqwest::Client::new();
+    let mut sse = SseCollector::connect(port).await;
+
+    let post_resp = client
+        .post(format!("http://127.0.0.1:{port}/message"))
+        .json(&serde_json::json!({"message": "trigger rejection"}))
+        .send()
+        .await
+        .expect("message post must succeed");
+    assert_eq!(post_resp.status(), 200);
+
+    let pending: Vec<serde_json::Value> = wait_for_condition(5000, || {
+        let p = port;
+        async move { poll_pending_permissions(p).await }
+    })
+    .await
+    .expect("permission request must appear within 5s");
+
+    let request_id = pending[0]["requestId"]
+        .as_str()
+        .expect("pending permission must have requestId");
+
+    respond_to_permission(port, request_id, "reject_once").await;
+
+    let events = sse.collect_events(Duration::from_secs(10)).await;
+    let saw_echo = events
+        .iter()
+        .any(|e| e.data.contains("Echo:") && e.data.contains("trigger rejection"));
+    assert!(
+        saw_echo,
+        "agent should still echo after permission is rejected; got events: {events:?}"
+    );
 
     cancel.cancel();
     let _ = with_timeout(5, handle).await;
