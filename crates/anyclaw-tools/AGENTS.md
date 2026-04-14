@@ -32,6 +32,7 @@ Served over HTTP via rmcp's `StreamableHttpService` (stateful mode) on a random 
 **StreamableHttpServerConfig requirements:**
 - `stateful_mode = true` is mandatory — without it, rmcp treats each HTTP request as independent, breaking multi-turn tool conversations that rely on session state
 - `cancellation_token` ties the MCP server lifecycle to the tools manager's cancel signal for clean shutdown
+- `allowed_hosts` must include `tools_server_host` when it differs from the defaults (`localhost`, `127.0.0.1`, `::1`). rmcp's default DNS rebinding protection rejects requests whose `Host` header doesn't match the allowed list — in Docker deployments where agents connect via container hostname (e.g. `anyclaw`), the host must be explicitly allowed or all MCP requests return 403 Forbidden
 
 ## WASM Sandbox Model
 

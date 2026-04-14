@@ -225,6 +225,10 @@ impl Manager for ToolsManager {
                             };
                             let _ = reply.send(urls);
                         }
+                        Some(ToolsCommand::GetToolDescriptions { tool_names, reply }) => {
+                            let descriptions = self.collect_tool_descriptions(tool_names.as_deref()).await;
+                            let _ = reply.send(descriptions);
+                        }
                         Some(ToolsCommand::Shutdown) | None => {
                             break;
                         }
@@ -246,6 +250,45 @@ impl Manager for ToolsManager {
 }
 
 impl ToolsManager {
+    async fn collect_tool_descriptions(
+        &self,
+        tool_names: Option<&[String]>,
+    ) -> Vec<anyclaw_core::ToolDescription> {
+        let mut descriptions = Vec::new();
+
+        if let Some(host) = &self.native_host {
+            for tool in host.tool_list() {
+                let name = tool.name.to_string();
+                let desc = tool.description.as_deref().unwrap_or("").to_string();
+                descriptions.push(anyclaw_core::ToolDescription {
+                    name,
+                    description: desc,
+                });
+            }
+        }
+
+        if let Some(externals) = &self.external_servers {
+            for ext in externals.iter() {
+                if let Ok(tools) = ext.list_tools().await {
+                    for tool in tools {
+                        let name = tool.name.to_string();
+                        let desc = tool.description.as_deref().unwrap_or("").to_string();
+                        descriptions.push(anyclaw_core::ToolDescription {
+                            name,
+                            description: desc,
+                        });
+                    }
+                }
+            }
+        }
+
+        if let Some(names) = tool_names {
+            descriptions.retain(|d| names.iter().any(|n| n == &d.name));
+        }
+
+        descriptions
+    }
+
     fn enabled_tool_configs(
         &self,
         tool_type: &anyclaw_config::ToolType,
@@ -338,9 +381,22 @@ impl ToolsManager {
         external_servers: Arc<Vec<ExternalMcpServer>>,
     ) -> Result<(tokio::task::JoinHandle<()>, String), ManagerError> {
         let ct = CancellationToken::new();
+        let mut allowed_hosts = vec![
+            "localhost".to_string(),
+            "127.0.0.1".to_string(),
+            "::1".to_string(),
+        ];
+        if self.tools_server_host != "127.0.0.1"
+            && self.tools_server_host != "localhost"
+            && self.tools_server_host != "::1"
+        {
+            allowed_hosts.push(self.tools_server_host.clone());
+        }
         let config = StreamableHttpServerConfig::default()
             .with_stateful_mode(true)
-            .with_cancellation_token(ct.clone());
+            .with_cancellation_token(ct.clone())
+            .with_allowed_hosts(allowed_hosts)
+            .with_sse_keep_alive(None);
 
         let service: StreamableHttpService<AggregatedToolServer, LocalSessionManager> =
             StreamableHttpService::new(
