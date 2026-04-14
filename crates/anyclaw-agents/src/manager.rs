@@ -434,12 +434,18 @@ impl AgentsManager {
             AgentsCommand::CreateSession {
                 agent_name,
                 session_key,
+                force_new,
                 reply,
             } => {
                 let slot_idx = find_slot_by_name(&self.slots, &agent_name);
-                let has_stale = slot_idx
-                    .map(|idx| self.slots[idx].stale_sessions.contains_key(&session_key))
-                    .unwrap_or(false);
+                let has_stale = !force_new
+                    && slot_idx
+                        .map(|idx| self.slots[idx].stale_sessions.contains_key(&session_key))
+                        .unwrap_or(false);
+
+                if force_new && let Some(idx) = slot_idx {
+                    self.slots[idx].stale_sessions.remove(&session_key);
+                }
 
                 let result = if has_stale {
                     let idx = slot_idx.unwrap();
