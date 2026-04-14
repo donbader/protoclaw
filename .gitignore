@@ -8,6 +8,7 @@ coverage/
 
 # GSD planning (local-only)
 .planning/
+docs/superpowers/
 
 # IDE / OS
 .DS_Store
