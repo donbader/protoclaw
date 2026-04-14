@@ -577,8 +577,12 @@ impl AgentsManager {
         let acp_session_id = slot
             .session_map
             .get(session_key)
-            .ok_or(AgentsError::ConnectionClosed)?;
+            .ok_or(AgentsError::ConnectionClosed)?
+            .clone();
 
+        self.slots[slot_idx].awaiting_first_prompt.remove(&acp_session_id);
+
+        let slot = &self.slots[slot_idx];
         let conn = slot
             .connection
             .as_ref()
@@ -721,7 +725,8 @@ impl AgentsManager {
                 let slot = &mut self.slots[slot_idx];
                 slot.stale_sessions.remove(session_key);
                 slot.session_map.insert(session_key.clone(), acp_id.clone());
-                slot.reverse_map.insert(acp_id, session_key.clone());
+                slot.reverse_map.insert(acp_id.clone(), session_key.clone());
+                slot.awaiting_first_prompt.insert(acp_id.clone());
                 return Ok(());
             }
             tracing::info!(
@@ -953,6 +958,17 @@ impl AgentsManager {
         let is_result = matches!(event.update, SessionUpdateType::Result { .. });
         Self::add_received_timestamp(&mut content);
         normalize_tool_event_fields(&mut content, update_type);
+
+        if self.slots[slot_idx].awaiting_first_prompt.contains(&event.session_id) {
+            tracing::debug!(
+                agent = %self.slots[slot_idx].name(),
+                session_id = %event.session_id,
+                update_type,
+                seq,
+                "suppressed replay event during session/load"
+            );
+            return;
+        }
 
         if let Some(session_key) = self.slots[slot_idx]
             .reverse_map
@@ -1376,6 +1392,9 @@ impl AgentsManager {
                 // recognises the old ACP session IDs in the new process.
                 let slot = &mut self.slots[slot_idx];
                 slot.session_map.extend(slot.stale_sessions.drain());
+                for acp_id in slot.session_map.values() {
+                    slot.awaiting_first_prompt.insert(acp_id.clone());
+                }
                 slot.lifecycle.backoff.reset();
                 true
             }
@@ -1392,6 +1411,7 @@ impl AgentsManager {
         // self-healing on the next prompt if session/load isn't attempted here.
         let slot = &mut self.slots[slot_idx];
         slot.stale_sessions.extend(slot.session_map.drain());
+        slot.awaiting_first_prompt.clear();
 
         let acp_timeout = Self::acp_timeout_for(&self.slots[slot_idx].config, &self.manager_config);
         if self

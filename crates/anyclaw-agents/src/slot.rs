@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
 use anyclaw_config::AgentConfig;
@@ -25,6 +25,9 @@ pub struct AgentSlot {
     /// when an agent process exits. Used by `prompt_session` to attempt `session/load`
     /// recovery before falling back to creating a fresh session.
     pub(crate) stale_sessions: HashMap<SessionKey, String>,
+    /// ACP session IDs loaded via `session/load` that haven't received a `session/prompt`
+    /// yet. Replay events from `session/load` are suppressed until the first prompt.
+    pub(crate) awaiting_first_prompt: HashSet<String>,
 }
 
 impl AgentSlot {
@@ -54,6 +57,7 @@ impl AgentSlot {
             reverse_map: HashMap::new(),
             pending_permissions: HashMap::new(),
             stale_sessions: HashMap::new(),
+            awaiting_first_prompt: HashSet::new(),
         }
     }
 
@@ -111,6 +115,7 @@ mod tests {
         assert!(slot.reverse_map.is_empty());
         assert!(slot.pending_permissions.is_empty());
         assert!(slot.stale_sessions.is_empty());
+        assert!(slot.awaiting_first_prompt.is_empty());
     }
 
     #[test]
