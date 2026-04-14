@@ -685,9 +685,7 @@ impl AgentsManager {
                 self.slots[slot_idx]
                     .reverse_map
                     .retain(|_, v| v != session_key);
-                let acp_id = self
-                    .create_session(agent_name, session_key.clone())
-                    .await?;
+                let acp_id = self.create_session(agent_name, session_key.clone()).await?;
                 tracing::info!(
                     agent = %agent_name,
                     session_key = %session_key,
@@ -720,9 +718,7 @@ impl AgentsManager {
                         })
                         .await;
                     let _ = sender
-                        .send(ChannelEvent::SessionComplete {
-                            session_key: sk,
-                        })
+                        .send(ChannelEvent::SessionComplete { session_key: sk })
                         .await;
                 }
                 Ok(())
