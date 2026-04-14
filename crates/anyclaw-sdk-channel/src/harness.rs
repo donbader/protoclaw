@@ -43,6 +43,7 @@ impl<C: Channel> ChannelHarness<C> {
         // Maps permission request_id → JSON-RPC request ID for deferred responses.
         let mut pending_permissions: HashMap<String, RequestId> = HashMap::new();
 
+        // Phase 1: Main loop — read stdin, write outbound messages and permission responses.
         loop {
             tokio::select! {
                 line_result = lines.next_line() => {
@@ -59,31 +60,31 @@ impl<C: Channel> ChannelHarness<C> {
                                 Self::write_response(&mut writer, &response).await?;
                             }
                         }
-                        Ok(None) => break,
-                        Err(_) => break,
+                        Ok(None) | Err(_) => break,
                     }
                 }
                 Some(send_msg) = outbound_rx.recv() => {
-                    let params = serde_json::to_value(&send_msg).unwrap_or_else(|e| {
-                        tracing::warn!(error = %e, "failed to serialize channel/sendMessage params, using null");
-                        serde_json::Value::default()
-                    });
-                    let notification = JsonRpcRequest::new("channel/sendMessage", None, Some(params));
-                    Self::write_request(&mut writer, &notification).await?;
+                    Self::write_outbound(&mut writer, &send_msg).await?;
                 }
                 Some(perm_resp) = permission_rx.recv() => {
-                    // Find and remove the pending JSON-RPC request ID for this permission.
-                    if let Some(jsonrpc_id) = pending_permissions.remove(&perm_resp.request_id) {
-                        let result = serde_json::to_value(&perm_resp)?;
-                        let response = JsonRpcResponse::success(Some(jsonrpc_id), result);
-                        Self::write_response(&mut writer, &response).await?;
-                    } else {
-                        tracing::warn!(
-                            request_id = %perm_resp.request_id,
-                            "received permission response for unknown request"
-                        );
-                    }
+                    Self::flush_permission(&mut writer, perm_resp, &mut pending_permissions).await?;
                 }
+            }
+        }
+
+        // Phase 2: Drain — stdin is closed, but permission responses may still
+        // be in flight (e.g. user answered a prompt right as the pipe closed).
+        // Flush remaining responses until all pending permissions are resolved
+        // or the sender side drops.
+        while !pending_permissions.is_empty() {
+            tokio::select! {
+                Some(perm_resp) = permission_rx.recv() => {
+                    Self::flush_permission(&mut writer, perm_resp, &mut pending_permissions).await?;
+                }
+                Some(send_msg) = outbound_rx.recv() => {
+                    Self::write_outbound(&mut writer, &send_msg).await?;
+                }
+                else => break,
             }
         }
 
@@ -101,14 +102,34 @@ impl<C: Channel> ChannelHarness<C> {
         Ok(())
     }
 
-    async fn write_request<W: tokio::io::AsyncWrite + Unpin>(
+    async fn write_outbound<W: tokio::io::AsyncWrite + Unpin>(
         writer: &mut W,
-        msg: &JsonRpcRequest,
+        send_msg: &ChannelSendMessage,
     ) -> Result<(), ChannelSdkError> {
-        let mut line = serde_json::to_vec(msg)?;
+        let params = serde_json::to_value(send_msg)?;
+        let notification = JsonRpcRequest::new("channel/sendMessage", None, Some(params));
+        let mut line = serde_json::to_vec(&notification)?;
         line.push(b'\n');
         writer.write_all(&line).await?;
         writer.flush().await?;
+        Ok(())
+    }
+
+    async fn flush_permission<W: tokio::io::AsyncWrite + Unpin>(
+        writer: &mut W,
+        perm_resp: PermissionResponse,
+        pending_permissions: &mut HashMap<String, RequestId>,
+    ) -> Result<(), ChannelSdkError> {
+        if let Some(jsonrpc_id) = pending_permissions.remove(&perm_resp.request_id) {
+            let result = serde_json::to_value(&perm_resp)?;
+            let response = JsonRpcResponse::success(Some(jsonrpc_id), result);
+            Self::write_response(writer, &response).await?;
+        } else {
+            tracing::warn!(
+                request_id = %perm_resp.request_id,
+                "received permission response for unknown request"
+            );
+        }
         Ok(())
     }
 
