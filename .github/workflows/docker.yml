@@ -47,8 +47,8 @@ jobs:
           target: core
           platforms: ${{ matrix.platform }}
           outputs: type=image,name=ghcr.io/donbader/anyclaw,push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=gha,scope=build-${{ matrix.platform }}
-          cache-to: type=gha,scope=build-${{ matrix.platform }},mode=max
+          cache-from: type=gha,scope=build-core-${{ matrix.platform }}
+          cache-to: type=gha,scope=build-core-${{ matrix.platform }},mode=max
 
       - name: Build and push builder-export
         id: builder-export
@@ -58,8 +58,10 @@ jobs:
           target: builder-export
           platforms: ${{ matrix.platform }}
           outputs: type=image,name=ghcr.io/donbader/anyclaw-builder,push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=gha,scope=build-${{ matrix.platform }}
-          cache-to: type=gha,scope=build-${{ matrix.platform }},mode=max
+          cache-from: |
+            type=gha,scope=build-builder-${{ matrix.platform }}
+            type=gha,scope=build-core-${{ matrix.platform }}
+          cache-to: type=gha,scope=build-builder-${{ matrix.platform }},mode=max
 
       - name: Export digests
         run: |

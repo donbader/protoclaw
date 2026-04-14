@@ -28,6 +28,10 @@ jobs:
         with:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-stable
+          save-if: false
       - name: Generate crates.io token (Trusted Publishing)
         uses: rust-lang/crates-io-auth-action@v1
         id: crates-io-auth
@@ -50,6 +54,10 @@ jobs:
         with:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-stable
+          save-if: false
       - name: Run release-plz release-pr
         uses: release-plz/action@v0.5
         with:
