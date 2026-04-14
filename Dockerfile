@@ -5,16 +5,6 @@ WORKDIR /build
 # mold linker + clang driver for faster link times
 RUN apk add --no-cache clang mold
 
-# sccache for cross-build compilation caching via GHA cache backend
-ARG SCCACHE_VERSION=v0.14.0
-ARG TARGETARCH
-RUN ARCH=$([ "$TARGETARCH" = "arm64" ] && echo "aarch64" || echo "x86_64") \
-    && wget -qO- \
-       "https://github.com/mozilla/sccache/releases/download/${SCCACHE_VERSION}/sccache-${SCCACHE_VERSION}-${ARCH}-unknown-linux-musl.tar.gz" \
-       | tar -xz --strip-components=1 -C /usr/local/bin \
-         "sccache-${SCCACHE_VERSION}-${ARCH}-unknown-linux-musl/sccache" \
-    && chmod +x /usr/local/bin/sccache
-
 # Stage 2: Planner — generate recipe.json from workspace manifests
 FROM chef AS planner
 COPY . .
@@ -25,38 +15,22 @@ FROM chef AS builder
 COPY --from=planner /build/recipe.json recipe.json
 COPY .cargo .cargo
 
-RUN --mount=type=secret,id=ACTIONS_RUNTIME_TOKEN \
-    --mount=type=secret,id=ACTIONS_RESULTS_URL \
-    --mount=type=cache,target=/usr/local/cargo/registry \
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/build/target \
-    ACTIONS_RUNTIME_TOKEN=$(cat /run/secrets/ACTIONS_RUNTIME_TOKEN 2>/dev/null || true) \
-    ACTIONS_RESULTS_URL=$(cat /run/secrets/ACTIONS_RESULTS_URL 2>/dev/null || true) \
-    SCCACHE_GHA_ENABLED=true \
-    SCCACHE_NO_DAEMON=1 \
-    RUSTC_WRAPPER=sccache \
-    cargo chef cook --release --locked --recipe-path recipe.json \
-    && sccache --show-stats
+    cargo chef cook --release --locked --recipe-path recipe.json
 
 COPY . .
 
-RUN --mount=type=secret,id=ACTIONS_RUNTIME_TOKEN \
-    --mount=type=secret,id=ACTIONS_RESULTS_URL \
-    --mount=type=cache,target=/usr/local/cargo/registry \
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/build/target \
-    ACTIONS_RUNTIME_TOKEN=$(cat /run/secrets/ACTIONS_RUNTIME_TOKEN 2>/dev/null || true) \
-    ACTIONS_RESULTS_URL=$(cat /run/secrets/ACTIONS_RESULTS_URL 2>/dev/null || true) \
-    SCCACHE_GHA_ENABLED=true \
-    SCCACHE_NO_DAEMON=1 \
-    RUSTC_WRAPPER=sccache \
     cargo build --release --locked \
     --bin anyclaw \
     --bin telegram-channel \
     --bin debug-http \
     --bin mock-agent \
     --bin system-info \
-    && sccache --show-stats \
     && cp target/release/anyclaw \
         target/release/telegram-channel \
         target/release/debug-http \
