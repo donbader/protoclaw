@@ -5,9 +5,9 @@ use anyclaw_config::AgentConfig;
 use anyclaw_core::{CrashTracker, ExponentialBackoff, SessionKey, SlotLifecycle};
 use tokio_util::sync::CancellationToken;
 
-use crate::PendingPermission;
 use crate::acp_types::{InitializeResult, SessionCapabilities};
 use crate::connection::AgentConnection;
+use crate::PendingPermission;
 
 pub struct AgentSlot {
     pub(crate) name: String,
@@ -28,6 +28,10 @@ pub struct AgentSlot {
     /// ACP session IDs loaded via `session/load` that haven't received a `session/prompt`
     /// yet. Replay events from `session/load` are suppressed until the first prompt.
     pub(crate) awaiting_first_prompt: HashSet<String>,
+    /// Latest `available_commands_update` content received from this agent slot.
+    /// Buffered so it can be replayed to the channel on every `prompt_session` call,
+    /// ensuring commands are synced even when the channel binary restarts independently.
+    pub(crate) last_available_commands: Option<serde_json::Value>,
 }
 
 impl AgentSlot {
@@ -58,6 +62,7 @@ impl AgentSlot {
             pending_permissions: HashMap::new(),
             stale_sessions: HashMap::new(),
             awaiting_first_prompt: HashSet::new(),
+            last_available_commands: None,
         }
     }
 
