@@ -1,19 +1,17 @@
 pub mod acp_error;
 pub mod acp_types;
 pub mod backend;
-// Grandfathered: typed replacement in Phase 2-4
-#[allow(clippy::disallowed_types)]
 pub mod connection;
 pub mod docker_backend;
 pub mod error;
 pub mod local_backend;
-// Grandfathered: typed replacement in Phase 2-4
+// D-03: manager.rs manipulates arbitrary agent content (timestamps, tool normalization, command injection)
 #[allow(clippy::disallowed_types)]
 pub mod manager;
-// Grandfathered: typed replacement in Phase 2-4
+// D-03: platform_commands_json() serializes typed structs to Value for agent content merging
 #[allow(clippy::disallowed_types)]
 pub mod platform_commands;
-// Grandfathered: typed replacement in Phase 2-4
+// D-03: last_available_commands stores arbitrary agent-reported availableCommands payload
 #[allow(clippy::disallowed_types)]
 pub mod slot;
 

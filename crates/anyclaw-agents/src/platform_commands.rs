@@ -1,4 +1,7 @@
+use serde::Serialize;
+
 /// A command handled by anyclaw itself (not dispatched to any agent).
+#[derive(Debug, Clone, Serialize)]
 pub struct PlatformCommand {
     /// The slash command name, without the leading `/` (e.g. `"new"`).
     pub name: &'static str,
@@ -11,6 +14,11 @@ pub const PLATFORM_COMMANDS: &[PlatformCommand] = &[PlatformCommand {
     name: "new",
     description: "Start a new conversation",
 }];
+
+/// Returns a typed slice of all platform commands.
+pub fn platform_commands() -> &'static [PlatformCommand] {
+    PLATFORM_COMMANDS
+}
 
 /// Returns the matching `PlatformCommand` if `text` is exactly a platform command
 /// (i.e. `"/new"` or `"/new@botname"` — the Telegram bot-mention suffix is stripped).
@@ -26,17 +34,10 @@ pub fn match_platform_command(text: &str) -> Option<&'static PlatformCommand> {
 
 /// Returns a JSON array of available-command objects for all platform commands,
 /// suitable for merging into an `available_commands_update` payload.
+/// D-03: serialization boundary — agent content mutation requires Value for array merging.
+#[allow(clippy::disallowed_types)]
 pub fn platform_commands_json() -> serde_json::Value {
-    let cmds: Vec<serde_json::Value> = PLATFORM_COMMANDS
-        .iter()
-        .map(|c| {
-            serde_json::json!({
-                "name": c.name,
-                "description": c.description,
-            })
-        })
-        .collect();
-    serde_json::Value::Array(cmds)
+    serde_json::to_value(PLATFORM_COMMANDS).unwrap_or_default()
 }
 
 #[cfg(test)]

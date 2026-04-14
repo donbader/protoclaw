@@ -31,6 +31,7 @@ pub struct AgentSlot {
     /// Latest `available_commands_update` content received from this agent slot.
     /// Buffered so it can be replayed to the channel on every `prompt_session` call,
     /// ensuring commands are synced even when the channel binary restarts independently.
+    /// D-03: stores arbitrary agent-reported availableCommands payload (not just platform commands).
     pub(crate) last_available_commands: Option<serde_json::Value>,
     /// Cached tool context string built from tool descriptions fetched at session creation.
     /// Shared across all sessions on this slot since all see the same tools.

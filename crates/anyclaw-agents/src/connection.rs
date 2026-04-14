@@ -316,6 +316,8 @@ impl AgentConnection {
         })
     }
 
+    // D-03: params schema varies per JSON-RPC method — cannot be typed at this layer
+    #[allow(clippy::disallowed_types)]
     pub async fn send_request(
         &self,
         method: &str,
@@ -336,6 +338,8 @@ impl AgentConnection {
         Ok(rx)
     }
 
+    // D-03: params schema varies per JSON-RPC method — cannot be typed at this layer
+    #[allow(clippy::disallowed_types)]
     pub async fn send_notification(
         &self,
         method: &str,
