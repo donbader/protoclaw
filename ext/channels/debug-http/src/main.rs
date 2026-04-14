@@ -172,6 +172,14 @@ impl Channel for DebugHttpChannel {
                 })
                 .to_string(),
             },
+            ContentKind::AvailableCommandsUpdate { commands } => SsePayload {
+                event_type: Some("available_commands".into()),
+                data: commands.to_string(),
+            },
+            ContentKind::UsageUpdate => SsePayload {
+                event_type: Some("usage".into()),
+                data: String::new(),
+            },
             _ => {
                 let content_str = content_to_string(&msg.content);
                 SsePayload {

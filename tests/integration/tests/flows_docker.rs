@@ -66,11 +66,19 @@ async fn when_docker_agent_running_and_supervisor_cancelled_then_container_remov
         .expect("supervisor task panicked");
     assert!(result.is_ok());
 
-    let output = std::process::Command::new("docker")
-        .args(["ps", "-aq", "--filter", "label=anyclaw.managed=true"])
-        .output()
-        .expect("docker ps failed");
-    let remaining = String::from_utf8_lossy(&output.stdout);
+    // Container removal is async — poll until clean or timeout.
+    let mut remaining = String::new();
+    for _ in 0..10 {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let output = std::process::Command::new("docker")
+            .args(["ps", "-aq", "--filter", "label=anyclaw.managed=true"])
+            .output()
+            .expect("docker ps failed");
+        remaining = String::from_utf8_lossy(&output.stdout).to_string();
+        if remaining.trim().is_empty() {
+            break;
+        }
+    }
     assert!(
         remaining.trim().is_empty(),
         "no anyclaw containers should remain after shutdown, found: {remaining}"
