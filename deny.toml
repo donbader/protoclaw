@@ -1,8 +1,5 @@
 [advisories]
-vulnerability = "deny"
-unmaintained = "warn"
-yanked = "warn"
-notice = "warn"
+ignore = []
 
 [licenses]
 allow = [
@@ -34,7 +31,6 @@ skip = []
 skip-tree = []
 
 [bans.build]
-allow-build-scripts = "allow"
 
 [sources]
 unknown-registry = "deny"
