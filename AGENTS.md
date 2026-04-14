@@ -55,8 +55,8 @@ anyclaw/
 | ACP↔HTTP bridge | `ext/agents/acp-bridge/` | Generic bridge: translates ACP stdio to HTTP REST+SSE (e.g. OpenCode serve API) |
 | Add test helper | `crates/anyclaw-test-helpers/` | Shared across all crate tests |
 | Integration tests | `tests/integration/tests/e2e.rs` | Requires `cargo build` first (needs mock-agent binary) |
-| Dev iteration (contributor) | `examples/02-real-agents-telegram-bot/dev.sh` | Contributor-only helper — incremental rebuild + restart via persistent builder container; not needed to run the bot |
-| Dev builder image (contributor) | `examples/02-real-agents-telegram-bot/Dockerfile.dev-builder` | Local source build with cargo-chef caching; contributor-only, not used by production `docker-compose.yml` |
+| Dev iteration (contributor) | `examples/02-real-agents-telegram-bot/docker-compose.dev.yml` | Contributor-only override — builds from workspace source; use with `docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build` |
+| Dev builder image (contributor) | `examples/02-real-agents-telegram-bot/Dockerfile.dev-builder` | Local source build with cargo-chef + mold + BuildKit cache mounts; contributor-only, not used by production `docker-compose.yml` |
 
 ## Crate Dependency Flow
 

@@ -1,6 +1,6 @@
 # Local dev override: build anyclaw from workspace source instead of ghcr.io
-# NOT auto-loaded. Use via: ./dev.sh up
-# Or manually: docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+# NOT auto-loaded. Use via:
+# docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 services:
   anyclaw:
     build:

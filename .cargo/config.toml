@@ -1,0 +1,11 @@
+# Use mold linker via clang for faster link times in Docker builds (Alpine musl).
+# clang is the driver because mold is a linker, not a compiler driver.
+# Alpine's clang targets musl by default — no extra flags needed.
+
+[target.x86_64-unknown-linux-musl]
+linker = "clang"
+rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+
+[target.aarch64-unknown-linux-musl]
+linker = "clang"
+rustflags = ["-C", "link-arg=-fuse-ld=mold"]

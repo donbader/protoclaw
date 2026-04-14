@@ -100,7 +100,6 @@ OpenCode is the default agent. To use a different agent:
 | `.opencode/` | OpenCode config baked into agent image (gitignored — create your own or omit) |
 | `.env.example` | Environment template |
 | `test.sh` | E2E tests (Docker-only) |
-| `dev.sh` | Contributor-only: incremental rebuild helper (persistent builder container) |
 | `docker-compose.dev.yml` | Contributor-only: dev build override (builds from workspace source) |
 | `Dockerfile.dev-builder` | Contributor-only: local source build with cargo-chef caching |
 
@@ -110,14 +109,20 @@ OpenCode is the default agent. To use a different agent:
 
 ### Local Source Builds
 
-For iterating on anyclaw source code, use the dev tooling:
+For iterating on anyclaw source code, use the dev override:
 
 ```sh
-./dev.sh up        # Build from source + start containers
-./dev.sh rebuild   # Incremental rebuild + restart (~30s)
-./dev.sh logs      # Follow anyclaw logs
-./dev.sh down      # Stop containers (builder preserved)
-./dev.sh shell     # Shell into anyclaw container
+# Build from workspace source + start
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+
+# Incremental rebuild (fast — BuildKit cache mounts preserve cargo target dir)
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+
+# Follow logs
+docker compose -f docker-compose.yml -f docker-compose.dev.yml logs -f anyclaw
+
+# Stop
+docker compose -f docker-compose.yml -f docker-compose.dev.yml down
 ```
 
-This uses `docker-compose.dev.yml` (override) and `Dockerfile.dev-builder` (cargo-chef cached builds). Neither is loaded by the default `docker compose up`.
+This uses `docker-compose.dev.yml` (override) and `Dockerfile.dev-builder` (cargo-chef + mold + BuildKit cache mounts). Neither is loaded by the default `docker compose up`.

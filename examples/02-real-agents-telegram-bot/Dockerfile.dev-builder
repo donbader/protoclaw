@@ -6,6 +6,7 @@
 
 FROM lukemathwalker/cargo-chef:latest-rust-1.94-alpine AS chef
 WORKDIR /build
+RUN apk add --no-cache clang mold
 
 FROM chef AS planner
 COPY . .
@@ -13,17 +14,25 @@ RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef AS builder
 COPY --from=planner /build/recipe.json recipe.json
+COPY .cargo .cargo
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/build/target \
     cargo chef cook --locked --recipe-path recipe.json
 COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/build/target \
     cargo build --locked \
     --bin anyclaw \
     --bin telegram-channel \
     --bin debug-http \
-    --bin system-info
+    --bin system-info \
+    && cp target/debug/anyclaw \
+        target/debug/telegram-channel \
+        target/debug/debug-http \
+        target/debug/system-info \
+        /tmp/
 
 # --- Below here is identical to Dockerfile (just references local builder) ---
 
@@ -42,10 +51,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY --from=opencode-deps /usr/local/lib/node_modules /usr/local/lib/node_modules
 COPY --from=opencode-deps /usr/local/bin /usr/local/bin
-COPY --from=builder /build/target/debug/anyclaw /usr/local/bin/anyclaw
-COPY --from=builder /build/target/debug/debug-http /usr/local/bin/channels/debug-http
-COPY --from=builder /build/target/debug/telegram-channel /usr/local/bin/channels/telegram
-COPY --from=builder /build/target/debug/system-info /usr/local/bin/tools/system-info
+COPY --from=builder /tmp/anyclaw /usr/local/bin/anyclaw
+COPY --from=builder /tmp/debug-http /usr/local/bin/channels/debug-http
+COPY --from=builder /tmp/telegram-channel /usr/local/bin/channels/telegram
+COPY --from=builder /tmp/system-info /usr/local/bin/tools/system-info
 WORKDIR /workspace
 ENTRYPOINT ["anyclaw"]
 
