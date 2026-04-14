@@ -42,6 +42,7 @@ anyclaw-test-helpers = { path = "crates/anyclaw-test-helpers" }
 wasmtime = "43"
 wasmtime-wasi = "43"
 rstest = "0.26"
+agent-client-protocol-schema = "0.11"
 serde_yaml = { package = "yaml_serde", version = "0.10" }
 subst = "0.3"
 bollard = "0.20"
