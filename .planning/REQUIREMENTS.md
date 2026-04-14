@@ -34,7 +34,7 @@ Requirements for the code quality milestone. Each maps to roadmap phases.
 - [x] **JSON-03**: Replace `serde_json::Value` with typed structs in `anyclaw-core`
 - [ ] **JSON-04**: Replace `serde_json::Value` with typed structs in `anyclaw-agents`
 - [ ] **JSON-05**: Replace `serde_json::Value` with typed structs in `anyclaw-channels`
-- [ ] **JSON-06**: Replace `serde_json::Value` with typed structs in `anyclaw-tools`
+- [x] **JSON-06**: Replace `serde_json::Value` with typed structs in `anyclaw-tools`
 - [ ] **JSON-07**: Replace `serde_json::Value` with typed structs in SDK crates (sdk-agent, sdk-channel, sdk-tool)
 - [ ] **JSON-08**: Replace `serde_json::Value` with typed structs in ext/ binaries and examples
 
@@ -47,8 +47,8 @@ Requirements for the code quality milestone. Each maps to roadmap phases.
 ### Clone Reduction
 
 - [ ] **CLON-01**: Eliminate unnecessary `.clone()` calls in `anyclaw-agents` manager (103 clones baseline)
-- [ ] **CLON-02**: Audit and reduce `.clone()` calls across all other crates
-- [ ] **CLON-03**: Use borrowing or `&str` where ownership transfer isn't needed
+- [x] **CLON-02**: Audit and reduce `.clone()` calls across all other crates
+- [x] **CLON-03**: Use borrowing or `&str` where ownership transfer isn't needed
 
 ### Documentation
 
@@ -127,15 +127,15 @@ Tracked but not in current milestone.
 | JSON-03 | Phase 2 | Complete |
 | JSON-04 | Phase 3 | Pending |
 | JSON-05 | Phase 3 | Pending |
-| JSON-06 | Phase 3 | Pending |
+| JSON-06 | Phase 3 | Complete |
 | JSON-07 | Phase 4 | Pending |
 | JSON-08 | Phase 4 | Pending |
 | SERD-01 | Phase 2 | Complete |
 | SERD-02 | Phase 2 | Complete |
 | SERD-03 | Phase 4 | Pending |
 | CLON-01 | Phase 3 | Pending |
-| CLON-02 | Phase 3 | Pending |
-| CLON-03 | Phase 3 | Pending |
+| CLON-02 | Phase 3 | Complete |
+| CLON-03 | Phase 3 | Complete |
 | DOCS-01 | Phase 4 | Pending |
 | DOCS-02 | Phase 4 | Pending |
 | DOCS-03 | Phase 4 | Pending |
