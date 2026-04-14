@@ -26,3 +26,6 @@ tokio-test = { workspace = true }
 tempfile = { workspace = true }
 wat = "1"
 rstest = { workspace = true }
+
+[lints]
+workspace = true

@@ -14,3 +14,6 @@ anyclaw-sdk-channel = { workspace = true }
 anyclaw-sdk-types = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync"] }
+
+[lints]
+workspace = true

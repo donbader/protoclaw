@@ -14,3 +14,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["io-std", "io-util", "macros", "rt", "rt-multi-thread", "time"] }
 uuid = { workspace = true }
+
+[lints]
+workspace = true

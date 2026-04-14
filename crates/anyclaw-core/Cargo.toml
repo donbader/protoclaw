@@ -19,3 +19,6 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 [dev-dependencies]
 rstest = { workspace = true }
 tokio = { workspace = true, default-features = false, features = ["macros", "rt"] }
+
+[lints]
+workspace = true

@@ -22,3 +22,6 @@ tempfile.workspace = true
 serde_yaml.workspace = true
 rstest = { workspace = true }
 temp-env = { workspace = true }
+
+[lints]
+workspace = true

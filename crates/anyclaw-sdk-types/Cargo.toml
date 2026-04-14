@@ -18,3 +18,6 @@ agent-client-protocol-schema = { workspace = true }
 
 [dev-dependencies]
 rstest.workspace = true
+
+[lints]
+workspace = true

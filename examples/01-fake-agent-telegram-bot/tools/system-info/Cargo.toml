@@ -12,3 +12,6 @@ path = "src/main.rs"
 anyclaw-sdk-tool = { path = "../../../../crates/anyclaw-sdk-tool" }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
+
+[lints]
+workspace = true

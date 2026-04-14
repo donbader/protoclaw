@@ -22,3 +22,6 @@ tracing-subscriber = { workspace = true }
 
 [dev-dependencies]
 tower = "0.5"
+
+[lints]
+workspace = true
