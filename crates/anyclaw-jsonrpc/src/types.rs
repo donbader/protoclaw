@@ -8,37 +8,37 @@ pub enum RequestId {
     String(String),
 }
 
+// Extensible Value fields: params schema varies per JSON-RPC method (D-03)
+#[allow(clippy::disallowed_types)]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct JsonRpcRequest {
     pub jsonrpc: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<RequestId>,
     pub method: String,
-    // Extensible: params schema varies per JSON-RPC method (D-03)
-    #[allow(clippy::disallowed_types)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub params: Option<serde_json::Value>,
 }
 
+// Extensible Value fields: result schema varies per JSON-RPC method (D-03)
+#[allow(clippy::disallowed_types)]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct JsonRpcResponse {
     pub jsonrpc: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<RequestId>,
-    // Extensible: result schema varies per JSON-RPC method (D-03)
-    #[allow(clippy::disallowed_types)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<JsonRpcError>,
 }
 
+// Extensible Value fields: error data is implementation-defined (D-03)
+#[allow(clippy::disallowed_types)]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct JsonRpcError {
     pub code: i64,
     pub message: String,
-    // Extensible: error data is implementation-defined (D-03)
-    #[allow(clippy::disallowed_types)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<serde_json::Value>,
 }
@@ -51,11 +51,12 @@ pub enum JsonRpcMessage {
 }
 
 impl JsonRpcRequest {
+    // Extensible: params schema varies per JSON-RPC method (D-03)
+    #[allow(clippy::disallowed_types)]
     pub fn new(
         method: impl Into<String>,
         id: Option<RequestId>,
-        // Extensible: params schema varies per JSON-RPC method (D-03)
-        #[allow(clippy::disallowed_types)] params: Option<serde_json::Value>,
+        params: Option<serde_json::Value>,
     ) -> Self {
         Self {
             jsonrpc: "2.0".to_string(),
@@ -71,11 +72,9 @@ impl JsonRpcRequest {
 }
 
 impl JsonRpcResponse {
-    pub fn success(
-        id: Option<RequestId>,
-        // Extensible: result schema varies per JSON-RPC method (D-03)
-        #[allow(clippy::disallowed_types)] result: serde_json::Value,
-    ) -> Self {
+    // Extensible: result schema varies per JSON-RPC method (D-03)
+    #[allow(clippy::disallowed_types)]
+    pub fn success(id: Option<RequestId>, result: serde_json::Value) -> Self {
         Self {
             jsonrpc: "2.0".to_string(),
             id,

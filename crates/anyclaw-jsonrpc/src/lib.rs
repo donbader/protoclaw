@@ -1,8 +1,7 @@
-// Grandfathered: typed replacement in Phase 2-4
-#[allow(clippy::disallowed_types)]
 pub mod codec;
 pub mod error;
-// Grandfathered: typed replacement in Phase 2-4
+// Extensible Value fields: params/result/data schemas are method-defined (D-03).
+// clippy::disallowed_types fires on inner type expressions, not suppressible at struct/field level.
 #[allow(clippy::disallowed_types)]
 pub mod types;
 
