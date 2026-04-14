@@ -42,7 +42,7 @@ Requirements for the code quality milestone. Each maps to roadmap phases.
 
 - [x] **SERD-01**: All SDK wire types use `#[serde(rename_all = "camelCase")]` consistently
 - [x] **SERD-02**: All config types use `snake_case` consistently
-- [ ] **SERD-03**: Round-trip serialization tests exist for all wire types
+- [x] **SERD-03**: Round-trip serialization tests exist for all wire types
 
 ### Clone Reduction
 
@@ -132,7 +132,7 @@ Tracked but not in current milestone.
 | JSON-08 | Phase 4 | Pending |
 | SERD-01 | Phase 2 | Complete |
 | SERD-02 | Phase 2 | Complete |
-| SERD-03 | Phase 4 | Pending |
+| SERD-03 | Phase 4 | Complete |
 | CLON-01 | Phase 3 | Complete |
 | CLON-02 | Phase 3 | Complete |
 | CLON-03 | Phase 3 | Complete |

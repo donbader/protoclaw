@@ -80,7 +80,7 @@ Plans:
 **Plans**: 4 plans
 Plans:
 - [x] 04-01-PLAN.md — Type SDK crates: replace Value in AgentAdapter, Channel, Tool traits + harnesses
-- [ ] 04-02-PLAN.md — Round-trip serde tests for all public wire types across SDK crates
+- [x] 04-02-PLAN.md — Round-trip serde tests for all public wire types across SDK crates
 - [ ] 04-03-PLAN.md — Enable warn(missing_docs) on all crates + inline limitation comments from AGENTS.md
 - [ ] 04-04-PLAN.md — Type ext/ binaries and examples, fix Channel trait compilation errors
 
