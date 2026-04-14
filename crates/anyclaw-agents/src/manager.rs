@@ -694,6 +694,14 @@ impl AgentsManager {
                     acp_session_id = %acp_id,
                     "platform command /new: fresh session created"
                 );
+                // Signal channels manager that this "prompt" is done so the queue unblocks.
+                if let Some(sender) = &self.channels_sender {
+                    let _ = sender
+                        .send(ChannelEvent::SessionComplete {
+                            session_key: session_key.clone(),
+                        })
+                        .await;
+                }
                 Ok(())
             }
             _ => {
