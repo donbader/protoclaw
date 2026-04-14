@@ -1,17 +1,17 @@
 pub mod error;
-// Grandfathered: typed replacement in Phase 2-4
+// D-03: Config options are arbitrary user-defined Values (HashMap<String, Value>)
 #[allow(clippy::disallowed_types)]
 pub mod external;
-// Grandfathered: typed replacement in Phase 2-4
+// D-03: Tool trait boundary (input_schema/execute use Value) + ToolsCommand args
 #[allow(clippy::disallowed_types)]
 pub mod manager;
-// Grandfathered: typed replacement in Phase 2-4
+// D-03: Tool dispatch args are arbitrary JSON (serde_json::Map<String, Value>)
 #[allow(clippy::disallowed_types)]
 pub mod mcp_host;
-// Grandfathered: typed replacement in Phase 2-4
+// D-03: WASM sandbox config options are arbitrary user-defined Values
 #[allow(clippy::disallowed_types)]
 pub mod wasm_runner;
-// Grandfathered: typed replacement in Phase 2-4
+// D-03: Tool trait boundary — input_schema/execute use Value for arbitrary tool schemas
 #[allow(clippy::disallowed_types)]
 pub mod wasm_tool;
 

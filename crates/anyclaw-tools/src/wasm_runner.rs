@@ -75,7 +75,7 @@ impl WasmToolRunner {
                 .map_err(|e| ToolsError::McpHostFailed(format!("wasmtime engine: {e}")))?,
         );
 
-        let engine_clone = engine.clone();
+        let engine_clone = Arc::clone(&engine);
         let epoch_handle = tokio::spawn(async move {
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(
                 anyclaw_core::constants::EPOCH_TICK_INTERVAL_SECS,
@@ -97,9 +97,11 @@ impl WasmToolRunner {
         module_bytes: &[u8],
         input_json: &str,
         sandbox: &WasmSandboxConfig,
+        // D-03: options are arbitrary user-defined config values per tool (HashMap<String, Value>).
+        // Cannot be typed — users define custom key/value pairs in anyclaw.yaml.
         options: &HashMap<String, serde_json::Value>,
     ) -> Result<String, ToolsError> {
-        let engine = self.engine.clone();
+        let engine = Arc::clone(&self.engine);
         let module_bytes = module_bytes.to_vec();
         let input_json = input_json.to_string();
         let sandbox = sandbox.clone();
@@ -117,6 +119,7 @@ impl WasmToolRunner {
         module_bytes: &[u8],
         input_json: &str,
         sandbox: &WasmSandboxConfig,
+        // D-03: options are arbitrary user-defined config values (see execute())
         options: &HashMap<String, serde_json::Value>,
     ) -> Result<String, ToolsError> {
         let module = Module::new(engine, module_bytes)
@@ -197,6 +200,7 @@ fn build_wasi_ctx(
     input_json: &str,
     stdout: &MemoryOutputPipe,
     preopened_dirs: &[PreopenedDir],
+    // D-03: options are arbitrary user-defined config values (see WasmToolRunner::execute)
     options: &HashMap<String, serde_json::Value>,
 ) -> Result<WasiP1Ctx, ToolsError> {
     let mut builder = WasiCtxBuilder::new();
@@ -220,7 +224,7 @@ fn build_wasi_ctx(
 
     for (key, value) in options {
         let val = match value {
-            serde_json::Value::String(s) => s.clone(),
+            serde_json::Value::String(s) => s.to_owned(),
             other => other.to_string(),
         };
         builder.env(key, &val);

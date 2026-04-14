@@ -13,9 +13,11 @@ pub struct ExternalMcpServer {
     client: Arc<RunningService<RoleClient, ()>>,
 }
 
+// D-03: Config options are arbitrary user-defined values (HashMap<String, serde_json::Value>
+// in McpServerConfig). Cannot be typed — users define custom key/value pairs per tool.
 fn serialize_option_value(value: &serde_json::Value) -> String {
     match value {
-        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::String(s) => s.to_owned(),
         other => other.to_string(),
     }
 }

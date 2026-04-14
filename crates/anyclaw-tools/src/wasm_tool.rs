@@ -32,6 +32,9 @@ impl WasmTool {
     }
 }
 
+// D-03: WasmTool implements the Tool trait which uses serde_json::Value
+// for input_schema/execute — extensible tool boundary, cannot be typed.
+// The WASM output parsing fallback also produces Value (arbitrary tool output).
 impl Tool for WasmTool {
     fn name(&self) -> &str {
         &self.name
@@ -63,6 +66,7 @@ impl Tool for WasmTool {
             .await
             .map_err(|e| ToolSdkError::ExecutionFailed(e.to_string()))?;
 
+        // D-03: WASM tool output is arbitrary — parse as JSON, fall back to string Value
         let value: serde_json::Value =
             serde_json::from_str(&output).unwrap_or(serde_json::Value::String(output));
 
