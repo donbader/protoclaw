@@ -23,6 +23,7 @@ pub enum ChannelsCommand {
     /// Deliver agent message to a specific channel (by session key).
     DeliverToChannel {
         session_key: String,
+        // D-03: agent content is arbitrary JSON (streaming chunks, results, thoughts, etc.)
         content: serde_json::Value,
     },
     /// Route permission request to originating channel.
@@ -361,6 +362,7 @@ impl ChannelsManager {
     async fn handle_deliver_message(
         &mut self,
         session_key: SessionKey,
+        // D-03: agent content is arbitrary JSON (streaming chunks, results, thoughts, etc.)
         content: serde_json::Value,
     ) {
         if let Some(entry) = self.routing_table.get(&session_key) {
@@ -600,6 +602,8 @@ impl ChannelsManager {
         }
     }
 
+    // D-03: params is method-specific JSON — channel protocol payloads vary per method
+    #[allow(clippy::disallowed_types)]
     async fn collect_send_message(
         &mut self,
         slot_index: usize,
@@ -875,6 +879,8 @@ impl ChannelsManager {
     }
 
     /// Forward a channel/respondPermission message to the agents manager.
+    // D-03: params is method-specific JSON — channel protocol payloads vary per method
+    #[allow(clippy::disallowed_types)]
     async fn handle_respond_permission(&self, params: serde_json::Value, channel_name: &str) {
         if let Ok(resp) = serde_json::from_value::<ChannelRespondPermission>(params) {
             if let Some(agents_handle) = &self.agents_handle

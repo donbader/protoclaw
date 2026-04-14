@@ -1,11 +1,9 @@
-// Grandfathered: typed replacement in Phase 2-4
+// D-03: ChannelEvent content and JSON-RPC method params are arbitrary agent/protocol JSON
 #[allow(clippy::disallowed_types)]
 pub mod connection;
-// Grandfathered: typed replacement in Phase 2-4
-#[allow(clippy::disallowed_types)]
 pub mod debug_http;
 pub mod error;
-// Grandfathered: typed replacement in Phase 2-4
+// D-03: ChannelEvent content, channel protocol params, and permission payloads are arbitrary JSON
 #[allow(clippy::disallowed_types)]
 pub mod manager;
 pub mod session_queue;

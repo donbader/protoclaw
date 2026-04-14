@@ -1,11 +1,37 @@
-use anyclaw_core::{AgentsCommand, ManagerHandle};
+use anyclaw_core::{AgentStatusInfo, AgentsCommand, ManagerHandle};
 use axum::extract::State;
 use axum::routing::get;
 use axum::{Json, Router};
+use serde::Serialize;
 use tokio::sync::{oneshot, watch};
 use tokio_util::sync::CancellationToken;
 
 use crate::error::ChannelsError;
+
+#[derive(Serialize)]
+struct AgentHealth {
+    name: String,
+    connected: bool,
+    session_count: usize,
+}
+
+impl From<&AgentStatusInfo> for AgentHealth {
+    fn from(s: &AgentStatusInfo) -> Self {
+        Self {
+            name: s.name.clone(),
+            connected: s.connected,
+            session_count: s.session_count,
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct HealthResponse {
+    status: &'static str,
+    agent: Vec<AgentHealth>,
+    channels: Vec<String>,
+    mcp_servers: Vec<String>,
+}
 
 #[derive(Clone)]
 struct AppState {
@@ -74,7 +100,7 @@ impl DebugHttpChannel {
     }
 }
 
-async fn handle_health(State(state): State<AppState>) -> Json<serde_json::Value> {
+async fn handle_health(State(state): State<AppState>) -> Json<HealthResponse> {
     let (reply_tx, reply_rx) = oneshot::channel();
     let agent_status = if state
         .agents_handle
@@ -87,36 +113,24 @@ async fn handle_health(State(state): State<AppState>) -> Json<serde_json::Value>
         None
     };
 
-    let agent_json = match agent_status {
-        Some(statuses) => {
-            let agents: Vec<_> = statuses
-                .iter()
-                .map(|s| {
-                    serde_json::json!({
-                        "name": s.name,
-                        "connected": s.connected,
-                        "session_count": s.session_count,
-                    })
-                })
-                .collect();
-            serde_json::json!(agents)
-        }
-        None => serde_json::json!([]),
+    let agent = match agent_status {
+        Some(statuses) => statuses.iter().map(AgentHealth::from).collect(),
+        None => vec![],
     };
 
-    Json(serde_json::json!({
-        "status": "ok",
-        "agent": agent_json,
-        "channels": state.channel_names,
-        "mcp_servers": state.mcp_server_names,
-    }))
+    Json(HealthResponse {
+        status: "ok",
+        agent,
+        channels: state.channel_names,
+        mcp_servers: state.mcp_server_names,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use anyclaw_core::AgentsCommand;
     use anyclaw_core::ManagerHandle;
-    use anyclaw_core::{AgentStatusInfo, AgentsCommand};
 
     #[test]
     fn when_debug_http_channel_created_then_instance_initialized() {
