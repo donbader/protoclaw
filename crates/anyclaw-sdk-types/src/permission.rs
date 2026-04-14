@@ -53,6 +53,7 @@ pub struct ChannelRequestPermission {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     #[test]
     fn when_serializing_permission_option_then_uses_camel_case() {
@@ -133,5 +134,78 @@ mod tests {
         assert!(json.get("session_id").is_none());
         let deser: ChannelRequestPermission = serde_json::from_value(json).unwrap();
         assert_eq!(deser, req);
+    }
+
+    // ── Round-trip serde tests (04-02 Task 1) ──────────────────────────
+
+    #[rstest]
+    fn when_permission_option_round_trips_then_identical() {
+        let original = PermissionOption {
+            option_id: "allow_once".into(),
+            label: "Allow once".into(),
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        let restored: PermissionOption = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_permission_request_round_trips_then_identical() {
+        let original = PermissionRequest {
+            request_id: "perm-1".into(),
+            description: "Allow file write to /tmp?".into(),
+            options: vec![
+                PermissionOption {
+                    option_id: "allow".into(),
+                    label: "Allow".into(),
+                },
+                PermissionOption {
+                    option_id: "deny".into(),
+                    label: "Deny".into(),
+                },
+            ],
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        let restored: PermissionRequest = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_permission_request_empty_options_round_trips_then_identical() {
+        let original = PermissionRequest {
+            request_id: "perm-2".into(),
+            description: "No options".into(),
+            options: vec![],
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        let restored: PermissionRequest = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_permission_response_round_trips_then_identical() {
+        let original = PermissionResponse {
+            request_id: "perm-1".into(),
+            option_id: "allow_once".into(),
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        let restored: PermissionResponse = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_channel_request_permission_round_trips_then_identical() {
+        let original = ChannelRequestPermission {
+            request_id: "req-1".into(),
+            session_id: "sess-1".into(),
+            description: "Allow network access?".into(),
+            options: vec![PermissionOption {
+                option_id: "allow".into(),
+                label: "Allow".into(),
+            }],
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        let restored: ChannelRequestPermission = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
     }
 }

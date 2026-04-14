@@ -863,4 +863,190 @@ mod tests {
             other => panic!("expected AvailableCommandsUpdate, got {:?}", other),
         }
     }
+
+    // ── Round-trip serde tests (04-02 Task 1) ──────────────────────────
+
+    #[rstest]
+    fn when_channel_capabilities_round_trips_then_identical() {
+        let original = ChannelCapabilities {
+            streaming: true,
+            rich_text: false,
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        let restored: ChannelCapabilities = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_channel_initialize_params_round_trips_then_identical() {
+        let mut opts = std::collections::HashMap::new();
+        opts.insert("token".into(), serde_json::json!("abc123"));
+        let original = ChannelInitializeParams {
+            protocol_version: 1,
+            channel_id: "telegram".into(),
+            ack: Some(ChannelAckConfig {
+                reaction: true,
+                typing: false,
+                reaction_emoji: "👀".into(),
+                reaction_lifecycle: "remove".into(),
+            }),
+            options: opts,
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        let restored: ChannelInitializeParams = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_channel_initialize_params_empty_options_round_trips_then_identical() {
+        let original = ChannelInitializeParams {
+            protocol_version: 1,
+            channel_id: "debug-http".into(),
+            ack: None,
+            options: std::collections::HashMap::new(),
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        let restored: ChannelInitializeParams = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_channel_initialize_result_round_trips_then_identical() {
+        let original = ChannelInitializeResult {
+            protocol_version: 1,
+            capabilities: ChannelCapabilities {
+                streaming: true,
+                rich_text: true,
+            },
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        let restored: ChannelInitializeResult = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_deliver_message_round_trips_then_identical() {
+        let original = DeliverMessage {
+            session_id: "ses-1".into(),
+            content: serde_json::json!({"update": {"sessionUpdate": "result", "content": "done"}}),
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        let restored: DeliverMessage = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_peer_info_round_trips_then_identical() {
+        let original = PeerInfo {
+            channel_name: "telegram".into(),
+            peer_id: "user-42".into(),
+            kind: "direct".into(),
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        let restored: PeerInfo = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_channel_send_message_round_trips_then_identical() {
+        let original = ChannelSendMessage {
+            peer_info: PeerInfo {
+                channel_name: "debug-http".into(),
+                peer_id: "dev".into(),
+                kind: "local".into(),
+            },
+            content: "hello agent".into(),
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        let restored: ChannelSendMessage = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_thought_content_round_trips_then_identical() {
+        let original = ThoughtContent {
+            session_id: "ses-1".into(),
+            update_type: "agent_thought_chunk".into(),
+            content: "analyzing...".into(),
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        let restored: ThoughtContent = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_ack_notification_round_trips_then_identical() {
+        let original = AckNotification {
+            session_id: "ses-1".into(),
+            channel_name: "telegram".into(),
+            peer_id: "alice".into(),
+            message_id: Some("msg-42".into()),
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        let restored: AckNotification = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_ack_notification_no_message_id_round_trips_then_identical() {
+        let original = AckNotification {
+            session_id: "ses-1".into(),
+            channel_name: "debug-http".into(),
+            peer_id: "dev".into(),
+            message_id: None,
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        let restored: AckNotification = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_ack_lifecycle_notification_round_trips_then_identical() {
+        let original = AckLifecycleNotification {
+            session_id: "ses-1".into(),
+            action: "response_started".into(),
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        let restored: AckLifecycleNotification = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_channel_ack_config_round_trips_then_identical() {
+        let original = ChannelAckConfig {
+            reaction: true,
+            typing: true,
+            reaction_emoji: "👀".into(),
+            reaction_lifecycle: "remove".into(),
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        let restored: ChannelAckConfig = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_channel_respond_permission_round_trips_then_identical() {
+        let original = ChannelRespondPermission {
+            request_id: "req-1".into(),
+            option_id: "allow".into(),
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        let restored: ChannelRespondPermission = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_session_created_round_trips_then_identical() {
+        let original = SessionCreated {
+            session_id: "acp-sess-42".into(),
+            peer_info: PeerInfo {
+                channel_name: "telegram".into(),
+                peer_id: "tg:99999".into(),
+                kind: "direct".into(),
+            },
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        let restored: SessionCreated = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
 }

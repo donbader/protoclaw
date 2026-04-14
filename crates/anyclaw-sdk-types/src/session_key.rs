@@ -60,6 +60,7 @@ impl AsRef<str> for SessionKey {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     #[test]
     fn when_session_key_created_then_formatted_as_channel_slash_peer() {
@@ -90,5 +91,21 @@ mod tests {
         let mut set = std::collections::HashSet::new();
         set.insert(a);
         assert!(set.contains(&b));
+    }
+
+    #[rstest]
+    fn when_session_key_serde_round_trips_then_identical() {
+        let original = SessionKey::new("telegram", "direct", "alice");
+        let json = serde_json::to_value(&original).unwrap();
+        let restored: SessionKey = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_session_key_display_from_str_round_trips_then_identical() {
+        let original = SessionKey::new("slack", "group", "general");
+        let displayed = original.to_string();
+        let parsed: SessionKey = displayed.parse().unwrap();
+        assert_eq!(original, parsed);
     }
 }
