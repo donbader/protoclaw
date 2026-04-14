@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
@@ -42,6 +43,10 @@ pub(crate) struct SlotIncoming {
 
 struct PromptCompletion {
     session_key: SessionKey,
+    /// Set when the agent reports the session no longer exists,
+    /// so `handle_prompt_completion` can invalidate the stale mapping.
+    /// Read via `completion_rx` channel in `handle_prompt_completion`.
+    session_expired: bool,
 }
 
 /// Resolve the effective working directory for an agent from its workspace config.
@@ -130,7 +135,7 @@ pub struct AgentsManager {
     update_seq: AtomicU64,
     log_level: Option<String>,
     /// Persistent session store. Defaults to [`NoopSessionStore`].
-    session_store: std::sync::Arc<dyn DynSessionStore>,
+    session_store: Arc<dyn DynSessionStore>,
     /// TTL for expired session cleanup at boot (seconds). Default: 7 days.
     session_ttl_secs: i64,
 }
@@ -163,7 +168,7 @@ impl AgentsManager {
             streaming_completed: HashSet::new(),
             update_seq: AtomicU64::new(0),
             log_level: None,
-            session_store: std::sync::Arc::new(NoopSessionStore),
+            session_store: Arc::new(NoopSessionStore),
             session_ttl_secs: 7 * 24 * 3600,
         }
     }
@@ -183,7 +188,7 @@ impl AgentsManager {
         self
     }
 
-    pub fn with_session_store(mut self, store: std::sync::Arc<dyn DynSessionStore>) -> Self {
+    pub fn with_session_store(mut self, store: Arc<dyn DynSessionStore>) -> Self {
         self.session_store = store;
         self
     }
@@ -276,11 +281,11 @@ impl AgentsManager {
         });
 
         let mcp_servers: Vec<McpServerInfo> = urls
-            .iter()
+            .into_iter()
             .map(|u| McpServerInfo {
-                name: u.name.clone(),
+                name: u.name,
                 server_type: "http".into(),
-                url: u.url.clone(),
+                url: u.url,
                 command: String::new(),
                 args: vec![],
                 env: vec![],
@@ -342,11 +347,11 @@ impl AgentsManager {
             );
             Vec::new()
         });
-        urls.iter()
+        urls.into_iter()
             .map(|u| McpServerInfo {
-                name: u.name.clone(),
+                name: u.name,
                 server_type: "http".into(),
-                url: u.url.clone(),
+                url: u.url,
                 command: String::new(),
                 args: vec![],
                 env: vec![],
@@ -649,7 +654,7 @@ impl AgentsManager {
         if !self.slots[slot_idx]
             .tool_context_sent
             .contains(&acp_session_id)
-            && let Some(ctx) = self.slots[slot_idx].tool_context.clone()
+            && let Some(ctx) = self.slots[slot_idx].tool_context.as_deref()
         {
             prompt_parts.push(ContentPart::text(ctx));
             self.slots[slot_idx]
@@ -671,12 +676,12 @@ impl AgentsManager {
 
         let response_rx = conn.send_request("session/prompt", params).await?;
 
-        if let Some(commands_content) = self.slots[slot_idx].last_available_commands.clone()
+        if let Some(commands_content) = self.slots[slot_idx].last_available_commands.as_ref()
             && let Some(sender) = &self.channels_sender
             && let Err(e) = sender
                 .send(ChannelEvent::DeliverMessage {
                     session_key: session_key.clone(),
-                    content: commands_content,
+                    content: commands_content.clone(),
                 })
                 .await
         {
@@ -689,7 +694,7 @@ impl AgentsManager {
                 .map(|d| d.as_secs() as i64)
                 .unwrap_or(0);
             let sk_string = session_key.to_string();
-            let store = self.session_store.clone();
+            let store = Arc::clone(&self.session_store);
             tokio::spawn(async move {
                 if let Err(e) = store.update_last_active(&sk_string, now).await {
                     tracing::warn!(
@@ -709,9 +714,27 @@ impl AgentsManager {
                 match response_rx.await {
                     Ok(response) => {
                         // Check if the agent returned a JSON-RPC error
+                        let mut session_expired = false;
                         if let Some(error) = &response.error {
                             let msg = &error.message;
                             tracing::warn!(session_key = %sk, error = %msg, "agent returned error for prompt");
+
+                            // Detect "session not found" so the stale mapping gets
+                            // invalidated in handle_prompt_completion, allowing the
+                            // next prompt to trigger heal_session.
+                            let combined = format!(
+                                "{} {}",
+                                msg,
+                                error
+                                    .data
+                                    .as_ref()
+                                    .map(std::string::ToString::to_string)
+                                    .unwrap_or_default()
+                            );
+                            if combined.to_lowercase().contains("session not found") {
+                                session_expired = true;
+                            }
+
                             if let Some(sender) = &channels_tx {
                                 let error_content = serde_json::json!({
                                     "error": msg,
@@ -726,7 +749,10 @@ impl AgentsManager {
                             }
                         }
                         let _ = completion_tx
-                            .send(PromptCompletion { session_key: sk })
+                            .send(PromptCompletion {
+                                session_key: sk,
+                                session_expired,
+                            })
                             .await;
                     }
                     Err(_) => {
@@ -761,10 +787,9 @@ impl AgentsManager {
                 );
                 // Signal channels manager that this "prompt" is done so the queue unblocks.
                 if let Some(sender) = &self.channels_sender {
-                    let sk = session_key.clone();
                     let _ = sender
                         .send(ChannelEvent::DeliverMessage {
-                            session_key: sk.clone(),
+                            session_key: session_key.clone(),
                             content: serde_json::json!({
                                 "update": {
                                     "sessionUpdate": "agent_message_chunk",
@@ -775,7 +800,7 @@ impl AgentsManager {
                         .await;
                     let _ = sender
                         .send(ChannelEvent::DeliverMessage {
-                            session_key: sk.clone(),
+                            session_key: session_key.clone(),
                             content: serde_json::json!({
                                 "update": {
                                     "sessionUpdate": "result",
@@ -785,7 +810,9 @@ impl AgentsManager {
                         })
                         .await;
                     let _ = sender
-                        .send(ChannelEvent::SessionComplete { session_key: sk })
+                        .send(ChannelEvent::SessionComplete {
+                            session_key: session_key.clone(),
+                        })
                         .await;
                 }
                 Ok(())
@@ -831,7 +858,7 @@ impl AgentsManager {
             "session recovery initiated"
         );
 
-        if supports_resume && let Some(acp_id) = stale_acp_id.clone() {
+        if supports_resume && let Some(acp_id) = stale_acp_id.as_deref() {
             let cwd = resolve_agent_cwd(&self.slots[slot_idx].config.workspace)
                 .to_string_lossy()
                 .into_owned();
@@ -871,8 +898,10 @@ impl AgentsManager {
                 );
                 let slot = &mut self.slots[slot_idx];
                 slot.stale_sessions.remove(session_key);
-                slot.session_map.insert(session_key.clone(), acp_id.clone());
-                slot.reverse_map.insert(acp_id.clone(), session_key.clone());
+                slot.session_map
+                    .insert(session_key.clone(), acp_id.to_owned());
+                slot.reverse_map
+                    .insert(acp_id.to_owned(), session_key.clone());
                 // No awaiting_first_prompt for resume — no replay needed.
                 return Ok(());
             }
@@ -931,7 +960,7 @@ impl AgentsManager {
                 slot.stale_sessions.remove(session_key);
                 slot.session_map.insert(session_key.clone(), acp_id.clone());
                 slot.reverse_map.insert(acp_id.clone(), session_key.clone());
-                slot.awaiting_first_prompt.insert(acp_id.clone());
+                slot.awaiting_first_prompt.insert(acp_id);
                 return Ok(());
             }
             tracing::info!(
@@ -1018,16 +1047,15 @@ impl AgentsManager {
             .map_err(|_| AgentsError::ConnectionClosed)?;
 
         let result: SessionForkResult = serde_json::from_value(resp.result.unwrap_or_default())?;
-        let new_session_id = result.session_id.clone();
 
-        let fork_key = SessionKey::new(session_key.channel_name(), "fork", &new_session_id);
+        let fork_key = SessionKey::new(session_key.channel_name(), "fork", &result.session_id);
         let slot = &mut self.slots[slot_idx];
         slot.session_map
-            .insert(fork_key.clone(), new_session_id.clone());
-        slot.reverse_map.insert(new_session_id.clone(), fork_key);
+            .insert(fork_key.clone(), result.session_id.clone());
+        slot.reverse_map.insert(result.session_id.clone(), fork_key);
 
-        tracing::info!(agent = %agent_name, forked_session_id = %new_session_id, "session forked");
-        Ok(new_session_id)
+        tracing::info!(agent = %agent_name, forked_session_id = %result.session_id, "session forked");
+        Ok(result.session_id)
     }
 
     async fn list_sessions(
@@ -1087,8 +1115,8 @@ impl AgentsManager {
     }
 
     async fn handle_incoming(&mut self, slot_idx: usize, msg: IncomingMessage) {
-        let request = match &msg {
-            IncomingMessage::AgentNotification(r) | IncomingMessage::AgentRequest(r) => r.clone(),
+        let request = match msg {
+            IncomingMessage::AgentNotification(r) | IncomingMessage::AgentRequest(r) => r,
         };
 
         match request.method.as_str() {
@@ -1096,7 +1124,7 @@ impl AgentsManager {
                 // D-03: session/update params are forwarded as raw content to channels
                 // (with timestamp injection, tool normalization, command merging).
                 // Must stay as Value for content mutation pipeline.
-                let params = request.params.clone().unwrap_or(serde_json::Value::Null);
+                let params = request.params.unwrap_or(serde_json::Value::Null);
                 self.handle_session_update(slot_idx, params).await;
             }
             "session/request_permission" => {
@@ -1254,6 +1282,7 @@ impl AgentsManager {
         let seq = self.update_seq.fetch_add(1, Ordering::Relaxed);
         tracing::debug!(raw_params = %params, seq, "session/update received — attempting deser");
 
+        // Clone needed: typed event for dispatch + raw Value for content forwarding (D-03)
         match serde_json::from_value::<SessionUpdateEvent>(params.clone()) {
             Ok(event) => {
                 self.forward_session_update(slot_idx, event, params, seq)
@@ -1450,6 +1479,22 @@ impl AgentsManager {
         }
 
         let already_got_result = self.streaming_completed.remove(&completion.session_key);
+
+        // When the agent reports "session not found", invalidate the stale mapping
+        // so the next inbound prompt triggers heal_session() instead of reusing
+        // the dead ACP session ID.
+        if completion.session_expired {
+            tracing::info!(
+                session_key = %completion.session_key,
+                "invalidating expired session mapping — next prompt will trigger recovery"
+            );
+            for slot in &mut self.slots {
+                if let Some(acp_id) = slot.session_map.remove(&completion.session_key) {
+                    slot.reverse_map.remove(&acp_id);
+                    slot.tool_context_sent.remove(&acp_id);
+                }
+            }
+        }
 
         if let Some(sender) = &self.channels_sender {
             if !already_got_result {
@@ -1767,9 +1812,8 @@ impl AgentsManager {
             };
 
             for container in containers {
-                let id = match container.id {
-                    Some(ref id) => id.clone(),
-                    None => continue,
+                let Some(id) = container.id else {
+                    continue;
                 };
                 tracing::info!(container_id = %id, agent = %name, "cleanup: removing stale container");
                 if let Err(e) = docker
@@ -2091,6 +2135,14 @@ mod tests {
         }
     }
 
+    /// Test helper: register a session in both session_map and reverse_map.
+    fn register_test_session(slot: &mut AgentSlot, session_key: &SessionKey, acp_session_id: &str) {
+        slot.session_map
+            .insert(session_key.clone(), acp_session_id.to_owned());
+        slot.reverse_map
+            .insert(acp_session_id.to_owned(), session_key.clone());
+    }
+
     #[test]
     fn when_agents_manager_created_then_name_is_agents() {
         let (handle, _rx) = make_tools_handle();
@@ -2309,10 +2361,7 @@ mod tests {
         let mut slot = AgentSlot::new("test-agent".into(), mock_agent_config(), &cancel);
         let session_key = SessionKey::new("debug-http", "local", "dev");
         let acp_session_id = "acp-sess-1".to_string();
-        slot.session_map
-            .insert(session_key.clone(), acp_session_id.clone());
-        slot.reverse_map
-            .insert(acp_session_id.clone(), session_key.clone());
+        register_test_session(&mut slot, &session_key, &acp_session_id);
         m.slots.push(slot);
 
         let result_notification = IncomingMessage::AgentNotification(JsonRpcRequest::new(
@@ -2362,10 +2411,7 @@ mod tests {
         let mut slot = AgentSlot::new("test-agent".into(), mock_agent_config(), &cancel);
         let session_key = SessionKey::new("debug-http", "local", "dev");
         let acp_session_id = "acp-sess-1".to_string();
-        slot.session_map
-            .insert(session_key.clone(), acp_session_id.clone());
-        slot.reverse_map
-            .insert(acp_session_id.clone(), session_key.clone());
+        register_test_session(&mut slot, &session_key, &acp_session_id);
         m.slots.push(slot);
 
         let chunk_notification = IncomingMessage::AgentNotification(JsonRpcRequest::new(
@@ -2405,16 +2451,14 @@ mod tests {
         let mut slot = AgentSlot::new("test-agent".into(), mock_agent_config(), &cancel);
         let session_key = SessionKey::new("telegram", "direct", "user1");
         let acp_session_id = "acp-sess-1".to_string();
-        slot.session_map
-            .insert(session_key.clone(), acp_session_id.clone());
-        slot.reverse_map
-            .insert(acp_session_id.clone(), session_key.clone());
+        register_test_session(&mut slot, &session_key, &acp_session_id);
         m.slots.push(slot);
 
         let (_incoming_tx, mut incoming_rx) = mpsc::channel::<SlotIncoming>(16);
 
         let completion = PromptCompletion {
             session_key: session_key.clone(),
+            session_expired: false,
         };
         m.handle_prompt_completion(completion, &mut incoming_rx)
             .await;
@@ -2469,10 +2513,7 @@ mod tests {
         let mut slot = AgentSlot::new("test-agent".into(), mock_agent_config(), &cancel);
         let session_key = SessionKey::new("telegram", "direct", "user1");
         let acp_session_id = "acp-sess-1".to_string();
-        slot.session_map
-            .insert(session_key.clone(), acp_session_id.clone());
-        slot.reverse_map
-            .insert(acp_session_id.clone(), session_key.clone());
+        register_test_session(&mut slot, &session_key, &acp_session_id);
         m.slots.push(slot);
 
         m.streaming_completed.insert(session_key.clone());
@@ -2480,6 +2521,7 @@ mod tests {
         let (_incoming_tx, mut incoming_rx) = mpsc::channel::<SlotIncoming>(16);
         let completion = PromptCompletion {
             session_key: session_key.clone(),
+            session_expired: false,
         };
         m.handle_prompt_completion(completion, &mut incoming_rx)
             .await;
@@ -2538,10 +2580,7 @@ mod tests {
         let mut slot = AgentSlot::new("test-agent".into(), mock_agent_config(), &cancel);
         let session_key = SessionKey::new("telegram", "direct", "user1");
         let acp_session_id = "acp-sess-1".to_string();
-        slot.session_map
-            .insert(session_key.clone(), acp_session_id.clone());
-        slot.reverse_map
-            .insert(acp_session_id.clone(), session_key.clone());
+        register_test_session(&mut slot, &session_key, &acp_session_id);
         m.slots.push(slot);
 
         let (incoming_tx, mut incoming_rx) = mpsc::channel::<SlotIncoming>(16);
@@ -2580,6 +2619,7 @@ mod tests {
 
         let completion = PromptCompletion {
             session_key: session_key.clone(),
+            session_expired: false,
         };
         m.handle_prompt_completion(completion, &mut incoming_rx)
             .await;
@@ -3144,10 +3184,7 @@ mod tests {
         let mut slot = AgentSlot::new("test-agent".into(), mock_agent_config(), &cancel);
         let session_key = SessionKey::new("telegram", "direct", "u1");
         let acp_session_id = "acp-perm-1".to_string();
-        slot.session_map
-            .insert(session_key.clone(), acp_session_id.clone());
-        slot.reverse_map
-            .insert(acp_session_id.clone(), session_key.clone());
+        register_test_session(&mut slot, &session_key, &acp_session_id);
         m.slots.push(slot);
 
         let request = JsonRpcRequest::new(
@@ -3184,10 +3221,7 @@ mod tests {
         let mut slot = AgentSlot::new("test-agent".into(), mock_agent_config(), &cancel);
         let session_key = SessionKey::new("telegram", "direct", "u1");
         let acp_session_id = "acp-perm-2".to_string();
-        slot.session_map
-            .insert(session_key.clone(), acp_session_id.clone());
-        slot.reverse_map
-            .insert(acp_session_id.clone(), session_key.clone());
+        register_test_session(&mut slot, &session_key, &acp_session_id);
         m.slots.push(slot);
 
         let request = JsonRpcRequest::new(
@@ -3252,10 +3286,7 @@ mod tests {
         let mut slot = AgentSlot::new("test-agent".into(), mock_agent_config(), &cancel);
         let session_key = SessionKey::new("telegram", "direct", "u1");
         let acp_session_id = "acp-perm-3".to_string();
-        slot.session_map
-            .insert(session_key.clone(), acp_session_id.clone());
-        slot.reverse_map
-            .insert(acp_session_id.clone(), session_key.clone());
+        register_test_session(&mut slot, &session_key, &acp_session_id);
         m.slots.push(slot);
 
         let request = JsonRpcRequest::new(
@@ -3290,10 +3321,7 @@ mod tests {
         let mut slot = AgentSlot::new("test-agent".into(), mock_agent_config(), &cancel);
         let session_key = SessionKey::new("telegram", "direct", "u1");
         let acp_session_id = "acp-perm-fallback".to_string();
-        slot.session_map
-            .insert(session_key.clone(), acp_session_id.clone());
-        slot.reverse_map
-            .insert(acp_session_id.clone(), session_key.clone());
+        register_test_session(&mut slot, &session_key, &acp_session_id);
         m.slots.push(slot);
 
         let request = JsonRpcRequest::new(
@@ -3336,10 +3364,7 @@ mod tests {
         let mut slot = AgentSlot::new("test-agent".into(), mock_agent_config(), &cancel);
         let session_key = SessionKey::new("telegram", "direct", "u1");
         let acp_session_id = "acp-perm-4".to_string();
-        slot.session_map
-            .insert(session_key.clone(), acp_session_id.clone());
-        slot.reverse_map
-            .insert(acp_session_id.clone(), session_key.clone());
+        register_test_session(&mut slot, &session_key, &acp_session_id);
         m.slots.push(slot);
 
         let request = JsonRpcRequest::new(
@@ -3405,10 +3430,7 @@ mod tests {
         let mut slot = AgentSlot::new("test-agent".into(), mock_agent_config(), &cancel);
         let session_key = SessionKey::new("telegram", "direct", "u1");
         let acp_session_id = "acp-perm-format".to_string();
-        slot.session_map
-            .insert(session_key.clone(), acp_session_id.clone());
-        slot.reverse_map
-            .insert(acp_session_id.clone(), session_key.clone());
+        register_test_session(&mut slot, &session_key, &acp_session_id);
 
         // Wire up a real connection with a readable stdin pipe
         let (stdin_write, stdin_read) = tokio::io::duplex(64 * 1024);
@@ -3520,7 +3542,7 @@ mod tests {
         }
 
         let session_key_str = SessionKey::new("telegram", "direct", "alice").to_string();
-        let store = std::sync::Arc::new(StubStore {
+        let store = Arc::new(StubStore {
             sessions: vec![PersistedSession {
                 session_key: session_key_str.clone(),
                 agent_name: "default".to_string(),
@@ -3605,9 +3627,8 @@ mod tests {
     async fn when_start_called_with_sqlite_store_then_expired_sessions_deleted() {
         use anyclaw_core::{PersistedSession, SqliteSessionStore};
 
-        let store_arc: std::sync::Arc<dyn anyclaw_core::DynSessionStore> = std::sync::Arc::new(
-            SqliteSessionStore::open_in_memory().expect("in-memory sqlite failed"),
-        );
+        let store_arc: Arc<dyn anyclaw_core::DynSessionStore> =
+            Arc::new(SqliteSessionStore::open_in_memory().expect("in-memory sqlite failed"));
 
         let old_session = PersistedSession {
             session_key: "old-key".to_string(),
@@ -3629,7 +3650,7 @@ mod tests {
         let tools_task = tokio::spawn(serve_tools_urls(rx));
 
         let mut m = AgentsManager::new(mock_agents_manager_config(), handle)
-            .with_session_store(store_arc.clone())
+            .with_session_store(Arc::clone(&store_arc))
             .with_session_ttl_secs(1);
 
         m.start().await.expect("start failed");
@@ -3653,14 +3674,13 @@ mod tests {
         use anyclaw_core::{PersistedSession, SqliteSessionStore};
 
         let store = SqliteSessionStore::open_in_memory().expect("in-memory sqlite failed");
-        let store_arc: std::sync::Arc<dyn anyclaw_core::DynSessionStore> =
-            std::sync::Arc::new(store);
+        let store_arc: Arc<dyn anyclaw_core::DynSessionStore> = Arc::new(store);
 
         let (handle, rx) = make_tools_handle();
         let tools_task = tokio::spawn(serve_tools_urls(rx));
 
         let mut m = AgentsManager::new(mock_agents_manager_config(), handle)
-            .with_session_store(store_arc.clone());
+            .with_session_store(Arc::clone(&store_arc));
 
         m.start().await.expect("start failed");
 
@@ -3759,10 +3779,7 @@ mod tests {
         let mut slot = AgentSlot::new("test-agent".into(), mock_agent_config(), &cancel);
         let session_key = SessionKey::new("telegram", "direct", "alice");
         let acp_session_id = "acp-replay-1".to_string();
-        slot.session_map
-            .insert(session_key.clone(), acp_session_id.clone());
-        slot.reverse_map
-            .insert(acp_session_id.clone(), session_key.clone());
+        register_test_session(&mut slot, &session_key, &acp_session_id);
         slot.awaiting_first_prompt.insert(acp_session_id.clone());
         m.slots.push(slot);
 
@@ -3825,10 +3842,7 @@ mod tests {
         let mut slot = AgentSlot::new("test-agent".into(), mock_agent_config(), &cancel);
         let session_key = SessionKey::new("telegram", "direct", "alice");
         let acp_session_id = "acp-live-1".to_string();
-        slot.session_map
-            .insert(session_key.clone(), acp_session_id.clone());
-        slot.reverse_map
-            .insert(acp_session_id.clone(), session_key.clone());
+        register_test_session(&mut slot, &session_key, &acp_session_id);
         m.slots.push(slot);
 
         let params = serde_json::json!({

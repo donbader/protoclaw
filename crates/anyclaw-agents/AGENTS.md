@@ -7,10 +7,33 @@ Manages the agent subprocess lifecycle and implements the ACP (Agent Client Prot
 | File | Purpose |
 |------|---------|
 | `manager.rs` | `AgentsManager` — session lifecycle, command handling, crash recovery |
-| `connection.rs` | `AgentConnection` — subprocess spawn, JSON-RPC framing over piped stdio, direct bridge to manager |
-| `acp_types.rs` | ACP wire types: `InitializeParams`, `SessionNewParams`, `SessionPromptParams`, etc. |
+| `connection.rs` | `AgentConnection` — subprocess spawn, typed JSON-RPC framing over piped stdio, direct bridge to manager |
+| `platform_commands.rs` | `PlatformCommand` — typed platform commands with `Serialize`, `platform_commands_json()` for D-03 merging |
+| `slot.rs` | `AgentSlot` — per-agent state: session maps, capabilities, pending permissions |
+| `acp_types.rs` | ACP wire types: re-exports from `anyclaw-sdk-types` (`InitializeParams`, `SessionNewParams`, etc.) |
 | `acp_error.rs` | `AcpError` — protocol-level errors (version mismatch, etc.) |
 | `error.rs` | `AgentsError` — manager-level errors (spawn, timeout, connection) |
+
+## Typed Pipeline (Phase 3)
+
+- **Connection layer:** `AgentConnection` reads/writes `JsonRpcMessage` directly via `NdJsonCodec` — no `from_value`/`to_value` shims
+- **Pending requests:** `DashMap<u64, oneshot::Sender<JsonRpcResponse>>` — lock-free concurrent access replaces `Arc<Mutex<HashMap>>`
+- **Incoming messages:** `IncomingMessage::AgentRequest(JsonRpcRequest)` / `AgentNotification(JsonRpcRequest)` — typed, not raw Value
+- **Outbound responses:** `send_raw(JsonRpcResponse)` — typed response struct, not raw Value
+- **Permission flow:** `PendingPermission.request` is `JsonRpcRequest` — typed throughout
+- **Request handlers:** `handle_permission_request`, `handle_fs_read`, `handle_fs_write` extract params from `&JsonRpcRequest` internally
+
+## D-03 Value Boundaries
+
+Remaining `serde_json::Value` usages are documented D-03 extensible boundaries:
+
+- **Agent content mutation** (`add_received_timestamp`, `normalize_tool_event_fields`, `forward_session_update`): `DeliverMessage.content` stays as Value because the manager injects `_received_at_ms`, normalizes tool event fields, and merges platform commands — all raw JSON mutations
+- **Permission params** (`handle_permission_request`): agent-defined schemas where `requestId` location varies by agent implementation
+- **FS request params** (`handle_fs_read`, `handle_fs_write`): agent-defined path/content fields
+- **`session/update` params** (`handle_session_update`): deserialized into `SessionUpdateEvent` for typed dispatch, but raw Value forwarded as channel content
+- **`last_available_commands`** (slot.rs): stores arbitrary agent-reported `availableCommands` payload
+- **`platform_commands_json()`**: serialization boundary for merging typed `PlatformCommand` into agent content arrays
+- **`send_request`/`send_notification` params** (connection.rs): method-specific schemas cannot be typed at the connection layer
 
 ## ACP Methods (JSON-RPC 2.0)
 
