@@ -49,6 +49,8 @@ impl AggregatedToolServer {
         tools
     }
 
+    // D-03: args use serde_json::Value — tool call arguments are arbitrary JSON
+    // defined by each tool's input_schema. Cannot be typed at this layer.
     async fn route_call(
         &self,
         name: &str,
@@ -82,6 +84,7 @@ impl AggregatedToolServer {
         result
     }
 
+    // D-03: args use serde_json::Value — arbitrary tool call arguments (see route_call)
     async fn dispatch_tool_inner(
         &self,
         name: &str,
@@ -187,10 +190,10 @@ impl Manager for ToolsManager {
 
         let all_tools = self.load_all_tools(&wasm_configs)?;
         let native_host = Arc::new(McpHost::new(all_tools));
-        self.native_host = Some(native_host.clone());
+        self.native_host = Some(Arc::clone(&native_host));
 
         let external_servers = Arc::new(self.spawn_external_servers(&mcp_configs).await);
-        self.external_servers = Some(external_servers.clone());
+        self.external_servers = Some(Arc::clone(&external_servers));
 
         self.start_aggregated_server_if_needed(&native_host, &external_servers, &mcp_configs)
             .await?;
@@ -315,7 +318,7 @@ impl ToolsManager {
         );
 
         for (name, wasm_config) in wasm_configs {
-            match WasmTool::new(name.clone(), wasm_config.clone(), wasm_runner.clone()) {
+            match WasmTool::new(name.clone(), wasm_config.clone(), Arc::clone(&wasm_runner)) {
                 Ok(tool) => {
                     tracing::info!(name = %DynTool::name(&tool), "loaded WASM tool");
                     all_tools.push(Box::new(tool));
@@ -360,7 +363,7 @@ impl ToolsManager {
         }
 
         let (handle, url) = self
-            .spawn_aggregated_server(native_host.clone(), external_servers.clone())
+            .spawn_aggregated_server(Arc::clone(native_host), Arc::clone(external_servers))
             .await?;
         self.server_handles.push(handle);
         tracing::info!(url = %url, "tools aggregated MCP server listening");
@@ -402,8 +405,8 @@ impl ToolsManager {
             StreamableHttpService::new(
                 move || {
                     Ok(AggregatedToolServer::new(
-                        native_host.clone(),
-                        external_servers.clone(),
+                        Arc::clone(&native_host),
+                        Arc::clone(&external_servers),
                     ))
                 },
                 Default::default(),
@@ -434,6 +437,9 @@ mod tests {
     use super::*;
     use anyclaw_sdk_tool::{Tool, ToolSdkError};
 
+    // D-03: DummyTool implements the Tool trait which uses serde_json::Value
+    // for input_schema/execute — extensible tool boundary, cannot be typed.
+    #[allow(clippy::disallowed_types)]
     struct DummyTool {
         tool_name: String,
     }

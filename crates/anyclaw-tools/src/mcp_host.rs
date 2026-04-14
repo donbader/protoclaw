@@ -24,6 +24,8 @@ impl McpHost {
         self.server.build_tool_list()
     }
 
+    // D-03: args use serde_json::Value — tool call arguments are arbitrary JSON
+    // defined by each tool's input_schema. Cannot be typed at this layer.
     pub async fn dispatch_tool(
         &self,
         name: &str,
@@ -38,6 +40,9 @@ mod tests {
     use super::*;
     use anyclaw_sdk_tool::ToolSdkError;
 
+    // D-03: EchoTool implements the Tool trait which uses serde_json::Value
+    // for input_schema/execute — extensible tool boundary, cannot be typed.
+    #[allow(clippy::disallowed_types)]
     struct EchoTool;
 
     impl Tool for EchoTool {

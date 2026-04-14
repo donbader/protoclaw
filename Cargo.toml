@@ -49,6 +49,7 @@ bollard = "0.20"
 temp-env = "0.3"
 metrics = "0.24"
 metrics-exporter-prometheus = "0.18"
+dashmap = "6"
 
 [workspace.lints.clippy]
 unwrap_used = "warn"
