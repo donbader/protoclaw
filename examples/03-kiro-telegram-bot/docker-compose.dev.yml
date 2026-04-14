@@ -1,0 +1,15 @@
+# Local dev override: build anyclaw from workspace source instead of ghcr.io
+# NOT auto-loaded. Use via:
+# docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+services:
+  anyclaw:
+    build:
+      context: ../..
+      dockerfile: examples/03-kiro-telegram-bot/Dockerfile.dev-builder
+      target: example-03-kiro
+
+  kiro-agent-image:
+    build:
+      context: ../..
+      dockerfile: examples/03-kiro-telegram-bot/Dockerfile.dev-builder
+      target: kiro-agent

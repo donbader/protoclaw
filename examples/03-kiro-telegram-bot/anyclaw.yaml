@@ -1,0 +1,68 @@
+# Anyclaw Kiro Example — Docker Workspace
+# Kiro CLI runs in an isolated container managed by anyclaw via bollard.
+# Auth: set KIRO_API_KEY env var (Pro+), or pre-authenticate and mount ~/.kiro volume.
+# See README.md for both auth flows.
+
+log_level: "debug,hyper=warn,reqwest=warn,h2=warn,hyper_util=warn,tower=warn"
+extensions_dir: "/usr/local/bin"
+
+agents_manager:
+  acp_timeout_secs: 120
+  agents:
+    kiro:
+      workspace:
+        type: docker
+        image: "anyclaw-kiro-agent:latest"
+        entrypoint: ["kiro-cli", "acp"]
+        docker_host: "tcp://socket-proxy:2375"
+        network: "anyclaw-external"
+        working_dir: "/home/kiro/workspace"
+        pull_policy: "never"
+        volumes:
+          - "kiro-auth-data:/home/kiro/.local/share/kiro-cli"
+          - "kiro-agent-workspace:/home/kiro/workspace"
+        env:
+          KIRO_API_KEY: "${KIRO_API_KEY:}"
+      enabled: true
+      tools:
+        - "system-info"
+
+channels_manager:
+  channels:
+    debug-http:
+      binary: "@built-in/channels/debug-http"
+      agent: "kiro"
+      options:
+        HOST: "0.0.0.0"
+        PORT: "8080"
+      ack:
+        reaction: false
+        typing: false
+    telegram:
+      binary: "@built-in/channels/telegram"
+      enabled: "${TELEGRAM_ENABLED:false}"
+      agent: "kiro"
+      options:
+        TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:}"
+      ack:
+        reaction: true
+        reaction_emoji: "👀"
+        typing: true
+        reaction_lifecycle: "remove"
+
+tools_manager:
+  tools_server_host: "anyclaw"
+  tools:
+    system-info:
+      binary: "@built-in/tools/system-info"
+
+session_store:
+  type: sqlite
+  path: "/workspace/data/sessions.db"
+  ttl_days: 7
+
+supervisor:
+  shutdown_timeout_secs: 30
+  health_check_interval_secs: 5
+  max_restarts: 5
+  restart_window_secs: 60

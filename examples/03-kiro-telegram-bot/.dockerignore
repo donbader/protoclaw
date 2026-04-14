@@ -1,0 +1,13 @@
+target/
+.git/
+.planning/
+.claude/
+*.md
+!README.md
+*.yaml
+!anyclaw.yaml
+*.yml
+.env*
+docker-compose*
+Dockerfile
+docs/
