@@ -31,7 +31,7 @@ pub fn platform_commands_json() -> serde_json::Value {
         .iter()
         .map(|c| {
             serde_json::json!({
-                "command": format!("/{}", c.name),
+                "name": c.name,
                 "description": c.description,
             })
         })
@@ -59,15 +59,12 @@ mod tests {
     }
 
     #[test]
-    fn when_platform_commands_json_called_then_returns_array_with_slash_prefix() {
+    fn when_platform_commands_json_called_then_returns_array_with_name_field() {
         let val = platform_commands_json();
         let arr = val.as_array().expect("should be array");
         assert!(!arr.is_empty());
         for item in arr {
-            let cmd = item["command"]
-                .as_str()
-                .expect("command field must be string");
-            assert!(cmd.starts_with('/'), "command must start with /");
+            assert!(item["name"].as_str().is_some(), "name must be present");
             assert!(
                 item["description"].as_str().is_some(),
                 "description must be present"
