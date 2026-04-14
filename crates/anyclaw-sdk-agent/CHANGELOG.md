@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.7](https://github.com/donbader/anyclaw/compare/anyclaw-sdk-agent-v0.2.6...anyclaw-sdk-agent-v0.2.7) - 2026-04-14
+
+### Added
+
+- *(04-01)* type AgentAdapter trait with ACP structs
+
+### Fixed
+
+- *(01-02)* resolve all clippy warnings across workspace
+
+### Other
+
+- *(01-01)* propagate lint inheritance to all 19 workspace crates
+
 ## [0.2.6](https://github.com/donbader/anyclaw/compare/anyclaw-sdk-agent-v0.2.5...anyclaw-sdk-agent-v0.2.6) - 2026-04-14
 
 ### Other
