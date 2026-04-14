@@ -47,6 +47,9 @@ impl ToolServer {
     }
 
     /// Convert all registered tools into rmcp [`RmcpTool`] descriptors for `list_tools`.
+    ///
+    /// D-03: `input_schema()` returns `serde_json::Value` (JSON Schema has no fixed Rust type),
+    /// so the conversion to rmcp's `Map<String, Value>` is inherently Value-based.
     pub fn build_tool_list(&self) -> Vec<RmcpTool> {
         self.tools
             .values()
@@ -67,6 +70,11 @@ impl ToolServer {
     ///
     /// Returns an MCP protocol error only for unknown tool names; execution
     /// failures are returned as `CallToolResult::error` (content-level).
+    ///
+    /// D-03: `arguments` is `Map<String, Value>` from rmcp's `CallToolRequestParam` —
+    /// tool input shape is defined by the tool's JSON Schema, not a static Rust type.
+    /// The conversion to `Value::Object` and pattern matching on `Value::String` in the
+    /// result both flow from the Tool trait being Value-based (D-03).
     pub async fn dispatch_tool(
         &self,
         name: &str,

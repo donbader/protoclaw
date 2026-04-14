@@ -12,11 +12,13 @@
 /// Error types for tool SDK operations.
 pub mod error;
 /// MCP tool server that dispatches to [`Tool`] implementations.
-// Grandfathered: typed replacement in Phase 2-4
+// D-03 boundary: Tool I/O is inherently dynamic — JSON Schema input, arbitrary JSON output.
+// All Value usages in server.rs flow from the Tool trait contract being Value-based.
 #[allow(clippy::disallowed_types)]
 pub mod server;
 /// The [`Tool`] trait that tool authors implement.
-// Grandfathered: typed replacement in Phase 2-4
+// D-03 boundary: Tool I/O uses Value because tool input is defined by a JSON Schema
+// (no fixed Rust type) and tool output is arbitrary JSON. See trait_def.rs doc comments.
 #[allow(clippy::disallowed_types)]
 pub mod trait_def;
 
