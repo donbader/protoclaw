@@ -436,7 +436,24 @@ impl AgentsManager {
                 session_key,
                 reply,
             } => {
-                let result = self.create_session(&agent_name, session_key).await;
+                let slot_idx = find_slot_by_name(&self.slots, &agent_name);
+                let has_stale = slot_idx
+                    .map(|idx| self.slots[idx].stale_sessions.contains_key(&session_key))
+                    .unwrap_or(false);
+
+                let result = if has_stale {
+                    let idx = slot_idx.unwrap();
+                    match self.heal_session(idx, &agent_name, &session_key).await {
+                        Ok(()) => self.slots[idx]
+                            .session_map
+                            .get(&session_key)
+                            .cloned()
+                            .ok_or(AgentsError::ConnectionClosed),
+                        Err(e) => Err(e),
+                    }
+                } else {
+                    self.create_session(&agent_name, session_key).await
+                };
                 let _ = reply.send(result.map_err(|e| e.to_string()));
             }
             AgentsCommand::PromptSession {
