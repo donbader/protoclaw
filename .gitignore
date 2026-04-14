@@ -7,7 +7,7 @@ coverage/
 *.profraw
 
 # GSD planning (local-only)
-.planning/
+# .planning/
 docs/superpowers/
 
 # IDE / OS
