@@ -652,91 +652,142 @@ impl AgentsManager {
     }
 
     /// Attempt to recover a missing session before a prompt:
-    /// 1. Try `session/load` if the agent supports it and a stale ACP session ID exists.
-    /// 2. Fall back to `create_session` otherwise.
-    async fn heal_session(
-        &mut self,
-        slot_idx: usize,
-        agent_name: &str,
-        session_key: &SessionKey,
-    ) -> Result<(), AgentsError> {
-        let acp_timeout = Self::acp_timeout_for(&self.slots[slot_idx].config, &self.manager_config);
+     /// 1. Try `session/resume` if the agent supports it and a stale ACP session ID exists.
+     /// 2. Try `session/load` if the agent supports it and a stale ACP session ID exists.
+     /// 3. Fall back to `create_session` otherwise.
+     async fn heal_session(
+         &mut self,
+         slot_idx: usize,
+         agent_name: &str,
+         session_key: &SessionKey,
+     ) -> Result<(), AgentsError> {
+         let acp_timeout = Self::acp_timeout_for(&self.slots[slot_idx].config, &self.manager_config);
 
-        let stale_acp_id = self.slots[slot_idx]
-            .stale_sessions
-            .get(session_key)
-            .cloned();
+         let stale_acp_id = self.slots[slot_idx]
+             .stale_sessions
+             .get(session_key)
+             .cloned();
 
-        let supports_load = self.slots[slot_idx]
-            .agent_capabilities
-            .as_ref()
-            .and_then(|r| r.agent_capabilities.as_ref())
-            .is_some_and(|c| c.load_session);
+         let supports_resume = self.slots[slot_idx].has_session_capability(|c| c.resume.is_some());
+         let supports_load = self.slots[slot_idx]
+             .agent_capabilities
+             .as_ref()
+             .and_then(|r| r.agent_capabilities.as_ref())
+             .is_some_and(|c| c.load_session);
 
-        tracing::info!(
-            agent = %agent_name,
-            session_key = %session_key,
-            has_stale_acp_id = stale_acp_id.is_some(),
-            supports_load = supports_load,
-            step = "recovery_started",
-            "session recovery initiated"
-        );
+         tracing::info!(
+             agent = %agent_name,
+             session_key = %session_key,
+             has_stale_acp_id = stale_acp_id.is_some(),
+             supports_resume = supports_resume,
+             supports_load = supports_load,
+             step = "recovery_started",
+             "session recovery initiated"
+         );
 
-        if supports_load && let Some(acp_id) = stale_acp_id {
-            let cwd = resolve_agent_cwd(&self.slots[slot_idx].config.workspace)
-                .to_string_lossy()
-                .into_owned();
-            let mcp_servers = self.fetch_mcp_servers(slot_idx).await;
-            let params = match serde_json::to_value(SessionLoadParams {
-                session_id: acp_id.clone(),
-                cwd: Some(cwd),
-                mcp_servers: Some(mcp_servers),
-            }) {
-                Ok(v) => v,
-                Err(e) => {
-                    tracing::warn!(agent = %agent_name, error = %e, "failed to serialize session/load params");
-                    serde_json::Value::default()
-                }
-            };
+         if supports_resume && let Some(acp_id) = stale_acp_id.clone() {
+             let cwd = resolve_agent_cwd(&self.slots[slot_idx].config.workspace)
+                 .to_string_lossy()
+                 .into_owned();
+             let mcp_servers = self.fetch_mcp_servers(slot_idx).await;
+             let params = serde_json::json!({
+                 "sessionId": acp_id,
+                 "cwd": cwd,
+                 "mcpServers": serde_json::to_value(&mcp_servers).unwrap_or_default(),
+             });
 
-            let conn = self.slots[slot_idx]
-                .connection
-                .as_ref()
-                .ok_or(AgentsError::ConnectionClosed)?;
+             let conn = self.slots[slot_idx]
+                 .connection
+                 .as_ref()
+                 .ok_or(AgentsError::ConnectionClosed)?;
 
-            if let Ok(rx) = conn.send_request("session/load", params).await
-                && let Ok(Ok(resp)) = tokio::time::timeout(acp_timeout, rx).await
-                && resp.get("sessionId").is_some()
-            {
-                tracing::info!(
-                    agent = %agent_name,
-                    session_key = %session_key,
-                    step = "load_attempted",
-                    success = true,
-                    "session/load succeeded"
-                );
-                tracing::info!(
-                    agent = %agent_name,
-                    session_key = %session_key,
-                    step = "recovery_outcome",
-                    outcome = "loaded",
-                    "session recovery complete"
-                );
-                let slot = &mut self.slots[slot_idx];
-                slot.stale_sessions.remove(session_key);
-                slot.session_map.insert(session_key.clone(), acp_id.clone());
-                slot.reverse_map.insert(acp_id.clone(), session_key.clone());
-                slot.awaiting_first_prompt.insert(acp_id.clone());
-                return Ok(());
-            }
-            tracing::info!(
-                agent = %agent_name,
-                session_key = %session_key,
-                step = "load_attempted",
-                success = false,
-                "session/load rejected, falling back to create"
-            );
-        }
+             if let Ok(rx) = conn.send_request("session/resume", params).await
+                 && let Ok(Ok(resp)) = tokio::time::timeout(acp_timeout, rx).await
+                 && resp.get("sessionId").is_some()
+             {
+                 tracing::info!(
+                     agent = %agent_name,
+                     session_key = %session_key,
+                     step = "resume_attempted",
+                     success = true,
+                     "session/resume succeeded"
+                 );
+                 tracing::info!(
+                     agent = %agent_name,
+                     session_key = %session_key,
+                     step = "recovery_outcome",
+                     outcome = "resumed",
+                     "session recovery complete"
+                 );
+                 let slot = &mut self.slots[slot_idx];
+                 slot.stale_sessions.remove(session_key);
+                 slot.session_map.insert(session_key.clone(), acp_id.clone());
+                 slot.reverse_map.insert(acp_id.clone(), session_key.clone());
+                 // No awaiting_first_prompt for resume — no replay needed.
+                 return Ok(());
+             }
+             tracing::info!(
+                 agent = %agent_name,
+                 session_key = %session_key,
+                 step = "resume_attempted",
+                 success = false,
+                 "session/resume rejected, falling back to create"
+             );
+         } else if supports_load && let Some(acp_id) = stale_acp_id {
+             let cwd = resolve_agent_cwd(&self.slots[slot_idx].config.workspace)
+                 .to_string_lossy()
+                 .into_owned();
+             let mcp_servers = self.fetch_mcp_servers(slot_idx).await;
+             let params = match serde_json::to_value(SessionLoadParams {
+                 session_id: acp_id.clone(),
+                 cwd: Some(cwd),
+                 mcp_servers: Some(mcp_servers),
+             }) {
+                 Ok(v) => v,
+                 Err(e) => {
+                     tracing::warn!(agent = %agent_name, error = %e, "failed to serialize session/load params");
+                     serde_json::Value::default()
+                 }
+             };
+
+             let conn = self.slots[slot_idx]
+                 .connection
+                 .as_ref()
+                 .ok_or(AgentsError::ConnectionClosed)?;
+
+             if let Ok(rx) = conn.send_request("session/load", params).await
+                 && let Ok(Ok(resp)) = tokio::time::timeout(acp_timeout, rx).await
+                 && resp.get("sessionId").is_some()
+             {
+                 tracing::info!(
+                     agent = %agent_name,
+                     session_key = %session_key,
+                     step = "load_attempted",
+                     success = true,
+                     "session/load succeeded"
+                 );
+                 tracing::info!(
+                     agent = %agent_name,
+                     session_key = %session_key,
+                     step = "recovery_outcome",
+                     outcome = "loaded",
+                     "session recovery complete"
+                 );
+                 let slot = &mut self.slots[slot_idx];
+                 slot.stale_sessions.remove(session_key);
+                 slot.session_map.insert(session_key.clone(), acp_id.clone());
+                 slot.reverse_map.insert(acp_id.clone(), session_key.clone());
+                 slot.awaiting_first_prompt.insert(acp_id.clone());
+                 return Ok(());
+             }
+             tracing::info!(
+                 agent = %agent_name,
+                 session_key = %session_key,
+                 step = "load_attempted",
+                 success = false,
+                 "session/load rejected, falling back to create"
+             );
+         }
 
         self.slots[slot_idx].stale_sessions.remove(session_key);
         let acp_session_id = match self.create_session(agent_name, session_key.clone()).await {
@@ -787,9 +838,7 @@ impl AgentsManager {
             .ok_or_else(|| AgentsError::AgentNotFound(agent_name.to_string()))?;
 
         let slot = &self.slots[slot_idx];
-        // `session/fork` requires `unstable_session_fork` feature in the official ACP schema;
-        // treat as unsupported until the stable capability exists.
-        if !slot.has_session_capability(|_c| false) {
+        if !slot.has_session_capability(|c| c.fork.is_some()) {
             return Err(AgentsError::CapabilityNotSupported("fork".into()));
         }
 
@@ -1340,70 +1389,107 @@ impl AgentsManager {
         true
     }
 
-    async fn try_restore_session(
-        &mut self,
-        slot_idx: usize,
-        agent_name: &str,
-        acp_timeout: Duration,
-    ) -> bool {
-        let (supports_load, first_acp_id) = {
-            let slot = &self.slots[slot_idx];
-            let supports_load = slot
-                .agent_capabilities
-                .as_ref()
-                .and_then(|r| r.agent_capabilities.as_ref())
-                .is_some_and(|c| c.load_session);
-            let first_acp_id = slot.stale_sessions.values().next().cloned();
-            (supports_load, first_acp_id)
-        };
+     async fn try_restore_session(
+         &mut self,
+         slot_idx: usize,
+         agent_name: &str,
+         acp_timeout: Duration,
+     ) -> bool {
+         let (supports_resume, supports_load, first_acp_id) = {
+             let slot = &self.slots[slot_idx];
+             let supports_resume = slot.has_session_capability(|c| c.resume.is_some());
+             let supports_load = slot
+                 .agent_capabilities
+                 .as_ref()
+                 .and_then(|r| r.agent_capabilities.as_ref())
+                 .is_some_and(|c| c.load_session);
+             let first_acp_id = slot.stale_sessions.values().next().cloned();
+             (supports_resume, supports_load, first_acp_id)
+         };
 
-        if !supports_load {
-            return false;
-        }
+         let Some(first_acp_id) = first_acp_id else {
+             return false;
+         };
 
-        let Some(first_acp_id) = first_acp_id else {
-            return false;
-        };
+         if supports_resume {
+             let cwd = resolve_agent_cwd(&self.slots[slot_idx].config.workspace)
+                 .to_string_lossy()
+                 .into_owned();
+             let mcp_servers = self.fetch_mcp_servers(slot_idx).await;
+             let params = serde_json::json!({
+                 "sessionId": first_acp_id,
+                 "cwd": cwd,
+                 "mcpServers": serde_json::to_value(&mcp_servers).unwrap_or_default(),
+             });
 
-        let cwd = resolve_agent_cwd(&self.slots[slot_idx].config.workspace)
-            .to_string_lossy()
-            .into_owned();
-        let mcp_servers = self.fetch_mcp_servers(slot_idx).await;
-        let params = serde_json::to_value(SessionLoadParams {
-            session_id: first_acp_id,
-            cwd: Some(cwd),
-            mcp_servers: Some(mcp_servers),
-        })
-        .unwrap_or_else(|e| {
-            tracing::warn!(error = %e, agent = %agent_name, "failed to serialize session/load params, using null");
-            serde_json::Value::default()
-        });
+             let conn = self.slots[slot_idx].connection.as_ref().expect("connection just spawned");
+             let Ok(rx) = conn.send_request("session/resume", params).await else {
+                 tracing::warn!(agent = %agent_name, "session/resume failed, starting fresh session");
+                 return false;
+             };
 
-        let conn = self.slots[slot_idx].connection.as_ref().expect("connection just spawned");
-        let Ok(rx) = conn.send_request("session/load", params).await else {
-            tracing::warn!(agent = %agent_name, "session/load failed, starting fresh session");
-            return false;
-        };
+             match tokio::time::timeout(acp_timeout, rx).await {
+                 Ok(Ok(resp)) if resp.get("sessionId").is_some() => {
+                     tracing::info!(
+                         agent = %agent_name,
+                         step = "resume_attempted",
+                         success = true,
+                         "session restored via session/resume"
+                     );
+                     let slot = &mut self.slots[slot_idx];
+                     slot.session_map.extend(slot.stale_sessions.drain());
+                     // No awaiting_first_prompt for resume — no replay needed.
+                     slot.lifecycle.backoff.reset();
+                     return true;
+                 }
+                 _ => {
+                     tracing::warn!(agent = %agent_name, "session/resume failed, starting fresh session");
+                     return false;
+                 }
+             }
+         }
 
-        match tokio::time::timeout(acp_timeout, rx).await {
-            Ok(Ok(resp)) if resp.get("sessionId").is_some() => {
-                tracing::info!(agent = %agent_name, "session restored via session/load");
-                // Move stale sessions back into session_map — the agent confirmed it
-                // recognises the old ACP session IDs in the new process.
-                let slot = &mut self.slots[slot_idx];
-                slot.session_map.extend(slot.stale_sessions.drain());
-                for acp_id in slot.session_map.values() {
-                    slot.awaiting_first_prompt.insert(acp_id.clone());
-                }
-                slot.lifecycle.backoff.reset();
-                true
-            }
-            _ => {
-                tracing::warn!(agent = %agent_name, "session/load failed, starting fresh session");
-                false
-            }
-        }
-    }
+         if !supports_load {
+             return false;
+         }
+
+         let cwd = resolve_agent_cwd(&self.slots[slot_idx].config.workspace)
+             .to_string_lossy()
+             .into_owned();
+         let mcp_servers = self.fetch_mcp_servers(slot_idx).await;
+         let params = serde_json::to_value(SessionLoadParams {
+             session_id: first_acp_id,
+             cwd: Some(cwd),
+             mcp_servers: Some(mcp_servers),
+         })
+         .unwrap_or_else(|e| {
+             tracing::warn!(error = %e, agent = %agent_name, "failed to serialize session/load params, using null");
+             serde_json::Value::default()
+         });
+
+         let conn = self.slots[slot_idx].connection.as_ref().expect("connection just spawned");
+         let Ok(rx) = conn.send_request("session/load", params).await else {
+             tracing::warn!(agent = %agent_name, "session/load failed, starting fresh session");
+             return false;
+         };
+
+         match tokio::time::timeout(acp_timeout, rx).await {
+             Ok(Ok(resp)) if resp.get("sessionId").is_some() => {
+                 tracing::info!(agent = %agent_name, "session restored via session/load");
+                 let slot = &mut self.slots[slot_idx];
+                 slot.session_map.extend(slot.stale_sessions.drain());
+                 for acp_id in slot.session_map.values() {
+                     slot.awaiting_first_prompt.insert(acp_id.clone());
+                 }
+                 slot.lifecycle.backoff.reset();
+                 true
+             }
+             _ => {
+                 tracing::warn!(agent = %agent_name, "session/load failed, starting fresh session");
+                 false
+             }
+         }
+     }
 
     async fn restore_or_start_session(&mut self, slot_idx: usize, agent_name: &str) {
         // Drain session_map into stale_sessions so they survive the crash boundary.
