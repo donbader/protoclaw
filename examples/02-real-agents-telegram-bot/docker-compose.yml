@@ -25,6 +25,7 @@ services:
       - "8080:8080"
     volumes:
       - ./anyclaw.yaml:/workspace/anyclaw.yaml:ro
+      - anyclaw-data:/workspace/data
     env_file:
       - .env
     networks:
@@ -45,6 +46,9 @@ services:
     image: anyclaw-opencode-agent:latest
     entrypoint: ["true"]
     restart: "no"
+
+volumes:
+  anyclaw-data:
 
 networks:
   anyclaw-internal:

@@ -54,6 +54,11 @@ tools_manager:
     system-info:
       binary: "@built-in/tools/system-info"
 
+session_store:
+  type: sqlite
+  path: "/workspace/data/sessions.db"
+  ttl_days: 7
+
 supervisor:
   shutdown_timeout_secs: 30
   health_check_interval_secs: 5
