@@ -373,8 +373,6 @@ impl ChannelsManager {
             }
 
             if let Some(conn) = &slot.connection {
-                let mut content = content;
-                Self::inject_platform_commands(&mut content);
                 let params = serde_json::json!({
                     "sessionId": entry.acp_session_id,
                     "content": content,
@@ -607,13 +605,6 @@ impl ChannelsManager {
 
         let session_key = Self::build_session_key(&send_msg);
 
-        // Platform commands are handled locally — not forwarded to agents.
-        if crate::platform_commands::match_platform_command(&send_msg.content).is_some() {
-            return self
-                .handle_platform_command(slot_index, session_key, &send_msg)
-                .await;
-        }
-
         let agents_handle = self.agents_handle_for_collection(channel_name)?;
         let agent_name = self.agent_name_for_channel(slot_index).to_string();
 
@@ -643,97 +634,6 @@ impl ChannelsManager {
             self.queue.push_only(&session_key, content);
             Some(session_key)
         }
-    }
-
-    fn inject_platform_commands(content: &mut serde_json::Value) {
-        let is_available_commands_update = content
-            .pointer("/update/sessionUpdate")
-            .and_then(|v| v.as_str())
-            == Some("available_commands_update");
-        if !is_available_commands_update {
-            return;
-        }
-        let platform_cmds = crate::platform_commands::platform_commands_json();
-        let platform_arr = match platform_cmds {
-            serde_json::Value::Array(a) => a,
-            _ => return,
-        };
-        if let Some(update_obj) = content.get_mut("update").and_then(|v| v.as_object_mut()) {
-            let existing = update_obj
-                .get("availableCommands")
-                .and_then(|v| v.as_array())
-                .cloned()
-                .unwrap_or_default();
-            let mut merged = platform_arr;
-            merged.extend(existing);
-            update_obj.insert(
-                "availableCommands".to_string(),
-                serde_json::Value::Array(merged),
-            );
-        }
-    }
-
-    async fn handle_platform_command(
-        &mut self,
-        slot_index: usize,
-        session_key: SessionKey,
-        send_msg: &ChannelSendMessage,
-    ) -> Option<SessionKey> {
-        let agents_handle = self.agents_handle_for_collection(&self.slots[slot_index].name.clone())?;
-        let agent_name = self.agent_name_for_channel(slot_index).to_string();
-        let channel_id = self.slots[slot_index].channel_id.clone();
-
-        self.routing_table.remove(&session_key);
-        let _ = self.queue.flush_pending(&session_key);
-
-        let (reply_tx, reply_rx) = oneshot::channel();
-        if agents_handle
-            .send(AgentsCommand::CreateSession {
-                agent_name: agent_name.clone(),
-                session_key: session_key.clone(),
-                force_new: true,
-                reply: reply_tx,
-            })
-            .await
-            .is_err()
-        {
-            return None;
-        }
-
-        match reply_rx.await {
-            Ok(Ok(acp_session_id)) => {
-                self.routing_table.insert(
-                    session_key.clone(),
-                    RoutingEntry {
-                        _channel_id: channel_id,
-                        acp_session_id: acp_session_id.clone(),
-                        slot_index,
-                        agent_name,
-                    },
-                );
-                if let Some(conn) = &self.slots[slot_index].connection {
-                    let peer_info_json =
-                        serde_json::to_value(&send_msg.peer_info).unwrap_or_default();
-                    let params = serde_json::json!({
-                        "sessionId": acp_session_id,
-                        "peerInfo": peer_info_json,
-                    });
-                    let _ = conn
-                        .send_notification("channel/sessionCreated", params)
-                        .await;
-                }
-                tracing::info!(
-                    session_key = %session_key,
-                    acp_session_id = %acp_session_id,
-                    "platform /new: fresh session created"
-                );
-            }
-            _ => {
-                tracing::warn!(session_key = %session_key, "platform /new: failed to create fresh session");
-            }
-        }
-
-        None
     }
 
     /// Send ack notification to the channel for a session (at dispatch time, not inbound time).
@@ -880,7 +780,6 @@ impl ChannelsManager {
             .send(AgentsCommand::CreateSession {
                 agent_name: agent_name.to_string(),
                 session_key: session_key.clone(),
-                force_new: false,
                 reply: reply_tx,
             })
             .await

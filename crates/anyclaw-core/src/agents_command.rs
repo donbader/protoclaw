@@ -36,8 +36,6 @@ pub enum AgentsCommand {
     CreateSession {
         agent_name: String,
         session_key: SessionKey,
-        /// When `true`, skip stale-session recovery and always create a fresh session.
-        force_new: bool,
         reply: oneshot::Sender<Result<String, String>>,
     },
     PromptSession {

@@ -434,18 +434,12 @@ impl AgentsManager {
             AgentsCommand::CreateSession {
                 agent_name,
                 session_key,
-                force_new,
                 reply,
             } => {
                 let slot_idx = find_slot_by_name(&self.slots, &agent_name);
-                let has_stale = !force_new
-                    && slot_idx
-                        .map(|idx| self.slots[idx].stale_sessions.contains_key(&session_key))
-                        .unwrap_or(false);
-
-                if force_new && let Some(idx) = slot_idx {
-                    self.slots[idx].stale_sessions.remove(&session_key);
-                }
+                let has_stale = slot_idx
+                    .map(|idx| self.slots[idx].stale_sessions.contains_key(&session_key))
+                    .unwrap_or(false);
 
                 let result = if has_stale {
                     let idx = slot_idx.unwrap();
@@ -575,6 +569,13 @@ impl AgentsManager {
         let slot_idx = find_slot_by_name(&self.slots, agent_name)
             .ok_or_else(|| AgentsError::AgentNotFound(agent_name.to_string()))?;
 
+        // Platform commands are handled in the agents layer — not forwarded to the agent process.
+        if let Some(cmd) = crate::platform_commands::match_platform_command(message) {
+            return self
+                .handle_platform_command(cmd.name, slot_idx, agent_name, session_key)
+                .await;
+        }
+
         if !self.slots[slot_idx].session_map.contains_key(session_key) {
             self.heal_session(slot_idx, agent_name, session_key).await?;
         }
@@ -669,6 +670,37 @@ impl AgentsManager {
         }
 
         Ok(())
+    }
+
+    async fn handle_platform_command(
+        &mut self,
+        command: &str,
+        slot_idx: usize,
+        agent_name: &str,
+        session_key: &SessionKey,
+    ) -> Result<(), AgentsError> {
+        match command {
+            "new" => {
+                self.slots[slot_idx].session_map.remove(session_key);
+                self.slots[slot_idx]
+                    .reverse_map
+                    .retain(|_, v| v != session_key);
+                let acp_id = self
+                    .create_session(agent_name, session_key.clone())
+                    .await?;
+                tracing::info!(
+                    agent = %agent_name,
+                    session_key = %session_key,
+                    acp_session_id = %acp_id,
+                    "platform command /new: fresh session created"
+                );
+                Ok(())
+            }
+            _ => {
+                tracing::warn!(command = %command, "unknown platform command — ignoring");
+                Ok(())
+            }
+        }
     }
 
     /// Attempt to recover a missing session before a prompt:
@@ -1029,6 +1061,14 @@ impl AgentsManager {
         normalize_tool_event_fields(&mut content, update_type);
 
         if update_type == "available_commands_update" {
+            if let Some(cmds) = content
+                .pointer_mut("/update/availableCommands")
+                .and_then(|v| v.as_array_mut())
+                && let serde_json::Value::Array(platform_arr) =
+                    crate::platform_commands::platform_commands_json()
+            {
+                cmds.extend(platform_arr);
+            }
             self.slots[slot_idx].last_available_commands = Some(content.clone());
         }
 

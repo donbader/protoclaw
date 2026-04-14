@@ -6,6 +6,7 @@ pub mod docker_backend;
 pub mod error;
 pub mod local_backend;
 pub mod manager;
+pub mod platform_commands;
 pub mod slot;
 
 pub use anyclaw_core::{
