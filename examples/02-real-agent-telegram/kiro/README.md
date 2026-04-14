@@ -1,4 +1,4 @@
-# Example 03: Kiro Agent Bot
+# Kiro Agent Variant
 
 An anyclaw bot using [Kiro CLI](https://kiro.dev/cli/) as the AI agent. Kiro runs in an isolated Docker container using ACP mode (`kiro-cli acp`).
 

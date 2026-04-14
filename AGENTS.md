@@ -57,6 +57,7 @@ anyclaw/
 | ACP↔HTTP bridge | `ext/agents/acp-bridge/` | Translates ACP stdio to HTTP REST+SSE |
 | Add test helper | `crates/anyclaw-test-helpers/` | Shared across all crate tests |
 | Integration tests | `tests/integration/tests/e2e.rs` | Requires `cargo build` first (needs mock-agent binary) |
+| Add agent variant | `examples/02-real-agent-telegram/AGENTS.md` | Copy existing variant, follow the guide |
 | Dev iteration (contributor) | `examples/02-real-agent-telegram/opencode/docker-compose.dev.yml` | Override: `docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build` |
 
 ## Crate Dependency Flow

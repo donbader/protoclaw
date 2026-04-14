@@ -1,6 +1,6 @@
-# Example 02: Real Agent Bot
+# OpenCode Agent Variant
 
-A anyclaw bot with a real AI agent. OpenCode runs in an isolated Docker container using direct ACP mode (`opencode acp`) — no wrapper binary needed.
+An anyclaw bot with OpenCode as the AI agent. OpenCode runs in an isolated Docker container using direct ACP mode (`opencode acp`).
 
 ## Quick Start
 
@@ -67,28 +67,7 @@ Two Docker networks:
 
 The [docker-socket-proxy](https://github.com/Tecnativa/docker-socket-proxy) restricts Docker API to containers and images only. Agent containers get `cap_drop: ALL` and `no-new-privileges`.
 
-## Switching Agents
-
-OpenCode is the default agent. To use a different agent:
-
-### Claude Code
-
-1. Build a claude-code agent image (replace the opencode-agent stage in Dockerfile):
-   ```dockerfile
-   FROM node:20-slim AS opencode-agent
-   RUN npm install -g @anthropic-ai/claude-code --omit=dev
-   USER node
-   WORKDIR /home/node
-   ENTRYPOINT ["claude", "--acp"]
-   ```
-2. Update `anyclaw.yaml`: change `entrypoint: ["opencode", "acp"]` to `entrypoint: ["claude", "--acp"]`
-3. Rebuild: `docker compose up --build -d`
-
-### Kiro
-
-1. Build a kiro agent image (replace the opencode-agent stage in Dockerfile with Kiro CLI installation)
-2. Update `anyclaw.yaml`: change `entrypoint: ["opencode", "acp"]` to `entrypoint: ["kiro", "--acp"]` (verify Kiro's ACP flag)
-3. Rebuild: `docker compose up --build -d`
+See the [parent AGENTS.md](../AGENTS.md) for how to add a new agent variant (e.g., Claude Code).
 
 ## Files
 
