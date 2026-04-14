@@ -12,7 +12,7 @@ A crate-by-crate quality pass across the anyclaw workspace. Starts with tooling 
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Tooling & Lint Infrastructure** - Workspace lints, clippy.toml, rustfmt.toml, deny.toml, coverage setup, dead code removal
+- [x] **Phase 1: Tooling & Lint Infrastructure** - Workspace lints, clippy.toml, rustfmt.toml, deny.toml, coverage setup, dead code removal (completed 2026-04-14)
 - [ ] **Phase 2: Leaf Crate Quality** - Typed JSON in sdk-types/jsonrpc/core, error enum audit, serde consistency
 - [ ] **Phase 3: Manager Crate Quality** - Typed JSON in agents/channels/tools, clone reduction, DashMap migration
 - [ ] **Phase 4: SDK & External Polish** - Typed JSON in SDK + ext binaries, docs enforcement, inline limitation comments
@@ -31,7 +31,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. `cargo deny check` validates advisories, bans, and sources (not just licenses)
   4. `cargo llvm-cov` runs successfully and produces a baseline coverage report
   5. No unused imports or stale modules remain anywhere in the workspace
-**Plans:** 3 plans
+**Plans:** 3/3 plans complete
 Plans:
 - [x] 01-01-PLAN.md — Lint config files (clippy.toml, rustfmt.toml, deny.toml, workspace lints) + propagation to all crates
 - [x] 01-02-PLAN.md — Fix all clippy warnings, dead code removal, unused imports cleanup
@@ -46,7 +46,11 @@ Plans:
   2. Every library crate uses thiserror with a typed error enum — no anyhow in library code
   3. Zero bare `.unwrap()` calls exist in production code (all replaced with `.expect("reason")` or `?`)
   4. All SDK wire types use `#[serde(rename_all = "camelCase")]` and all config types use `snake_case`
-**Plans**: TBD
+**Plans:** 3 plans
+Plans:
+- [ ] 02-01-PLAN.md — Type anyclaw-sdk-types: replace Value with typed structs, fix unwraps, serde consistency
+- [ ] 02-02-PLAN.md — Type anyclaw-jsonrpc: typed RequestId, typed codec, error audit
+- [ ] 02-03-PLAN.md — Type anyclaw-core + fix downstream compilation for workspace build
 
 ### Phase 3: Manager Crate Quality
 **Goal**: The three manager crates (agents, channels, tools) use typed data throughout, have reduced clone overhead, and use lock-free concurrent maps — the heaviest crates are clean
@@ -101,7 +105,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Tooling & Lint Infrastructure | 0/0 | Not started | - |
+| 1. Tooling & Lint Infrastructure | 3/3 | Complete    | 2026-04-14 |
 | 2. Leaf Crate Quality | 0/0 | Not started | - |
 | 3. Manager Crate Quality | 0/0 | Not started | - |
 | 4. SDK & External Polish | 0/0 | Not started | - |

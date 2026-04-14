@@ -123,3 +123,221 @@ cargo build --bin mock-agent --bin debug-http   # Required BEFORE integration te
 cargo test -p integration                      # E2E tests (needs binaries built first)
 cargo clippy --workspace                       # Lint all crates
 ```
+
+<!-- GSD:project-start source:PROJECT.md -->
+## Project
+
+**Anyclaw — Code Quality Milestone**
+
+A comprehensive code quality improvement pass across the entire anyclaw workspace — 12 core crates, external binaries, and examples. The goal is to make every crate feel intentional: typed JSON everywhere, consistent error handling, dead code removed, full test coverage, zero clippy warnings. Crate-by-crate, breaking changes allowed.
+
+**Core Value:** Every line of code should be there for a reason, with typed data flowing through typed interfaces — no `serde_json::Value` soup, no bare unwraps, no inconsistent patterns across crates.
+
+### Constraints
+
+- **No unsafe**: Zero unsafe blocks exist. Do not introduce any.
+- **No mod.rs**: Flat lib.rs with pub mod + pub use. Convention must be maintained.
+- **Manager communication**: tokio::sync::mpsc via ManagerHandle only. No shared mutable state across managers.
+- **Boot order**: tools → agents → channels. Do not change MANAGER_ORDER.
+- **Test framework**: rstest 0.23 with BDD naming. All new tests must follow this.
+<!-- GSD:project-end -->
+
+<!-- GSD:stack-start source:codebase/STACK.md -->
+## Technology Stack
+
+## Languages
+- Rust, Edition 2024, MSRV 1.94 — all workspace crates
+- YAML — configuration (`anyclaw.yaml`, `defaults.yaml`)
+- WAT/WASM — sandboxed tool modules
+## Runtime
+- Tokio async runtime (multi-threaded `rt-multi-thread`)
+- Tokio version: `1.50`
+- Feature sets vary per crate; heaviest in `anyclaw-agents`: `fs`, `io-util`, `macros`, `net`, `process`, `rt`, `rt-multi-thread`, `sync`, `time`
+- Cargo with workspace resolver v2
+- Lockfile: `Cargo.lock` present (workspace)
+## Frameworks
+- Axum `0.8` — HTTP server (debug-http channel, supervisor health/metrics endpoint, MCP aggregated tool server)
+- Teloxide `0.17` — Telegram Bot API (in `ext/channels/telegram`, features: `macros`, `rustls`, `ctrlc_handler`)
+- rmcp `1.4` — MCP protocol client/server (in `anyclaw-tools` and `anyclaw-sdk-tool`, features: `client`, `server`, `transport-io`, `transport-child-process`, `transport-streamable-http-server`)
+- rstest `0.26` — parameterized/fixture-based test framework (all crates)
+- tokio-test `0.4` — async test utilities
+- test-log `0.2` — tracing-aware test logging (integration tests, test-helpers)
+- temp-env `0.3` — scoped env var manipulation in tests
+- Cargo workspace — 12 core crates + 5 ext binaries + 1 example tool + 1 integration test package
+- mold linker via clang for musl targets (`.cargo/config.toml`)
+- Release profile: `strip = true`, `lto = "thin"`
+## Key Dependencies
+- `tokio` `1.50` — async runtime, subprocess management, channels, timers
+- `serde` `1` (with `derive`) — serialization for all config and wire types
+- `serde_json` `1` — JSON parsing/generation throughout
+- `agent-client-protocol-schema` `0.11` — ACP wire type definitions (features: `unstable_session_resume`, `unstable_session_fork`)
+- `thiserror` `2` — typed error enums in all library crates
+- `anyhow` `1` — entry points only (`main.rs`, `supervisor.rs`, `init.rs`, `status.rs`)
+- `tracing` `0.1` — structured logging/spans throughout
+- `tracing-subscriber` `0.3` (features: `env-filter`, `json`) — log output formatting
+- `metrics` `0.24` — runtime metrics collection
+- `metrics-exporter-prometheus` `0.18` — Prometheus metrics endpoint
+- `tokio-util` `0.7` (features: `codec`) — `LinesCodec` for NDJSON framing
+- `tokio-stream` `0.1` (features: `sync`) — stream adapters for channel broadcast
+- `futures` `0.3` — future combinators
+- `bytes` `1` — byte buffer primitives for codec
+- `uuid` `1` (features: `v4`) — session and message IDs
+- `clap` `4` (features: `derive`, `env`) — CLI argument parsing
+- `reqwest` `0.12` (features: `json`, `rustls-tls`, `stream`) — HTTP client (CLI status command, integration tests)
+- `bollard` `0.20` — Docker Engine API client (agent Docker workspace support)
+- `figment` `0.10` (features: `toml`, `yaml`, `env`) — layered config loading
+- `yaml_serde` `0.10` (aliased as `serde_yaml`) — YAML parsing
+- `subst` `0.3` — `${VAR}` environment variable substitution in YAML
+- `rusqlite` `0.31` (features: `bundled`) — SQLite session persistence (in `anyclaw-core`)
+- `wasmtime` `43` — WASM runtime engine
+- `wasmtime-wasi` `43` — WASI host implementation for sandboxed tools
+- `schemars` `1` — JSON Schema generation for tool input schemas (in `anyclaw-sdk-tool`)
+- `regex` `1` — pattern matching (in `ext/channels/telegram`)
+## Configuration
+- Layered: embedded `defaults.yaml` → user `anyclaw.yaml` (with `${VAR}` substitution) → env vars (`ANYCLAW_` prefix, `__` separator)
+- Config file: `crates/anyclaw-config/src/defaults.yaml`
+- Config types: `crates/anyclaw-config/src/types.rs`
+- Config loading: `crates/anyclaw-config/src/lib.rs`
+- Workspace root: `Cargo.toml` (all deps centralized via `[workspace.dependencies]`)
+- Linker config: `.cargo/config.toml` (mold via clang for `x86_64-unknown-linux-musl` and `aarch64-unknown-linux-musl`)
+- Release profile: strip symbols, thin LTO
+## Platform Requirements
+- Rust 1.94+ (edition 2024)
+- No `rust-toolchain.toml` — relies on MSRV in `Cargo.toml`
+- Docker deployment (Alpine musl targets with mold linker)
+- Dockerfiles: `Dockerfile` (root), `examples/01-fake-agent-telegram-bot/Dockerfile.mock-agent`, `examples/02-real-agents-telegram-bot/Dockerfile`, `tests/integration/Dockerfile.mock-agent`
+- SQLite bundled (no external DB dependency)
+## Notable Patterns
+- All shared deps declared in `[workspace.dependencies]` in root `Cargo.toml`
+- Crates reference via `{ workspace = true }` with per-crate feature overrides
+- `anyclaw-sdk-types` `0.4.0`, `anyclaw-sdk-channel` `0.2.7`, `anyclaw-sdk-tool` `0.2.5`, `anyclaw-sdk-agent` `0.2.5`
+- Licensed MIT OR Apache-2.0, with readme, keywords, categories
+- Internal crates have `publish = false`
+- `agent-client-protocol-schema`: `unstable_session_resume`, `unstable_session_fork`
+- `rmcp`: split across consumer crates — `anyclaw-tools` uses `client`, `server`, `transport-io`, `transport-child-process`, `transport-streamable-http-server`; `anyclaw-sdk-tool` uses `server`, `transport-io`
+<!-- GSD:stack-end -->
+
+<!-- GSD:conventions-start source:CONVENTIONS.md -->
+## Conventions
+
+## Error Handling
+#[derive(Debug, Error)]
+- Production code: use `.expect("reason")` for true invariants, `?` for fallible paths
+- Prefer `unwrap_or_else(|| { tracing::warn!(...); Default::default() })` over bare `unwrap_or_default()` to make silent fallbacks visible in logs
+- Bare `.unwrap()` is allowed only in tests
+## Module Organization
+## Naming Conventions
+- `when_action_then_result` — most common
+- `given_precondition_when_action_then_result` — when setup matters
+- Fixture functions: `fn given_*()` (rstest fixtures)
+- Parameterized cases: `#[case::label_name]`
+#[test]
+#[test]
+## Async Patterns
+## Trait Patterns
+- `AgentAdapter` (`crates/anyclaw-sdk-agent/src/adapter.rs`) — per-method hooks with default passthrough impls
+- `Channel` (`crates/anyclaw-sdk-channel/src/trait_def.rs`) — messaging integration lifecycle
+- `Tool` (`crates/anyclaw-sdk-tool/src/trait_def.rs`) — MCP tool execution
+## Logging & Observability
+#[tracing::instrument(skip(slot), fields(agent = %slot.name()))]
+- `tracing::error!` — crash loops, fatal failures, respawn failures
+- `tracing::warn!` — recoverable errors, fallback paths, deserialization failures, missing routing entries
+- `tracing::info!` — lifecycle events (session started, agent recovered, manager running/stopped), permission flow
+- `tracing::debug!` — message routing, session updates, per-event tracing
+## Configuration Patterns
+## Code Quality Indicators
+<!-- GSD:conventions-end -->
+
+<!-- GSD:architecture-start source:ARCHITECTURE.md -->
+## Architecture
+
+## Pattern Overview
+- Supervisor orchestrates three independent managers (tools → agents → channels)
+- All external processes (agents, channels, MCP tools) run as isolated subprocesses communicating via JSON-RPC 2.0 over stdio
+- Inter-manager communication uses `tokio::sync::mpsc` channels via typed `ManagerHandle<C>` — no shared mutable state
+- Crash isolation per-manager and per-channel with exponential backoff and crash loop detection
+## Layers
+- Purpose: CLI parsing, tracing init, supervisor bootstrap
+- Location: `crates/anyclaw/src/`
+- Contains: `main.rs` (entry), `cli.rs` (Clap derive), `supervisor.rs` (re-export), `init.rs`, `status.rs`, `banner.rs`
+- Depends on: `anyclaw-supervisor`, `anyclaw-config`, `anyclaw-core`
+- Purpose: Boot/shutdown orchestration, health monitoring, crash recovery
+- Location: `crates/anyclaw-supervisor/src/lib.rs`
+- Contains: `Supervisor` struct, `ManagerSlot`, `ManagerKind` enum, `create_manager()` factory, `admin_server` module
+- Depends on: `anyclaw-agents`, `anyclaw-channels`, `anyclaw-tools`, `anyclaw-core`, `anyclaw-config`
+- Key constant: `MANAGER_ORDER: [&str; 3] = ["tools", "agents", "channels"]` — boot order is load-bearing, DO NOT change
+- Purpose: Domain-specific lifecycle management for tools, agents, and channels
+- Location: `crates/anyclaw-tools/`, `crates/anyclaw-agents/`, `crates/anyclaw-channels/`
+- All implement the `Manager` trait from `crates/anyclaw-core/src/manager.rs`
+- Each manager owns its subprocess connections and internal state
+- Purpose: Shared primitives — Manager trait, backoff, crash tracking, cross-manager command types, session persistence
+- Location: `crates/anyclaw-core/src/`
+- Contains: `Manager` trait, `ManagerHandle<C>`, `ExponentialBackoff`, `CrashTracker`, `SessionStore` trait, ID newtypes
+- Used by: All internal crates
+- Purpose: Traits and harnesses for external implementors building agents, channels, or tools
+- Location: `crates/anyclaw-sdk-types/`, `crates/anyclaw-sdk-agent/`, `crates/anyclaw-sdk-channel/`, `crates/anyclaw-sdk-tool/`
+- `anyclaw-sdk-types` is a dependency-free leaf crate with shared wire types
+- Each SDK crate defines a trait + harness/server that handles JSON-RPC framing
+- Purpose: Figment-based config loading with defaults → YAML → env var layering
+- Location: `crates/anyclaw-config/src/`
+- Contains: `AnyclawConfig`, `AgentConfig`, `ChannelConfig`, `McpServerConfig`, binary path resolution
+## Manager Implementations
+- Spawns external MCP server subprocesses via `ExternalMcpServer` (`crates/anyclaw-tools/src/external.rs`)
+- Loads WASM-sandboxed tools via `WasmToolRunner` (`crates/anyclaw-tools/src/wasm_runner.rs`) with per-invocation fuel budgets and WASI isolation
+- Hosts an `AggregatedToolServer` implementing rmcp's `ServerHandler` — merges native, WASM, and external tools into a single MCP endpoint over HTTP (StreamableHttpService, stateful mode)
+- Advertises tool URLs to agents via `ToolsCommand::GetMcpUrls`
+- Receives commands via `ManagerHandle<ToolsCommand>`
+- Manages agent subprocess lifecycle via `AgentConnection` (`crates/anyclaw-agents/src/connection.rs`)
+- Implements ACP (Agent Client Protocol) over JSON-RPC 2.0 stdio: `initialize`, `session/new`, `session/prompt`, `session/cancel`, `session/load`, `session/resume`
+- Supports two spawn backends: `LocalBackend` (`local_backend.rs`) and `DockerBackend` (`docker_backend.rs`)
+- Multi-session model: `session_map: HashMap<SessionKey, String>` maps channel identity → ACP session ID
+- Crash recovery: respawn → re-initialize → attempt `session/resume` (preferred) or `session/load` (fallback) → fresh session if both fail
+- Session persistence via `SessionStore` trait (`crates/anyclaw-core/src/session_store.rs`) with SQLite implementation (`sqlite_session_store.rs`)
+- Bridge-collapsed architecture: `spawn_with_bridge()` pushes incoming messages directly to manager's shared channel — no intermediate forwarding task
+- Receives commands via `ManagerHandle<AgentsCommand>`, sends events to channels via `mpsc::Sender<ChannelEvent>`
+- Manages channel subprocesses via `ChannelConnection` (`crates/anyclaw-channels/src/connection.rs`)
+- Per-channel crash isolation: each channel gets its own `ChannelSlot` with independent backoff and crash tracker
+- Session-keyed routing: `routing_table: HashMap<SessionKey, RoutingEntry>` maps session key → (channel_id, acp_session_id, slot_index)
+- Per-session FIFO message queue (`SessionQueue` in `crates/anyclaw-channels/src/session_queue.rs`) with two-phase collect+flush for message merging
+- Port discovery: channel subprocesses emit `PORT:{n}` to stderr, forwarded via `watch::Receiver<u16>`
+- Receives commands via `ManagerHandle<ChannelsCommand>`, receives events from agents via `mpsc::Receiver<ChannelEvent>`
+## Data Flow
+- Session state: `SessionStore` trait with `SqliteSessionStore` (rusqlite, bundled) or `NoopSessionStore`
+- Per-session message queue: `SessionQueue` in `ChannelsManager` (in-memory FIFO)
+- Routing table: `HashMap<SessionKey, RoutingEntry>` in `ChannelsManager` (in-memory)
+## Error Handling
+- Library crates define domain-specific error enums: `ManagerError` (`crates/anyclaw-core/src/error.rs`), `AgentsError` (`crates/anyclaw-agents/src/error.rs`), `ChannelsError` (`crates/anyclaw-channels/src/error.rs`), `ToolsError` (`crates/anyclaw-tools/src/error.rs`), `AcpError` (`crates/anyclaw-agents/src/acp_error.rs`)
+- `SupervisorError` in `crates/anyclaw-supervisor/src/lib.rs` wraps `ManagerError` with manager name context
+- `anyhow` permitted only in: `crates/anyclaw/src/main.rs`, `init.rs`, `status.rs`
+- Failed external MCP servers and invalid WASM modules are logged and skipped — not fatal to startup
+- Bad channel binaries log errors and continue with `connection: None` — don't block other channels
+- Use `.expect("reason")` for true invariants, `?` for fallible paths, bare `.unwrap()` only in tests
+## Cross-Cutting Concerns
+## Key Design Decisions
+<!-- GSD:architecture-end -->
+
+<!-- GSD:skills-start source:skills/ -->
+## Project Skills
+
+No project skills found. Add skills to any of: `.claude/skills/`, `.agents/skills/`, `.cursor/skills/`, or `.github/skills/` with a `SKILL.md` index file.
+<!-- GSD:skills-end -->
+
+<!-- GSD:workflow-start source:GSD defaults -->
+## GSD Workflow Enforcement
+
+Before using Edit, Write, or other file-changing tools, start work through a GSD command so planning artifacts and execution context stay in sync.
+
+Use these entry points:
+- `/gsd-quick` for small fixes, doc updates, and ad-hoc tasks
+- `/gsd-debug` for investigation and bug fixing
+- `/gsd-execute-phase` for planned phase work
+
+Do not make direct repo edits outside a GSD workflow unless the user explicitly asks to bypass it.
+<!-- GSD:workflow-end -->
+
+<!-- GSD:profile-start -->
+## Developer Profile
+
+> Profile not yet configured. Run `/gsd-profile-user` to generate your developer profile.
+> This section is managed by `generate-claude-profile` -- do not edit manually.
+<!-- GSD:profile-end -->
