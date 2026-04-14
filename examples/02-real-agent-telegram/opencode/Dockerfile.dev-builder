@@ -56,7 +56,7 @@ COPY --from=builder /tmp/debug-http /usr/local/bin/channels/debug-http
 COPY --from=builder /tmp/telegram-channel /usr/local/bin/channels/telegram
 COPY --from=builder /tmp/system-info /usr/local/bin/tools/system-info
 WORKDIR /workspace
-COPY examples/02-real-agents-telegram-bot/anyclaw.yaml /workspace/anyclaw.yaml
+COPY examples/02-real-agent-telegram/opencode/anyclaw.yaml /workspace/anyclaw.yaml
 ENTRYPOINT ["anyclaw"]
 
 FROM node:20-slim@sha256:f93745c153377ee2fbbdd6e24efcd03cd2e86d6ab1d8aa9916a3790c40313a55 AS opencode-agent
@@ -65,7 +65,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=opencode-deps /usr/local/lib/node_modules /usr/local/lib/node_modules
 COPY --from=opencode-deps /usr/local/bin /usr/local/bin
 RUN mkdir -p /home/node/.config/opencode
-COPY examples/02-real-agents-telegram-bot/README.md examples/02-real-agents-telegram-bot/.opencode* /tmp/build-staging/
+COPY examples/02-real-agent-telegram/opencode/README.md examples/02-real-agent-telegram/opencode/.opencode* /tmp/build-staging/
 RUN if [ -f /tmp/build-staging/opencode.json ]; then \
       cp /tmp/build-staging/opencode.json /home/node/.config/opencode/ && \
       cp /tmp/build-staging/package*.json /home/node/.config/opencode/ 2>/dev/null || true; \

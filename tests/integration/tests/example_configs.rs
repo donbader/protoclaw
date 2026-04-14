@@ -44,7 +44,7 @@ fn given_example_02_yaml_when_loaded_via_figment_jail_then_config_parses() {
 
         jail.create_file(
             "anyclaw.yaml",
-            include_str!("../../../examples/02-real-agents-telegram-bot/anyclaw.yaml"),
+            include_str!("../../../examples/02-real-agent-telegram/opencode/anyclaw.yaml"),
         )?;
 
         let config =
@@ -113,5 +113,5 @@ fn given_example_01_when_docker_compose_config_runs_then_syntax_is_valid() {
 #[test]
 #[ignore] // requires docker
 fn given_example_02_when_docker_compose_config_runs_then_syntax_is_valid() {
-    validate_docker_compose("02-real-agents-telegram-bot");
+    validate_docker_compose("02-real-agent-telegram/opencode");
 }

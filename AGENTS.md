@@ -30,7 +30,9 @@ anyclaw/
 │   └── integration/                # E2E tests (spawn real supervisor + mock-agent)
 ├── examples/01-fake-agent-telegram-bot/  # Fake agent example (Docker, mock-agent, debug-http)
 │   └── tools/system-info/          # Demo MCP tool binary (uses anyclaw-sdk-tool)
-└── examples/02-real-agents-telegram-bot/ # Real agent example (Docker, opencode, debug-http + telegram)
+└── examples/02-real-agent-telegram/      # Real agent examples (Docker, debug-http + telegram)
+    ├── opencode/                           # OpenCode agent variant
+    └── kiro/                               # Kiro CLI agent variant
 ```
 
 ## Where to Look
@@ -55,7 +57,7 @@ anyclaw/
 | ACP↔HTTP bridge | `ext/agents/acp-bridge/` | Translates ACP stdio to HTTP REST+SSE |
 | Add test helper | `crates/anyclaw-test-helpers/` | Shared across all crate tests |
 | Integration tests | `tests/integration/tests/e2e.rs` | Requires `cargo build` first (needs mock-agent binary) |
-| Dev iteration (contributor) | `examples/02-real-agents-telegram-bot/docker-compose.dev.yml` | Override: `docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build` |
+| Dev iteration (contributor) | `examples/02-real-agent-telegram/opencode/docker-compose.dev.yml` | Override: `docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build` |
 
 ## Crate Dependency Flow
 
@@ -205,7 +207,7 @@ A comprehensive code quality improvement pass across the entire anyclaw workspac
 - Rust 1.94+ (edition 2024)
 - No `rust-toolchain.toml` — relies on MSRV in `Cargo.toml`
 - Docker deployment (Alpine musl targets with mold linker)
-- Dockerfiles: `Dockerfile` (root), `examples/01-fake-agent-telegram-bot/Dockerfile.mock-agent`, `examples/02-real-agents-telegram-bot/Dockerfile`, `tests/integration/Dockerfile.mock-agent`
+- Dockerfiles: `Dockerfile` (root), `examples/01-fake-agent-telegram-bot/Dockerfile.mock-agent`, `examples/02-real-agent-telegram/opencode/Dockerfile`, `examples/02-real-agent-telegram/kiro/Dockerfile`, `tests/integration/Dockerfile.mock-agent`
 - SQLite bundled (no external DB dependency)
 ## Notable Patterns
 - All shared deps declared in `[workspace.dependencies]` in root `Cargo.toml`

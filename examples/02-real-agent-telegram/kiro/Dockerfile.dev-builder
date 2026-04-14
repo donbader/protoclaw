@@ -61,7 +61,7 @@ COPY --from=builder /tmp/debug-http /usr/local/bin/channels/debug-http
 COPY --from=builder /tmp/telegram-channel /usr/local/bin/channels/telegram
 COPY --from=builder /tmp/system-info /usr/local/bin/tools/system-info
 WORKDIR /workspace
-COPY examples/03-kiro-telegram-bot/anyclaw.yaml /workspace/anyclaw.yaml
+COPY examples/02-real-agent-telegram/kiro/anyclaw.yaml /workspace/anyclaw.yaml
 ENTRYPOINT ["anyclaw"]
 
 FROM debian:bookworm-slim@sha256:4724b8cc51e33e398f0e2e15e18d5ec2851ff0c2280647e1310bc1642182655d AS kiro-agent
