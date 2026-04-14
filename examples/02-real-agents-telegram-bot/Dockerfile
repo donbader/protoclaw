@@ -24,6 +24,7 @@ COPY --from=builder /usr/local/bin/channels/debug-http /usr/local/bin/channels/d
 COPY --from=builder /usr/local/bin/channels/telegram /usr/local/bin/channels/telegram
 COPY --from=builder /usr/local/bin/tools/system-info /usr/local/bin/tools/system-info
 WORKDIR /workspace
+COPY anyclaw.yaml /workspace/anyclaw.yaml
 ENTRYPOINT ["anyclaw"]
 
 # OpenCode agent image (for Docker workspace mode)

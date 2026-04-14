@@ -16,10 +16,11 @@ agents_manager:
         entrypoint: ["opencode", "acp"]
         docker_host: "tcp://socket-proxy:2375"
         network: "anyclaw-external"
-        working_dir: "/home/node"
+        working_dir: "/home/node/workspace"
         pull_policy: "never"
         volumes:
           - "opencode-agent-data:/home/node/.local/share"
+          - "opencode-agent-workspace:/home/node/workspace"
         env:
           XDG_CONFIG_HOME: "/home/node/.config"
           XDG_DATA_HOME: "/home/node/.local/share"
