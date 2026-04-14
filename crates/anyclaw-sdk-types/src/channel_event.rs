@@ -4,6 +4,7 @@ use crate::session_key::SessionKey;
 
 /// Events sent from AgentsManager to ChannelsManager via mpsc channel.
 /// Defined in anyclaw-sdk-types as the shared wire type for agent→channel routing.
+// DeliverMessage.content is raw JSON mutated by agents manager (pass-through)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum ChannelEvent {
@@ -29,8 +30,8 @@ pub enum ChannelEvent {
         request_id: String,
         /// Human-readable description of what is being requested.
         description: String,
-        /// Permission options as a JSON array of `{optionId, label}` objects.
-        options: serde_json::Value,
+        /// Permission options as typed `PermissionOption` structs.
+        options: Vec<crate::permission::PermissionOption>,
     },
     /// Acknowledge receipt of a message back to the originating channel.
     AckMessage {
@@ -66,11 +67,42 @@ mod tests {
             session_key: SessionKey::new("telegram", "direct", "alice"),
             request_id: "req-1".into(),
             description: "Allow file write?".into(),
-            options: serde_json::json!([{"optionId": "allow", "label": "Allow"}]),
+            options: vec![crate::permission::PermissionOption {
+                option_id: "allow".into(),
+                label: "Allow".into(),
+            }],
         };
         let json = serde_json::to_value(&event).unwrap();
         let deser: ChannelEvent = serde_json::from_value(json).unwrap();
         assert!(matches!(deser, ChannelEvent::RoutePermission { .. }));
+    }
+
+    #[test]
+    fn when_route_permission_options_round_trip_then_typed_vec() {
+        let event = ChannelEvent::RoutePermission {
+            session_key: SessionKey::new("telegram", "direct", "alice"),
+            request_id: "req-2".into(),
+            description: "Allow network?".into(),
+            options: vec![
+                crate::permission::PermissionOption {
+                    option_id: "allow_once".into(),
+                    label: "Allow once".into(),
+                },
+                crate::permission::PermissionOption {
+                    option_id: "deny".into(),
+                    label: "Deny".into(),
+                },
+            ],
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        let back: ChannelEvent = serde_json::from_str(&json).unwrap();
+        if let ChannelEvent::RoutePermission { options, .. } = back {
+            assert_eq!(options.len(), 2);
+            assert_eq!(options[0].option_id, "allow_once");
+            assert_eq!(options[1].label, "Deny");
+        } else {
+            panic!("expected RoutePermission");
+        }
     }
 
     #[test]

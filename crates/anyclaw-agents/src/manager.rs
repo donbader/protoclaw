@@ -1284,16 +1284,12 @@ impl AgentsManager {
             self.slots[slot_idx].reverse_map.get(session_id).cloned()
             && let Some(sender) = &self.channels_sender
         {
-            let options_json = serde_json::to_value(&options).unwrap_or_else(|e| {
-                tracing::warn!(error = %e, %request_id, "failed to serialize permission options, using null");
-                serde_json::Value::default()
-            });
             sender
                 .send(ChannelEvent::RoutePermission {
                     session_key,
                     request_id: request_id.clone(),
                     description: description.clone(),
-                    options: options_json,
+                    options: options.clone(),
                 })
                 .await
                 .is_ok()
@@ -2965,9 +2961,7 @@ mod tests {
     #[rstest]
     fn when_session_update_type_name_called_with_available_commands_update_then_returns_correct_string()
      {
-        let update = SessionUpdateType::AvailableCommandsUpdate {
-            commands: serde_json::Value::Array(vec![]),
-        };
+        let update = SessionUpdateType::AvailableCommandsUpdate { commands: vec![] };
         assert_eq!(
             AgentsManager::session_update_type_name(&update),
             "available_commands_update"

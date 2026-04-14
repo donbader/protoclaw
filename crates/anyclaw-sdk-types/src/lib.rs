@@ -13,15 +13,15 @@
 #![warn(missing_docs)]
 
 /// ACP (Agent Client Protocol) wire types for supervisor↔agent communication.
-// Grandfathered: typed replacement in Phase 2-4
+// Remaining Value usages: D-03 extensible fields (HashMap<String, Value>) and Vec<Value>
 #[allow(clippy::disallowed_types)]
 pub mod acp;
 /// Channel protocol wire types (capabilities, initialize, deliver, send, ack, content).
-// Grandfathered: typed replacement in Phase 2-4
+// Remaining Value usages: DeliverMessage.content pass-through, D-03 extensible fields, ContentKind dispatch
 #[allow(clippy::disallowed_types)]
 pub mod channel;
 /// Agent→channel bridge events routed through the supervisor.
-// Grandfathered: typed replacement in Phase 2-4
+// Remaining Value usages: DeliverMessage.content pass-through from agents manager
 #[allow(clippy::disallowed_types)]
 pub mod channel_event;
 /// Permission prompt types (request, response, options).

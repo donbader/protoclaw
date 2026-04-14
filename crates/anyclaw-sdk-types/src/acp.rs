@@ -17,16 +17,16 @@ pub use agent_client_protocol_schema::{AgentCapabilities, McpCapabilities, Promp
 pub use agent_client_protocol_schema::SessionCapabilities;
 
 /// Capabilities advertised by the supervisor to the agent during `initialize`.
+// Extensible: experimental capabilities have agent-defined schemas (D-03)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ClientCapabilities {
     /// Experimental capability extensions; omitted when not set.
-    // Extensible: experimental capabilities have agent-defined schemas (D-03)
-    #[allow(clippy::disallowed_types)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub experimental: Option<HashMap<String, serde_json::Value>>,
 }
 
 /// Parameters for the `initialize` request (supervisor → agent).
+// Extensible: runtime options have deployment-defined schemas (D-03)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct InitializeParams {
     /// ACP protocol version the supervisor is requesting.
@@ -35,8 +35,6 @@ pub struct InitializeParams {
     /// Capabilities the supervisor is advertising to the agent.
     pub capabilities: ClientCapabilities,
     /// Arbitrary runtime options forwarded from `anyclaw.yaml`.
-    // Extensible: runtime options have deployment-defined schemas (D-03)
-    #[allow(clippy::disallowed_types)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub options: Option<HashMap<String, serde_json::Value>>,
 }
@@ -181,14 +179,13 @@ pub struct SessionListResult {
 }
 
 /// Metadata for a single session returned in `SessionListResult`.
+// Extensible: agent-defined metadata has agent-specific schemas (D-03)
 #[derive(Debug, Deserialize, PartialEq)]
 pub struct SessionInfo {
     /// Unique identifier for this session.
     #[serde(rename = "sessionId")]
     pub session_id: String,
     /// Arbitrary agent-defined metadata for this session.
-    // Extensible: agent-defined metadata has agent-specific schemas (D-03)
-    #[allow(clippy::disallowed_types)]
     #[serde(default)]
     pub metadata: HashMap<String, serde_json::Value>,
 }
@@ -222,6 +219,7 @@ pub enum ToolCallStatus {
 }
 
 /// Variants of streaming update events sent by the agent via `session/update`.
+// Extensible: tool inputs, command descriptors, and config/session extras have agent-defined schemas (D-03)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "sessionUpdate", rename_all = "snake_case")]
 #[non_exhaustive]
@@ -253,8 +251,6 @@ pub enum SessionUpdateType {
         #[serde(default)]
         name: Option<String>,
         /// Input arguments passed to the tool.
-        // Extensible: tool input schema is tool-defined (D-03)
-        #[allow(clippy::disallowed_types)]
         #[serde(default)]
         input: Option<HashMap<String, serde_json::Value>>,
     },
@@ -270,8 +266,6 @@ pub enum SessionUpdateType {
         #[serde(default)]
         status: Option<ToolCallStatus>,
         /// Input arguments, if available at update time.
-        // Extensible: tool input schema is tool-defined (D-03)
-        #[allow(clippy::disallowed_types)]
         #[serde(skip_serializing_if = "Option::is_none")]
         input: Option<HashMap<String, serde_json::Value>>,
         /// Output produced by the tool call, if completed.
@@ -317,8 +311,6 @@ pub enum SessionUpdateType {
     /// Current list of slash-commands the agent exposes to the channel.
     AvailableCommandsUpdate {
         /// Command descriptors; schema is agent-defined.
-        // Extensible: command descriptors have agent-defined schemas (D-03)
-        #[allow(clippy::disallowed_types)]
         #[serde(default)]
         commands: Vec<serde_json::Value>,
     },
@@ -331,16 +323,12 @@ pub enum SessionUpdateType {
     /// Extension type — not part of core ACP. Carries config option updates from the agent.
     ConfigOptionUpdate {
         /// Flattened map of config option key-value pairs.
-        // Extensible: config options have agent-defined schemas (D-03)
-        #[allow(clippy::disallowed_types)]
         #[serde(default, flatten)]
         extra: HashMap<String, serde_json::Value>,
     },
     /// Extension type — not part of core ACP. Carries session metadata updates from the agent.
     SessionInfoUpdate {
         /// Flattened map of session metadata key-value pairs.
-        // Extensible: session metadata has agent-defined schemas (D-03)
-        #[allow(clippy::disallowed_types)]
         #[serde(default, flatten)]
         extra: HashMap<String, serde_json::Value>,
     },

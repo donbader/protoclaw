@@ -11,6 +11,7 @@ pub struct ChannelCapabilities {
 }
 
 /// Initialize handshake — anyclaw sends to channel subprocess.
+// Extensible: channel-specific options have channel-defined schemas (D-03)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ChannelInitializeParams {
@@ -37,6 +38,7 @@ pub struct ChannelInitializeResult {
 }
 
 /// Anyclaw → Channel: deliver agent message/streaming update.
+// Pass-through: agents manager mutates raw JSON (timestamps, normalization, command injection)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct DeliverMessage {
@@ -129,6 +131,7 @@ impl ThoughtContent {
 ///     _ => panic!("expected MessageChunk"),
 /// }
 /// ```
+// ContentKind dispatches over raw DeliverMessage.content (Value pass-through)
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub enum ContentKind {
@@ -158,6 +161,7 @@ pub enum ContentKind {
         /// Unique identifier for this tool invocation.
         tool_call_id: String,
         /// Tool input arguments, if any.
+        // Extensible: tool input schema is tool-defined (D-03)
         input: Option<serde_json::Value>,
     },
     /// Progress/completion update for a tool call.
@@ -174,6 +178,7 @@ pub enum ContentKind {
     /// Agent-provided list of available commands (e.g., for Telegram / menu).
     AvailableCommandsUpdate {
         /// The commands payload from the agent (array of command objects).
+        // Extensible: command descriptors have agent-defined schemas (D-03)
         commands: serde_json::Value,
     },
     /// Unrecognized content type.

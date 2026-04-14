@@ -433,16 +433,20 @@ impl ChannelsManager {
         session_key: &SessionKey,
         request_id: &str,
         description: String,
-        options: serde_json::Value,
+        options: Vec<PermissionOption>,
     ) {
         if let Some(entry) = self.routing_table.get(session_key) {
             let slot = &self.slots[entry.slot_index];
             if let Some(conn) = &slot.connection {
+                let options_json = serde_json::to_value(&options).unwrap_or_else(|e| {
+                    tracing::warn!(error = %e, %request_id, "failed to serialize permission options, using empty array");
+                    serde_json::Value::Array(vec![])
+                });
                 let params = serde_json::json!({
                     "requestId": request_id,
                     "sessionId": entry.acp_session_id,
                     "description": description,
-                    "options": options,
+                    "options": options_json,
                 });
                 match conn.send_request("channel/requestPermission", params).await {
                     Ok(rx) => {
