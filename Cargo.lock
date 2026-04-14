@@ -268,7 +268,6 @@ dependencies = [
 name = "anyclaw-sdk-channel"
 version = "0.3.0"
 dependencies = [
- "anyclaw-jsonrpc",
  "anyclaw-sdk-types",
  "rstest",
  "serde",

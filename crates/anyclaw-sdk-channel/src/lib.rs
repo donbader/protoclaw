@@ -19,6 +19,10 @@ pub mod content;
 pub mod error;
 /// JSON-RPC stdio harness that drives a [`Channel`] implementation.
 pub mod harness;
+/// Minimal JSON-RPC 2.0 types for the harness (private, avoids internal crate dep).
+// D-03 boundary: params/result/error.data are Value — schemas vary per method
+#[allow(clippy::disallowed_types)]
+mod jsonrpc;
 /// Test wrapper for unit-testing [`Channel`] implementations without JSON-RPC framing.
 pub mod testing;
 /// The [`Channel`] trait that channel authors implement.

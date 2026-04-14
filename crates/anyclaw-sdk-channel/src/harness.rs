@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::mpsc;
 
-use anyclaw_jsonrpc::{JsonRpcError, JsonRpcRequest, JsonRpcResponse, RequestId};
+use crate::jsonrpc::{JsonRpcError, JsonRpcRequest, JsonRpcResponse, RequestId};
 
 use crate::error::ChannelSdkError;
 use crate::trait_def::Channel;
