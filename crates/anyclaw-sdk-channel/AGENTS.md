@@ -56,7 +56,3 @@ pub struct ChannelHarness<C: Channel> { channel: C }
 - **Don't depend on internal crates** — this is external-facing SDK
 - **Don't handle JSON-RPC manually** — the harness does all framing; implement `Channel` trait only
 - **Don't block in trait methods** — all methods are async; use `.await` for I/O, don't block the tokio runtime
-
-## v5.1 Changes
-
-- Unwrap audit in harness serialization paths: `unwrap_or_default()` → `unwrap_or_else(|| { tracing::warn!(...); Default::default() })` so silent fallbacks are visible in logs

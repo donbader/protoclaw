@@ -41,8 +41,3 @@ Main entry point for the anyclaw sidecar. CLI parsing, config loading, and the S
 - `cmd_rx` fields are `Option<Receiver>` consumed via `.take()` — never accessed twice
 - Do not remove the `disabled` flag check in the health loop — it prevents crash-looping managers from being restarted indefinitely
 - When a manager is disabled due to crash loop, the root cancellation token is cancelled — this is intentional escalation. Do not downgrade this to a per-manager cancel only.
-
-## v5.1 Changes
-
-- Crash respawn escalation (disabled flag on crash loop) surfaced in `/health` output
-- `disabled: bool` on `ManagerSlot` prevents restart of crash-looping managers and triggers full supervisor shutdown
