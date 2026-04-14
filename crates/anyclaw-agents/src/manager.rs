@@ -896,7 +896,7 @@ impl AgentsManager {
                 Ok(v) => v,
                 Err(e) => {
                     tracing::warn!(agent = %agent_name, error = %e, "failed to serialize session/load params");
-                    serde_json::Value::default()
+                    serde_json::json!({})
                 }
             };
 
@@ -1090,22 +1090,23 @@ impl AgentsManager {
         let request = match &msg {
             IncomingMessage::AgentNotification(r) | IncomingMessage::AgentRequest(r) => r.clone(),
         };
-        let method = request.method.as_str();
-        let params = request.params.clone().unwrap_or(serde_json::Value::Null);
 
-        match method {
+        match request.method.as_str() {
             "session/update" => {
+                // D-03: session/update params are forwarded as raw content to channels
+                // (with timestamp injection, tool normalization, command merging).
+                // Must stay as Value for content mutation pipeline.
+                let params = request.params.clone().unwrap_or(serde_json::Value::Null);
                 self.handle_session_update(slot_idx, params).await;
             }
             "session/request_permission" => {
-                self.handle_permission_request(slot_idx, &request, &params)
-                    .await;
+                self.handle_permission_request(slot_idx, &request).await;
             }
             "fs/read_text_file" => {
-                Self::handle_fs_read(&self.slots[slot_idx], &request, &params).await;
+                Self::handle_fs_read(&self.slots[slot_idx], &request).await;
             }
             "fs/write_text_file" => {
-                Self::handle_fs_write(&self.slots[slot_idx], &request, &params).await;
+                Self::handle_fs_write(&self.slots[slot_idx], &request).await;
             }
             _ => {
                 Self::send_error_response(
@@ -1137,6 +1138,9 @@ impl AgentsManager {
         }
     }
 
+    // D-03: agent content is arbitrary JSON that requires raw mutation (timestamps, normalization, command injection).
+    // DeliverMessage.content stays as Value because agents manager injects _received_at_ms, normalizes
+    // tool event fields, and merges platform commands — all operations on raw JSON structure.
     fn add_received_timestamp(content: &mut serde_json::Value) {
         if let Some(obj) = content.as_object_mut() {
             let now_ms = std::time::SystemTime::now()
@@ -1150,6 +1154,8 @@ impl AgentsManager {
         }
     }
 
+    // D-03: content is raw agent JSON — inject_platform_commands merges platform command
+    // descriptors into the agent's availableCommands array, requiring Value array manipulation.
     async fn forward_session_update(
         &mut self,
         slot_idx: usize,
@@ -1240,6 +1246,10 @@ impl AgentsManager {
             .await;
     }
 
+    // D-03: session/update params are the raw agent content payload that gets forwarded
+    // to channels after mutation (timestamps, tool normalization, command merging).
+    // Deserialized into SessionUpdateEvent for typed dispatch, but the raw Value is
+    // forwarded as DeliverMessage.content for channel consumption.
     async fn handle_session_update(&mut self, slot_idx: usize, params: serde_json::Value) {
         let seq = self.update_seq.fetch_add(1, Ordering::Relaxed);
         tracing::debug!(raw_params = %params, seq, "session/update received — attempting deser");
@@ -1256,14 +1266,11 @@ impl AgentsManager {
         }
     }
 
-    async fn handle_permission_request(
-        &mut self,
-        slot_idx: usize,
-        request: &JsonRpcRequest,
-        params: &serde_json::Value,
-    ) {
-        let request_id = params["requestId"]
-            .as_str()
+    async fn handle_permission_request(&mut self, slot_idx: usize, request: &JsonRpcRequest) {
+        // D-03: permission request params have agent-defined schemas (requestId location varies by agent)
+        let params = request.params.as_ref();
+        let request_id = params
+            .and_then(|p| p["requestId"].as_str())
             .filter(|s| !s.is_empty())
             .map(std::string::ToString::to_string)
             .unwrap_or_else(|| {
@@ -1274,15 +1281,18 @@ impl AgentsManager {
                     None => String::new(),
                 }
             });
-        let description = params["description"]
-            .as_str()
-            .filter(|s| !s.is_empty())
-            .or_else(|| params["toolCall"]["title"].as_str())
+        let description = params
+            .and_then(|p| {
+                p["description"]
+                    .as_str()
+                    .filter(|s| !s.is_empty())
+                    .or_else(|| p["toolCall"]["title"].as_str())
+            })
             .unwrap_or("Permission requested")
             .to_string();
 
         let options: Vec<PermissionOption> = params
-            .get("options")
+            .and_then(|p| p.get("options"))
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_else(|| {
                 tracing::warn!(%request_id, "malformed permission options, using empty list");
@@ -1291,7 +1301,7 @@ impl AgentsManager {
 
         tracing::info!(agent = %self.slots[slot_idx].name(), %request_id, %description, "permission requested");
 
-        let session_id = params["sessionId"].as_str().unwrap_or("");
+        let session_id = params.and_then(|p| p["sessionId"].as_str()).unwrap_or("");
         let routed = if let Some(session_key) =
             self.slots[slot_idx].reverse_map.get(session_id).cloned()
             && let Some(sender) = &self.channels_sender
@@ -1342,12 +1352,10 @@ impl AgentsManager {
         }
     }
 
-    async fn handle_fs_read(
-        slot: &AgentSlot,
-        request: &JsonRpcRequest,
-        params: &serde_json::Value,
-    ) {
-        let path = params["path"].as_str().unwrap_or("");
+    async fn handle_fs_read(slot: &AgentSlot, request: &JsonRpcRequest) {
+        // D-03: fs request params have agent-defined path/content fields
+        let params = request.params.as_ref();
+        let path = params.and_then(|p| p["path"].as_str()).unwrap_or("");
         let sandbox_root = resolve_agent_cwd(&slot.config.workspace);
         let resolved = match validate_fs_path(&sandbox_root, path) {
             Ok(p) => p,
@@ -1371,13 +1379,11 @@ impl AgentsManager {
         }
     }
 
-    async fn handle_fs_write(
-        slot: &AgentSlot,
-        request: &JsonRpcRequest,
-        params: &serde_json::Value,
-    ) {
-        let path = params["path"].as_str().unwrap_or("");
-        let content = params["content"].as_str().unwrap_or("");
+    async fn handle_fs_write(slot: &AgentSlot, request: &JsonRpcRequest) {
+        // D-03: fs request params have agent-defined path/content fields
+        let params = request.params.as_ref();
+        let path = params.and_then(|p| p["path"].as_str()).unwrap_or("");
+        let content = params.and_then(|p| p["content"].as_str()).unwrap_or("");
         let sandbox_root = resolve_agent_cwd(&slot.config.workspace);
         let resolved = match validate_fs_write_path(&sandbox_root, path) {
             Ok(p) => p,
@@ -1641,8 +1647,8 @@ impl AgentsManager {
              mcp_servers: Some(mcp_servers),
          })
          .unwrap_or_else(|e| {
-             tracing::warn!(error = %e, agent = %agent_name, "failed to serialize session/load params, using null");
-             serde_json::Value::default()
+             tracing::warn!(error = %e, agent = %agent_name, "failed to serialize session/load params, using empty object");
+             serde_json::json!({})
          });
 
         let conn = self.slots[slot_idx]
@@ -1952,6 +1958,8 @@ impl Manager for AgentsManager {
     }
 }
 
+// D-03: agent content mutation — normalizes agent-specific wire quirks (title→name, rawOutput→output)
+// into the canonical format that ContentKind expects. Operates on raw JSON structure.
 fn normalize_tool_event_fields(content: &mut serde_json::Value, update_type: &str) {
     if update_type != "tool_call" && update_type != "tool_call_update" {
         return;
@@ -2648,10 +2656,13 @@ mod tests {
             mock_agent_config_with_working_dir(dir.path()),
             &cancel,
         );
-        let request = JsonRpcRequest::new("fs/read_text_file", Some(RequestId::Number(1)), None);
-        let params = serde_json::json!({"path": file_path.to_str().unwrap()});
+        let request = JsonRpcRequest::new(
+            "fs/read_text_file",
+            Some(RequestId::Number(1)),
+            Some(serde_json::json!({"path": file_path.to_str().unwrap()})),
+        );
 
-        AgentsManager::handle_fs_read(&slot, &request, &params).await;
+        AgentsManager::handle_fs_read(&slot, &request).await;
     }
 
     #[rstest]
@@ -2664,11 +2675,13 @@ mod tests {
             mock_agent_config_with_working_dir(dir.path()),
             &cancel,
         );
-        let request = JsonRpcRequest::new("fs/read_text_file", Some(RequestId::Number(2)), None);
-        let params =
-            serde_json::json!({"path": dir.path().join("nonexistent.txt").to_str().unwrap()});
+        let request = JsonRpcRequest::new(
+            "fs/read_text_file",
+            Some(RequestId::Number(2)),
+            Some(serde_json::json!({"path": dir.path().join("nonexistent.txt").to_str().unwrap()})),
+        );
 
-        AgentsManager::handle_fs_read(&slot, &request, &params).await;
+        AgentsManager::handle_fs_read(&slot, &request).await;
     }
 
     #[rstest]
@@ -2683,11 +2696,15 @@ mod tests {
             mock_agent_config_with_working_dir(dir.path()),
             &cancel,
         );
-        let request = JsonRpcRequest::new("fs/write_text_file", Some(RequestId::Number(3)), None);
-        let params =
-            serde_json::json!({"path": file_path.to_str().unwrap(), "content": "written content"});
+        let request = JsonRpcRequest::new(
+            "fs/write_text_file",
+            Some(RequestId::Number(3)),
+            Some(
+                serde_json::json!({"path": file_path.to_str().unwrap(), "content": "written content"}),
+            ),
+        );
 
-        AgentsManager::handle_fs_write(&slot, &request, &params).await;
+        AgentsManager::handle_fs_write(&slot, &request).await;
         let content = std::fs::read_to_string(&file_path).unwrap();
         assert_eq!(content, "written content");
     }
@@ -2702,10 +2719,15 @@ mod tests {
             mock_agent_config_with_working_dir(dir.path()),
             &cancel,
         );
-        let request = JsonRpcRequest::new("fs/write_text_file", Some(RequestId::Number(4)), None);
-        let params = serde_json::json!({"path": dir.path().join("subdir/nonexistent/file.txt").to_str().unwrap(), "content": "data"});
+        let request = JsonRpcRequest::new(
+            "fs/write_text_file",
+            Some(RequestId::Number(4)),
+            Some(
+                serde_json::json!({"path": dir.path().join("subdir/nonexistent/file.txt").to_str().unwrap(), "content": "data"}),
+            ),
+        );
 
-        AgentsManager::handle_fs_write(&slot, &request, &params).await;
+        AgentsManager::handle_fs_write(&slot, &request).await;
     }
 
     #[rstest]
@@ -2720,10 +2742,13 @@ mod tests {
             mock_agent_config_with_working_dir(dir.path()),
             &cancel,
         );
-        let request = JsonRpcRequest::new("fs/read_text_file", Some(RequestId::Number(10)), None);
-        let params = serde_json::json!({"path": "notes.txt"});
+        let request = JsonRpcRequest::new(
+            "fs/read_text_file",
+            Some(RequestId::Number(10)),
+            Some(serde_json::json!({"path": "notes.txt"})),
+        );
 
-        AgentsManager::handle_fs_read(&slot, &request, &params).await;
+        AgentsManager::handle_fs_read(&slot, &request).await;
     }
 
     #[rstest]
@@ -2736,10 +2761,13 @@ mod tests {
             mock_agent_config_with_working_dir(dir.path()),
             &cancel,
         );
-        let request = JsonRpcRequest::new("fs/read_text_file", Some(RequestId::Number(11)), None);
-        let params = serde_json::json!({"path": "../../etc/passwd"});
+        let request = JsonRpcRequest::new(
+            "fs/read_text_file",
+            Some(RequestId::Number(11)),
+            Some(serde_json::json!({"path": "../../etc/passwd"})),
+        );
 
-        AgentsManager::handle_fs_read(&slot, &request, &params).await;
+        AgentsManager::handle_fs_read(&slot, &request).await;
     }
 
     #[rstest]
@@ -2752,10 +2780,13 @@ mod tests {
             mock_agent_config_with_working_dir(dir.path()),
             &cancel,
         );
-        let request = JsonRpcRequest::new("fs/read_text_file", Some(RequestId::Number(12)), None);
-        let params = serde_json::json!({"path": "/etc/hostname"});
+        let request = JsonRpcRequest::new(
+            "fs/read_text_file",
+            Some(RequestId::Number(12)),
+            Some(serde_json::json!({"path": "/etc/hostname"})),
+        );
 
-        AgentsManager::handle_fs_read(&slot, &request, &params).await;
+        AgentsManager::handle_fs_read(&slot, &request).await;
     }
 
     #[rstest]
@@ -3122,15 +3153,14 @@ mod tests {
         let request = JsonRpcRequest::new(
             "session/request_permission",
             Some(RequestId::Number(0)),
-            None,
+            Some(serde_json::json!({
+                "sessionId": acp_session_id,
+                "options": [{"optionId": "once", "label": "Allow once"}],
+                "toolCall": {"title": "external_directory", "kind": "other"}
+            })),
         );
-        let params = serde_json::json!({
-            "sessionId": acp_session_id,
-            "options": [{"optionId": "once", "label": "Allow once"}],
-            "toolCall": {"title": "external_directory", "kind": "other"}
-        });
 
-        m.handle_permission_request(0, &request, &params).await;
+        m.handle_permission_request(0, &request).await;
 
         let event = channels_rx.try_recv().expect("should route permission");
         match event {
@@ -3163,14 +3193,13 @@ mod tests {
         let request = JsonRpcRequest::new(
             "session/request_permission",
             Some(RequestId::Number(1)),
-            None,
+            Some(serde_json::json!({
+                "sessionId": acp_session_id,
+                "options": [{"optionId": "once", "label": "Allow once"}],
+            })),
         );
-        let params = serde_json::json!({
-            "sessionId": acp_session_id,
-            "options": [{"optionId": "once", "label": "Allow once"}],
-        });
 
-        m.handle_permission_request(0, &request, &params).await;
+        m.handle_permission_request(0, &request).await;
 
         let event = channels_rx.try_recv().expect("should route permission");
         match event {
@@ -3195,15 +3224,14 @@ mod tests {
         let request = JsonRpcRequest::new(
             "session/request_permission",
             Some(RequestId::Number(5)),
-            None,
+            Some(serde_json::json!({
+                "sessionId": "unknown-session",
+                "options": [{"optionId": "once", "label": "Allow once"}],
+                "toolCall": {"title": "external_directory", "kind": "other"}
+            })),
         );
-        let params = serde_json::json!({
-            "sessionId": "unknown-session",
-            "options": [{"optionId": "once", "label": "Allow once"}],
-            "toolCall": {"title": "external_directory", "kind": "other"}
-        });
 
-        m.handle_permission_request(0, &request, &params).await;
+        m.handle_permission_request(0, &request).await;
 
         assert!(
             m.slots[0].pending_permissions.is_empty(),
@@ -3233,15 +3261,14 @@ mod tests {
         let request = JsonRpcRequest::new(
             "session/request_permission",
             Some(RequestId::Number(2)),
-            None,
+            Some(serde_json::json!({
+                "sessionId": acp_session_id,
+                "options": [{"optionId": "once", "label": "Allow once"}],
+                "description": "Allow access?"
+            })),
         );
-        let params = serde_json::json!({
-            "sessionId": acp_session_id,
-            "options": [{"optionId": "once", "label": "Allow once"}],
-            "description": "Allow access?"
-        });
 
-        m.handle_permission_request(0, &request, &params).await;
+        m.handle_permission_request(0, &request).await;
 
         assert_eq!(
             m.slots[0].pending_permissions.len(),
@@ -3272,15 +3299,14 @@ mod tests {
         let request = JsonRpcRequest::new(
             "session/request_permission",
             Some(RequestId::Number(42)),
-            None,
+            Some(serde_json::json!({
+                "sessionId": acp_session_id,
+                "options": [{"optionId": "once", "label": "Allow once"}],
+                "toolCall": {"title": "external_directory", "kind": "other"}
+            })),
         );
-        let params = serde_json::json!({
-            "sessionId": acp_session_id,
-            "options": [{"optionId": "once", "label": "Allow once"}],
-            "toolCall": {"title": "external_directory", "kind": "other"}
-        });
 
-        m.handle_permission_request(0, &request, &params).await;
+        m.handle_permission_request(0, &request).await;
 
         assert_eq!(m.slots[0].pending_permissions.len(), 1);
         assert!(
@@ -3319,19 +3345,18 @@ mod tests {
         let request = JsonRpcRequest::new(
             "session/request_permission",
             Some(RequestId::Number(3)),
-            None,
+            Some(serde_json::json!({
+                "sessionId": acp_session_id,
+                "options": [
+                    {"optionId": "once", "name": "Allow once", "kind": "allow_once"},
+                    {"optionId": "always", "name": "Always allow", "kind": "allow_always"},
+                    {"optionId": "reject", "name": "Reject", "kind": "reject_once"}
+                ],
+                "toolCall": {"title": "external_directory", "kind": "other"}
+            })),
         );
-        let params = serde_json::json!({
-            "sessionId": acp_session_id,
-            "options": [
-                {"optionId": "once", "name": "Allow once", "kind": "allow_once"},
-                {"optionId": "always", "name": "Always allow", "kind": "allow_always"},
-                {"optionId": "reject", "name": "Reject", "kind": "reject_once"}
-            ],
-            "toolCall": {"title": "external_directory", "kind": "other"}
-        });
 
-        m.handle_permission_request(0, &request, &params).await;
+        m.handle_permission_request(0, &request).await;
 
         assert_eq!(
             m.slots[0].pending_permissions.len(),
