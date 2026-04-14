@@ -19,6 +19,10 @@ use tracing::{info, warn};
 use crate::backend::ProcessBackend;
 use crate::error::AgentsError;
 
+/// [`ProcessBackend`] implementation for Docker containers via the bollard API.
+///
+/// Manages the full container lifecycle: create → attach → start → stop → remove.
+/// Stdio is captured via Docker attach and exposed as async read/write streams.
 pub struct DockerBackend {
     docker: Docker,
     container_id: Option<String>,

@@ -1,6 +1,7 @@
 use anyclaw_core::ManagerHandle;
 use tokio::sync::mpsc;
 
+/// Create a `ManagerHandle<C>` and its corresponding `mpsc::Receiver<C>` for tests.
 pub fn make_handle<C: Send + 'static>(buffer: usize) -> (ManagerHandle<C>, mpsc::Receiver<C>) {
     let (tx, rx) = mpsc::channel(buffer);
     (ManagerHandle::new(tx), rx)

@@ -21,6 +21,10 @@ use crate::mcp_host::McpHost;
 use crate::wasm_runner::WasmToolRunner;
 use crate::wasm_tool::WasmTool;
 
+/// Aggregated MCP server that merges native, WASM, and external tools into a single endpoint.
+///
+/// Implements rmcp's `ServerHandler` trait. `list_tools()` merges all sources;
+/// `call_tool()` routes to native host first, then external servers by name match.
 pub struct AggregatedToolServer {
     native_host: Arc<McpHost>,
     external_servers: Arc<Vec<ExternalMcpServer>>,
@@ -28,6 +32,7 @@ pub struct AggregatedToolServer {
 }
 
 impl AggregatedToolServer {
+    /// Create a new aggregated server from native and external tool sources.
     pub fn new(native_host: Arc<McpHost>, external_servers: Arc<Vec<ExternalMcpServer>>) -> Self {
         let mut server_info = ServerInfo::new(ServerCapabilities::builder().enable_tools().build());
         server_info.server_info = Implementation::new("anyclaw-tools", "0.1.0");
@@ -136,6 +141,8 @@ impl ServerHandler for AggregatedToolServer {
     }
 }
 
+/// Manages tool availability: spawns external MCP servers, loads WASM tools,
+/// and serves the aggregated MCP endpoint over HTTP.
 pub struct ToolsManager {
     tool_configs: HashMap<String, ToolConfig>,
     native_tools: Vec<Box<dyn DynTool>>,
@@ -148,6 +155,7 @@ pub struct ToolsManager {
 }
 
 impl ToolsManager {
+    /// Create a new tools manager from the given tool configs and server host.
     pub fn new(tool_configs: HashMap<String, ToolConfig>, tools_server_host: String) -> Self {
         Self {
             tool_configs,
@@ -161,16 +169,19 @@ impl ToolsManager {
         }
     }
 
+    /// Set the command receiver (wired by the supervisor).
     pub fn with_cmd_rx(mut self, rx: tokio::sync::mpsc::Receiver<ToolsCommand>) -> Self {
         self.cmd_rx = Some(rx);
         self
     }
 
+    /// Register native (in-process) tools to be served alongside external and WASM tools.
     pub fn with_native_tools(mut self, tools: Vec<Box<dyn DynTool>>) -> Self {
         self.native_tools = tools;
         self
     }
 
+    /// Return the MCP server URLs advertised to agents.
     pub fn server_urls(&self) -> &[McpServerUrl] {
         &self.server_urls
     }

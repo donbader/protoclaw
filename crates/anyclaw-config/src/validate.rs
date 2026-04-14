@@ -2,49 +2,95 @@ use crate::AnyclawConfig;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
+/// Outcome of [`validate_config`] — collects errors and warnings separately.
 #[derive(Debug, Clone)]
 pub struct ValidationResult {
+    /// Hard errors that should prevent startup.
     pub errors: Vec<ValidationError>,
+    /// Soft warnings that are informational but not blocking.
     pub warnings: Vec<ValidationWarning>,
 }
 
 impl ValidationResult {
+    /// Returns `true` if there are no errors (warnings are allowed).
     pub fn is_ok(&self) -> bool {
         self.errors.is_empty()
     }
 }
 
+/// A hard validation error that should prevent startup.
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum ValidationError {
+    /// A configured binary was not found on PATH or as an absolute path.
     #[error("{field}: binary '{binary}' not found on PATH or as absolute path")]
-    BinaryNotFound { field: String, binary: String },
+    BinaryNotFound {
+        /// Config field path (e.g. `"agents_manager.agents.default.workspace.binary"`).
+        field: String,
+        /// The binary name or path that was not found.
+        binary: String,
+    },
+    /// A configured working directory does not exist on disk.
     #[error("agent.working_dir: directory '{}' does not exist", path.display())]
-    WorkingDirNotFound { path: std::path::PathBuf },
+    WorkingDirNotFound {
+        /// The missing directory path.
+        path: std::path::PathBuf,
+    },
+    /// A Docker memory limit string could not be parsed.
     #[error("{field}: invalid memory limit '{value}': {reason}")]
     InvalidMemoryLimit {
+        /// Config field path.
         field: String,
+        /// The raw memory limit string.
         value: String,
+        /// Why parsing failed.
         reason: String,
     },
+    /// A Docker CPU limit string could not be parsed.
     #[error("{field}: invalid cpu limit '{value}': {reason}")]
     InvalidCpuLimit {
+        /// Config field path.
         field: String,
+        /// The raw CPU limit string.
         value: String,
+        /// Why parsing failed.
         reason: String,
     },
+    /// A Docker host URI does not use a recognized scheme.
     #[error("{field}: invalid docker_host URI '{value}' (expected unix:// or tcp://)")]
-    InvalidDockerHost { field: String, value: String },
+    InvalidDockerHost {
+        /// Config field path.
+        field: String,
+        /// The invalid URI.
+        value: String,
+    },
+    /// A volume mount entry is missing the required `:` separator.
     #[error("{field}: volume entry '{value}' missing ':' separator")]
-    InvalidVolumeMount { field: String, value: String },
+    InvalidVolumeMount {
+        /// Config field path.
+        field: String,
+        /// The invalid volume string.
+        value: String,
+    },
+    /// The tools server host is not a valid hostname or IP address.
     #[error("{field}: invalid hostname or IP '{value}'")]
-    InvalidToolsServerHost { field: String, value: String },
+    InvalidToolsServerHost {
+        /// Config field path.
+        field: String,
+        /// The invalid host string.
+        value: String,
+    },
 }
 
+/// A soft validation warning (informational, does not block startup).
 #[derive(Debug, Clone)]
 pub enum ValidationWarning {
+    /// A binary was found at an absolute path but is not on the system PATH.
     BinaryNotOnPath {
+        /// Config field path.
         field: String,
+        /// The binary name.
         binary: String,
+        /// Where the binary was found.
         found_at: String,
     },
 }
@@ -203,6 +249,7 @@ fn validate_tool_binaries(config: &AnyclawConfig, errors: &mut Vec<ValidationErr
     }
 }
 
+/// Validate the loaded configuration: check binary existence, working dirs, Docker limits, and host format.
 pub fn validate_config(config: &AnyclawConfig) -> ValidationResult {
     let mut errors = Vec::new();
     let warnings = Vec::new();

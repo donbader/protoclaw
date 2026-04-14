@@ -59,12 +59,17 @@ struct WasmState {
     limiter: WasmResourceLimiter,
 }
 
+/// Shared WASM runtime that compiles modules once and executes them in isolated per-invocation stores.
+///
+/// Each tool invocation gets a fresh `Store` with its own fuel budget, epoch timeout,
+/// and WASI context. Invalid WASM modules are skipped with a warning — they don't block startup.
 pub struct WasmToolRunner {
     engine: Arc<Engine>,
     epoch_handle: tokio::task::JoinHandle<()>,
 }
 
 impl WasmToolRunner {
+    /// Create a new runner with a shared wasmtime `Engine` and epoch ticker task.
     pub fn new() -> Result<Self, ToolsError> {
         let mut config = Config::new();
         config.consume_fuel(true);
@@ -92,6 +97,7 @@ impl WasmToolRunner {
         })
     }
 
+    /// Execute a WASM module with the given input JSON and sandbox configuration.
     pub async fn execute(
         &self,
         module_bytes: &[u8],
@@ -185,6 +191,7 @@ impl WasmToolRunner {
         Ok(output.trim().to_string())
     }
 
+    /// Return a reference to the shared wasmtime `Engine` (for module compilation).
     pub fn engine(&self) -> &Arc<Engine> {
         &self.engine
     }

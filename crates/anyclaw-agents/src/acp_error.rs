@@ -1,21 +1,37 @@
 use thiserror::Error;
 
+/// Errors specific to the ACP (Agent Client Protocol) handshake and session lifecycle.
 #[derive(Debug, Error)]
 pub enum AcpError {
+    /// The agent reported a protocol version that doesn't match what we support.
     #[error("protocol version mismatch: expected {expected}, got {got}")]
-    ProtocolMismatch { expected: u32, got: u32 },
+    ProtocolMismatch {
+        /// The version we expected.
+        expected: u32,
+        /// The version the agent reported.
+        got: u32,
+    },
 
+    /// The agent could not find the requested session.
     #[error("session not found: {0}")]
     SessionNotFound(String),
 
+    /// The agent does not support the requested JSON-RPC method.
     #[error("method not supported: {0}")]
     MethodNotSupported(String),
 
+    /// A transport-level error (pipe broken, EOF, etc.).
     #[error("transport error: {0}")]
     Transport(String),
 
+    /// A JSON-RPC error response from the agent.
     #[error("JSON-RPC error {code}: {message}")]
-    JsonRpc { code: i64, message: String },
+    JsonRpc {
+        /// JSON-RPC error code.
+        code: i64,
+        /// Human-readable error message from the agent.
+        message: String,
+    },
 }
 
 #[cfg(test)]

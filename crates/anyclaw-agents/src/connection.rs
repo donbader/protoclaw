@@ -219,6 +219,11 @@ impl std::fmt::Debug for AgentConnection {
     }
 }
 
+/// Manages a single agent subprocess's stdio connection and JSON-RPC framing.
+///
+/// Spawns reader/writer/stderr tasks that communicate via typed `JsonRpcMessage`.
+/// In bridge mode (`spawn_with_bridge`), incoming messages flow directly to the
+/// manager's shared channel — no intermediate forwarding task.
 pub struct AgentConnection {
     backend: Box<dyn ProcessBackend>,
     stdin_tx: mpsc::Sender<JsonRpcMessage>,
@@ -231,6 +236,7 @@ pub struct AgentConnection {
 }
 
 impl AgentConnection {
+    /// Spawn an agent subprocess in standalone mode (own internal incoming channel).
     pub async fn spawn(config: &AgentConfig, name: &str) -> Result<Self, AgentsError> {
         Self::spawn_inner(config, name, None, None).await
     }
@@ -316,6 +322,7 @@ impl AgentConnection {
         })
     }
 
+    /// Send a JSON-RPC request and return a oneshot receiver for the response.
     // D-03: params schema varies per JSON-RPC method — cannot be typed at this layer
     #[allow(clippy::disallowed_types)]
     pub async fn send_request(
@@ -338,6 +345,7 @@ impl AgentConnection {
         Ok(rx)
     }
 
+    /// Send a JSON-RPC notification (no response expected).
     // D-03: params schema varies per JSON-RPC method — cannot be typed at this layer
     #[allow(clippy::disallowed_types)]
     pub async fn send_notification(
@@ -355,6 +363,8 @@ impl AgentConnection {
         Ok(())
     }
 
+    /// Write a pre-built JSON-RPC response directly to the agent's stdin.
+    /// Used for permission responses which are replies to agent-initiated requests.
     pub async fn send_raw(&self, msg: JsonRpcResponse) -> Result<(), AgentsError> {
         tracing::debug!(id = ?msg.id, "send_raw to agent stdin");
         self.stdin_tx
@@ -372,10 +382,12 @@ impl AgentConnection {
         self.incoming_rx.take().expect("incoming_rx already taken")
     }
 
+    /// Check whether the agent subprocess is still running.
     pub fn is_alive(&mut self) -> bool {
         self.backend.is_alive()
     }
 
+    /// Kill the agent subprocess and abort all I/O tasks.
     pub async fn kill(&mut self) -> Result<(), AgentsError> {
         self.backend.kill().await?;
         self.reader_handle.abort();
@@ -384,6 +396,7 @@ impl AgentConnection {
         Ok(())
     }
 
+    /// Wait for the agent subprocess to exit and return its exit status.
     pub async fn wait(&mut self) -> Result<std::process::ExitStatus, AgentsError> {
         self.backend.wait().await
     }

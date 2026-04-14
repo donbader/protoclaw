@@ -4,12 +4,18 @@ use rusqlite::{Connection, params};
 
 use crate::session_store::{PersistedSession, SessionStore, SessionStoreError};
 
+/// SQLite-backed [`SessionStore`] implementation using rusqlite (bundled).
+///
+/// All database operations run on a blocking thread via `tokio::task::spawn_blocking`
+/// to avoid blocking the async runtime. The connection is wrapped in `Arc<Mutex<_>>`
+/// so the store can be cloned and shared across tasks.
 #[derive(Clone)]
 pub struct SqliteSessionStore {
     conn: Arc<Mutex<Connection>>,
 }
 
 impl SqliteSessionStore {
+    /// Open (or create) a SQLite database at the given file path.
     pub fn open(path: &str) -> Result<Self, SessionStoreError> {
         let conn = Connection::open(path).map_err(|e| SessionStoreError::Backend(e.to_string()))?;
         Self::init_schema(&conn)?;
@@ -18,6 +24,7 @@ impl SqliteSessionStore {
         })
     }
 
+    /// Open an in-memory SQLite database (useful for tests and when no persistence is needed).
     pub fn open_in_memory() -> Result<Self, SessionStoreError> {
         let conn =
             Connection::open_in_memory().map_err(|e| SessionStoreError::Backend(e.to_string()))?;

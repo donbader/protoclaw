@@ -1,3 +1,4 @@
+/// Format a health JSON response into human-readable CLI output.
 // Grandfathered: typed replacement in Phase 2-4
 #[allow(clippy::disallowed_types)]
 pub fn format_status_output(health: &serde_json::Value) -> String {
@@ -62,6 +63,7 @@ pub fn format_status_output(health: &serde_json::Value) -> String {
     out
 }
 
+/// Run the `anyclaw status` command: query the admin health endpoint and print results.
 pub async fn run_status(port: u16) -> anyhow::Result<()> {
     let url = format!("http://127.0.0.1:{}/health", port);
     let client = reqwest::Client::builder()

@@ -1,5 +1,6 @@
 use std::process::{Command, Stdio};
 
+/// Detect which agent binary (opencode, claude, gemini) is available on PATH.
 pub fn detect_agent_binary() -> Option<String> {
     for binary in &["opencode", "claude", "gemini"] {
         let ok = Command::new(binary)
@@ -16,6 +17,7 @@ pub fn detect_agent_binary() -> Option<String> {
     None
 }
 
+/// Generate a starter `anyclaw.yaml` config file for the given agent binary.
 pub fn generate_config_yaml(agent_binary: &str) -> String {
     format!(
         r#"# Anyclaw configuration
@@ -57,6 +59,7 @@ supervisor:
     )
 }
 
+/// Run the `anyclaw init` command: detect agent, generate config, write to disk.
 pub fn run_init(config_path: &str, force: bool) -> anyhow::Result<()> {
     let path = std::path::Path::new(config_path);
     if path.exists() && !force {

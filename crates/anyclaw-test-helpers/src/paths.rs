@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+/// Return the workspace root directory (parent of `crates/`).
 pub fn workspace_root() -> PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -9,18 +10,22 @@ pub fn workspace_root() -> PathBuf {
         .to_path_buf()
 }
 
+/// Path to the built mock-agent binary in `target/debug/`.
 pub fn mock_agent_path() -> PathBuf {
     workspace_root().join("target/debug/mock-agent")
 }
 
+/// Path to the built debug-http binary in `target/debug/`.
 pub fn debug_http_path() -> PathBuf {
     workspace_root().join("target/debug/debug-http")
 }
 
+/// Path to the built sdk-test-channel binary in `target/debug/`.
 pub fn sdk_test_channel_path() -> PathBuf {
     workspace_root().join("target/debug/sdk-test-channel")
 }
 
+/// Path to the built sdk-test-tool binary in `target/debug/`.
 pub fn sdk_test_tool_path() -> PathBuf {
     workspace_root().join("target/debug/sdk-test-tool")
 }

@@ -8,7 +8,12 @@ use tokio::process::Command;
 
 use crate::error::ToolsError;
 
+/// Manages a single external MCP server subprocess spawned via rmcp's child process transport.
+///
+/// Each `ExternalMcpServer` owns an rmcp client connected to the subprocess's stdio.
+/// Failed servers are logged and skipped — they don't block startup.
 pub struct ExternalMcpServer {
+    /// Logical tool name (matches the config key).
     pub name: String,
     client: Arc<RunningService<RoleClient, ()>>,
 }
@@ -31,6 +36,7 @@ impl std::fmt::Debug for ExternalMcpServer {
 }
 
 impl ExternalMcpServer {
+    /// Spawn an external MCP server subprocess from the given tool config.
     pub async fn spawn(name: &str, config: &ToolConfig) -> Result<Self, ToolsError> {
         let binary = config.binary.as_deref().ok_or_else(|| {
             ToolsError::ExternalServerFailed(format!("{name}: no binary specified"))
@@ -55,6 +61,7 @@ impl ExternalMcpServer {
         })
     }
 
+    /// List all tools advertised by this external MCP server.
     pub async fn list_tools(&self) -> Result<Vec<RmcpTool>, ToolsError> {
         let result = self
             .client
@@ -64,6 +71,7 @@ impl ExternalMcpServer {
         Ok(result.tools)
     }
 
+    /// Invoke a tool on this external MCP server.
     pub async fn call_tool(
         &self,
         params: CallToolRequestParams,
@@ -74,6 +82,7 @@ impl ExternalMcpServer {
             .map_err(|e: ServiceError| ToolsError::ProxyError(e.to_string()))
     }
 
+    /// Gracefully shut down the external MCP server subprocess.
     pub async fn shutdown(self) {
         if let Ok(client) = Arc::try_unwrap(self.client) {
             let _ = client.cancel().await;

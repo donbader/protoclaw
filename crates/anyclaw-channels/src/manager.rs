@@ -22,21 +22,25 @@ use anyclaw_sdk_types::{
 pub enum ChannelsCommand {
     /// Deliver agent message to a specific channel (by session key).
     DeliverToChannel {
+        /// Session key identifying the target channel and peer.
         session_key: String,
-        // D-03: agent content is arbitrary JSON (streaming chunks, results, thoughts, etc.)
+        /// D-03: agent content is arbitrary JSON (streaming chunks, results, thoughts, etc.)
         content: serde_json::Value,
     },
     /// Route permission request to originating channel.
     RoutePermission {
+        /// Session key identifying the channel that initiated the request.
         session_key: String,
+        /// ACP request ID to echo back in the permission response.
         request_id: String,
+        /// Human-readable description of what the agent is requesting.
         description: String,
+        /// Available response options (e.g. "Allow", "Deny").
         options: Vec<PermissionOption>,
     },
+    /// Request graceful shutdown of all channel subprocesses.
     Shutdown,
 }
-
-/// Routing table entry mapping a session key to its channel and ACP session.
 struct RoutingEntry {
     _channel_id: ChannelId,
     acp_session_id: String,
@@ -75,6 +79,7 @@ pub struct ChannelsManager {
 }
 
 impl ChannelsManager {
+    /// Create a new channels manager from the given channel configs.
     pub fn new(
         channel_configs: HashMap<String, ChannelConfig>,
         init_timeout_secs: u64,
@@ -99,21 +104,24 @@ impl ChannelsManager {
         }
     }
 
+    /// Clone the command sender so the supervisor can wire it to other managers.
     pub fn command_sender(&self) -> mpsc::Sender<ChannelsCommand> {
         self.cmd_tx.clone()
     }
 
-    /// Set the agents handle for creating/prompting sessions.
+    /// Set the tracing log level filter passed to channel subprocesses.
     pub fn with_log_level(mut self, level: String) -> Self {
         self.log_level = Some(level);
         self
     }
 
+    /// Set the agents handle for creating/prompting sessions.
     pub fn with_agents_handle(mut self, handle: ManagerHandle<AgentsCommand>) -> Self {
         self.agents_handle = Some(handle);
         self
     }
 
+    /// Set the optional permission response timeout.
     pub fn with_permission_timeout(mut self, timeout_secs: Option<u64>) -> Self {
         self.permission_timeout_secs = timeout_secs;
         self

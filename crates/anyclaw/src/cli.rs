@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand};
 
+/// Top-level CLI arguments parsed by clap.
 #[derive(Parser, Debug)]
 #[command(
     name = "anyclaw",
@@ -7,6 +8,7 @@ use clap::{Parser, Subcommand};
     version
 )]
 pub struct Cli {
+    /// Path to the anyclaw YAML config file.
     #[arg(
         short,
         long,
@@ -16,19 +18,27 @@ pub struct Cli {
     )]
     pub config: String,
 
+    /// Subcommand to execute (defaults to `run` if omitted).
     #[command(subcommand)]
     pub command: Option<Commands>,
 }
 
+/// Available CLI subcommands.
 #[derive(Subcommand, Debug)]
 pub enum Commands {
+    /// Start the supervisor and all configured managers.
     Run,
+    /// Scaffold a default `anyclaw.yaml` config file.
     Init {
+        /// Overwrite an existing config file.
         #[arg(long)]
         force: bool,
     },
+    /// Validate the config file without starting the supervisor.
     Validate,
+    /// Query the running supervisor's health endpoint.
     Status {
+        /// Admin server port to connect to.
         #[arg(long, default_value = "3000")]
         port: u16,
     },

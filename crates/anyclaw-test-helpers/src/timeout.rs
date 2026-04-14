@@ -1,6 +1,7 @@
 use std::future::Future;
 use std::time::Duration;
 
+/// Run a future with a timeout (in seconds). Panics with a clear message if the timeout expires.
 pub async fn with_timeout<F, T>(secs: u64, fut: F) -> T
 where
     F: Future<Output = T>,

@@ -40,6 +40,11 @@ struct AppState {
     mcp_server_names: Vec<String>,
 }
 
+/// In-process debug HTTP channel that exposes a `/health` endpoint.
+///
+/// Unlike other channels which run as subprocesses, `DebugHttpChannel` runs
+/// inside the supervisor process. It provides a lightweight health check
+/// endpoint for development and testing.
 pub struct DebugHttpChannel {
     port: u16,
     agents_handle: ManagerHandle<AgentsCommand>,
@@ -49,6 +54,7 @@ pub struct DebugHttpChannel {
 }
 
 impl DebugHttpChannel {
+    /// Create a new debug HTTP channel bound to the given port.
     pub fn new(port: u16, agents_handle: ManagerHandle<AgentsCommand>) -> Self {
         let (port_tx, _) = watch::channel(0u16);
         Self {
@@ -60,21 +66,25 @@ impl DebugHttpChannel {
         }
     }
 
+    /// Set the watch sender for port discovery (supervisor reads this to know the bound port).
     pub fn with_port_tx(mut self, port_tx: watch::Sender<u16>) -> Self {
         self.port_tx = port_tx;
         self
     }
 
+    /// Set channel and MCP server names for the health endpoint response.
     pub fn with_names(mut self, channel_names: Vec<String>, mcp_server_names: Vec<String>) -> Self {
         self.channel_names = channel_names;
         self.mcp_server_names = mcp_server_names;
         self
     }
 
+    /// Subscribe to port discovery updates.
     pub fn port_rx(&self) -> watch::Receiver<u16> {
         self.port_tx.subscribe()
     }
 
+    /// Start the HTTP server and run until the cancellation token fires.
     pub async fn run(self, cancel: CancellationToken) -> Result<(), ChannelsError> {
         let state = AppState {
             agents_handle: self.agents_handle.clone(),

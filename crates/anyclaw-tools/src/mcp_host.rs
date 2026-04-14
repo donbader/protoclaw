@@ -14,16 +14,19 @@ pub struct McpHost {
 }
 
 impl McpHost {
+    /// Create a new MCP host wrapping the given native tools.
     pub fn new(tools: Vec<Box<dyn DynTool>>) -> Self {
         Self {
             server: ToolServer::new(tools),
         }
     }
 
+    /// Return the list of tools registered in this host (for aggregation with external tools).
     pub fn tool_list(&self) -> Vec<RmcpTool> {
         self.server.build_tool_list()
     }
 
+    /// Dispatch a tool call by name with the given arguments.
     // D-03: args use serde_json::Value — tool call arguments are arbitrary JSON
     // defined by each tool's input_schema. Cannot be typed at this layer.
     pub async fn dispatch_tool(

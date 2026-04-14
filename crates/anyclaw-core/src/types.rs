@@ -1,25 +1,33 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+/// Opaque identifier for an ACP session, wrapping a UUID string.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct SessionId(String);
 
+/// Opaque identifier for a channel instance (e.g. "telegram", "debug-http").
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ChannelId(String);
 
+/// Opaque identifier for a manager (one of "tools", "agents", "channels").
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ManagerId(String);
 
+/// Opaque identifier for a message, generated as UUID v4.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct MessageId(String);
 
 impl ManagerId {
+    /// Well-known manager name for the tools manager.
     pub const TOOLS: &str = "tools";
+    /// Well-known manager name for the agents manager.
     pub const AGENTS: &str = "agents";
+    /// Well-known manager name for the channels manager.
     pub const CHANNELS: &str = "channels";
 }
 
 impl MessageId {
+    /// Generate a new random message ID (UUID v4).
     pub fn new() -> Self {
         Self(uuid::Uuid::new_v4().to_string())
     }

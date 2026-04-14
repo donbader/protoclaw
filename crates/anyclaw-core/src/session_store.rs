@@ -75,26 +75,31 @@ pub trait SessionStore: Send + Sync + 'static {
 /// Object-safe alias for [`SessionStore`]. Use `Arc<dyn DynSessionStore>` for runtime dispatch.
 /// Implementors write `impl SessionStore for X`; the blanket impl provides `DynSessionStore` automatically.
 pub trait DynSessionStore: Send + Sync + 'static {
+    /// Return all sessions that are not yet marked closed (boxed future for object safety).
     fn load_open_sessions<'a>(
         &'a self,
     ) -> Pin<Box<dyn Future<Output = Result<Vec<PersistedSession>, SessionStoreError>> + Send + 'a>>;
 
+    /// Insert or update a session record (boxed future for object safety).
     fn upsert_session<'a>(
         &'a self,
         session: &'a PersistedSession,
     ) -> Pin<Box<dyn Future<Output = Result<(), SessionStoreError>> + Send + 'a>>;
 
+    /// Mark a session as closed by its session key (boxed future for object safety).
     fn mark_closed<'a>(
         &'a self,
         session_key: &'a str,
     ) -> Pin<Box<dyn Future<Output = Result<(), SessionStoreError>> + Send + 'a>>;
 
+    /// Update the `last_active_at` timestamp (boxed future for object safety).
     fn update_last_active<'a>(
         &'a self,
         session_key: &'a str,
         timestamp: i64,
     ) -> Pin<Box<dyn Future<Output = Result<(), SessionStoreError>> + Send + 'a>>;
 
+    /// Delete sessions older than `max_age_secs` seconds (boxed future for object safety).
     fn delete_expired<'a>(
         &'a self,
         max_age_secs: i64,

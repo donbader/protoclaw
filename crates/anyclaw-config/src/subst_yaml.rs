@@ -6,9 +6,15 @@ use figment::{
     value::{Dict, Map},
 };
 
+/// Figment provider that loads a YAML file and expands `${VAR}` / `${VAR:-default}`
+/// placeholders using environment variables before parsing.
+///
+/// Missing variables without a default cause a hard error — misconfigured
+/// deployments are caught at startup rather than silently falling back to empty strings.
 pub struct SubstYaml(PathBuf);
 
 impl SubstYaml {
+    /// Create a provider that reads from the given YAML file path.
     pub fn file(path: impl Into<PathBuf>) -> Self {
         Self(path.into())
     }

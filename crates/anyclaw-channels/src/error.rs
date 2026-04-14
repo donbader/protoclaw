@@ -1,21 +1,30 @@
 use thiserror::Error;
 
+/// Errors from channel subprocess operations.
 #[derive(Debug, Error)]
 pub enum ChannelsError {
+    /// The channel binary could not be spawned.
     #[error("Failed to spawn channel subprocess: {0}")]
     SpawnFailed(String),
+    /// The channel's stdio connection was closed unexpectedly.
     #[error("Channel connection closed")]
     ConnectionClosed,
+    /// A channel request did not receive a response within the configured timeout.
     #[error("Channel request timed out after {0:?}")]
     Timeout(std::time::Duration),
+    /// An I/O error during subprocess communication.
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
+    /// A JSON serialization/deserialization error.
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
+    /// The channel's `initialize` handshake failed.
     #[error("Channel initialize failed: {0}")]
     InitializeFailed(String),
+    /// The debug-http server could not bind to the requested port.
     #[error("Failed to bind HTTP server: {0}")]
     BindFailed(String),
+    /// A command sent to the agents manager failed.
     #[error("Agent command failed: {0}")]
     AgentCommand(String),
 }

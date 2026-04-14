@@ -1,26 +1,40 @@
 use tokio::sync::oneshot;
 
+/// URL of an MCP server endpoint that agents can connect to for tool access.
 #[derive(Clone)]
 pub struct McpServerUrl {
+    /// Logical tool name (matches the config key).
     pub name: String,
+    /// HTTP URL of the aggregated MCP endpoint.
     pub url: String,
 }
 
+/// Human-readable description of a tool, returned by the admin API.
 #[derive(Clone, Debug)]
 pub struct ToolDescription {
+    /// Tool name as registered in the MCP host.
     pub name: String,
+    /// Brief description of what the tool does.
     pub description: String,
 }
 
+/// Commands sent to the tools manager via [`ManagerHandle<ToolsCommand>`](crate::ManagerHandle).
 pub enum ToolsCommand {
+    /// Retrieve MCP server URLs, optionally filtered by tool name.
     GetMcpUrls {
+        /// If `Some`, only return URLs for tools whose names are in this list.
         tool_names: Option<Vec<String>>,
+        /// Oneshot channel for the URL list.
         reply: oneshot::Sender<Vec<McpServerUrl>>,
     },
+    /// Retrieve tool descriptions, optionally filtered by tool name.
     GetToolDescriptions {
+        /// If `Some`, only return descriptions for tools whose names are in this list.
         tool_names: Option<Vec<String>>,
+        /// Oneshot channel for the description list.
         reply: oneshot::Sender<Vec<ToolDescription>>,
     },
+    /// Request graceful shutdown of all tool subprocesses.
     Shutdown,
 }
 

@@ -1,5 +1,6 @@
 use anyclaw_config::{AnyclawConfig, WorkspaceConfig};
 
+/// Format the ASCII startup banner showing configured agents, channels, tools, and config path.
 pub fn format_banner(config: &AnyclawConfig, config_path: &str) -> String {
     let mut out = format!("anyclaw v{}\n", env!("CARGO_PKG_VERSION"));
     for (name, agent) in &config.agents_manager.agents {

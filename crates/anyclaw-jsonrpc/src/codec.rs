@@ -5,9 +5,15 @@ use tokio_util::codec::{Decoder, Encoder};
 
 const MAX_LINE_SIZE: usize = 32 * 1024 * 1024;
 
+/// NDJSON (newline-delimited JSON) codec for JSON-RPC 2.0 over stdio.
+///
+/// Framing protocol: one JSON object per line terminated by `\n`. The codec
+/// skips empty lines, handles CRLF endings, silently drops non-JSON-RPC lines,
+/// and enforces a 32 MB maximum line size to prevent unbounded memory growth.
 pub struct NdJsonCodec;
 
 impl NdJsonCodec {
+    /// Create a new codec instance.
     pub fn new() -> Self {
         Self
     }

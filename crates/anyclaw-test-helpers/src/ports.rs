@@ -1,3 +1,4 @@
+/// Wait for a `watch::Receiver<u16>` to emit a non-zero port, with a timeout in milliseconds.
 pub async fn wait_for_port(
     mut port_rx: tokio::sync::watch::Receiver<u16>,
     timeout_ms: u64,

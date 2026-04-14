@@ -21,6 +21,7 @@ pub struct SessionQueue {
 }
 
 impl SessionQueue {
+    /// Create a new empty session queue.
     pub fn new() -> Self {
         Self {
             queues: HashMap::new(),
@@ -107,6 +108,7 @@ impl SessionQueue {
             None
         }
     }
+    /// Drain all queued messages for a session (used when the session becomes idle after completion).
     pub fn drain_queued(&mut self, session_key: &SessionKey) -> Vec<String> {
         if let Some(queue) = self.queues.remove(session_key) {
             queue.into_iter().collect()

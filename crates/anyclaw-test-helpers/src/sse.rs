@@ -3,12 +3,16 @@ use std::time::Duration;
 use futures_core::Stream;
 use tokio_stream::StreamExt;
 
+/// A parsed Server-Sent Event with optional event type and data payload.
 #[derive(Debug, Clone)]
 pub struct SseEvent {
+    /// The SSE event type (from `event:` field), if present.
     pub event_type: Option<String>,
+    /// The SSE data payload (from `data:` field).
     pub data: String,
 }
 
+/// Collects SSE events from an HTTP byte stream for integration test assertions.
 pub struct SseCollector {
     stream: Box<dyn Stream<Item = reqwest::Result<bytes::Bytes>> + Unpin + Send>,
     buffer: Vec<SseEvent>,
@@ -31,6 +35,7 @@ impl SseCollector {
         }
     }
 
+    /// Connect to an SSE endpoint at the given port and return a collector.
     pub async fn connect(port: u16) -> Self {
         let client = reqwest::Client::new();
         let resp = client
@@ -49,6 +54,7 @@ impl SseCollector {
         }
     }
 
+    /// Wait for the next SSE event, returning `None` if the timeout expires.
     pub async fn next_event(&mut self, timeout: Duration) -> Option<SseEvent> {
         if let Some(event) = self.buffer.pop() {
             return Some(event);
@@ -57,6 +63,7 @@ impl SseCollector {
         self.buffer.pop()
     }
 
+    /// Collect all SSE events that arrive within the timeout window.
     pub async fn collect_events(&mut self, timeout: Duration) -> Vec<SseEvent> {
         self.poll_events(timeout).await;
         let mut events = std::mem::take(&mut self.buffer);

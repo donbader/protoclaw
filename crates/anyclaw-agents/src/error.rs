@@ -1,29 +1,46 @@
 use thiserror::Error;
 
+/// Manager-level errors for agent subprocess operations.
 #[derive(Debug, Error)]
 pub enum AgentsError {
+    /// The agent binary could not be spawned.
     #[error("Failed to spawn agent process: {0}")]
     SpawnFailed(String),
+    /// The agent process exited before we expected it to.
     #[error("Agent process exited unexpectedly: {0}")]
     ProcessExited(String),
+    /// An ACP protocol-level error (wraps [`AcpError`](crate::acp_error::AcpError)).
     #[error("ACP protocol error: {0}")]
     Protocol(#[from] crate::acp_error::AcpError),
+    /// An ACP request did not receive a response within the configured timeout.
     #[error("Request timed out after {0:?}")]
     Timeout(std::time::Duration),
+    /// The agent's stdio connection was closed unexpectedly.
     #[error("Agent connection closed")]
     ConnectionClosed,
+    /// An I/O error during subprocess communication.
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
+    /// A JSON serialization/deserialization error.
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
+    /// No agent with the given name exists in the configuration.
     #[error("Agent not found: {0}")]
     AgentNotFound(String),
+    /// The agent does not advertise a required ACP capability.
     #[error("Agent does not support capability: {0}")]
     CapabilityNotSupported(String),
+    /// A Docker API error (container create, start, attach, etc.).
     #[error("Docker error: {0}")]
     DockerError(String),
+    /// Docker image pull failed.
     #[error("Failed to pull image {image}: {reason}")]
-    ImagePullFailed { image: String, reason: String },
+    ImagePullFailed {
+        /// The image that failed to pull.
+        image: String,
+        /// Why the pull failed.
+        reason: String,
+    },
 }
 
 #[cfg(test)]

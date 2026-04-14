@@ -117,6 +117,12 @@ fn validate_fs_write_path(
     Ok(canonical_parent.join(filename))
 }
 
+/// Manages agent subprocess lifecycles, ACP session routing, and crash recovery.
+///
+/// The `AgentsManager` owns all [`AgentSlot`]s, dispatches commands from the
+/// channels manager, and forwards agent events back to channels. It implements
+/// the bridge-collapsed architecture where incoming agent messages flow directly
+/// to the manager's shared channel without an intermediate forwarding task.
 pub struct AgentsManager {
     agent_configs: Vec<(String, AgentConfig)>,
     manager_config: AgentsManagerConfig,
@@ -141,6 +147,7 @@ pub struct AgentsManager {
 }
 
 impl AgentsManager {
+    /// Create a new agents manager from the given config and tools handle.
     pub fn new(
         mut agents_manager_config: AgentsManagerConfig,
         tools_handle: ManagerHandle<ToolsCommand>,
@@ -173,31 +180,37 @@ impl AgentsManager {
         }
     }
 
+    /// Set the tracing log level filter passed to agent subprocesses.
     pub fn with_log_level(mut self, level: String) -> Self {
         self.log_level = Some(level);
         self
     }
 
+    /// Replace the default [`GenericAcpAdapter`] with a custom adapter.
     pub fn with_adapter(mut self, adapter: Box<dyn DynAgentAdapter>) -> Self {
         self.adapter = adapter;
         self
     }
 
+    /// Set the outbound channel for forwarding agent events to the channels manager.
     pub fn with_channels_sender(mut self, sender: mpsc::Sender<ChannelEvent>) -> Self {
         self.channels_sender = Some(sender);
         self
     }
 
+    /// Set the persistent session store (default: [`NoopSessionStore`]).
     pub fn with_session_store(mut self, store: Arc<dyn DynSessionStore>) -> Self {
         self.session_store = store;
         self
     }
 
+    /// Set the TTL for expired session cleanup at boot (seconds).
     pub fn with_session_ttl_secs(mut self, ttl: i64) -> Self {
         self.session_ttl_secs = ttl;
         self
     }
 
+    /// Clone the command sender so the supervisor can wire it to the channels manager.
     pub fn command_sender(&self) -> tokio::sync::mpsc::Sender<AgentsCommand> {
         self.cmd_tx.clone()
     }

@@ -4,59 +4,100 @@ use crate::SessionKey;
 use anyclaw_sdk_types::PermissionOption;
 use anyclaw_sdk_types::SessionListResult;
 
+/// Status snapshot for a single agent, returned by the admin API.
 #[derive(Debug, Clone)]
 pub struct AgentStatusInfo {
+    /// Agent name (matches the config key).
     pub name: String,
+    /// Whether the agent subprocess is currently connected.
     pub connected: bool,
+    /// Number of active ACP sessions.
     pub session_count: usize,
 }
 
+/// A pending permission request awaiting user response, surfaced via the admin API.
 pub struct PendingPermissionInfo {
+    /// The ACP request ID that must be echoed back in the response.
     pub request_id: String,
+    /// Human-readable description of what the agent is requesting.
     pub description: String,
+    /// Available response options (e.g. "Allow", "Deny").
     pub options: Vec<PermissionOption>,
 }
 
+/// Commands sent to the agents manager via [`ManagerHandle<AgentsCommand>`](crate::ManagerHandle).
 pub enum AgentsCommand {
+    /// Send a prompt to the default agent session (legacy single-session path).
     SendPrompt {
+        /// The user message text.
         message: String,
+        /// Oneshot channel for the result.
         reply: oneshot::Sender<Result<(), String>>,
     },
+    /// Cancel any in-progress operation on the default agent.
     CancelOperation,
+    /// Respond to a pending permission request from an agent.
     RespondPermission {
+        /// The ACP request ID being responded to.
         request_id: String,
+        /// The selected option ID (e.g. "allow", "deny").
         option_id: String,
     },
+    /// Retrieve all pending permission requests across all agents.
     GetPendingPermissions {
+        /// Oneshot channel for the list of pending permissions.
         reply: oneshot::Sender<Vec<PendingPermissionInfo>>,
     },
+    /// Request graceful shutdown of all agent subprocesses.
     Shutdown,
+    /// Retrieve status information for all configured agents.
     GetStatus {
+        /// Oneshot channel for the status list.
         reply: oneshot::Sender<Vec<AgentStatusInfo>>,
     },
+    /// Create a new ACP session for a specific agent and session key.
     CreateSession {
+        /// Which agent to create the session on.
         agent_name: String,
+        /// Channel-derived session identity (e.g. "telegram:user:12345").
         session_key: SessionKey,
+        /// Oneshot channel returning the ACP session ID on success.
         reply: oneshot::Sender<Result<String, String>>,
     },
+    /// Send a user message to an existing session.
     PromptSession {
+        /// Which agent owns the session.
         agent_name: String,
+        /// Session identity to route the prompt to.
         session_key: SessionKey,
+        /// The user message text.
         message: String,
+        /// Oneshot channel for the result.
         reply: oneshot::Sender<Result<(), String>>,
     },
+    /// Fork an existing session (creates a new session branching from the current state).
     ForkSession {
+        /// Which agent owns the session to fork.
         agent_name: String,
+        /// Session identity to fork from.
         session_key: SessionKey,
+        /// Oneshot channel returning the new ACP session ID on success.
         reply: oneshot::Sender<Result<String, String>>,
     },
+    /// List all sessions on a specific agent.
     ListSessions {
+        /// Which agent to query.
         agent_name: String,
+        /// Oneshot channel for the session list.
         reply: oneshot::Sender<Result<SessionListResult, String>>,
     },
+    /// Cancel an in-progress operation on a specific session.
     CancelSession {
+        /// Which agent owns the session.
         agent_name: String,
+        /// Session identity to cancel.
         session_key: SessionKey,
+        /// Oneshot channel for the result.
         reply: oneshot::Sender<Result<(), String>>,
     },
 }

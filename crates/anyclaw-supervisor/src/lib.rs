@@ -1,3 +1,8 @@
+#![warn(missing_docs)]
+
+//! Supervisor: boot/shutdown orchestration, health monitoring, and crash recovery
+//! for the three-manager architecture (tools → agents → channels).
+
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -14,18 +19,25 @@ use anyclaw_channels::{ChannelsCommand, ChannelsManager};
 use anyclaw_core::ChannelEvent;
 use anyclaw_tools::{ToolsCommand, ToolsManager};
 
+/// Admin HTTP server exposing `/health` and `/metrics` endpoints.
 pub mod admin_server;
 
+/// Errors from the supervisor layer.
 #[derive(Debug, thiserror::Error)]
 pub enum SupervisorError {
+    /// A manager failed during its `start()` phase at boot time.
     #[error("failed to boot manager '{manager}': {source}")]
     BootFailure {
+        /// Name of the manager that failed.
         manager: String,
+        /// The underlying manager error.
         #[source]
         source: ManagerError,
     },
 }
 
+/// Orchestrates the three managers: boots them in order, monitors health,
+/// restarts crashed managers with backoff, and shuts down in reverse order.
 pub struct Supervisor {
     config: AnyclawConfig,
     tools_tx: Option<tokio::sync::mpsc::Sender<ToolsCommand>>,
@@ -62,6 +74,7 @@ async fn shutdown_signal() {
 }
 
 impl Supervisor {
+    /// Create a new supervisor from the given config. Resolves all binary paths at construction.
     pub fn new(mut config: AnyclawConfig) -> Self {
         resolve_all_binary_paths(&mut config);
 
@@ -82,6 +95,7 @@ impl Supervisor {
         }
     }
 
+    /// Subscribe to debug-http port discovery updates.
     pub fn debug_http_port_rx(&self) -> tokio::sync::watch::Receiver<u16> {
         self.debug_http_port_rx.clone()
     }
@@ -92,6 +106,7 @@ impl Supervisor {
         self
     }
 
+    /// Run the supervisor with automatic SIGTERM/SIGINT handling.
     pub async fn run(self) -> Result<(), SupervisorError> {
         let cancel = CancellationToken::new();
         let cancel_clone = cancel.clone();
@@ -107,6 +122,7 @@ impl Supervisor {
         result
     }
 
+    /// Run the supervisor with an externally-provided cancellation token (used in tests).
     pub async fn run_with_cancel(
         mut self,
         cancel: CancellationToken,

@@ -4,55 +4,75 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(untagged)]
 pub enum RequestId {
+    /// Numeric id (most common in practice).
     Number(i64),
+    /// String id (used by some agent implementations).
     String(String),
 }
 
 // Extensible Value fields: params schema varies per JSON-RPC method (D-03)
 #[allow(clippy::disallowed_types)]
+/// A JSON-RPC 2.0 request (or notification if `id` is `None`).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct JsonRpcRequest {
+    /// Protocol version — always `"2.0"`.
     pub jsonrpc: String,
+    /// Request id. `None` for notifications.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<RequestId>,
+    /// The RPC method name (e.g. `"session/prompt"`, `"initialize"`).
     pub method: String,
+    /// Method-specific parameters. D-03 extensible boundary: schemas vary per method.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub params: Option<serde_json::Value>,
 }
 
 // Extensible Value fields: result schema varies per JSON-RPC method (D-03)
 #[allow(clippy::disallowed_types)]
+/// A JSON-RPC 2.0 response (success or error).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct JsonRpcResponse {
+    /// Protocol version — always `"2.0"`.
     pub jsonrpc: String,
+    /// Echoed request id. `None` for responses to notifications.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<RequestId>,
+    /// Success payload. D-03 extensible boundary: schemas vary per method.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<serde_json::Value>,
+    /// Error payload (mutually exclusive with `result`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<JsonRpcError>,
 }
 
 // Extensible Value fields: error data is implementation-defined (D-03)
 #[allow(clippy::disallowed_types)]
+/// A JSON-RPC 2.0 error object embedded in a response.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct JsonRpcError {
+    /// Numeric error code (e.g. `-32600` for "Invalid Request").
     pub code: i64,
+    /// Human-readable error description.
     pub message: String,
+    /// Optional structured error data. D-03 extensible boundary.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<serde_json::Value>,
 }
 
+/// Untagged enum that deserialises either a request or a response from a JSON-RPC line.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(untagged)]
 pub enum JsonRpcMessage {
+    /// A JSON-RPC request or notification (has `method` field).
     Request(JsonRpcRequest),
+    /// A JSON-RPC response (has `result` or `error` field).
     Response(JsonRpcResponse),
 }
 
 impl JsonRpcRequest {
     // Extensible: params schema varies per JSON-RPC method (D-03)
     #[allow(clippy::disallowed_types)]
+    /// Create a new JSON-RPC 2.0 request with the given method, optional id, and optional params.
     pub fn new(
         method: impl Into<String>,
         id: Option<RequestId>,
@@ -66,6 +86,7 @@ impl JsonRpcRequest {
         }
     }
 
+    /// Returns `true` if this request is a notification (no `id` field).
     pub fn is_notification(&self) -> bool {
         self.id.is_none()
     }
@@ -74,6 +95,7 @@ impl JsonRpcRequest {
 impl JsonRpcResponse {
     // Extensible: result schema varies per JSON-RPC method (D-03)
     #[allow(clippy::disallowed_types)]
+    /// Create a success response with the given id and result payload.
     pub fn success(id: Option<RequestId>, result: serde_json::Value) -> Self {
         Self {
             jsonrpc: "2.0".to_string(),
@@ -83,6 +105,7 @@ impl JsonRpcResponse {
         }
     }
 
+    /// Create an error response with the given id and error object.
     pub fn error(id: Option<RequestId>, error: JsonRpcError) -> Self {
         Self {
             jsonrpc: "2.0".to_string(),

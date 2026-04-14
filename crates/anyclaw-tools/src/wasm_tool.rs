@@ -5,6 +5,10 @@ use anyclaw_sdk_tool::{Tool, ToolSdkError};
 
 use crate::wasm_runner::WasmToolRunner;
 
+/// A WASM module wrapped as a [`Tool`] implementation.
+///
+/// Each invocation gets a fresh wasmtime `Store` with its own fuel budget,
+/// epoch timeout, and WASI context — full isolation between calls.
 pub struct WasmTool {
     name: String,
     config: ToolConfig,
@@ -13,6 +17,7 @@ pub struct WasmTool {
 }
 
 impl WasmTool {
+    /// Load a WASM module from the path specified in the tool config.
     pub fn new(
         name: String,
         config: ToolConfig,

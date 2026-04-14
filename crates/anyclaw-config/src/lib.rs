@@ -1,10 +1,23 @@
+#![warn(missing_docs)]
+
+//! Figment-based layered configuration for anyclaw.
+//!
+//! Loading order: embedded defaults → user YAML file (with `${VAR}` substitution)
+//! → environment variables (`ANYCLAW_` prefix, `__` separator).
+
+/// Configuration error types.
 pub mod error;
+/// K8s-style resource limit parsers (memory, CPU).
 pub mod parse;
+/// Binary path resolution (`@built-in/` prefix expansion).
 pub mod resolve;
+/// YAML provider with `${VAR}` environment variable substitution.
 pub mod subst_yaml;
 // Grandfathered: typed replacement in Phase 2-4
 #[allow(clippy::disallowed_types)]
+/// All configuration structs and their serde defaults.
 pub mod types;
+/// Semantic config validation (binary existence, working dir checks, Docker limits).
 pub mod validate;
 
 pub use error::*;
@@ -16,6 +29,10 @@ pub use validate::*;
 use figment::{Figment, providers::Format};
 
 impl AnyclawConfig {
+    /// Load configuration from layered providers: defaults → YAML file → env vars.
+    ///
+    /// Returns [`ConfigError::LoadFailed`] if the config file does not exist or
+    /// cannot be parsed.
     pub fn load(config_path: Option<&str>) -> Result<Self, ConfigError> {
         let path = config_path.unwrap_or("anyclaw.yaml");
 

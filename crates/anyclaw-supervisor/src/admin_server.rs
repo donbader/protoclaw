@@ -7,6 +7,7 @@ use tokio::sync::RwLock;
 
 type SharedHealth = Arc<RwLock<HealthSnapshot>>;
 
+/// Start the admin HTTP server on the given port, serving `/health` and `/metrics`.
 pub async fn start(port: u16, health: SharedHealth) {
     let handle = match PrometheusBuilder::new().install_recorder() {
         Ok(h) => h,

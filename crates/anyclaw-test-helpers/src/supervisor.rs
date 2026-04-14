@@ -1,5 +1,6 @@
 use tokio_util::sync::CancellationToken;
 
+/// Boot a supervisor, wait for all managers to start, and return (cancel_token, join_handle, debug_http_port).
 pub async fn boot_supervisor_with_port(
     config: anyclaw_config::AnyclawConfig,
 ) -> (

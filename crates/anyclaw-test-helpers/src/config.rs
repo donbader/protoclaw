@@ -4,10 +4,12 @@ use crate::paths::{
     debug_http_path, mock_agent_path, sdk_test_channel_path, sdk_test_tool_path, workspace_root,
 };
 
+/// Build an `AnyclawConfig` with a mock-agent and no channels/tools.
 pub fn mock_agent_config() -> anyclaw_config::AnyclawConfig {
     mock_agent_config_with_options(HashMap::new())
 }
 
+/// Build an `AnyclawConfig` with a mock-agent and custom agent options.
 pub fn mock_agent_config_with_options(
     options: HashMap<String, serde_json::Value>,
 ) -> anyclaw_config::AnyclawConfig {

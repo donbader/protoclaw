@@ -1,17 +1,24 @@
 use thiserror::Error;
 
+/// Errors from tool management operations.
 #[derive(Debug, Error)]
 pub enum ToolsError {
+    /// The aggregated MCP HTTP server could not be started.
     #[error("Failed to start MCP server: {0}")]
     ServerStart(String),
+    /// An operation was attempted but the MCP server is not running.
     #[error("MCP server not running")]
     ServerNotRunning,
+    /// The in-process MCP host encountered an error.
     #[error("MCP host failed: {0}")]
     McpHostFailed(String),
+    /// An external MCP server subprocess failed.
     #[error("External MCP server failed: {0}")]
     ExternalServerFailed(String),
+    /// A tool proxy/routing error.
     #[error("Tool proxy error: {0}")]
     ProxyError(String),
+    /// An I/O error during tool operations.
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 }

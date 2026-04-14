@@ -1,20 +1,40 @@
 /// Configuration errors for anyclaw config loading and validation.
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
+    /// The config file could not be loaded or parsed.
     #[error("failed to load config from '{path}': {reason}")]
-    LoadFailed { path: String, reason: String },
+    LoadFailed {
+        /// Path that was attempted.
+        path: String,
+        /// Why loading failed.
+        reason: String,
+    },
 
+    /// Semantic validation of the loaded config failed.
     #[error("config validation failed: {0}")]
     Validation(String),
 
+    /// Figment extraction error.
     #[error("config parse error: {0}")]
     Parse(#[from] Box<figment::Error>),
 
+    /// A Docker memory limit string could not be parsed.
     #[error("invalid memory limit '{value}': {reason}")]
-    InvalidMemoryLimit { value: String, reason: String },
+    InvalidMemoryLimit {
+        /// The raw memory limit string.
+        value: String,
+        /// Why parsing failed.
+        reason: String,
+    },
 
+    /// A Docker CPU limit string could not be parsed.
     #[error("invalid cpu limit '{value}': {reason}")]
-    InvalidCpuLimit { value: String, reason: String },
+    InvalidCpuLimit {
+        /// The raw CPU limit string.
+        value: String,
+        /// Why parsing failed.
+        reason: String,
+    },
 }
 
 #[cfg(test)]

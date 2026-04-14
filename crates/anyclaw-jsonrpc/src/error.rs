@@ -1,13 +1,27 @@
+/// Errors that can occur during JSON-RPC framing (codec layer).
 #[derive(Debug, thiserror::Error)]
 pub enum FramingError {
+    /// The Content-Length header could not be parsed.
     #[error("invalid Content-Length header: {reason}")]
-    InvalidHeader { reason: String },
+    InvalidHeader {
+        /// Why the header was rejected.
+        reason: String,
+    },
+    /// A single frame exceeded the maximum allowed size.
     #[error("frame of {size} bytes exceeds maximum of {max} bytes")]
-    FrameTooLarge { size: usize, max: usize },
+    FrameTooLarge {
+        /// Actual frame size in bytes.
+        size: usize,
+        /// Maximum allowed size in bytes.
+        max: usize,
+    },
+    /// The JSON payload could not be parsed.
     #[error("invalid JSON payload: {0}")]
     InvalidJson(#[from] serde_json::Error),
+    /// A header contained invalid UTF-8.
     #[error("invalid UTF-8 in header: {0}")]
     InvalidUtf8(#[from] std::str::Utf8Error),
+    /// An underlying I/O error.
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 }

@@ -6,11 +6,13 @@ use tokio::process::Child;
 use crate::backend::ProcessBackend;
 use crate::error::AgentsError;
 
+/// [`ProcessBackend`] implementation for native local subprocesses via `tokio::process::Child`.
 pub struct LocalBackend {
     child: Child,
 }
 
 impl LocalBackend {
+    /// Wrap an already-spawned child process as a backend.
     pub fn new(child: Child) -> Self {
         Self { child }
     }

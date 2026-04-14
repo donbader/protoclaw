@@ -2,6 +2,10 @@ use std::time::{Duration, Instant};
 
 use crate::constants;
 
+/// Exponential backoff calculator for manager restart delays.
+///
+/// Starts at a base delay and doubles on each attempt up to a configurable cap.
+/// Used by the supervisor to avoid hammering a repeatedly-failing subprocess.
 pub struct ExponentialBackoff {
     current: Duration,
     max: Duration,
@@ -10,6 +14,7 @@ pub struct ExponentialBackoff {
 }
 
 impl ExponentialBackoff {
+    /// Create a new backoff with the given base delay and maximum cap.
     pub fn new(base: Duration, max: Duration) -> Self {
         Self {
             current: base,
@@ -19,6 +24,7 @@ impl ExponentialBackoff {
         }
     }
 
+    /// Return the current delay and advance to the next (doubled, capped at max).
     pub fn next_delay(&mut self) -> Duration {
         let delay = self.current;
         self.current = (self.current * 2).min(self.max);
@@ -26,25 +32,23 @@ impl ExponentialBackoff {
         delay
     }
 
+    /// Reset the backoff to its initial base delay and zero the attempt counter.
     pub fn reset(&mut self) {
         self.current = self.base;
         self.attempts = 0;
     }
 
+    /// Number of delays consumed so far (incremented by each [`next_delay`](Self::next_delay) call).
     pub fn attempts(&self) -> u32 {
         self.attempts
     }
 }
 
-impl Default for ExponentialBackoff {
-    fn default() -> Self {
-        Self::new(
-            Duration::from_millis(constants::DEFAULT_BACKOFF_BASE_MS),
-            Duration::from_secs(constants::DEFAULT_BACKOFF_MAX_SECS),
-        )
-    }
-}
-
+/// Sliding-window crash counter that detects crash loops.
+///
+/// Records crash timestamps and checks whether the count within a rolling
+/// time window exceeds a threshold. When it does, the supervisor marks the
+/// manager as disabled and stops restarting it.
 pub struct CrashTracker {
     timestamps: Vec<Instant>,
     max_crashes: u32,
@@ -52,6 +56,7 @@ pub struct CrashTracker {
 }
 
 impl CrashTracker {
+    /// Create a tracker that trips after `max_crashes` within `window`.
     pub fn new(max_crashes: u32, window: Duration) -> Self {
         Self {
             timestamps: Vec::new(),
@@ -60,6 +65,7 @@ impl CrashTracker {
         }
     }
 
+    /// Record a crash and prune timestamps outside the window.
     pub fn record_crash(&mut self) {
         let now = Instant::now();
         self.timestamps
@@ -67,6 +73,7 @@ impl CrashTracker {
         self.timestamps.push(now);
     }
 
+    /// Check whether the number of recent crashes meets or exceeds the threshold.
     pub fn is_crash_loop(&self) -> bool {
         let now = Instant::now();
         let recent = self
@@ -77,8 +84,18 @@ impl CrashTracker {
         recent >= self.max_crashes as usize
     }
 
+    /// Clear all recorded crash timestamps.
     pub fn reset(&mut self) {
         self.timestamps.clear();
+    }
+}
+
+impl Default for ExponentialBackoff {
+    fn default() -> Self {
+        Self::new(
+            Duration::from_millis(constants::DEFAULT_BACKOFF_BASE_MS),
+            Duration::from_secs(constants::DEFAULT_BACKOFF_MAX_SECS),
+        )
     }
 }
 

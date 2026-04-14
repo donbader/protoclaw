@@ -9,6 +9,10 @@ use crate::PendingPermission;
 use crate::acp_types::{InitializeResult, SessionCapabilities};
 use crate::connection::AgentConnection;
 
+/// Per-agent runtime state: connection, session maps, capabilities, and pending permissions.
+///
+/// Each configured agent gets one `AgentSlot`. The slot tracks the subprocess connection,
+/// maps channel session keys to ACP session IDs, and buffers pending permission requests.
 pub struct AgentSlot {
     pub(crate) name: String,
     pub(crate) config: AgentConfig,
@@ -43,6 +47,7 @@ pub struct AgentSlot {
 }
 
 impl AgentSlot {
+    /// Create a new slot for the given agent configuration.
     pub fn new(name: String, config: AgentConfig, parent_cancel: &CancellationToken) -> Self {
         let disabled = !config.enabled;
         let backoff = match &config.backoff {
@@ -76,6 +81,7 @@ impl AgentSlot {
         }
     }
 
+    /// The agent's configured name (matches the config map key).
     pub fn name(&self) -> &str {
         &self.name
     }
@@ -89,6 +95,7 @@ impl AgentSlot {
     }
 }
 
+/// Find the index of an agent slot by name, or `None` if not found.
 pub fn find_slot_by_name(slots: &[AgentSlot], name: &str) -> Option<usize> {
     slots.iter().position(|s| s.name == name)
 }

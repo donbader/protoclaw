@@ -1,31 +1,62 @@
+/// Errors originating from the supervisor layer (boot failures, crash loops, shutdown timeouts).
 #[derive(Debug, thiserror::Error)]
 pub enum SupervisorError {
+    /// A manager failed during its `start()` phase.
     #[error("failed to boot manager {manager}: {reason}")]
-    BootFailed { manager: String, reason: String },
+    BootFailed {
+        /// Name of the manager that failed to boot.
+        manager: String,
+        /// Human-readable reason for the failure.
+        reason: String,
+    },
+    /// A manager's `run()` task exited with an error.
     #[error("manager {manager} crashed: {reason}")]
-    ManagerCrashed { manager: String, reason: String },
+    ManagerCrashed {
+        /// Name of the crashed manager.
+        manager: String,
+        /// Human-readable crash reason.
+        reason: String,
+    },
+    /// A manager did not shut down within the per-manager timeout.
     #[error("shutdown timed out for manager {manager}")]
-    ShutdownTimeout { manager: String },
+    ShutdownTimeout {
+        /// Name of the manager that timed out.
+        manager: String,
+    },
+    /// A manager exceeded its crash-loop threshold (N crashes within a time window).
     #[error("crash loop detected for manager {manager}: {count} crashes in {window_secs}s")]
     CrashLoop {
+        /// Name of the crash-looping manager.
         manager: String,
+        /// Number of crashes recorded in the window.
         count: u32,
+        /// Duration of the crash-tracking window in seconds.
         window_secs: u64,
     },
+    /// A configuration error prevented supervisor startup.
     #[error("configuration error: {0}")]
     Config(String),
 }
 
+/// Errors originating from individual manager operations.
 #[derive(Debug, thiserror::Error)]
 pub enum ManagerError {
+    /// The manager's `start()` was not called before `run()`.
     #[error("manager not started")]
     NotStarted,
+    /// Attempted to call `run()` on a manager that is already running.
     #[error("manager already running")]
     AlreadyRunning,
+    /// A periodic health check failed.
     #[error("health check failed: {reason}")]
-    HealthCheckFailed { reason: String },
+    HealthCheckFailed {
+        /// Why the health check failed.
+        reason: String,
+    },
+    /// Sending a command via [`ManagerHandle`](crate::ManagerHandle) failed (channel closed).
     #[error("command send failed: {0}")]
     SendFailed(String),
+    /// Catch-all for internal errors that don't fit other variants.
     #[error("{0}")]
     Internal(String),
 }

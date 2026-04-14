@@ -104,8 +104,10 @@ pub const DEFAULTS_YAML: &str = include_str!("defaults.yaml");
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum LogFormat {
+    /// Human-readable colored output (default, suitable for development).
     #[default]
     Pretty,
+    /// Structured JSON lines (suitable for production log aggregators).
     Json,
 }
 
@@ -152,28 +154,39 @@ pub enum SessionStoreConfig {
 /// Manager-hierarchy: each manager owns its children as named maps.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AnyclawConfig {
+    /// Tracing filter directive (e.g. `"info,hyper=warn"`).
     #[serde(default = "default_log_level")]
     pub log_level: String,
+    /// Output format for tracing logs.
     #[serde(default)]
     pub log_format: LogFormat,
+    /// Base directory for resolving `@built-in/` binary paths.
     #[serde(default = "default_extensions_dir")]
     pub extensions_dir: String,
+    /// Agents manager configuration and named agent map.
     #[serde(alias = "agents-manager", default)]
     pub agents_manager: AgentsManagerConfig,
+    /// Channels manager configuration and named channel map.
     #[serde(alias = "channels-manager", default)]
     pub channels_manager: ChannelsManagerConfig,
+    /// Tools manager configuration and named tool map.
     #[serde(alias = "tools-manager", default)]
     pub tools_manager: ToolsManagerConfig,
+    /// Supervisor-level settings (shutdown timeout, health interval, restart limits).
     #[serde(default)]
     pub supervisor: SupervisorConfig,
+    /// Session persistence backend selection.
     #[serde(alias = "session-store", default)]
     pub session_store: SessionStoreConfig,
 }
 
+/// Per-subprocess backoff configuration for restart delays.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct BackoffConfig {
+    /// Initial delay before the first restart attempt (milliseconds).
     #[serde(default = "default_backoff_base_ms")]
     pub base_delay_ms: u64,
+    /// Maximum delay cap — the backoff will never exceed this (seconds).
     #[serde(default = "default_backoff_max_secs")]
     pub max_delay_secs: u64,
 }
@@ -214,12 +227,16 @@ impl Default for CrashTrackerConfig {
     }
 }
 
+/// Configuration for the agents manager and its named agent map.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AgentsManagerConfig {
+    /// Default ACP request timeout in seconds (overridable per-agent).
     #[serde(default = "default_acp_timeout_secs")]
     pub acp_timeout_secs: u64,
+    /// Grace period after sending shutdown before force-killing agent subprocesses (ms).
     #[serde(default = "default_shutdown_grace_ms")]
     pub shutdown_grace_ms: u64,
+    /// Named agent configurations (keys are agent names used in routing).
     #[serde(default)]
     pub agents: HashMap<String, AgentConfig>,
 }
@@ -234,12 +251,16 @@ impl Default for AgentsManagerConfig {
     }
 }
 
+/// Configuration for the channels manager and its named channel map.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ChannelsManagerConfig {
+    /// Timeout for the `initialize` handshake with channel subprocesses (seconds).
     #[serde(default = "default_init_timeout_secs")]
     pub init_timeout_secs: u64,
+    /// Graceful shutdown wait before force-killing channel subprocesses (seconds).
     #[serde(default = "default_exit_timeout_secs")]
     pub exit_timeout_secs: u64,
+    /// Named channel configurations (keys are channel names used in routing).
     #[serde(default)]
     pub channels: HashMap<String, ChannelConfig>,
 }
@@ -254,10 +275,14 @@ impl Default for ChannelsManagerConfig {
     }
 }
 
+/// Configuration for the tools manager and its named tool map.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ToolsManagerConfig {
+    /// Named tool configurations (keys are tool names advertised to agents).
     #[serde(default)]
     pub tools: HashMap<String, ToolConfig>,
+    /// Host/IP for the aggregated MCP HTTP endpoint. Default `127.0.0.1`.
+    /// Set to the container hostname in Docker deployments so agent containers can reach it.
     #[serde(default = "default_tools_server_host")]
     pub tools_server_host: String,
 }
@@ -271,11 +296,15 @@ impl Default for ToolsManagerConfig {
     }
 }
 
+/// Docker image pull policy for agent containers.
 #[derive(Debug, Clone, Serialize, PartialEq, Default)]
 pub enum PullPolicy {
+    /// Always pull the image before starting the container.
     Always,
+    /// Only pull if the image is not already present locally (default).
     #[default]
     IfNotPresent,
+    /// Never pull — fail if the image is not present locally.
     Never,
 }
 
@@ -298,32 +327,46 @@ impl<'de> serde::Deserialize<'de> for PullPolicy {
     }
 }
 
+/// Local workspace: agent runs as a native subprocess on the host.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct LocalWorkspaceConfig {
+    /// Executable path (or `@built-in/` prefix resolved at boot).
     pub binary: StringOrArray,
+    /// Working directory for the subprocess. `None` = inherit supervisor's cwd.
     #[serde(default)]
     pub working_dir: Option<PathBuf>,
+    /// Extra environment variables passed to the subprocess.
     #[serde(default, deserialize_with = "deserialize_string_map")]
     pub env: HashMap<String, String>,
 }
 
+/// Docker workspace: agent runs inside a Docker container.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct DockerWorkspaceConfig {
+    /// Docker image name (e.g. `"anyclaw/opencode:latest"`).
     pub image: String,
+    /// Override the container entrypoint.
     #[serde(default)]
     pub entrypoint: Option<StringOrArray>,
+    /// Volume mounts in `host:container[:ro]` format.
     #[serde(default)]
     pub volumes: Vec<String>,
+    /// Extra environment variables passed to the container.
     #[serde(default, deserialize_with = "deserialize_string_map")]
     pub env: HashMap<String, String>,
+    /// Docker memory limit (K8s-style, e.g. `"512m"`, `"2g"`).
     #[serde(default)]
     pub memory_limit: Option<String>,
+    /// Docker CPU limit (e.g. `"1.5"` = 1.5 cores).
     #[serde(default)]
     pub cpu_limit: Option<String>,
+    /// Docker daemon socket URI (e.g. `"unix:///var/run/docker.sock"`).
     #[serde(default)]
     pub docker_host: Option<String>,
+    /// Docker network to attach the container to.
     #[serde(default)]
     pub network: Option<String>,
+    /// Image pull policy before starting the container.
     #[serde(default)]
     pub pull_policy: PullPolicy,
     /// Working directory to pass as `cwd` in the ACP `session/new` handshake.
@@ -334,49 +377,71 @@ pub struct DockerWorkspaceConfig {
     pub working_dir: Option<PathBuf>,
 }
 
+/// Tagged enum selecting the agent's execution environment.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum WorkspaceConfig {
+    /// Run the agent as a local subprocess.
     Local(LocalWorkspaceConfig),
+    /// Run the agent inside a Docker container.
     Docker(DockerWorkspaceConfig),
 }
 
+/// Per-agent configuration. Names come from the HashMap key in [`AgentsManagerConfig`].
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AgentConfig {
+    /// Execution environment (local subprocess or Docker container).
     pub workspace: WorkspaceConfig,
+    /// Whether this agent is active. Disabled agents are not spawned.
     #[serde(default = "default_true")]
     pub enabled: bool,
+    /// Tool names this agent is allowed to use (matched against tool config keys).
     #[serde(default)]
     pub tools: Vec<String>,
+    /// Per-agent ACP timeout override (seconds). `None` = use manager default.
     #[serde(default)]
     pub acp_timeout_secs: Option<u64>,
+    /// Per-agent backoff override. `None` = use default backoff.
     #[serde(default)]
     pub backoff: Option<BackoffConfig>,
+    /// Per-agent crash tracker override. `None` = use default crash tracker.
     #[serde(default)]
     pub crash_tracker: Option<CrashTrackerConfig>,
+    /// Arbitrary key-value options passed to the agent during initialization.
     #[serde(default)]
     pub options: HashMap<String, serde_json::Value>,
 }
 
+/// Per-channel configuration. Names come from the HashMap key in [`ChannelsManagerConfig`].
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ChannelConfig {
+    /// Path to the channel binary (resolved via `@built-in/` at boot).
     pub binary: String,
+    /// Extra CLI arguments passed to the channel subprocess.
     #[serde(default)]
     pub args: Vec<String>,
+    /// Whether this channel is active. Disabled channels are not spawned.
     #[serde(default = "default_true")]
     pub enabled: bool,
+    /// Which agent to route messages to (matches an agent config key).
     #[serde(default = "default_agent")]
     pub agent: String,
+    /// Message acknowledgement configuration (reactions, typing indicators).
     #[serde(default)]
     pub ack: AckConfig,
+    /// Per-channel init timeout override (seconds). `None` = use manager default.
     #[serde(default)]
     pub init_timeout_secs: Option<u64>,
+    /// Per-channel graceful shutdown timeout override (seconds). `None` = use manager default.
     #[serde(default)]
     pub exit_timeout_secs: Option<u64>,
+    /// Per-channel backoff override. `None` = use default backoff.
     #[serde(default)]
     pub backoff: Option<BackoffConfig>,
+    /// Per-channel crash tracker override. `None` = use default crash tracker.
     #[serde(default)]
     pub crash_tracker: Option<CrashTrackerConfig>,
+    /// Arbitrary key-value options passed to the channel during initialization.
     #[serde(default)]
     pub options: HashMap<String, serde_json::Value>,
 }
@@ -388,8 +453,10 @@ pub struct ChannelConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ReactionLifecycle {
+    /// Remove the reaction emoji after the agent finishes (default).
     #[default]
     Remove,
+    /// Replace the in-progress emoji with a "done" checkmark.
     ReplaceDone,
 }
 
@@ -402,14 +469,19 @@ impl std::fmt::Display for ReactionLifecycle {
     }
 }
 
+/// Message acknowledgement configuration for a channel.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AckConfig {
+    /// Whether to add a reaction emoji when a message is received.
     #[serde(default)]
     pub reaction: bool,
+    /// Whether to send a typing indicator while the agent is processing.
     #[serde(default)]
     pub typing: bool,
+    /// Emoji used for the "in progress" reaction.
     #[serde(default = "default_reaction_emoji")]
     pub reaction_emoji: String,
+    /// What to do with the reaction after the agent finishes responding.
     #[serde(default)]
     pub reaction_lifecycle: ReactionLifecycle,
 }
@@ -443,49 +515,70 @@ impl From<AckConfig> for anyclaw_sdk_types::ChannelAckConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum ToolType {
+    /// External MCP server subprocess communicating over JSON-RPC/stdio (default).
     #[default]
     Mcp,
+    /// WASM module executed in the built-in sandboxed runner.
     Wasm,
 }
 
+/// Per-tool configuration. Names come from the HashMap key in [`ToolsManagerConfig`].
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ToolConfig {
+    /// Whether this tool is an external MCP server or a WASM module.
     #[serde(default)]
     pub tool_type: ToolType,
+    /// Path to the MCP server binary (for `Mcp` type tools).
     #[serde(default)]
     pub binary: Option<String>,
+    /// Extra CLI arguments passed to the tool binary.
     #[serde(default)]
     pub args: Vec<String>,
+    /// Whether this tool is active. Disabled tools are not started.
     #[serde(default = "default_true")]
     pub enabled: bool,
+    /// Path to the `.wasm` module file (for `Wasm` type tools).
     #[serde(default)]
     pub module: Option<PathBuf>,
+    /// Human-readable description of what the tool does.
     #[serde(default)]
     pub description: String,
+    /// JSON Schema string describing the tool's input parameters.
     #[serde(default)]
     pub input_schema: Option<String>,
+    /// WASM sandbox limits (fuel, timeout, memory, filesystem preopens).
     #[serde(default)]
     pub sandbox: WasmSandboxConfig,
+    /// Arbitrary key-value options passed to the tool during initialization.
     #[serde(default)]
     pub options: HashMap<String, serde_json::Value>,
 }
 
+/// WASM sandbox resource limits for sandboxed tool execution.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct WasmSandboxConfig {
+    /// Maximum fuel (instruction count) per tool invocation.
     #[serde(default = "default_fuel_limit")]
     pub fuel_limit: u64,
+    /// Wall-clock timeout per invocation (seconds), enforced via epoch interruption.
     #[serde(default = "default_epoch_timeout")]
     pub epoch_timeout_secs: u64,
+    /// Maximum memory the WASM module may allocate (bytes).
     #[serde(default = "default_memory_limit")]
     pub memory_limit_bytes: u64,
+    /// Host directories pre-opened for WASI filesystem access.
     #[serde(default)]
     pub preopened_dirs: Vec<PreopenedDir>,
 }
 
+/// A host directory pre-opened for WASI filesystem access inside the WASM sandbox.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PreopenedDir {
+    /// Path on the host filesystem.
     pub host: PathBuf,
+    /// Path visible to the WASM module.
     pub guest: String,
+    /// Whether the directory is mounted read-only (default: `true`).
     #[serde(default = "default_readonly_true")]
     pub readonly: bool,
 }
@@ -500,8 +593,10 @@ pub struct PreopenedDir {
 /// agent or channel *subprocesses* within a manager's crash recovery loop.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct SupervisorConfig {
+    /// Total shutdown timeout divided equally among managers (seconds).
     #[serde(default = "default_shutdown_timeout")]
     pub shutdown_timeout_secs: u64,
+    /// Interval between health check sweeps (seconds).
     #[serde(default = "default_health_interval")]
     pub health_check_interval_secs: u64,
     /// Maximum number of manager restart attempts within `restart_window_secs`.
@@ -634,6 +729,7 @@ impl Default for SupervisorConfig {
 }
 
 impl AnyclawConfig {
+    /// Return the name of the first enabled agent, or `None` if no agents are configured.
     pub fn default_agent_name(&self) -> Option<&str> {
         self.agents_manager
             .agents

@@ -53,6 +53,10 @@ pub fn resolve_binary_path(binary: &str, extensions_dir: &str) -> String {
     }
 }
 
+/// Resolve all `@built-in/` binary paths in the config against `extensions_dir`.
+///
+/// Called by the Supervisor before manager construction so managers receive
+/// fully-resolved absolute paths.
 pub fn resolve_all_binary_paths(config: &mut crate::AnyclawConfig) {
     let ext = config.extensions_dir.clone();
     for agent in config.agents_manager.agents.values_mut() {
