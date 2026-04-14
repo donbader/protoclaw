@@ -31,7 +31,7 @@ Requirements for the code quality milestone. Each maps to roadmap phases.
 
 - [x] **JSON-01**: Replace `serde_json::Value` with typed structs in `anyclaw-sdk-types`
 - [x] **JSON-02**: Replace `serde_json::Value` with typed structs in `anyclaw-jsonrpc`
-- [ ] **JSON-03**: Replace `serde_json::Value` with typed structs in `anyclaw-core`
+- [x] **JSON-03**: Replace `serde_json::Value` with typed structs in `anyclaw-core`
 - [ ] **JSON-04**: Replace `serde_json::Value` with typed structs in `anyclaw-agents`
 - [ ] **JSON-05**: Replace `serde_json::Value` with typed structs in `anyclaw-channels`
 - [ ] **JSON-06**: Replace `serde_json::Value` with typed structs in `anyclaw-tools`
@@ -124,7 +124,7 @@ Tracked but not in current milestone.
 | ERRH-03 | Phase 2 | Complete |
 | JSON-01 | Phase 2 | Complete |
 | JSON-02 | Phase 2 | Complete |
-| JSON-03 | Phase 2 | Pending |
+| JSON-03 | Phase 2 | Complete |
 | JSON-04 | Phase 3 | Pending |
 | JSON-05 | Phase 3 | Pending |
 | JSON-06 | Phase 3 | Pending |

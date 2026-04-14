@@ -50,7 +50,7 @@ Plans:
 Plans:
 - [x] 02-01-PLAN.md — Type anyclaw-sdk-types: replace Value with typed structs, fix unwraps, serde consistency
 - [x] 02-02-PLAN.md — Type anyclaw-jsonrpc: typed RequestId, typed codec, error audit
-- [ ] 02-03-PLAN.md — Type anyclaw-core + fix downstream compilation for workspace build
+- [x] 02-03-PLAN.md — Type anyclaw-core + fix downstream compilation for workspace build
 
 ### Phase 3: Manager Crate Quality
 **Goal**: The three manager crates (agents, channels, tools) use typed data throughout, have reduced clone overhead, and use lock-free concurrent maps — the heaviest crates are clean
