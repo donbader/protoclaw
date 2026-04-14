@@ -49,6 +49,7 @@ pub enum ChannelEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     #[test]
     fn when_deliver_message_event_serialized_then_deserializes_correctly() {
@@ -135,5 +136,62 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    // ── Round-trip serde tests (04-02 Task 1) ──────────────────────────
+
+    #[rstest]
+    #[case::deliver_message(ChannelEvent::DeliverMessage {
+        session_key: SessionKey::new("debug-http", "local", "dev"),
+        content: serde_json::json!({"text": "hello"}),
+    })]
+    #[case::session_complete(ChannelEvent::SessionComplete {
+        session_key: SessionKey::new("telegram", "direct", "alice"),
+    })]
+    #[case::ack_message_with_id(ChannelEvent::AckMessage {
+        session_key: SessionKey::new("telegram", "direct", "bob"),
+        channel_name: "telegram".into(),
+        peer_id: "bob".into(),
+        message_id: Some("msg-99".into()),
+    })]
+    #[case::ack_message_without_id(ChannelEvent::AckMessage {
+        session_key: SessionKey::new("debug-http", "local", "dev"),
+        channel_name: "debug-http".into(),
+        peer_id: "dev".into(),
+        message_id: None,
+    })]
+    fn when_channel_event_variant_round_trips_then_deserializes_to_same_variant(
+        #[case] original: ChannelEvent,
+    ) {
+        let json = serde_json::to_string(&original).unwrap();
+        let restored: ChannelEvent = serde_json::from_str(&json).unwrap();
+        // ChannelEvent doesn't derive PartialEq, so compare serialized JSON
+        let original_json = serde_json::to_value(&original).unwrap();
+        let restored_json = serde_json::to_value(&restored).unwrap();
+        assert_eq!(original_json, restored_json);
+    }
+
+    #[rstest]
+    fn when_route_permission_event_round_trips_then_identical() {
+        let original = ChannelEvent::RoutePermission {
+            session_key: SessionKey::new("telegram", "direct", "alice"),
+            request_id: "req-1".into(),
+            description: "Allow file write?".into(),
+            options: vec![
+                crate::permission::PermissionOption {
+                    option_id: "allow".into(),
+                    label: "Allow".into(),
+                },
+                crate::permission::PermissionOption {
+                    option_id: "deny".into(),
+                    label: "Deny".into(),
+                },
+            ],
+        };
+        let json = serde_json::to_string(&original).unwrap();
+        let restored: ChannelEvent = serde_json::from_str(&json).unwrap();
+        let original_json = serde_json::to_value(&original).unwrap();
+        let restored_json = serde_json::to_value(&restored).unwrap();
+        assert_eq!(original_json, restored_json);
     }
 }

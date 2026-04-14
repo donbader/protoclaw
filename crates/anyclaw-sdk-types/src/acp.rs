@@ -172,7 +172,7 @@ pub struct SessionForkResult {
 pub struct SessionListParams {}
 
 /// Result returned by the agent in response to `session/list`.
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct SessionListResult {
     /// List of sessions currently known to the agent.
     pub sessions: Vec<SessionInfo>,
@@ -180,7 +180,7 @@ pub struct SessionListResult {
 
 /// Metadata for a single session returned in `SessionListResult`.
 // Extensible: agent-defined metadata has agent-specific schemas (D-03)
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct SessionInfo {
     /// Unique identifier for this session.
     #[serde(rename = "sessionId")]
@@ -645,6 +645,278 @@ mod tests {
     }
 
     // ── Existing tests ──────────────────────────────────────────────
+
+    // ── Round-trip serde tests (04-02 Task 1) ──────────────────────────
+
+    #[rstest]
+    fn when_client_capabilities_round_trips_then_identical() {
+        let mut exp = HashMap::new();
+        exp.insert("beta".into(), serde_json::json!(true));
+        let original = ClientCapabilities {
+            experimental: Some(exp),
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        let restored: ClientCapabilities = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_client_capabilities_none_round_trips_then_identical() {
+        let original = ClientCapabilities { experimental: None };
+        let json = serde_json::to_string(&original).unwrap();
+        let restored: ClientCapabilities = serde_json::from_str(&json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_initialize_params_round_trips_then_identical() {
+        let mut opts = HashMap::new();
+        opts.insert("model".into(), serde_json::json!("gpt-4"));
+        let original = InitializeParams {
+            protocol_version: 1,
+            capabilities: ClientCapabilities { experimental: None },
+            options: Some(opts),
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        let restored: InitializeParams = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_initialize_result_round_trips_then_identical() {
+        let original = InitializeResult {
+            protocol_version: 1,
+            agent_capabilities: None,
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        let restored: InitializeResult = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_mcp_server_info_round_trips_then_identical() {
+        let original = McpServerInfo {
+            name: "tools-server".into(),
+            server_type: "sse".into(),
+            url: "http://localhost:8080".into(),
+            command: String::new(),
+            args: vec![],
+            env: vec![],
+            headers: vec![vec!["Authorization".into(), "Bearer tok".into()]],
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        let restored: McpServerInfo = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_session_new_params_with_session_id_round_trips_then_identical() {
+        let original = SessionNewParams {
+            session_id: Some("ses-custom".into()),
+            cwd: "/tmp".into(),
+            mcp_servers: vec![McpServerInfo {
+                name: "s1".into(),
+                server_type: "stdio".into(),
+                url: String::new(),
+                command: "/usr/bin/tool".into(),
+                args: vec!["--flag".into()],
+                env: vec!["KEY=VAL".into()],
+                headers: vec![],
+            }],
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        let restored: SessionNewParams = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_session_new_params_without_session_id_round_trips_then_identical() {
+        let original = SessionNewParams {
+            session_id: None,
+            cwd: "/home/user".into(),
+            mcp_servers: vec![],
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        let restored: SessionNewParams = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_session_new_result_round_trips_then_identical() {
+        let original = SessionNewResult {
+            session_id: "ses-abc123".into(),
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        let restored: SessionNewResult = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    #[case::text(ContentPart::Text { text: "hello".into() })]
+    #[case::image(ContentPart::Image { url: "http://example.com/img.png".into() })]
+    #[case::empty_text(ContentPart::default())]
+    fn when_content_part_round_trips_then_identical(#[case] original: ContentPart) {
+        let json = serde_json::to_value(&original).unwrap();
+        let restored: ContentPart = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_session_prompt_params_round_trips_then_identical() {
+        let original = SessionPromptParams {
+            session_id: "ses-1".into(),
+            prompt: vec![
+                ContentPart::text("hello"),
+                ContentPart::Image {
+                    url: "http://img".into(),
+                },
+            ],
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        let restored: SessionPromptParams = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_session_cancel_params_round_trips_then_identical() {
+        let original = SessionCancelParams {
+            session_id: "ses-cancel".into(),
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        let restored: SessionCancelParams = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_session_fork_params_round_trips_then_identical() {
+        let original = SessionForkParams {
+            session_id: "ses-fork".into(),
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        let restored: SessionForkParams = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_session_fork_result_round_trips_then_identical() {
+        let original = SessionForkResult {
+            session_id: "ses-forked".into(),
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        let restored: SessionForkResult = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_session_list_params_round_trips_then_identical() {
+        let original = SessionListParams {};
+        let json = serde_json::to_value(&original).unwrap();
+        let restored: SessionListParams = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_session_list_result_round_trips_then_identical() {
+        let original = SessionListResult {
+            sessions: vec![
+                SessionInfo {
+                    session_id: "ses-1".into(),
+                    metadata: HashMap::new(),
+                },
+                SessionInfo {
+                    session_id: "ses-2".into(),
+                    metadata: {
+                        let mut m = HashMap::new();
+                        m.insert("key".into(), serde_json::json!("val"));
+                        m
+                    },
+                },
+            ],
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        let restored: SessionListResult = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_session_info_round_trips_then_identical() {
+        let original = SessionInfo {
+            session_id: "ses-info".into(),
+            metadata: {
+                let mut m = HashMap::new();
+                m.insert("agent".into(), serde_json::json!("opencode"));
+                m
+            },
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        let restored: SessionInfo = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_session_load_params_round_trips_then_identical() {
+        let original = SessionLoadParams {
+            session_id: "ses-load".into(),
+            cwd: Some("/workspace".into()),
+            mcp_servers: Some(vec![]),
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        let restored: SessionLoadParams = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_session_load_params_minimal_round_trips_then_identical() {
+        let original = SessionLoadParams {
+            session_id: "ses-load-min".into(),
+            cwd: None,
+            mcp_servers: None,
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        let restored: SessionLoadParams = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    #[case::pending(ToolCallStatus::Pending)]
+    #[case::in_progress(ToolCallStatus::InProgress)]
+    #[case::completed(ToolCallStatus::Completed)]
+    #[case::failed(ToolCallStatus::Failed)]
+    fn when_tool_call_status_round_trips_then_identical(#[case] original: ToolCallStatus) {
+        let json = serde_json::to_value(&original).unwrap();
+        let restored: ToolCallStatus = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_session_update_event_tool_call_update_round_trips_then_identical() {
+        let original = SessionUpdateEvent {
+            session_id: "ses-tcu".into(),
+            update: SessionUpdateType::ToolCallUpdate {
+                tool_call_id: "tc-1".into(),
+                name: Some("read_file".into()),
+                status: Some(ToolCallStatus::Completed),
+                input: None,
+                output: Some("file contents".into()),
+            },
+        };
+        let json = serde_json::to_string(&original).unwrap();
+        let restored: SessionUpdateEvent = serde_json::from_str(&json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_session_update_event_current_mode_round_trips_then_identical() {
+        let original = SessionUpdateEvent {
+            session_id: "ses-mode".into(),
+            update: SessionUpdateType::CurrentModeUpdate {
+                mode: Some("code".into()),
+            },
+        };
+        let json = serde_json::to_string(&original).unwrap();
+        let restored: SessionUpdateEvent = serde_json::from_str(&json).unwrap();
+        assert_eq!(original, restored);
+    }
 
     /// Real OpenCode `initialize` response with nested `agentCapabilities` object.
     /// The official ACP spec wraps capabilities under `agentCapabilities`; anyclaw's
