@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: verifying
-stopped_at: Completed 03-04-PLAN.md
-last_updated: "2026-04-14T16:38:23.034Z"
+status: executing
+stopped_at: Completed 04-01-PLAN.md
+last_updated: "2026-04-14T23:10:58.090Z"
 last_activity: 2026-04-14
 progress:
   total_phases: 6
   completed_phases: 3
-  total_plans: 10
-  completed_plans: 10
-  percent: 100
+  total_plans: 14
+  completed_plans: 11
+  percent: 79
 ---
 
 # Project State
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-14)
 
 **Core value:** Every line of code should be there for a reason, with typed data flowing through typed interfaces.
-**Current focus:** Phase 03 — Manager Crate Quality
+**Current focus:** Phase 04 — SDK & External Polish
 
 ## Current Position
 
-Phase: 03 (Manager Crate Quality) — EXECUTING
-Plan: 4 of 4
-Status: Phase complete — ready for verification
+Phase: 04 (SDK & External Polish) — EXECUTING
+Plan: 2 of 4
+Status: Ready to execute
 Last activity: 2026-04-14
 
 Progress: [░░░░░░░░░░] 0%
@@ -36,7 +36,7 @@ Progress: [░░░░░░░░░░] 0%
 
 **Velocity:**
 
-- Total plans completed: 6
+- Total plans completed: 10
 - Average duration: —
 - Total execution time: 0 hours
 
@@ -46,6 +46,7 @@ Progress: [░░░░░░░░░░] 0%
 |-------|-------|-------|----------|
 | 1 | 3 | - | - |
 | 2 | 3 | - | - |
+| 3 | 4 | - | - |
 
 **Recent Trend:**
 
@@ -72,6 +73,7 @@ Recent decisions affecting current work:
 - [Phase 02]: params/result/data stay as Value — D-03 extensible boundaries, framing layer must not know method schemas
 - [Phase 03]: All serde_json::Value usages in tools crate are D-03 extensible boundaries — documented, not replaced
 - [Phase 03]: PendingPermission.request typed as JsonRpcRequest — eliminates Value indexing in permission flow
+- [Phase 04]: AgentAdapter hooks use typed ACP structs — zero serde_json::Value in sdk-agent
 
 ### Pending Todos
 
@@ -83,6 +85,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-14T16:38:23.031Z
-Stopped at: Completed 03-04-PLAN.md
+Last session: 2026-04-14T23:10:58.087Z
+Stopped at: Completed 04-01-PLAN.md
 Resume file: None

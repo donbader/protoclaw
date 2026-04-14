@@ -14,7 +14,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Tooling & Lint Infrastructure** - Workspace lints, clippy.toml, rustfmt.toml, deny.toml, coverage setup, dead code removal (completed 2026-04-14)
 - [x] **Phase 2: Leaf Crate Quality** - Typed JSON in sdk-types/jsonrpc/core, error enum audit, serde consistency (completed 2026-04-14)
-- [ ] **Phase 3: Manager Crate Quality** - Typed JSON in agents/channels/tools, clone reduction, DashMap migration
+- [x] **Phase 3: Manager Crate Quality** - Typed JSON in agents/channels/tools, clone reduction, DashMap migration (completed 2026-04-14)
 - [ ] **Phase 4: SDK & External Polish** - Typed JSON in SDK + ext binaries, docs enforcement, inline limitation comments
 - [ ] **Phase 5: Test Coverage & Verification** - Fill test gaps, coverage baseline, property-based testing for wire types
 - [ ] **Phase 6: File Decomposition** - Break up agents manager (3,708 lines) and supervisor (927 lines)
@@ -61,7 +61,7 @@ Plans:
   2. Clone count in anyclaw-agents manager is measurably reduced from the 103-clone baseline
   3. Borrowing (`&str`, references) is used instead of ownership transfer where ownership isn't needed
   4. `Arc<Mutex<HashMap<u64, oneshot::Sender>>>` in connection crates is replaced with DashMap
-**Plans:** 4 plans
+**Plans:** 4/4 plans complete
 Plans:
 - [x] 03-01-PLAN.md — Type anyclaw-tools: Value replacement, clone reduction, add dashmap workspace dep
 - [x] 03-02-PLAN.md — Type anyclaw-channels: DashMap migration, typed codec pipeline, clone reduction
@@ -77,7 +77,12 @@ Plans:
   2. `#![warn(missing_docs)]` is enabled on all crates and produces zero warnings
   3. Round-trip serialization tests exist for all wire types
   4. Known limitations from AGENTS.md are documented as inline comments at the relevant code locations
-**Plans**: TBD
+**Plans**: 4 plans
+Plans:
+- [x] 04-01-PLAN.md — Type SDK crates: replace Value in AgentAdapter, Channel, Tool traits + harnesses
+- [ ] 04-02-PLAN.md — Round-trip serde tests for all public wire types across SDK crates
+- [ ] 04-03-PLAN.md — Enable warn(missing_docs) on all crates + inline limitation comments from AGENTS.md
+- [ ] 04-04-PLAN.md — Type ext/ binaries and examples, fix Channel trait compilation errors
 
 ### Phase 5: Test Coverage & Verification
 **Goal**: Every identified test gap is filled, coverage baseline is established, and wire types have property-based tests — the codebase is verifiably correct
@@ -112,7 +117,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 |-------|----------------|--------|-----------|
 | 1. Tooling & Lint Infrastructure | 3/3 | Complete    | 2026-04-14 |
 | 2. Leaf Crate Quality | 3/3 | Complete    | 2026-04-14 |
-| 3. Manager Crate Quality | 0/0 | Not started | - |
-| 4. SDK & External Polish | 0/0 | Not started | - |
+| 3. Manager Crate Quality | 4/4 | Complete    | 2026-04-14 |
+| 4. SDK & External Polish | 0/4 | Planning    | - |
 | 5. Test Coverage & Verification | 0/0 | Not started | - |
 | 6. File Decomposition | 0/0 | Not started | - |
