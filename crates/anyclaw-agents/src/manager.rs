@@ -3461,4 +3461,150 @@ mod tests {
             "session should be marked closed after shutdown_all, but got: {after:?}"
         );
     }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_session_loaded_then_awaiting_first_prompt_populated() {
+        let (handle, rx) = make_tools_handle();
+        let tools_task = tokio::spawn(serve_tools_urls(rx));
+
+        let mut m = AgentsManager::new(mock_agents_manager_config(), handle);
+        m.start().await.unwrap();
+
+        let session_key = SessionKey::new("telegram", "direct", "alice");
+        m.slots[0]
+            .stale_sessions
+            .insert(session_key.clone(), "stale-acp-load-1".to_string());
+
+        let result = m.heal_session(0, "default", &session_key).await;
+        assert!(
+            result.is_ok(),
+            "heal_session should succeed via session/load: {result:?}"
+        );
+
+        let acp_id = m.slots[0]
+            .session_map
+            .get(&session_key)
+            .cloned()
+            .expect("session_map must contain the healed session key");
+
+        assert!(
+            m.slots[0].awaiting_first_prompt.contains(&acp_id),
+            "awaiting_first_prompt must contain the ACP session ID after session/load"
+        );
+        assert!(
+            !m.slots[0].stale_sessions.contains_key(&session_key),
+            "stale_sessions must be cleared after successful heal"
+        );
+
+        m.shutdown_all().await;
+        tools_task.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_replay_event_received_for_awaiting_session_then_not_forwarded() {
+        let (handle, _rx) = make_tools_handle();
+        let mut m = AgentsManager::new(mock_agents_manager_config_with(HashMap::new()), handle);
+
+        let (channels_tx, mut channels_rx) = mpsc::channel::<ChannelEvent>(16);
+        m.channels_sender = Some(channels_tx);
+
+        let cancel = CancellationToken::new();
+        let mut slot = AgentSlot::new("test-agent".into(), mock_agent_config(), &cancel);
+        let session_key = SessionKey::new("telegram", "direct", "alice");
+        let acp_session_id = "acp-replay-1".to_string();
+        slot.session_map
+            .insert(session_key.clone(), acp_session_id.clone());
+        slot.reverse_map
+            .insert(acp_session_id.clone(), session_key.clone());
+        slot.awaiting_first_prompt.insert(acp_session_id.clone());
+        m.slots.push(slot);
+
+        let params = serde_json::json!({
+            "sessionId": acp_session_id,
+            "update": {
+                "sessionUpdate": "agent_message_chunk",
+                "content": { "text": "replay content", "type": "text" },
+                "messageId": "replay-msg-1"
+            }
+        });
+        m.handle_session_update(0, params).await;
+
+        assert!(
+            channels_rx.try_recv().is_err(),
+            "replay event must not be forwarded to channels while awaiting_first_prompt is set"
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_prompt_sent_after_load_then_awaiting_first_prompt_cleared() {
+        let (handle, rx) = make_tools_handle();
+        let tools_task = tokio::spawn(serve_tools_urls(rx));
+
+        let mut m = AgentsManager::new(mock_agents_manager_config(), handle);
+        m.start().await.unwrap();
+
+        let default_key = SessionKey::new("default", "default", "default");
+        let acp_id = m.slots[0]
+            .session_map
+            .get(&default_key)
+            .cloned()
+            .expect("default session must exist after start");
+
+        m.slots[0].awaiting_first_prompt.insert(acp_id.clone());
+
+        let result = m.prompt_session("default", &default_key, "hello").await;
+        assert!(
+            result.is_ok(),
+            "prompt_session should succeed: {result:?}"
+        );
+
+        assert!(
+            !m.slots[0].awaiting_first_prompt.contains(&acp_id),
+            "awaiting_first_prompt must be cleared after prompt_session"
+        );
+
+        m.shutdown_all().await;
+        tools_task.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_live_event_received_after_prompt_then_forwarded() {
+        let (handle, _rx) = make_tools_handle();
+        let mut m = AgentsManager::new(mock_agents_manager_config_with(HashMap::new()), handle);
+
+        let (channels_tx, mut channels_rx) = mpsc::channel::<ChannelEvent>(16);
+        m.channels_sender = Some(channels_tx);
+
+        let cancel = CancellationToken::new();
+        let mut slot = AgentSlot::new("test-agent".into(), mock_agent_config(), &cancel);
+        let session_key = SessionKey::new("telegram", "direct", "alice");
+        let acp_session_id = "acp-live-1".to_string();
+        slot.session_map
+            .insert(session_key.clone(), acp_session_id.clone());
+        slot.reverse_map
+            .insert(acp_session_id.clone(), session_key.clone());
+        m.slots.push(slot);
+
+        let params = serde_json::json!({
+            "sessionId": acp_session_id,
+            "update": {
+                "sessionUpdate": "agent_message_chunk",
+                "content": { "text": "live content", "type": "text" },
+                "messageId": "live-msg-1"
+            }
+        });
+        m.handle_session_update(0, params).await;
+
+        let event = channels_rx
+            .try_recv()
+            .expect("live event must be forwarded to channels");
+        assert!(
+            matches!(event, ChannelEvent::DeliverMessage { .. }),
+            "forwarded event must be DeliverMessage, got: {event:?}"
+        );
+    }
 }

@@ -180,10 +180,12 @@ async fn handle_initialize(stdout: &mut tokio::io::Stdout, id: Option<Value>, ms
         "id": id,
         "result": {
             "protocolVersion": 2,
-            "loadSession": true,
-            "mcpCapabilities": { "http": true, "sse": true },
-            "promptCapabilities": { "embeddedContext": true },
-            "sessionCapabilities": {}
+            "agentCapabilities": {
+                "loadSession": true,
+                "mcpCapabilities": { "http": true, "sse": true },
+                "promptCapabilities": { "embeddedContext": true },
+                "sessionCapabilities": {}
+            }
         }
     });
     write_message(stdout, &resp).await;
