@@ -14,7 +14,8 @@ use crate::slot::{AgentSlot, find_slot_by_name};
 use anyclaw_config::{AgentConfig, AgentsManagerConfig, WorkspaceConfig};
 use anyclaw_core::{
     AgentStatusInfo, AgentsCommand, CrashAction, Manager, ManagerError, ManagerHandle,
-    McpServerUrl, PendingPermissionInfo, PersistedSession, SessionKey, ToolsCommand, constants,
+    McpServerUrl, PendingPermissionInfo, PersistedSession, SessionKey, ToolDescription,
+    ToolsCommand, constants,
 };
 use anyclaw_sdk_agent::{DynAgentAdapter, GenericAcpAdapter};
 use anyclaw_sdk_types::{ChannelEvent, PermissionOption};
@@ -352,6 +353,52 @@ impl AgentsManager {
             .collect()
     }
 
+    /// Fetch tool descriptions from the tools manager and build a compact context string.
+    ///
+    /// Returns `None` if no tools are available or the tools handle is unavailable.
+    /// The result is cached on the slot so it's only fetched once per agent lifecycle.
+    async fn fetch_tool_context(&self, slot_idx: usize) -> Option<String> {
+        let tool_names = if self.slots[slot_idx].config.tools.is_empty() {
+            None
+        } else {
+            Some(self.slots[slot_idx].config.tools.clone())
+        };
+        let (reply_tx, reply_rx) = oneshot::channel();
+        if self
+            .tools_handle
+            .send(ToolsCommand::GetToolDescriptions {
+                tool_names,
+                reply: reply_tx,
+            })
+            .await
+            .is_err()
+        {
+            return None;
+        }
+        let descriptions: Vec<ToolDescription> = reply_rx.await.unwrap_or_else(|_| {
+            tracing::warn!("tools handle dropped before providing tool descriptions");
+            Vec::new()
+        });
+        if descriptions.is_empty() {
+            return None;
+        }
+        let mut ctx = String::from(
+            "[Platform context: You have the following MCP tools available. \
+             Use them when relevant instead of approximating with built-in tools.\n",
+        );
+        for desc in &descriptions {
+            ctx.push_str("- ");
+            ctx.push_str(&desc.name);
+            if !desc.description.is_empty() {
+                ctx.push_str(": ");
+                ctx.push_str(&desc.description);
+            }
+            ctx.push('\n');
+        }
+        ctx.push(']');
+        Some(ctx)
+    }
+
     async fn handle_command(&mut self, cmd: AgentsCommand) -> bool {
         match cmd {
             AgentsCommand::SendPrompt { message, reply } => {
@@ -529,6 +576,11 @@ impl AgentsManager {
         let acp_session_id =
             Self::start_session(&mut self.slots[slot_idx], &self.tools_handle, acp_timeout).await?;
 
+        // Cache tool context on first session creation for this slot.
+        if self.slots[slot_idx].tool_context.is_none() {
+            self.slots[slot_idx].tool_context = self.fetch_tool_context(slot_idx).await;
+        }
+
         let slot = &mut self.slots[slot_idx];
         slot.session_map
             .insert(session_key.clone(), acp_session_id.clone());
@@ -591,6 +643,20 @@ impl AgentsManager {
             .awaiting_first_prompt
             .remove(&acp_session_id);
 
+        // Build prompt parts, injecting tool context on first prompt per session.
+        let mut prompt_parts = Vec::new();
+        if !self.slots[slot_idx]
+            .tool_context_sent
+            .contains(&acp_session_id)
+            && let Some(ctx) = self.slots[slot_idx].tool_context.clone()
+        {
+            prompt_parts.push(ContentPart::text(ctx));
+            self.slots[slot_idx]
+                .tool_context_sent
+                .insert(acp_session_id.clone());
+        }
+        prompt_parts.push(ContentPart::text(message));
+
         let slot = &self.slots[slot_idx];
         let conn = slot
             .connection
@@ -599,7 +665,7 @@ impl AgentsManager {
 
         let params = serde_json::to_value(SessionPromptParams {
             session_id: acp_session_id.clone(),
-            prompt: vec![ContentPart::text(message)],
+            prompt: prompt_parts,
         })?;
 
         let response_rx = conn.send_request("session/prompt", params).await?;
@@ -1601,6 +1667,7 @@ impl AgentsManager {
         let slot = &mut self.slots[slot_idx];
         slot.stale_sessions.extend(slot.session_map.drain());
         slot.awaiting_first_prompt.clear();
+        slot.tool_context_sent.clear();
 
         let acp_timeout = Self::acp_timeout_for(&self.slots[slot_idx].config, &self.manager_config);
         if self
@@ -1982,6 +2049,12 @@ mod tests {
         while let Some(cmd) = rx.recv().await {
             match cmd {
                 ToolsCommand::GetMcpUrls {
+                    tool_names: _,
+                    reply,
+                } => {
+                    let _ = reply.send(vec![]);
+                }
+                ToolsCommand::GetToolDescriptions {
                     tool_names: _,
                     reply,
                 } => {

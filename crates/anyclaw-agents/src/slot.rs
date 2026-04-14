@@ -32,6 +32,13 @@ pub struct AgentSlot {
     /// Buffered so it can be replayed to the channel on every `prompt_session` call,
     /// ensuring commands are synced even when the channel binary restarts independently.
     pub(crate) last_available_commands: Option<serde_json::Value>,
+    /// Cached tool context string built from tool descriptions fetched at session creation.
+    /// Shared across all sessions on this slot since all see the same tools.
+    /// `None` means not yet fetched or no tools configured.
+    pub(crate) tool_context: Option<String>,
+    /// ACP session IDs that have already received the tool context injection.
+    /// Prevents re-injecting on subsequent prompts within the same session.
+    pub(crate) tool_context_sent: HashSet<String>,
 }
 
 impl AgentSlot {
@@ -63,6 +70,8 @@ impl AgentSlot {
             stale_sessions: HashMap::new(),
             awaiting_first_prompt: HashSet::new(),
             last_available_commands: None,
+            tool_context: None,
+            tool_context_sent: HashSet::new(),
         }
     }
 

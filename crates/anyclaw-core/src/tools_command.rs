@@ -6,10 +6,20 @@ pub struct McpServerUrl {
     pub url: String,
 }
 
+#[derive(Clone, Debug)]
+pub struct ToolDescription {
+    pub name: String,
+    pub description: String,
+}
+
 pub enum ToolsCommand {
     GetMcpUrls {
         tool_names: Option<Vec<String>>,
         reply: oneshot::Sender<Vec<McpServerUrl>>,
+    },
+    GetToolDescriptions {
+        tool_names: Option<Vec<String>>,
+        reply: oneshot::Sender<Vec<ToolDescription>>,
     },
     Shutdown,
 }
@@ -74,6 +84,42 @@ mod tests {
             } => {
                 assert_eq!(names.len(), 2);
                 assert!(names.contains(&"tool-a".to_string()));
+            }
+            _ => panic!("unexpected variant"),
+        }
+    }
+
+    #[test]
+    fn when_tool_description_constructed_then_fields_accessible() {
+        let desc = ToolDescription {
+            name: "system-info".into(),
+            description: "Returns system information".into(),
+        };
+        assert_eq!(desc.name, "system-info");
+        assert_eq!(desc.description, "Returns system information");
+    }
+
+    #[test]
+    fn when_tool_description_cloned_then_equal_to_original() {
+        let desc = ToolDescription {
+            name: "my-tool".into(),
+            description: "Does things".into(),
+        };
+        let cloned = desc.clone();
+        assert_eq!(cloned.name, desc.name);
+        assert_eq!(cloned.description, desc.description);
+    }
+
+    #[test]
+    fn when_get_tool_descriptions_with_no_filter_then_tool_names_is_none() {
+        let (tx, _rx) = oneshot::channel();
+        let cmd = ToolsCommand::GetToolDescriptions {
+            tool_names: None,
+            reply: tx,
+        };
+        match cmd {
+            ToolsCommand::GetToolDescriptions { tool_names, .. } => {
+                assert!(tool_names.is_none());
             }
             _ => panic!("unexpected variant"),
         }
