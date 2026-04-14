@@ -21,9 +21,9 @@ SDK for building channel extensions. Provides the `Channel` trait for business l
 pub trait Channel: Send + 'static {
     fn capabilities(&self) -> ChannelCapabilities;
     async fn on_initialize(&mut self, params: ChannelInitializeParams) -> Result<(), ChannelSdkError>;
-    async fn on_ready(&mut self, outbound: mpsc::Sender<ChannelSendMessage>) -> Result<(), ChannelSdkError>;
+    async fn on_ready(&mut self, outbound: mpsc::Sender<ChannelSendMessage>, permission_tx: mpsc::Sender<PermissionResponse>) -> Result<(), ChannelSdkError>;
     async fn deliver_message(&mut self, msg: DeliverMessage) -> Result<(), ChannelSdkError>;
-    async fn request_permission(&mut self, req: ChannelRequestPermission) -> Result<PermissionResponse, ChannelSdkError>;
+    async fn show_permission_prompt(&mut self, req: ChannelRequestPermission) -> Result<(), ChannelSdkError>;
     async fn handle_unknown(&mut self, method: &str, params: Value) -> Result<Value, ChannelSdkError>;
     async fn on_session_created(&mut self, msg: SessionCreated) -> Result<(), ChannelSdkError>;
 }
@@ -35,9 +35,9 @@ pub struct ChannelHarness<C: Channel> { channel: C }
 
 1. Create a struct implementing `Channel`
 2. Return capabilities in `capabilities()` (streaming, rich_text)
-3. In `on_ready()`, store the `outbound` sender — use it to send user messages to anyclaw
+3. In `on_ready()`, store the `outbound` sender and `permission_tx` sender
 4. Implement `deliver_message()` to render agent responses to your platform
-5. Implement `request_permission()` to show permission prompts and return user's choice
+5. Implement `show_permission_prompt()` to display permission UI — return immediately, send `PermissionResponse` through `permission_tx` when the user responds
 6. Wrap in `ChannelHarness::new(my_channel).run_stdio().await`
 
 **Default implementations:** `on_initialize()`, `handle_unknown()`, and `on_session_created()` have defaults — override only if needed.

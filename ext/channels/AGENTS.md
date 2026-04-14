@@ -132,9 +132,9 @@ use anyclaw_sdk_types::{ChannelRequestPermission, ContentKind, DeliverMessage, P
 #[async_trait]
 impl Channel for MyChannel {
     fn capabilities(&self) -> ChannelCapabilities { /* ... */ }
-    async fn on_ready(&mut self, outbound: mpsc::Sender<ChannelSendMessage>) -> Result<(), ChannelSdkError> { /* ... */ }
+    async fn on_ready(&mut self, outbound: mpsc::Sender<ChannelSendMessage>, permission_tx: mpsc::Sender<PermissionResponse>) -> Result<(), ChannelSdkError> { /* ... */ }
     async fn deliver_message(&mut self, msg: DeliverMessage) -> Result<(), ChannelSdkError> { /* ... */ }
-    async fn request_permission(&mut self, req: ChannelRequestPermission) -> Result<PermissionResponse, ChannelSdkError> { /* ... */ }
+    async fn show_permission_prompt(&mut self, req: ChannelRequestPermission) -> Result<(), ChannelSdkError> { /* ... */ }
 }
 ```
 
@@ -157,19 +157,24 @@ use anyclaw_sdk_channel::content_to_string;
 let text = content_to_string(&msg.content); // handles OpenCode wrapper + plain strings
 ```
 
-### PermissionBroker for oneshot management
+### PermissionBroker for non-blocking permission handling
 
 ```rust
 // In state struct:
 pub permission_broker: Mutex<PermissionBroker>,
+pub permission_tx: Mutex<Option<mpsc::Sender<PermissionResponse>>>,
 
-// In request_permission():
-let rx = self.state.permission_broker.lock().await.register(&req.request_id);
-// ... send UI prompt ...
-rx.await.map_err(|_| ChannelSdkError::Protocol("closed".into()))
+// In show_permission_prompt():
+self.state.permission_broker.lock().await.register(&req.request_id);
+// ... send UI prompt (inline keyboard, etc.) ...
+// Return immediately — do NOT await the user's response here.
 
-// In callback/resolution handler:
+// In callback/resolution handler (e.g. Telegram callback button):
 self.state.permission_broker.lock().await.resolve(&request_id, &option_id);
+let tx = self.state.permission_tx.lock().await.clone();
+if let Some(tx) = tx {
+    tx.send(PermissionResponse { request_id, option_id }).await.ok();
+}
 ```
 
 ### ChannelTester for unit tests
