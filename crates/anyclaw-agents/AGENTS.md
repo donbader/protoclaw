@@ -21,7 +21,6 @@ Manages the agent subprocess lifecycle and implements the ACP (Agent Client Prot
 | `session/prompt` | client→agent | Send user message to session |
 | `session/cancel` | client→agent | Cancel in-progress operation |
 | `session/load` | client→agent | Restore session after crash (if agent supports it) |
-| `session/close` | client→agent | Graceful session teardown (capability-gated) |
 | `session/update` | agent→client | Streaming agent response updates |
 | `session/request_permission` | agent→client | Agent requests user permission |
 | `fs/read_text_file` | agent→client | Agent requests file read |

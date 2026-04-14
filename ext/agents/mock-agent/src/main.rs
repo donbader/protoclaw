@@ -135,10 +135,6 @@ async fn main() {
             "session/load" => {
                 handle_session_load(&mut stdout, id, opts().reject_load, &mut session_id).await;
             }
-            "session/close" => {
-                handle_session_close(&mut stdout, id).await;
-                break;
-            }
             _ => {
                 let resp = json!({
                     "jsonrpc": "2.0",
@@ -385,11 +381,6 @@ async fn handle_session_load(
         });
         write_message(stdout, &resp).await;
     }
-}
-
-async fn handle_session_close(stdout: &mut tokio::io::Stdout, id: Option<Value>) {
-    let resp = json!({ "jsonrpc": "2.0", "id": id, "result": {} });
-    write_message(stdout, &resp).await;
 }
 
 #[cfg(test)]

@@ -17,6 +17,8 @@ agents_manager:
         docker_host: "tcp://socket-proxy:2375"
         network: "anyclaw-external"
         working_dir: "/home/node"
+        volumes:
+          - "opencode-agent-data:/home/node/.local/share"
         env:
           XDG_CONFIG_HOME: "/home/node/.config"
           XDG_DATA_HOME: "/home/node/.local/share"

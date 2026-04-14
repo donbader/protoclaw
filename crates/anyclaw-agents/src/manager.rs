@@ -1175,20 +1175,8 @@ impl AgentsManager {
     }
 
     async fn shutdown_all(&mut self) {
-        let store = self.session_store.clone();
         for slot in &mut self.slots {
-            for session_key in slot.session_map.keys() {
-                if let Err(e) = store.mark_closed(session_key.as_ref()).await {
-                    tracing::warn!(session_key = %session_key, error = %e, "failed to mark session closed in store");
-                }
-            }
-            if let Some(conn) = &slot.connection {
-                if slot.has_session_capability(|c| c.close.is_some()) {
-                    for acp_id in slot.session_map.values() {
-                        let params = serde_json::json!({ "sessionId": acp_id });
-                        let _ = conn.send_notification("session/close", params).await;
-                    }
-                }
+            if slot.connection.is_some() {
                 tokio::time::sleep(Duration::from_millis(self.manager_config.shutdown_grace_ms))
                     .await;
             }
