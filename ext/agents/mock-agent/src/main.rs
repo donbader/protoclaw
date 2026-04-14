@@ -160,12 +160,14 @@ async fn write_message<W: AsyncWrite + Unpin>(writer: &mut W, msg: &Value) {
 fn extract_prompt_message(msg: &Value) -> Option<String> {
     // ACP wire format: prompt is a flat array of content parts
     // e.g. {"prompt": [{"type": "text", "text": "hello"}]}
+    // The user message is always the last part; earlier parts may be
+    // injected platform context (e.g. tool descriptions).
     let prompt = msg["params"]["prompt"].as_array()?;
-    let first = prompt.first()?;
-    if first["type"].as_str()? != "text" {
+    let last = prompt.last()?;
+    if last["type"].as_str()? != "text" {
         return None;
     }
-    first["text"].as_str().map(std::string::ToString::to_string)
+    last["text"].as_str().map(std::string::ToString::to_string)
 }
 
 async fn handle_initialize(stdout: &mut tokio::io::Stdout, id: Option<Value>, msg: &Value) {
