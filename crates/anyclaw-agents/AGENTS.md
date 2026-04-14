@@ -20,7 +20,8 @@ Manages the agent subprocess lifecycle and implements the ACP (Agent Client Prot
 | `session/new` | client→agent | Create new session, pass MCP server URLs |
 | `session/prompt` | client→agent | Send user message to session |
 | `session/cancel` | client→agent | Cancel in-progress operation |
-| `session/load` | client→agent | Restore session after crash (if agent supports it) |
+| `session/load` | client→agent | Restore session after crash (if agent supports it, replays history) |
+| `session/resume` | client→agent | Restore session without replay (preferred over load) |
 | `session/update` | agent→client | Streaming agent response updates |
 | `session/request_permission` | agent→client | Agent requests user permission |
 | `fs/read_text_file` | agent→client | Agent requests file read |
@@ -44,9 +45,19 @@ Manages the agent subprocess lifecycle and implements the ACP (Agent Client Prot
 2. Old connection cleaned up via `kill()` (stops + removes Docker container if applicable)
 3. Backoff delay (exponential, 100ms→30s)
 4. Respawn subprocess + re-initialize
-5. If agent supports `session/load` → attempt session restore
-6. If restore fails → start fresh session
-7. Reset backoff on success
+5. If agent supports `session/resume` → attempt silent restore (no replay)
+6. Else if agent supports `session/load` → attempt restore (replay suppressed via `awaiting_first_prompt`)
+7. If restore fails → start fresh session
+8. Reset backoff on success
+
+## Session Persistence
+
+- `shutdown_all()` leaves sessions open in the store — TTL-based expiry handles cleanup
+- On restart, `load_open_sessions()` populates `stale_sessions` from the SQLite store
+- `CreateSession` checks `stale_sessions` before creating new sessions
+- `heal_session()` prefers `session/resume` (no replay) over `session/load` (replays history)
+- For `session/load`, replay events are suppressed until the first `session/prompt` via `awaiting_first_prompt` set
+- Agent data directories must be volume-mounted so the agent can restore from its own session history
 
 ## Completion Signal Flow
 
