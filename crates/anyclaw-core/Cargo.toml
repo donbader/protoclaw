@@ -7,7 +7,7 @@ rust-version.workspace = true
 
 [dependencies]
 anyclaw-sdk-types = { workspace = true }
-tokio = { workspace = true, default-features = false, features = ["sync"] }
+tokio = { workspace = true, default-features = false, features = ["sync", "rt"] }
 tokio-util.workspace = true
 serde.workspace = true
 serde_json.workspace = true

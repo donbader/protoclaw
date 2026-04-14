@@ -2,6 +2,7 @@ use tokio::sync::oneshot;
 
 use crate::SessionKey;
 use anyclaw_sdk_types::PermissionOption;
+use anyclaw_sdk_types::SessionListResult;
 
 #[derive(Debug, Clone)]
 pub struct AgentStatusInfo {
@@ -51,7 +52,7 @@ pub enum AgentsCommand {
     },
     ListSessions {
         agent_name: String,
-        reply: oneshot::Sender<Result<serde_json::Value, String>>,
+        reply: oneshot::Sender<Result<SessionListResult, String>>,
     },
     CancelSession {
         agent_name: String,
@@ -133,5 +134,25 @@ mod tests {
             }
             _ => panic!("unexpected variant"),
         }
+    }
+
+    #[test]
+    fn when_list_sessions_reply_sent_then_typed_result_received() {
+        use anyclaw_sdk_types::SessionInfo;
+        use std::collections::HashMap;
+
+        let (tx, rx) = oneshot::channel();
+        let result = SessionListResult {
+            sessions: vec![SessionInfo {
+                session_id: "ses-1".into(),
+                metadata: HashMap::new(),
+            }],
+        };
+        tx.send(Ok(result)).expect("send should succeed");
+        let received: Result<SessionListResult, String> =
+            rx.blocking_recv().expect("recv should succeed");
+        let list = received.expect("result should be Ok");
+        assert_eq!(list.sessions.len(), 1);
+        assert_eq!(list.sessions[0].session_id, "ses-1");
     }
 }
