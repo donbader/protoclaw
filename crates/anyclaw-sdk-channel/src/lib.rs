@@ -12,19 +12,17 @@
 /// Permission request/response oneshot management.
 pub mod broker;
 /// Extract displayable text from agent content values.
-// Grandfathered: typed replacement in Phase 2-4
+// D-03 boundary: DeliverMessage.content is Value — agent content shape is agent-defined
 #[allow(clippy::disallowed_types)]
 pub mod content;
 /// Error types for channel SDK operations.
 pub mod error;
 /// JSON-RPC stdio harness that drives a [`Channel`] implementation.
-// Grandfathered: typed replacement in Phase 2-4
-#[allow(clippy::disallowed_types)]
 pub mod harness;
 /// Test wrapper for unit-testing [`Channel`] implementations without JSON-RPC framing.
 pub mod testing;
 /// The [`Channel`] trait that channel authors implement.
-// Grandfathered: typed replacement in Phase 2-4
+// D-03 boundary: handle_unknown params/return are Value — unknown methods have no schema
 #[allow(clippy::disallowed_types)]
 pub mod trait_def;
 

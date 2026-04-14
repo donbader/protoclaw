@@ -12,6 +12,7 @@ keywords = ["agent", "mcp", "acp", "sdk"]
 categories = ["network-programming"]
 
 [dependencies]
+anyclaw-jsonrpc = { workspace = true }
 anyclaw-sdk-types = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

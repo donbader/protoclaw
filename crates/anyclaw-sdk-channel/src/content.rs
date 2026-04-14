@@ -2,6 +2,10 @@
 ///
 /// Handles OpenCode's `{"type": "text", "text": "actual text"}` wrapper format,
 /// plain string values, and falls back to JSON serialization for other types.
+///
+/// D-03 boundary: `DeliverMessage.content` is `serde_json::Value` because the agents
+/// manager mutates raw JSON (timestamps, normalization, command injection) before
+/// delivery. The content shape is agent-defined and cannot be statically typed here.
 pub fn content_to_string(content: &serde_json::Value) -> String {
     if let Some(text) = content.get("text").and_then(|t| t.as_str()) {
         return text.to_string();

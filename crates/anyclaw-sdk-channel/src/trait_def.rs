@@ -47,9 +47,13 @@ pub trait Channel: Send + 'static {
     ) -> Result<(), ChannelSdkError>;
 
     /// Handle an unrecognized JSON-RPC method. Default: return a protocol error.
+    ///
+    /// D-03 boundary: params and return type stay as `serde_json::Value` because unknown
+    /// methods have no schema — the channel cannot know the shape at compile time.
     async fn handle_unknown(
         &mut self,
         method: &str,
+        // D-03: unknown method params have no fixed schema
         _params: serde_json::Value,
     ) -> Result<serde_json::Value, ChannelSdkError> {
         Err(ChannelSdkError::Protocol(format!(

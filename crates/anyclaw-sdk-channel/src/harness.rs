@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::mpsc;
 
+use anyclaw_jsonrpc::{JsonRpcError, JsonRpcRequest, JsonRpcResponse, RequestId};
+
 use crate::error::ChannelSdkError;
 use crate::trait_def::Channel;
 use anyclaw_sdk_types::{
@@ -38,8 +40,8 @@ impl<C: Channel> ChannelHarness<C> {
         let (outbound_tx, mut outbound_rx) = mpsc::channel::<ChannelSendMessage>(64);
         let (permission_tx, mut permission_rx) = mpsc::channel::<PermissionResponse>(16);
 
-        // Maps JSON-RPC request ID → permission request_id for deferred responses.
-        let mut pending_permissions: HashMap<String, serde_json::Value> = HashMap::new();
+        // Maps permission request_id → JSON-RPC request ID for deferred responses.
+        let mut pending_permissions: HashMap<String, RequestId> = HashMap::new();
 
         loop {
             tokio::select! {
@@ -49,12 +51,12 @@ impl<C: Channel> ChannelHarness<C> {
                             if line.trim().is_empty() {
                                 continue;
                             }
-                            let msg: serde_json::Value = match serde_json::from_str(&line) {
+                            let req: JsonRpcRequest = match serde_json::from_str(&line) {
                                 Ok(v) => v,
                                 Err(_) => continue,
                             };
-                            if let Some(response) = self.dispatch(msg, &outbound_tx, &permission_tx, &mut pending_permissions).await? {
-                                Self::write_line(&mut writer, &response).await?;
+                            if let Some(response) = self.dispatch(req, &outbound_tx, &permission_tx, &mut pending_permissions).await? {
+                                Self::write_response(&mut writer, &response).await?;
                             }
                         }
                         Ok(None) => break,
@@ -66,22 +68,15 @@ impl<C: Channel> ChannelHarness<C> {
                         tracing::warn!(error = %e, "failed to serialize channel/sendMessage params, using null");
                         serde_json::Value::default()
                     });
-                    let notification = serde_json::json!({
-                        "jsonrpc": "2.0",
-                        "method": "channel/sendMessage",
-                        "params": params,
-                    });
-                    Self::write_line(&mut writer, &notification).await?;
+                    let notification = JsonRpcRequest::new("channel/sendMessage", None, Some(params));
+                    Self::write_request(&mut writer, &notification).await?;
                 }
                 Some(perm_resp) = permission_rx.recv() => {
                     // Find and remove the pending JSON-RPC request ID for this permission.
                     if let Some(jsonrpc_id) = pending_permissions.remove(&perm_resp.request_id) {
-                        let response = serde_json::json!({
-                            "jsonrpc": "2.0",
-                            "id": jsonrpc_id,
-                            "result": serde_json::to_value(&perm_resp)?,
-                        });
-                        Self::write_line(&mut writer, &response).await?;
+                        let result = serde_json::to_value(&perm_resp)?;
+                        let response = JsonRpcResponse::success(Some(jsonrpc_id), result);
+                        Self::write_response(&mut writer, &response).await?;
                     } else {
                         tracing::warn!(
                             request_id = %perm_resp.request_id,
@@ -95,9 +90,20 @@ impl<C: Channel> ChannelHarness<C> {
         Ok(())
     }
 
-    async fn write_line<W: tokio::io::AsyncWrite + Unpin>(
+    async fn write_response<W: tokio::io::AsyncWrite + Unpin>(
         writer: &mut W,
-        msg: &serde_json::Value,
+        msg: &JsonRpcResponse,
+    ) -> Result<(), ChannelSdkError> {
+        let mut line = serde_json::to_vec(msg)?;
+        line.push(b'\n');
+        writer.write_all(&line).await?;
+        writer.flush().await?;
+        Ok(())
+    }
+
+    async fn write_request<W: tokio::io::AsyncWrite + Unpin>(
+        writer: &mut W,
+        msg: &JsonRpcRequest,
     ) -> Result<(), ChannelSdkError> {
         let mut line = serde_json::to_vec(msg)?;
         line.push(b'\n');
@@ -108,19 +114,15 @@ impl<C: Channel> ChannelHarness<C> {
 
     async fn dispatch(
         &mut self,
-        msg: serde_json::Value,
+        req: JsonRpcRequest,
         outbound_tx: &mpsc::Sender<ChannelSendMessage>,
         permission_tx: &mpsc::Sender<PermissionResponse>,
-        pending_permissions: &mut HashMap<String, serde_json::Value>,
-    ) -> Result<Option<serde_json::Value>, ChannelSdkError> {
-        let method = msg.get("method").and_then(|m| m.as_str()).unwrap_or("");
-        let id = msg.get("id").cloned();
-        let params = msg
-            .get("params")
-            .cloned()
-            .unwrap_or(serde_json::Value::Null);
+        pending_permissions: &mut HashMap<String, RequestId>,
+    ) -> Result<Option<JsonRpcResponse>, ChannelSdkError> {
+        let id = req.id.clone();
+        let params = req.params.unwrap_or(serde_json::Value::Null);
 
-        match method {
+        match req.method.as_str() {
             "initialize" => {
                 let caps = self.channel.capabilities();
                 let result = ChannelInitializeResult {
@@ -140,11 +142,10 @@ impl<C: Channel> ChannelHarness<C> {
                     .on_ready(outbound_tx.clone(), permission_tx.clone())
                     .await?;
                 if let Some(req_id) = id {
-                    return Ok(Some(serde_json::json!({
-                        "jsonrpc": "2.0",
-                        "id": req_id,
-                        "result": serde_json::to_value(&result)?,
-                    })));
+                    return Ok(Some(JsonRpcResponse::success(
+                        Some(req_id),
+                        serde_json::to_value(&result)?,
+                    )));
                 }
             }
             "channel/deliverMessage" => {
@@ -166,20 +167,19 @@ impl<C: Channel> ChannelHarness<C> {
                     self.channel.show_permission_prompt(req).await?;
                 }
             }
-            _ => {
+            method => {
                 let result = self.channel.handle_unknown(method, params).await;
                 if let Some(req_id) = id {
                     return Ok(Some(match result {
-                        Ok(val) => serde_json::json!({
-                            "jsonrpc": "2.0",
-                            "id": req_id,
-                            "result": val,
-                        }),
-                        Err(e) => serde_json::json!({
-                            "jsonrpc": "2.0",
-                            "id": req_id,
-                            "error": {"code": -32601, "message": e.to_string()},
-                        }),
+                        Ok(val) => JsonRpcResponse::success(Some(req_id), val),
+                        Err(e) => JsonRpcResponse::error(
+                            Some(req_id),
+                            JsonRpcError {
+                                code: -32601,
+                                message: e.to_string(),
+                                data: None,
+                            },
+                        ),
                     }));
                 }
             }
