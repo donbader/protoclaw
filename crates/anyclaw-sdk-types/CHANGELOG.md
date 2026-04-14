@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0](https://github.com/donbader/anyclaw/compare/anyclaw-sdk-types-v0.4.0...anyclaw-sdk-types-v0.5.0) - 2026-04-14
+
+### Fixed
+
+- *(sdk-types)* read availableCommands instead of commands from wire format
+- use official ACP schema types for agent capabilities
+
+### Other
+
+- add agent-client-protocol-schema v0.11
+
 ## [0.4.0](https://github.com/donbader/anyclaw/compare/anyclaw-sdk-types-v0.3.0...anyclaw-sdk-types-v0.4.0) - 2026-04-13
 
 ### Added
