@@ -20,8 +20,10 @@ pub use agent_client_protocol_schema::SessionCapabilities;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ClientCapabilities {
     /// Experimental capability extensions; omitted when not set.
+    // Extensible: experimental capabilities have agent-defined schemas (D-03)
+    #[allow(clippy::disallowed_types)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub experimental: Option<serde_json::Value>,
+    pub experimental: Option<HashMap<String, serde_json::Value>>,
 }
 
 /// Parameters for the `initialize` request (supervisor → agent).
@@ -33,6 +35,8 @@ pub struct InitializeParams {
     /// Capabilities the supervisor is advertising to the agent.
     pub capabilities: ClientCapabilities,
     /// Arbitrary runtime options forwarded from `anyclaw.yaml`.
+    // Extensible: runtime options have deployment-defined schemas (D-03)
+    #[allow(clippy::disallowed_types)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub options: Option<HashMap<String, serde_json::Value>>,
 }
@@ -123,6 +127,14 @@ impl ContentPart {
     }
 }
 
+impl Default for ContentPart {
+    fn default() -> Self {
+        ContentPart::Text {
+            text: String::new(),
+        }
+    }
+}
+
 /// Parameters for the `session/prompt` request (supervisor → agent).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SessionPromptParams {
@@ -175,8 +187,10 @@ pub struct SessionInfo {
     #[serde(rename = "sessionId")]
     pub session_id: String,
     /// Arbitrary agent-defined metadata for this session.
+    // Extensible: agent-defined metadata has agent-specific schemas (D-03)
+    #[allow(clippy::disallowed_types)]
     #[serde(default)]
-    pub metadata: serde_json::Value,
+    pub metadata: HashMap<String, serde_json::Value>,
 }
 
 /// Parameters for the `session/load` request (supervisor → agent).
@@ -216,7 +230,7 @@ pub enum SessionUpdateType {
     AgentMessageChunk {
         /// Partial message content for this chunk.
         #[serde(default)]
-        content: serde_json::Value,
+        content: ContentPart,
         /// Optional message ID grouping chunks belonging to the same message.
         #[serde(rename = "messageId", default)]
         message_id: Option<String>,
@@ -225,7 +239,7 @@ pub enum SessionUpdateType {
     AgentThoughtChunk {
         /// Partial thought content for this chunk.
         #[serde(default)]
-        content: serde_json::Value,
+        content: ContentPart,
         /// Optional message ID grouping chunks belonging to the same thought.
         #[serde(rename = "messageId", default)]
         message_id: Option<String>,
@@ -239,8 +253,10 @@ pub enum SessionUpdateType {
         #[serde(default)]
         name: Option<String>,
         /// Input arguments passed to the tool.
+        // Extensible: tool input schema is tool-defined (D-03)
+        #[allow(clippy::disallowed_types)]
         #[serde(default)]
-        input: Option<serde_json::Value>,
+        input: Option<HashMap<String, serde_json::Value>>,
     },
     /// Status update for an in-progress tool call.
     ToolCallUpdate {
@@ -254,8 +270,10 @@ pub enum SessionUpdateType {
         #[serde(default)]
         status: Option<ToolCallStatus>,
         /// Input arguments, if available at update time.
+        // Extensible: tool input schema is tool-defined (D-03)
+        #[allow(clippy::disallowed_types)]
         #[serde(skip_serializing_if = "Option::is_none")]
-        input: Option<serde_json::Value>,
+        input: Option<HashMap<String, serde_json::Value>>,
         /// Output produced by the tool call, if completed.
         #[serde(skip_serializing_if = "Option::is_none")]
         output: Option<String>,
@@ -264,7 +282,7 @@ pub enum SessionUpdateType {
     Plan {
         /// Plan content emitted by the agent.
         #[serde(default)]
-        content: serde_json::Value,
+        content: ContentPart,
     },
     /// Token usage statistics for the current session turn.
     UsageUpdate {
@@ -291,7 +309,7 @@ pub enum SessionUpdateType {
     UserMessageChunk {
         /// Partial user message content for this chunk.
         #[serde(default)]
-        content: serde_json::Value,
+        content: ContentPart,
         /// Optional message ID grouping chunks belonging to the same user message.
         #[serde(rename = "messageId", default)]
         message_id: Option<String>,
@@ -299,8 +317,10 @@ pub enum SessionUpdateType {
     /// Current list of slash-commands the agent exposes to the channel.
     AvailableCommandsUpdate {
         /// Command descriptors; schema is agent-defined.
+        // Extensible: command descriptors have agent-defined schemas (D-03)
+        #[allow(clippy::disallowed_types)]
         #[serde(default)]
-        commands: serde_json::Value,
+        commands: Vec<serde_json::Value>,
     },
     /// Extension type — not part of core ACP. Carries the agent's current operating mode.
     CurrentModeUpdate {
@@ -311,14 +331,18 @@ pub enum SessionUpdateType {
     /// Extension type — not part of core ACP. Carries config option updates from the agent.
     ConfigOptionUpdate {
         /// Flattened map of config option key-value pairs.
+        // Extensible: config options have agent-defined schemas (D-03)
+        #[allow(clippy::disallowed_types)]
         #[serde(default, flatten)]
-        extra: serde_json::Map<String, serde_json::Value>,
+        extra: HashMap<String, serde_json::Value>,
     },
     /// Extension type — not part of core ACP. Carries session metadata updates from the agent.
     SessionInfoUpdate {
         /// Flattened map of session metadata key-value pairs.
+        // Extensible: session metadata has agent-defined schemas (D-03)
+        #[allow(clippy::disallowed_types)]
         #[serde(default, flatten)]
-        extra: serde_json::Map<String, serde_json::Value>,
+        extra: HashMap<String, serde_json::Value>,
     },
 }
 
@@ -383,7 +407,7 @@ mod tests {
     #[case::agent_message_chunk(SessionUpdateEvent {
         session_id: "ses-abc".into(),
         update: SessionUpdateType::AgentMessageChunk {
-            content: serde_json::json!("hello"),
+            content: ContentPart::text("hello"),
             message_id: Some("msg-1".into()),
         },
     })]
@@ -439,6 +463,200 @@ mod tests {
         assert_eq!(result.sessions[0].session_id, "ses-1");
         assert_eq!(result.sessions[1].session_id, "ses-2");
     }
+
+    // ── Round-trip tests for typed replacements (Task 1) ──────────────
+
+    #[rstest]
+    fn when_client_capabilities_with_no_experimental_serialized_then_field_omitted() {
+        let caps = ClientCapabilities { experimental: None };
+        let json = serde_json::to_value(&caps).unwrap();
+        assert!(json.get("experimental").is_none());
+    }
+
+    #[rstest]
+    fn when_client_capabilities_with_experimental_round_trips() {
+        let mut exp = HashMap::new();
+        exp.insert("foo".into(), serde_json::json!(42));
+        let caps = ClientCapabilities {
+            experimental: Some(exp),
+        };
+        let json = serde_json::to_string(&caps).unwrap();
+        let back: ClientCapabilities = serde_json::from_str(&json).unwrap();
+        assert_eq!(caps, back);
+    }
+
+    #[rstest]
+    fn when_initialize_params_with_no_options_round_trips() {
+        let params = InitializeParams {
+            protocol_version: 1,
+            capabilities: ClientCapabilities { experimental: None },
+            options: None,
+        };
+        let json = serde_json::to_string(&params).unwrap();
+        let back: InitializeParams = serde_json::from_str(&json).unwrap();
+        assert_eq!(params, back);
+    }
+
+    #[rstest]
+    fn when_initialize_params_with_options_round_trips() {
+        let mut opts = HashMap::new();
+        opts.insert("key".into(), serde_json::json!("val"));
+        let params = InitializeParams {
+            protocol_version: 1,
+            capabilities: ClientCapabilities { experimental: None },
+            options: Some(opts),
+        };
+        let json = serde_json::to_string(&params).unwrap();
+        let back: InitializeParams = serde_json::from_str(&json).unwrap();
+        assert_eq!(params, back);
+    }
+
+    #[rstest]
+    fn when_session_info_metadata_round_trips_as_hashmap() {
+        let json = serde_json::json!({
+            "sessionId": "ses-1",
+            "metadata": {"key": "value"}
+        });
+        let info: SessionInfo = serde_json::from_value(json).unwrap();
+        assert_eq!(
+            info.metadata.get("key").and_then(|v| v.as_str()),
+            Some("value")
+        );
+    }
+
+    #[rstest]
+    fn when_session_info_missing_metadata_then_defaults_to_empty() {
+        let json = serde_json::json!({"sessionId": "ses-1"});
+        let info: SessionInfo = serde_json::from_value(json).unwrap();
+        assert!(info.metadata.is_empty());
+    }
+
+    #[rstest]
+    fn when_agent_message_chunk_content_round_trips_as_content_part() {
+        let event = SessionUpdateEvent {
+            session_id: "ses-1".into(),
+            update: SessionUpdateType::AgentMessageChunk {
+                content: ContentPart::text("hello"),
+                message_id: Some("msg-1".into()),
+            },
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        let back: SessionUpdateEvent = serde_json::from_str(&json).unwrap();
+        assert_eq!(event, back);
+    }
+
+    #[rstest]
+    fn when_agent_thought_chunk_content_round_trips_as_content_part() {
+        let event = SessionUpdateEvent {
+            session_id: "ses-1".into(),
+            update: SessionUpdateType::AgentThoughtChunk {
+                content: ContentPart::text("thinking..."),
+                message_id: None,
+            },
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        let back: SessionUpdateEvent = serde_json::from_str(&json).unwrap();
+        assert_eq!(event, back);
+    }
+
+    #[rstest]
+    fn when_tool_call_input_round_trips_as_typed_hashmap() {
+        let mut input = HashMap::new();
+        input.insert("arg1".into(), serde_json::json!("val1"));
+        let event = SessionUpdateEvent {
+            session_id: "ses-1".into(),
+            update: SessionUpdateType::ToolCall {
+                tool_call_id: Some("tc-1".into()),
+                name: Some("my_tool".into()),
+                input: Some(input),
+            },
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        let back: SessionUpdateEvent = serde_json::from_str(&json).unwrap();
+        assert_eq!(event, back);
+    }
+
+    #[rstest]
+    fn when_available_commands_update_round_trips_as_vec() {
+        let event = SessionUpdateEvent {
+            session_id: "ses-1".into(),
+            update: SessionUpdateType::AvailableCommandsUpdate {
+                commands: vec![serde_json::json!({"name": "/help"})],
+            },
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        let back: SessionUpdateEvent = serde_json::from_str(&json).unwrap();
+        assert_eq!(event, back);
+    }
+
+    #[rstest]
+    fn when_config_option_update_extra_round_trips_via_flatten() {
+        let json_str = r#"{"sessionId":"ses-1","update":{"sessionUpdate":"config_option_update","key":"value"}}"#;
+        let event: SessionUpdateEvent = serde_json::from_str(json_str).unwrap();
+        if let SessionUpdateType::ConfigOptionUpdate { ref extra } = event.update {
+            assert_eq!(extra.get("key").and_then(|v| v.as_str()), Some("value"));
+        } else {
+            panic!("expected ConfigOptionUpdate");
+        }
+        // Round-trip
+        let back_json = serde_json::to_string(&event).unwrap();
+        let back: SessionUpdateEvent = serde_json::from_str(&back_json).unwrap();
+        assert_eq!(event, back);
+    }
+
+    #[rstest]
+    fn when_session_info_update_extra_round_trips_via_flatten() {
+        let json_str = r#"{"sessionId":"ses-1","update":{"sessionUpdate":"session_info_update","info":"data"}}"#;
+        let event: SessionUpdateEvent = serde_json::from_str(json_str).unwrap();
+        if let SessionUpdateType::SessionInfoUpdate { ref extra } = event.update {
+            assert_eq!(extra.get("info").and_then(|v| v.as_str()), Some("data"));
+        } else {
+            panic!("expected SessionInfoUpdate");
+        }
+        let back_json = serde_json::to_string(&event).unwrap();
+        let back: SessionUpdateEvent = serde_json::from_str(&back_json).unwrap();
+        assert_eq!(event, back);
+    }
+
+    #[rstest]
+    fn when_plan_content_round_trips_as_content_part() {
+        let event = SessionUpdateEvent {
+            session_id: "ses-1".into(),
+            update: SessionUpdateType::Plan {
+                content: ContentPart::text("step 1: do thing"),
+            },
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        let back: SessionUpdateEvent = serde_json::from_str(&json).unwrap();
+        assert_eq!(event, back);
+    }
+
+    #[rstest]
+    fn when_user_message_chunk_content_round_trips_as_content_part() {
+        let event = SessionUpdateEvent {
+            session_id: "ses-1".into(),
+            update: SessionUpdateType::UserMessageChunk {
+                content: ContentPart::text("user says hi"),
+                message_id: Some("umsg-1".into()),
+            },
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        let back: SessionUpdateEvent = serde_json::from_str(&json).unwrap();
+        assert_eq!(event, back);
+    }
+
+    #[rstest]
+    fn when_content_part_default_then_empty_text() {
+        let part = ContentPart::default();
+        assert_eq!(
+            part,
+            ContentPart::Text {
+                text: String::new()
+            }
+        );
+    }
+
+    // ── Existing tests ──────────────────────────────────────────────
 
     /// Real OpenCode `initialize` response with nested `agentCapabilities` object.
     /// The official ACP spec wraps capabilities under `agentCapabilities`; anyclaw's
