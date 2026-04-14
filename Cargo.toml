@@ -50,6 +50,23 @@ temp-env = "0.3"
 metrics = "0.24"
 metrics-exporter-prometheus = "0.18"
 
+[workspace.lints.clippy]
+unwrap_used = "warn"
+expect_used = "allow"
+disallowed_types = "warn"
+needless_pass_by_value = "warn"
+redundant_closure_for_method_calls = "warn"
+manual_let_else = "warn"
+implicit_clone = "warn"
+cloned_instead_of_copied = "warn"
+flat_map_option = "warn"
+semicolon_if_nothing_returned = "warn"
+
+[workspace.lints.rust]
+unused_imports = "warn"
+dead_code = "warn"
+unused_variables = "warn"
+
 [profile.release]
 strip = true
 lto = "thin"

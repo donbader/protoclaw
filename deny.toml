@@ -1,3 +1,9 @@
+[advisories]
+vulnerability = "deny"
+unmaintained = "warn"
+yanked = "warn"
+notice = "warn"
+
 [licenses]
 allow = [
     "MIT",
@@ -18,3 +24,20 @@ unused-allowed-license = "allow"
 
 [licenses.private]
 ignore = true
+
+[bans]
+multiple-versions = "warn"
+wildcards = "allow"
+highlight = "all"
+deny = []
+skip = []
+skip-tree = []
+
+[bans.build]
+allow-build-scripts = "allow"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
