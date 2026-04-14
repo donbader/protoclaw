@@ -17,9 +17,9 @@ Requirements for the code quality milestone. Each maps to roadmap phases.
 
 ### Dead Code & Hygiene
 
-- [ ] **HYGN-01**: Remove all unused imports across workspace
-- [ ] **HYGN-02**: Remove stale modules and unreachable branches
-- [ ] **HYGN-03**: Zero clippy warnings across entire workspace (`cargo clippy --workspace`)
+- [x] **HYGN-01**: Remove all unused imports across workspace
+- [x] **HYGN-02**: Remove stale modules and unreachable branches
+- [x] **HYGN-03**: Zero clippy warnings across entire workspace (`cargo clippy --workspace`)
 
 ### Error Handling
 
@@ -78,8 +78,8 @@ Requirements for the code quality milestone. Each maps to roadmap phases.
 
 ### Bug Fixes
 
-- [ ] **BUGF-01**: Fix any code bugs discovered during the quality pass (logic errors, incorrect behavior, edge cases)
-- [ ] **BUGF-02**: Fix any code smells that indicate latent bugs (unreachable match arms, silent error swallowing, incorrect type coercions)
+- [x] **BUGF-01**: Fix any code bugs discovered during the quality pass (logic errors, incorrect behavior, edge cases)
+- [x] **BUGF-02**: Fix any code smells that indicate latent bugs (unreachable match arms, silent error swallowing, incorrect type coercions)
 
 ## Deferred Requirements
 
@@ -116,9 +116,9 @@ Tracked but not in current milestone.
 | TOOL-03 | Phase 1 | Complete |
 | TOOL-04 | Phase 1 | Complete |
 | TOOL-05 | Phase 1 | Complete |
-| HYGN-01 | Phase 1 | Pending |
-| HYGN-02 | Phase 1 | Pending |
-| HYGN-03 | Phase 1 | Pending |
+| HYGN-01 | Phase 1 | Complete |
+| HYGN-02 | Phase 1 | Complete |
+| HYGN-03 | Phase 1 | Complete |
 | ERRH-01 | Phase 2 | Pending |
 | ERRH-02 | Phase 2 | Pending |
 | ERRH-03 | Phase 2 | Pending |
@@ -150,8 +150,8 @@ Tracked but not in current milestone.
 | ADVN-01 | Phase 3 | Pending |
 | ADVN-02 | Phase 5 | Pending |
 | ADVN-03 | Phase 4 | Pending |
-| BUGF-01 | All phases | Pending |
-| BUGF-02 | All phases | Pending |
+| BUGF-01 | All phases | Complete |
+| BUGF-02 | All phases | Complete |
 
 **Coverage:**
 - Current milestone requirements: 41 total

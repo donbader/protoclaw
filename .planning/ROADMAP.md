@@ -34,7 +34,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans:** 3 plans
 Plans:
 - [x] 01-01-PLAN.md — Lint config files (clippy.toml, rustfmt.toml, deny.toml, workspace lints) + propagation to all crates
-- [ ] 01-02-PLAN.md — Fix all clippy warnings, dead code removal, unused imports cleanup
+- [x] 01-02-PLAN.md — Fix all clippy warnings, dead code removal, unused imports cleanup
 - [x] 01-03-PLAN.md — Coverage baseline with cargo-llvm-cov
 
 ### Phase 2: Leaf Crate Quality
