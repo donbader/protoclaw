@@ -39,11 +39,11 @@ async fn when_message_sent_then_streaming_chunks_arrive_before_result() {
         .position(|e| e.data == "Echo: stream-order-test")
         .expect("should have received result event via SSE");
 
-    // Chunk events are non-thought events that arrive before the result
+    // Chunk events are unnamed (no event_type) events that arrive before the result
     let chunk_positions: Vec<usize> = events
         .iter()
         .enumerate()
-        .filter(|(i, e)| *i < result_position && e.event_type.as_deref() != Some("thought"))
+        .filter(|(i, e)| *i < result_position && e.event_type.is_none())
         .map(|(i, _)| i)
         .collect();
 
