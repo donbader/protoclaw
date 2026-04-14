@@ -22,7 +22,7 @@ impl StringOrArray {
 
     /// Return the first element (the command), if any.
     pub fn first(&self) -> Option<&str> {
-        self.0.first().map(|s| s.as_str())
+        self.0.first().map(String::as_str)
     }
 
     /// Split into (command, args). Panics if the vec is empty.

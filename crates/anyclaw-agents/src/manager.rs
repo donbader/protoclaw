@@ -442,7 +442,7 @@ impl AgentsManager {
                     .unwrap_or(false);
 
                 let result = if has_stale {
-                    let idx = slot_idx.unwrap();
+                    let idx = slot_idx.expect("slot_idx must be Some when has_stale is true");
                     match self.heal_session(idx, &agent_name, &session_key).await {
                         Ok(()) => self.slots[idx]
                             .session_map
@@ -1170,7 +1170,7 @@ impl AgentsManager {
         match serde_json::from_value::<SessionUpdateEvent>(params.clone()) {
             Ok(event) => {
                 self.forward_session_update(slot_idx, event, params, seq)
-                    .await
+                    .await;
             }
             Err(error) => {
                 self.forward_malformed_update_error(slot_idx, &params, &error, seq)
@@ -1188,10 +1188,13 @@ impl AgentsManager {
         let request_id = params["requestId"]
             .as_str()
             .filter(|s| !s.is_empty())
-            .map(|s| s.to_string())
+            .map(std::string::ToString::to_string)
             .unwrap_or_else(|| {
                 // OpenCode uses JSON-RPC id field instead of params.requestId
-                request.get("id").map(|v| v.to_string()).unwrap_or_default()
+                request
+                    .get("id")
+                    .map(std::string::ToString::to_string)
+                    .unwrap_or_default()
             });
         let description = params["description"]
             .as_str()
@@ -1868,9 +1871,8 @@ fn normalize_tool_event_fields(content: &mut serde_json::Value, update_type: &st
     if update_type != "tool_call" && update_type != "tool_call_update" {
         return;
     }
-    let update = match content.get_mut("update").and_then(|u| u.as_object_mut()) {
-        Some(u) => u,
-        None => return,
+    let Some(update) = content.get_mut("update").and_then(|u| u.as_object_mut()) else {
+        return;
     };
 
     if !update.contains_key("name")

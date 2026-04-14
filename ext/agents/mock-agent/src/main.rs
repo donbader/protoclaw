@@ -1,3 +1,6 @@
+// Grandfathered: typed replacement in Phase 2-4
+#![allow(clippy::disallowed_types)]
+
 use serde_json::{Value, json};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -98,17 +101,14 @@ async fn main() {
             }
             "session/prompt" => {
                 let sid = session_id.clone().unwrap_or_else(|| "unknown".to_string());
-                let user_msg = match extract_prompt_message(&msg) {
-                    Some(m) => m,
-                    None => {
-                        let resp = json!({
-                            "jsonrpc": "2.0",
-                            "id": id,
-                            "error": { "code": -32602, "message": "session/prompt requires 'prompt' (array of content parts)" }
-                        });
-                        write_message(&mut stdout, &resp).await;
-                        continue;
-                    }
+                let Some(user_msg) = extract_prompt_message(&msg) else {
+                    let resp = json!({
+                        "jsonrpc": "2.0",
+                        "id": id,
+                        "error": { "code": -32602, "message": "session/prompt requires 'prompt' (array of content parts)" }
+                    });
+                    write_message(&mut stdout, &resp).await;
+                    continue;
                 };
                 let think = THINK_ENABLED.load(Ordering::SeqCst);
                 handle_session_prompt(
@@ -165,7 +165,7 @@ fn extract_prompt_message(msg: &Value) -> Option<String> {
     if first["type"].as_str()? != "text" {
         return None;
     }
-    first["text"].as_str().map(|s| s.to_string())
+    first["text"].as_str().map(std::string::ToString::to_string)
 }
 
 async fn handle_initialize(stdout: &mut tokio::io::Stdout, id: Option<Value>, msg: &Value) {
@@ -214,7 +214,7 @@ async fn handle_session_new<W: AsyncWrite + Unpin>(
 ) -> String {
     let params = &msg["params"];
 
-    if !params.get("cwd").is_some_and(|v| v.is_string()) {
+    if !params.get("cwd").is_some_and(serde_json::Value::is_string) {
         let resp = json!({
             "jsonrpc": "2.0",
             "id": id,
@@ -224,7 +224,10 @@ async fn handle_session_new<W: AsyncWrite + Unpin>(
         return String::new();
     }
 
-    if !params.get("mcpServers").is_some_and(|v| v.is_array()) {
+    if !params
+        .get("mcpServers")
+        .is_some_and(serde_json::Value::is_array)
+    {
         let resp = json!({
             "jsonrpc": "2.0",
             "id": id,
@@ -234,10 +237,7 @@ async fn handle_session_new<W: AsyncWrite + Unpin>(
         return String::new();
     }
 
-    let count = params["mcpServers"]
-        .as_array()
-        .map(|a| a.len())
-        .unwrap_or(0);
+    let count = params["mcpServers"].as_array().map(Vec::len).unwrap_or(0);
     MCP_SERVER_COUNT.store(count, Ordering::SeqCst);
 
     let sid = uuid::Uuid::new_v4().to_string();

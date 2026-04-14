@@ -1,4 +1,8 @@
+// Grandfathered: typed replacement in Phase 2-4
+#[allow(clippy::disallowed_types)]
 mod channel;
+// Grandfathered: typed replacement in Phase 2-4
+#[allow(clippy::disallowed_types)]
 mod deliver;
 mod dispatcher;
 mod formatting;

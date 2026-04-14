@@ -186,13 +186,11 @@ impl ContentKind {
     /// Reads `content["update"]["sessionUpdate"]` as the type discriminator
     /// (the actual wire format both channels use).
     pub fn from_content(content: &serde_json::Value) -> Self {
-        let update = match content.get("update") {
-            Some(u) => u,
-            None => return ContentKind::Unknown,
+        let Some(update) = content.get("update") else {
+            return ContentKind::Unknown;
         };
-        let session_update = match update.get("sessionUpdate").and_then(|v| v.as_str()) {
-            Some(s) => s,
-            None => return ContentKind::Unknown,
+        let Some(session_update) = update.get("sessionUpdate").and_then(|v| v.as_str()) else {
+            return ContentKind::Unknown;
         };
         match session_update {
             "agent_thought_chunk" => {
@@ -250,7 +248,7 @@ impl ContentKind {
                 let output = update
                     .get("output")
                     .and_then(|v| v.as_str())
-                    .map(|s| s.to_string());
+                    .map(std::string::ToString::to_string);
                 ContentKind::ToolCallUpdate {
                     name,
                     tool_call_id,

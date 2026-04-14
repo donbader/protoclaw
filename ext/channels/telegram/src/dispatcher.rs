@@ -26,9 +26,8 @@ pub async fn process_text_message(
     state: &SharedState,
 ) -> Result<(), ChannelSdkError> {
     let guard = state.outbound.lock().await;
-    let outbound = match guard.as_ref() {
-        Some(tx) => tx,
-        None => return Ok(()),
+    let Some(outbound) = guard.as_ref() else {
+        return Ok(());
     };
 
     let peer_info = peer_info_from_chat(chat_id, chat_type);
@@ -70,14 +69,12 @@ async fn handle_callback_query(
     q: CallbackQuery,
     state: Arc<SharedState>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let data = match q.data.as_deref() {
-        Some(d) => d,
-        None => return Ok(()),
+    let Some(data) = q.data.as_deref() else {
+        return Ok(());
     };
 
-    let (request_id, option_id) = match crate::permissions::parse_callback_data(data) {
-        Some(pair) => pair,
-        None => return Ok(()),
+    let Some((request_id, option_id)) = crate::permissions::parse_callback_data(data) else {
+        return Ok(());
     };
 
     tracing::info!(%request_id, %option_id, "callback query received");

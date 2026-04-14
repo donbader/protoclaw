@@ -135,7 +135,7 @@ impl ChannelsManager {
             .iter()
             .find(|s| s.name == name)
             .and_then(|s| s.connection.as_ref())
-            .map(|conn| conn.port_rx())
+            .map(ChannelConnection::port_rx)
     }
 
     /// Spawn and initialize a single channel subprocess.
@@ -595,12 +595,9 @@ impl ChannelsManager {
         params: serde_json::Value,
         channel_name: &str,
     ) -> Option<SessionKey> {
-        let send_msg = match serde_json::from_value::<ChannelSendMessage>(params) {
-            Ok(send_msg) => send_msg,
-            Err(_) => {
-                tracing::warn!(channel = %channel_name, "failed to parse channel/sendMessage params");
-                return None;
-            }
+        let Ok(send_msg) = serde_json::from_value::<ChannelSendMessage>(params) else {
+            tracing::warn!(channel = %channel_name, "failed to parse channel/sendMessage params");
+            return None;
         };
 
         let session_key = Self::build_session_key(&send_msg);
@@ -638,9 +635,8 @@ impl ChannelsManager {
 
     /// Send ack notification to the channel for a session (at dispatch time, not inbound time).
     async fn send_ack_to_channel(&self, session_key: &SessionKey) {
-        let entry = match self.routing_table.get(session_key) {
-            Some(e) => e,
-            None => return,
+        let Some(entry) = self.routing_table.get(session_key) else {
+            return;
         };
         let slot = &self.slots[entry.slot_index];
         if let Some(conn) = &slot.connection {

@@ -4,6 +4,8 @@ use clap::Parser;
 mod banner;
 mod cli;
 mod init;
+// Grandfathered: typed replacement in Phase 2-4
+#[allow(clippy::disallowed_types)]
 mod status;
 
 fn init_tracing(log_level: &str, log_format: &anyclaw_config::LogFormat) {

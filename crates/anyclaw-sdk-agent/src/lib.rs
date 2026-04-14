@@ -10,6 +10,8 @@
 #![warn(missing_docs)]
 
 /// ACP message adapter trait and dyn-compatible wrapper.
+// Grandfathered: typed replacement in Phase 2-4
+#[allow(clippy::disallowed_types)]
 pub mod adapter;
 /// Error types for the agent SDK.
 pub mod error;

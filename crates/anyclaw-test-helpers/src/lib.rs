@@ -1,3 +1,5 @@
+// Grandfathered: typed replacement in Phase 2-4
+#[allow(clippy::disallowed_types)]
 pub mod config;
 pub mod handles;
 pub mod paths;

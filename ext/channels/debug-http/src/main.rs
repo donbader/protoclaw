@@ -1,3 +1,6 @@
+// Grandfathered: typed replacement in Phase 2-4
+#![allow(clippy::disallowed_types)]
+
 use std::convert::Infallible;
 use std::sync::Arc;
 

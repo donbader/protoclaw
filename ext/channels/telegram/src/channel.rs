@@ -37,19 +37,16 @@ impl TelegramChannel {
 
     async fn handle_ack_message(&self, ack: AckNotification) {
         let ack_cfg = self.state.ack_config.read().await;
-        let cfg = match ack_cfg.as_ref() {
-            Some(c) => c,
-            None => return,
+        let Some(cfg) = ack_cfg.as_ref() else {
+            return;
         };
 
-        let bot = match &self.bot {
-            Some(b) => b,
-            None => return,
+        let Some(bot) = &self.bot else {
+            return;
         };
 
-        let chat_id = match Self::parse_chat_id(&ack.peer_id) {
-            Some(id) => id,
-            None => return,
+        let Some(chat_id) = Self::parse_chat_id(&ack.peer_id) else {
+            return;
         };
 
         if cfg.reaction
@@ -91,15 +88,13 @@ impl TelegramChannel {
             return;
         }
 
-        let bot = match &self.bot {
-            Some(b) => b,
-            None => return,
+        let Some(bot) = &self.bot else {
+            return;
         };
 
         let ack_cfg = self.state.ack_config.read().await;
-        let cfg = match ack_cfg.as_ref() {
-            Some(c) => c,
-            None => return,
+        let Some(cfg) = ack_cfg.as_ref() else {
+            return;
         };
 
         if !cfg.reaction {
@@ -107,15 +102,13 @@ impl TelegramChannel {
         }
 
         let session_chat = self.state.session_chat_map.read().await;
-        let chat_id = match session_chat.get(&lifecycle.session_id) {
-            Some(&id) => id,
-            None => return,
+        let Some(&chat_id) = session_chat.get(&lifecycle.session_id) else {
+            return;
         };
         drop(session_chat);
 
-        let msg_id = match self.state.last_message_ids.read().await.get(&chat_id) {
-            Some(&id) => id,
-            None => return,
+        let Some(&msg_id) = self.state.last_message_ids.read().await.get(&chat_id) else {
+            return;
         };
 
         match cfg.reaction_lifecycle.as_str() {
@@ -187,21 +180,21 @@ impl Channel for TelegramChannel {
         if let Some(v) = params
             .options
             .get("TELEGRAM_RESPONSE_EDIT_COOLDOWN_MS")
-            .and_then(|v| v.as_u64())
+            .and_then(serde_json::Value::as_u64)
         {
             *self.state.response_edit_cooldown_ms.write().await = v;
         }
         if let Some(v) = params
             .options
             .get("TELEGRAM_THOUGHT_DEBOUNCE_MS")
-            .and_then(|v| v.as_u64())
+            .and_then(serde_json::Value::as_u64)
         {
             *self.state.thought_debounce_ms.write().await = v;
         }
         if let Some(v) = params
             .options
             .get("TELEGRAM_FINALIZATION_DELAY_MS")
-            .and_then(|v| v.as_u64())
+            .and_then(serde_json::Value::as_u64)
         {
             *self.state.finalization_delay_ms.write().await = v;
         }

@@ -1,3 +1,5 @@
+// Grandfathered: typed replacement in Phase 2-4
+#[allow(clippy::disallowed_types)]
 pub fn format_status_output(health: &serde_json::Value) -> String {
     let mut out = String::new();
 

@@ -70,7 +70,7 @@ impl SessionQueue {
 
     /// Number of messages queued for a specific session (not counting the active one).
     pub fn queued_count(&self, session_key: &SessionKey) -> usize {
-        self.queues.get(session_key).map_or(0, |q| q.len())
+        self.queues.get(session_key).map_or(0, VecDeque::len)
     }
 
     /// Whether a session is currently active (processing a message).

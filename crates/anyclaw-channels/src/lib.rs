@@ -1,6 +1,12 @@
+// Grandfathered: typed replacement in Phase 2-4
+#[allow(clippy::disallowed_types)]
 pub mod connection;
+// Grandfathered: typed replacement in Phase 2-4
+#[allow(clippy::disallowed_types)]
 pub mod debug_http;
 pub mod error;
+// Grandfathered: typed replacement in Phase 2-4
+#[allow(clippy::disallowed_types)]
 pub mod manager;
 pub mod session_queue;
 

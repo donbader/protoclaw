@@ -2,6 +2,8 @@ pub mod error;
 pub mod parse;
 pub mod resolve;
 pub mod subst_yaml;
+// Grandfathered: typed replacement in Phase 2-4
+#[allow(clippy::disallowed_types)]
 pub mod types;
 pub mod validate;
 

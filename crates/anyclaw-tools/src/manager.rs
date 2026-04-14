@@ -182,8 +182,8 @@ impl Manager for ToolsManager {
 
     #[tracing::instrument(skip(self), name = "tools_manager_start")]
     async fn start(&mut self) -> Result<(), ManagerError> {
-        let wasm_configs = self.enabled_tool_configs(anyclaw_config::ToolType::Wasm);
-        let mcp_configs = self.enabled_tool_configs(anyclaw_config::ToolType::Mcp);
+        let wasm_configs = self.enabled_tool_configs(&anyclaw_config::ToolType::Wasm);
+        let mcp_configs = self.enabled_tool_configs(&anyclaw_config::ToolType::Mcp);
 
         let all_tools = self.load_all_tools(&wasm_configs)?;
         let native_host = Arc::new(McpHost::new(all_tools));
@@ -248,11 +248,11 @@ impl Manager for ToolsManager {
 impl ToolsManager {
     fn enabled_tool_configs(
         &self,
-        tool_type: anyclaw_config::ToolType,
+        tool_type: &anyclaw_config::ToolType,
     ) -> Vec<(String, ToolConfig)> {
         self.tool_configs
             .iter()
-            .filter(|(_, config)| config.tool_type == tool_type && config.enabled)
+            .filter(|(_, config)| config.tool_type == *tool_type && config.enabled)
             .map(|(name, config)| (name.clone(), config.clone()))
             .collect()
     }

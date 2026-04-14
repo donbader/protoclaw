@@ -236,7 +236,7 @@ pub async fn deliver_to_chat(
         .and_then(|v| v.as_str());
 
     let origin_instant = content.get("_received_at_ms")
-        .and_then(|v| v.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .and_then(|received_ms| {
             let now_ms = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -509,7 +509,7 @@ pub async fn deliver_to_chat(
                         let mut turns = state_clone.turns.write().await;
                         turns
                             .get_mut(&chat_id)
-                            .and_then(|t| t.take_response_for_finalize())
+                            .and_then(ChatTurn::take_response_for_finalize)
                     };
                     if let Some((text, msg_id)) = final_data
                         && !text.is_empty()
@@ -646,7 +646,7 @@ pub async fn deliver_to_chat(
 
             let collapse_data = {
                 let mut turns = state.turns.write().await;
-                turns.get_mut(&chat_id).and_then(|t| t.collapse_thought())
+                turns.get_mut(&chat_id).and_then(ChatTurn::collapse_thought)
             };
 
             if let Some((thought_msg_id, elapsed_secs)) = collapse_data
@@ -702,7 +702,7 @@ pub async fn deliver_to_chat(
                     let mut turns = state_clone.turns.write().await;
                     turns
                         .get_mut(&chat_id)
-                        .and_then(|t| t.take_response_for_finalize())
+                        .and_then(ChatTurn::take_response_for_finalize)
                 };
                 if let Some((text, msg_id)) = final_data {
                     tracing::debug!(
@@ -801,7 +801,7 @@ pub async fn deliver_to_chat(
                         tool_call_id,
                         ToolCallTrack {
                             msg_id: sent.id.0,
-                            name: name.to_string(),
+                            name: name.clone(),
                         },
                     );
                 }
