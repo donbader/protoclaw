@@ -696,9 +696,32 @@ impl AgentsManager {
                 );
                 // Signal channels manager that this "prompt" is done so the queue unblocks.
                 if let Some(sender) = &self.channels_sender {
+                    let sk = session_key.clone();
+                    let _ = sender
+                        .send(ChannelEvent::DeliverMessage {
+                            session_key: sk.clone(),
+                            content: serde_json::json!({
+                                "update": {
+                                    "sessionUpdate": "agent_message_chunk",
+                                    "content": "New conversation started."
+                                }
+                            }),
+                        })
+                        .await;
+                    let _ = sender
+                        .send(ChannelEvent::DeliverMessage {
+                            session_key: sk.clone(),
+                            content: serde_json::json!({
+                                "update": {
+                                    "sessionUpdate": "result",
+                                    "content": ""
+                                }
+                            }),
+                        })
+                        .await;
                     let _ = sender
                         .send(ChannelEvent::SessionComplete {
-                            session_key: session_key.clone(),
+                            session_key: sk,
                         })
                         .await;
                 }
