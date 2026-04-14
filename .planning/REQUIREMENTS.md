@@ -24,13 +24,13 @@ Requirements for the code quality milestone. Each maps to roadmap phases.
 ### Error Handling
 
 - [x] **ERRH-01**: Verify thiserror used in all library crates — no anyhow leaking into library code
-- [ ] **ERRH-02**: Verify each manager crate has a proper typed error enum
+- [x] **ERRH-02**: Verify each manager crate has a proper typed error enum
 - [x] **ERRH-03**: Eliminate bare `.unwrap()` in all production code (replace with `.expect("reason")` or `?`)
 
 ### Typed JSON
 
 - [x] **JSON-01**: Replace `serde_json::Value` with typed structs in `anyclaw-sdk-types`
-- [ ] **JSON-02**: Replace `serde_json::Value` with typed structs in `anyclaw-jsonrpc`
+- [x] **JSON-02**: Replace `serde_json::Value` with typed structs in `anyclaw-jsonrpc`
 - [ ] **JSON-03**: Replace `serde_json::Value` with typed structs in `anyclaw-core`
 - [ ] **JSON-04**: Replace `serde_json::Value` with typed structs in `anyclaw-agents`
 - [ ] **JSON-05**: Replace `serde_json::Value` with typed structs in `anyclaw-channels`
@@ -120,10 +120,10 @@ Tracked but not in current milestone.
 | HYGN-02 | Phase 1 | Complete |
 | HYGN-03 | Phase 1 | Complete |
 | ERRH-01 | Phase 2 | Complete |
-| ERRH-02 | Phase 2 | Pending |
+| ERRH-02 | Phase 2 | Complete |
 | ERRH-03 | Phase 2 | Complete |
 | JSON-01 | Phase 2 | Complete |
-| JSON-02 | Phase 2 | Pending |
+| JSON-02 | Phase 2 | Complete |
 | JSON-03 | Phase 2 | Pending |
 | JSON-04 | Phase 3 | Pending |
 | JSON-05 | Phase 3 | Pending |

@@ -49,7 +49,7 @@ Plans:
 **Plans:** 3 plans
 Plans:
 - [x] 02-01-PLAN.md — Type anyclaw-sdk-types: replace Value with typed structs, fix unwraps, serde consistency
-- [ ] 02-02-PLAN.md — Type anyclaw-jsonrpc: typed RequestId, typed codec, error audit
+- [x] 02-02-PLAN.md — Type anyclaw-jsonrpc: typed RequestId, typed codec, error audit
 - [ ] 02-03-PLAN.md — Type anyclaw-core + fix downstream compilation for workspace build
 
 ### Phase 3: Manager Crate Quality
