@@ -33,7 +33,7 @@ Requirements for the code quality milestone. Each maps to roadmap phases.
 - [x] **JSON-02**: Replace `serde_json::Value` with typed structs in `anyclaw-jsonrpc`
 - [x] **JSON-03**: Replace `serde_json::Value` with typed structs in `anyclaw-core`
 - [ ] **JSON-04**: Replace `serde_json::Value` with typed structs in `anyclaw-agents`
-- [ ] **JSON-05**: Replace `serde_json::Value` with typed structs in `anyclaw-channels`
+- [x] **JSON-05**: Replace `serde_json::Value` with typed structs in `anyclaw-channels`
 - [x] **JSON-06**: Replace `serde_json::Value` with typed structs in `anyclaw-tools`
 - [ ] **JSON-07**: Replace `serde_json::Value` with typed structs in SDK crates (sdk-agent, sdk-channel, sdk-tool)
 - [ ] **JSON-08**: Replace `serde_json::Value` with typed structs in ext/ binaries and examples
@@ -72,7 +72,7 @@ Requirements for the code quality milestone. Each maps to roadmap phases.
 
 ### Advanced Quality
 
-- [ ] **ADVN-01**: Replace `Arc<Mutex<HashMap<u64, oneshot::Sender>>>` with DashMap in connection crates
+- [x] **ADVN-01**: Replace `Arc<Mutex<HashMap<u64, oneshot::Sender>>>` with DashMap in connection crates
 - [ ] **ADVN-02**: Property-based testing (proptest) for all ACP/MCP wire types
 - [ ] **ADVN-03**: Inline TODO/LIMITATION comments from AGENTS.md into source code at relevant locations
 
@@ -126,7 +126,7 @@ Tracked but not in current milestone.
 | JSON-02 | Phase 2 | Complete |
 | JSON-03 | Phase 2 | Complete |
 | JSON-04 | Phase 3 | Pending |
-| JSON-05 | Phase 3 | Pending |
+| JSON-05 | Phase 3 | Complete |
 | JSON-06 | Phase 3 | Complete |
 | JSON-07 | Phase 4 | Pending |
 | JSON-08 | Phase 4 | Pending |
@@ -147,7 +147,7 @@ Tracked but not in current milestone.
 | DECO-01 | Phase 6 | Pending |
 | DECO-02 | Phase 6 | Pending |
 | DECO-03 | Phase 6 | Pending |
-| ADVN-01 | Phase 3 | Pending |
+| ADVN-01 | Phase 3 | Complete |
 | ADVN-02 | Phase 5 | Pending |
 | ADVN-03 | Phase 4 | Pending |
 | BUGF-01 | All phases | Complete |
