@@ -260,7 +260,7 @@ impl ContentKind {
             }
             "available_commands_update" => ContentKind::AvailableCommandsUpdate {
                 commands: update
-                    .get("commands")
+                    .get("availableCommands")
                     .cloned()
                     .unwrap_or(serde_json::Value::Array(vec![])),
             },
@@ -832,7 +832,7 @@ mod tests {
         let content = serde_json::json!({
             "update": {
                 "sessionUpdate": "available_commands_update",
-                "commands": [{"name": "start", "description": "Start the bot"}]
+                "availableCommands": [{"name": "start", "description": "Start the bot"}]
             }
         });
         let kind = ContentKind::from_content(&content);
