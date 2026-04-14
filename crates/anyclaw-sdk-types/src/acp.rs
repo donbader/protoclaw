@@ -62,6 +62,9 @@ pub struct SessionCapabilities {
     /// Resume capability descriptor; present if the agent supports `session/load`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resume: Option<serde_json::Value>,
+    /// Close capability descriptor; present if the agent supports `session/close`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub close: Option<serde_json::Value>,
 }
 
 /// Result returned by the agent in response to `initialize`.

@@ -716,13 +716,7 @@ impl AgentsManager {
             .ok_or_else(|| AgentsError::AgentNotFound(agent_name.to_string()))?;
 
         let slot = &self.slots[slot_idx];
-        if slot
-            .agent_capabilities
-            .as_ref()
-            .and_then(|r| r.session_capabilities.as_ref())
-            .and_then(|c| c.fork.as_ref())
-            .is_none()
-        {
+        if !slot.has_session_capability(|c| c.fork.is_some()) {
             return Err(AgentsError::CapabilityNotSupported("fork".into()));
         }
 
@@ -765,13 +759,7 @@ impl AgentsManager {
             .ok_or_else(|| AgentsError::AgentNotFound(agent_name.to_string()))?;
 
         let slot = &self.slots[slot_idx];
-        if slot
-            .agent_capabilities
-            .as_ref()
-            .and_then(|r| r.session_capabilities.as_ref())
-            .and_then(|c| c.list.as_ref())
-            .is_none()
-        {
+        if !slot.has_session_capability(|c| c.list.is_some()) {
             return Err(AgentsError::CapabilityNotSupported("list".into()));
         }
 
@@ -1195,9 +1183,11 @@ impl AgentsManager {
                 }
             }
             if let Some(conn) = &slot.connection {
-                for acp_id in slot.session_map.values() {
-                    let params = serde_json::json!({ "sessionId": acp_id });
-                    let _ = conn.send_notification("session/close", params).await;
+                if slot.has_session_capability(|c| c.close.is_some()) {
+                    for acp_id in slot.session_map.values() {
+                        let params = serde_json::json!({ "sessionId": acp_id });
+                        let _ = conn.send_notification("session/close", params).await;
+                    }
                 }
                 tokio::time::sleep(Duration::from_millis(self.manager_config.shutdown_grace_ms))
                     .await;
