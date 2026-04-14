@@ -6,8 +6,6 @@ libnull.rlib
 coverage/
 *.profraw
 
-# GSD planning (local-only)
-.planning/
 docs/superpowers/
 
 # IDE / OS
