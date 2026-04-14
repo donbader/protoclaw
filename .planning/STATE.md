@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Completed 03-02-PLAN.md
-last_updated: "2026-04-14T15:30:30.905Z"
+last_updated: "2026-04-14T15:52:02.684Z"
 last_activity: 2026-04-14
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 10
-  completed_plans: 8
-  percent: 80
+  completed_plans: 9
+  percent: 90
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-04-14)
 ## Current Position
 
 Phase: 03 (Manager Crate Quality) — EXECUTING
-Plan: 3 of 4
+Plan: 4 of 4
 Status: Ready to execute
 Last activity: 2026-04-14
 
@@ -71,6 +71,7 @@ Recent decisions affecting current work:
 - [Phase 02]: DeliverMessage.content stays Value — agents manager mutates raw JSON (timestamps, normalization, command injection)
 - [Phase 02]: params/result/data stay as Value — D-03 extensible boundaries, framing layer must not know method schemas
 - [Phase 03]: All serde_json::Value usages in tools crate are D-03 extensible boundaries — documented, not replaced
+- [Phase 03]: PendingPermission.request typed as JsonRpcRequest — eliminates Value indexing in permission flow
 
 ### Pending Todos
 
