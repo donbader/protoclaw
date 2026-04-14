@@ -3463,15 +3463,15 @@ mod tests {
         m.shutdown_all().await;
         tools_task.abort();
 
-    let after = store_arc
-        .load_open_sessions()
-        .await
-        .expect("load after failed");
-    assert_eq!(
-        after.len(),
-        1,
-        "session should remain open after shutdown_all for recovery on restart"
-    );
+        let after = store_arc
+            .load_open_sessions()
+            .await
+            .expect("load after failed");
+        assert_eq!(
+            after.len(),
+            1,
+            "session should remain open after shutdown_all for recovery on restart"
+        );
     }
 
     #[rstest]
