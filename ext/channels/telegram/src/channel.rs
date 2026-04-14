@@ -214,9 +214,11 @@ impl Channel for TelegramChannel {
     async fn on_ready(
         &mut self,
         outbound: mpsc::Sender<ChannelSendMessage>,
+        permission_tx: mpsc::Sender<PermissionResponse>,
     ) -> Result<(), ChannelSdkError> {
         let bot = self.bot()?.clone();
         *self.state.outbound.lock().await = Some(outbound);
+        *self.state.permission_tx.lock().await = Some(permission_tx);
         tokio::spawn(crate::dispatcher::run_dispatcher(bot, self.state.clone()));
         Ok(())
     }
@@ -246,10 +248,10 @@ impl Channel for TelegramChannel {
         Ok(())
     }
 
-    async fn request_permission(
+    async fn show_permission_prompt(
         &mut self,
         req: ChannelRequestPermission,
-    ) -> Result<PermissionResponse, ChannelSdkError> {
+    ) -> Result<(), ChannelSdkError> {
         let chat_id = *self
             .state
             .session_chat_map
@@ -284,15 +286,13 @@ impl Channel for TelegramChannel {
             .await
             .insert(req.request_id.clone(), (chat_id, sent.id.0));
 
-        let rx = self
-            .state
+        self.state
             .permission_broker
             .lock()
             .await
             .register(&req.request_id);
 
-        rx.await
-            .map_err(|_| ChannelSdkError::Protocol("permission response channel closed".into()))
+        Ok(())
     }
 
     async fn handle_unknown(
@@ -356,7 +356,8 @@ mod tests {
         };
         ch.on_initialize(params).await.unwrap();
         let (tx, _rx) = mpsc::channel(16);
-        ch.on_ready(tx).await.unwrap();
+        let (perm_tx, _perm_rx) = mpsc::channel(16);
+        ch.on_ready(tx, perm_tx).await.unwrap();
         assert!(state.outbound.lock().await.is_some());
     }
 

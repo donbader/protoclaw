@@ -46,6 +46,8 @@ struct SharedState {
     /// Pending permission requests from the agent.
     pending_permissions: RwLock<Vec<PendingPermission>>,
     permission_broker: Mutex<PermissionBroker>,
+    /// Sender for deferred permission responses back to the harness.
+    permission_tx: Mutex<Option<mpsc::Sender<PermissionResponse>>>,
     /// Optional API key; when set, all routes except /health require Bearer auth.
     api_key: Option<String>,
 }
@@ -98,6 +100,7 @@ impl Channel for DebugHttpChannel {
     async fn on_ready(
         &mut self,
         outbound: mpsc::Sender<ChannelSendMessage>,
+        permission_tx: mpsc::Sender<PermissionResponse>,
     ) -> Result<(), ChannelSdkError> {
         let (event_tx, _) = broadcast::channel::<SsePayload>(256);
         self.state = Arc::new(SharedState {
@@ -105,6 +108,7 @@ impl Channel for DebugHttpChannel {
             event_tx,
             pending_permissions: RwLock::new(Vec::new()),
             permission_broker: Mutex::new(PermissionBroker::new()),
+            permission_tx: Mutex::new(Some(permission_tx)),
             api_key: self.api_key.clone(),
         });
 
@@ -195,10 +199,10 @@ impl Channel for DebugHttpChannel {
         Ok(())
     }
 
-    async fn request_permission(
+    async fn show_permission_prompt(
         &mut self,
         req: ChannelRequestPermission,
-    ) -> Result<PermissionResponse, ChannelSdkError> {
+    ) -> Result<(), ChannelSdkError> {
         self.state
             .pending_permissions
             .write()
@@ -213,15 +217,13 @@ impl Channel for DebugHttpChannel {
                 }),
             });
 
-        let rx = self
-            .state
+        self.state
             .permission_broker
             .lock()
             .await
             .register(&req.request_id);
 
-        rx.await
-            .map_err(|_| ChannelSdkError::Protocol("permission response channel closed".into()))
+        Ok(())
     }
 }
 
@@ -360,6 +362,18 @@ async fn handle_permission_respond(
             .await
             .resolve(&id, &body.option_id);
     }
+    {
+        let tx = state.permission_tx.lock().await.clone();
+        if let Some(tx) = tx {
+            let resp = PermissionResponse {
+                request_id: id,
+                option_id: body.option_id,
+            };
+            if let Err(e) = tx.send(resp).await {
+                tracing::warn!(error = %e, "failed to send permission response to harness");
+            }
+        }
+    }
     Json(serde_json::json!({"status": "responded"}))
 }
 
@@ -384,6 +398,7 @@ async fn main() {
         event_tx,
         pending_permissions: RwLock::new(Vec::new()),
         permission_broker: Mutex::new(PermissionBroker::new()),
+        permission_tx: Mutex::new(None),
         api_key: None,
     });
 
@@ -413,6 +428,7 @@ mod tests {
             event_tx,
             pending_permissions: RwLock::new(Vec::new()),
             permission_broker: Mutex::new(PermissionBroker::new()),
+            permission_tx: Mutex::new(None),
             api_key: None,
         })
     }
@@ -424,6 +440,7 @@ mod tests {
             event_tx,
             pending_permissions: RwLock::new(Vec::new()),
             permission_broker: Mutex::new(PermissionBroker::new()),
+            permission_tx: Mutex::new(None),
             api_key: Some(key.to_string()),
         })
     }
@@ -452,7 +469,8 @@ mod tests {
             api_key: None,
         };
         let (tx, _rx) = mpsc::channel(16);
-        ch.on_ready(tx).await.unwrap();
+        let (perm_tx, _perm_rx) = mpsc::channel(16);
+        ch.on_ready(tx, perm_tx).await.unwrap();
         let outbound = ch.state.outbound.lock().await;
         assert!(
             outbound.is_some(),
@@ -548,7 +566,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn request_permission_resolves_via_oneshot() {
+    async fn show_permission_prompt_registers_and_stores_pending() {
         let state = make_shared_state();
         let mut ch = DebugHttpChannel {
             state: state.clone(),
@@ -566,22 +584,11 @@ mod tests {
             }],
         };
 
-        let state2 = state.clone();
-        let handle = tokio::spawn(async move { ch.request_permission(req).await });
+        ch.show_permission_prompt(req).await.unwrap();
 
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-        {
-            state2
-                .permission_broker
-                .lock()
-                .await
-                .resolve("perm-1", "allow");
-        }
-
-        let resp = handle.await.unwrap().unwrap();
-        assert_eq!(resp.request_id, "perm-1");
-        assert_eq!(resp.option_id, "allow");
+        let perms = state.pending_permissions.read().await;
+        assert_eq!(perms.len(), 1);
+        assert_eq!(perms[0].request_id, "perm-1");
     }
 
     #[tokio::test]

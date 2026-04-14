@@ -24,20 +24,27 @@ pub trait Channel: Send + 'static {
     }
 
     /// Called after initialization completes. Store the `outbound` sender to
-    /// send user messages back to anyclaw.
+    /// send user messages back to anyclaw. Store the `permission_tx` sender
+    /// to send permission responses asynchronously when the user responds.
     async fn on_ready(
         &mut self,
         outbound: mpsc::Sender<ChannelSendMessage>,
+        permission_tx: mpsc::Sender<PermissionResponse>,
     ) -> Result<(), ChannelSdkError>;
 
     /// Render an agent response to this channel's platform.
     async fn deliver_message(&mut self, msg: DeliverMessage) -> Result<(), ChannelSdkError>;
 
-    /// Show a permission prompt and return the user's choice.
-    async fn request_permission(
+    /// Show a permission prompt to the user. Return immediately after displaying
+    /// the UI (e.g. inline keyboard). When the user responds, send the
+    /// [`PermissionResponse`] through the `permission_tx` provided in [`on_ready`].
+    ///
+    /// This method must NOT block waiting for the user's response — doing so
+    /// would stall delivery of subsequent messages from the agent.
+    async fn show_permission_prompt(
         &mut self,
         req: ChannelRequestPermission,
-    ) -> Result<PermissionResponse, ChannelSdkError>;
+    ) -> Result<(), ChannelSdkError>;
 
     /// Handle an unrecognized JSON-RPC method. Default: return a protocol error.
     async fn handle_unknown(
@@ -74,6 +81,7 @@ mod tests {
         async fn on_ready(
             &mut self,
             _outbound: mpsc::Sender<ChannelSendMessage>,
+            _permission_tx: mpsc::Sender<PermissionResponse>,
         ) -> Result<(), ChannelSdkError> {
             Ok(())
         }
@@ -82,14 +90,11 @@ mod tests {
             Ok(())
         }
 
-        async fn request_permission(
+        async fn show_permission_prompt(
             &mut self,
-            req: ChannelRequestPermission,
-        ) -> Result<PermissionResponse, ChannelSdkError> {
-            Ok(PermissionResponse {
-                request_id: req.request_id,
-                option_id: "allow".into(),
-            })
+            _req: ChannelRequestPermission,
+        ) -> Result<(), ChannelSdkError> {
+            Ok(())
         }
     }
 
@@ -110,7 +115,8 @@ mod tests {
     async fn when_on_ready_called_with_sender_then_returns_ok() {
         let mut ch = MockChannel;
         let (tx, _rx) = mpsc::channel(1);
-        assert!(ch.on_ready(tx).await.is_ok());
+        let (perm_tx, _perm_rx) = mpsc::channel(1);
+        assert!(ch.on_ready(tx, perm_tx).await.is_ok());
     }
 
     #[tokio::test]
@@ -124,7 +130,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn when_request_permission_called_then_returns_allow_response() {
+    async fn when_show_permission_prompt_called_then_returns_ok() {
         let mut ch = MockChannel;
         let req = ChannelRequestPermission {
             request_id: "r1".into(),
@@ -135,9 +141,7 @@ mod tests {
                 label: "Allow".into(),
             }],
         };
-        let resp = ch.request_permission(req).await.unwrap();
-        assert_eq!(resp.request_id, "r1");
-        assert_eq!(resp.option_id, "allow");
+        assert!(ch.show_permission_prompt(req).await.is_ok());
     }
 
     #[tokio::test]

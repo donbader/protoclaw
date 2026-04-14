@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use anyclaw_sdk_channel::{ChannelAckConfig, PermissionBroker};
-use anyclaw_sdk_types::ChannelSendMessage;
+use anyclaw_sdk_types::{ChannelSendMessage, PermissionResponse};
 use tokio::sync::{Mutex, RwLock, mpsc};
 
 use crate::turn::ChatTurn;
@@ -10,6 +10,7 @@ pub struct SharedState {
     pub outbound: Mutex<Option<mpsc::Sender<ChannelSendMessage>>>,
     pub permission_broker: Mutex<PermissionBroker>,
     pub permission_messages: Mutex<HashMap<String, (i64, i32)>>,
+    pub permission_tx: Mutex<Option<mpsc::Sender<PermissionResponse>>>,
     pub session_chat_map: RwLock<HashMap<String, i64>>,
     pub last_message_ids: RwLock<HashMap<i64, i32>>,
     pub ack_config: RwLock<Option<ChannelAckConfig>>,
@@ -26,6 +27,7 @@ impl SharedState {
             outbound: Mutex::new(None),
             permission_broker: Mutex::new(PermissionBroker::new()),
             permission_messages: Mutex::new(HashMap::new()),
+            permission_tx: Mutex::new(None),
             session_chat_map: RwLock::new(HashMap::new()),
             last_message_ids: RwLock::new(HashMap::new()),
             ack_config: RwLock::new(None),

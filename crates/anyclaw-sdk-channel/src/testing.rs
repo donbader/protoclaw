@@ -16,16 +16,22 @@ pub struct ChannelTester<C: Channel> {
     /// Receive outbound messages the channel sends via its outbound sender.
     pub outbound_rx: mpsc::Receiver<ChannelSendMessage>,
     outbound_tx: mpsc::Sender<ChannelSendMessage>,
+    /// Receive permission responses the channel sends asynchronously.
+    pub permission_rx: mpsc::Receiver<PermissionResponse>,
+    permission_tx: mpsc::Sender<PermissionResponse>,
 }
 
 impl<C: Channel> ChannelTester<C> {
-    /// Create a new tester wrapping the given channel, with a buffered outbound channel.
+    /// Create a new tester wrapping the given channel, with buffered channels.
     pub fn new(channel: C) -> Self {
         let (outbound_tx, outbound_rx) = mpsc::channel(64);
+        let (permission_tx, permission_rx) = mpsc::channel(16);
         Self {
             channel,
             outbound_rx,
             outbound_tx,
+            permission_rx,
+            permission_tx,
         }
     }
 
@@ -47,7 +53,9 @@ impl<C: Channel> ChannelTester<C> {
             options: std::collections::HashMap::new(),
         });
         self.channel.on_initialize(params).await?;
-        self.channel.on_ready(self.outbound_tx.clone()).await?;
+        self.channel
+            .on_ready(self.outbound_tx.clone(), self.permission_tx.clone())
+            .await?;
         Ok(())
     }
 
@@ -56,12 +64,12 @@ impl<C: Channel> ChannelTester<C> {
         self.channel.deliver_message(msg).await
     }
 
-    /// Forward a permission request to the channel under test.
-    pub async fn request_permission(
+    /// Show a permission prompt on the channel under test.
+    pub async fn show_permission_prompt(
         &mut self,
         req: ChannelRequestPermission,
-    ) -> Result<PermissionResponse, ChannelSdkError> {
-        self.channel.request_permission(req).await
+    ) -> Result<(), ChannelSdkError> {
+        self.channel.show_permission_prompt(req).await
     }
 
     /// Get a mutable reference to the wrapped channel.
@@ -87,6 +95,7 @@ mod tests {
         ready: Arc<Mutex<bool>>,
         delivered: Arc<Mutex<Vec<DeliverMessage>>>,
         outbound: Arc<Mutex<Option<mpsc::Sender<ChannelSendMessage>>>>,
+        permission_tx: Arc<Mutex<Option<mpsc::Sender<PermissionResponse>>>>,
     }
 
     impl MockTestChannel {
@@ -96,6 +105,7 @@ mod tests {
                 ready: Arc::new(Mutex::new(false)),
                 delivered: Arc::new(Mutex::new(Vec::new())),
                 outbound: Arc::new(Mutex::new(None)),
+                permission_tx: Arc::new(Mutex::new(None)),
             }
         }
     }
@@ -119,9 +129,11 @@ mod tests {
         async fn on_ready(
             &mut self,
             outbound: mpsc::Sender<ChannelSendMessage>,
+            permission_tx: mpsc::Sender<PermissionResponse>,
         ) -> Result<(), ChannelSdkError> {
             *self.ready.lock().unwrap() = true;
             *self.outbound.lock().unwrap() = Some(outbound);
+            *self.permission_tx.lock().unwrap() = Some(permission_tx);
             Ok(())
         }
 
@@ -143,18 +155,24 @@ mod tests {
             Ok(())
         }
 
-        async fn request_permission(
+        async fn show_permission_prompt(
             &mut self,
             req: ChannelRequestPermission,
-        ) -> Result<PermissionResponse, ChannelSdkError> {
-            Ok(PermissionResponse {
-                request_id: req.request_id,
-                option_id: req
-                    .options
-                    .first()
-                    .map(|o| o.option_id.clone())
-                    .unwrap_or_default(),
-            })
+        ) -> Result<(), ChannelSdkError> {
+            let tx = self.permission_tx.lock().unwrap().clone();
+            if let Some(tx) = tx {
+                let _ = tx
+                    .send(PermissionResponse {
+                        request_id: req.request_id,
+                        option_id: req
+                            .options
+                            .first()
+                            .map(|o| o.option_id.clone())
+                            .unwrap_or_default(),
+                    })
+                    .await;
+            }
+            Ok(())
         }
     }
 
@@ -203,12 +221,12 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn when_request_permission_called_then_channel_handles_it() {
+    async fn when_show_permission_prompt_called_then_channel_sends_response() {
         let mut tester = ChannelTester::new(MockTestChannel::new());
         tester.initialize(None).await.unwrap();
 
-        let resp = tester
-            .request_permission(ChannelRequestPermission {
+        tester
+            .show_permission_prompt(ChannelRequestPermission {
                 request_id: "perm-1".into(),
                 session_id: "s1".into(),
                 description: "Allow?".into(),
@@ -220,6 +238,7 @@ mod tests {
             .await
             .unwrap();
 
+        let resp = tester.permission_rx.try_recv().unwrap();
         assert_eq!(resp.request_id, "perm-1");
         assert_eq!(resp.option_id, "allow");
     }

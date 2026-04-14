@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::mpsc;
 
@@ -5,7 +6,7 @@ use crate::error::ChannelSdkError;
 use crate::trait_def::Channel;
 use anyclaw_sdk_types::{
     ChannelInitializeParams, ChannelInitializeResult, ChannelRequestPermission, ChannelSendMessage,
-    DeliverMessage, SessionCreated,
+    DeliverMessage, PermissionResponse, SessionCreated,
 };
 
 /// JSON-RPC stdio harness that drives a [`Channel`] implementation.
@@ -35,6 +36,10 @@ impl<C: Channel> ChannelHarness<C> {
     {
         let mut lines = BufReader::new(reader).lines();
         let (outbound_tx, mut outbound_rx) = mpsc::channel::<ChannelSendMessage>(64);
+        let (permission_tx, mut permission_rx) = mpsc::channel::<PermissionResponse>(16);
+
+        // Maps JSON-RPC request ID → permission request_id for deferred responses.
+        let mut pending_permissions: HashMap<String, serde_json::Value> = HashMap::new();
 
         loop {
             tokio::select! {
@@ -48,7 +53,7 @@ impl<C: Channel> ChannelHarness<C> {
                                 Ok(v) => v,
                                 Err(_) => continue,
                             };
-                            if let Some(response) = self.dispatch(msg, &outbound_tx).await? {
+                            if let Some(response) = self.dispatch(msg, &outbound_tx, &permission_tx, &mut pending_permissions).await? {
                                 Self::write_line(&mut writer, &response).await?;
                             }
                         }
@@ -67,6 +72,22 @@ impl<C: Channel> ChannelHarness<C> {
                         "params": params,
                     });
                     Self::write_line(&mut writer, &notification).await?;
+                }
+                Some(perm_resp) = permission_rx.recv() => {
+                    // Find and remove the pending JSON-RPC request ID for this permission.
+                    if let Some(jsonrpc_id) = pending_permissions.remove(&perm_resp.request_id) {
+                        let response = serde_json::json!({
+                            "jsonrpc": "2.0",
+                            "id": jsonrpc_id,
+                            "result": serde_json::to_value(&perm_resp)?,
+                        });
+                        Self::write_line(&mut writer, &response).await?;
+                    } else {
+                        tracing::warn!(
+                            request_id = %perm_resp.request_id,
+                            "received permission response for unknown request"
+                        );
+                    }
                 }
             }
         }
@@ -89,6 +110,8 @@ impl<C: Channel> ChannelHarness<C> {
         &mut self,
         msg: serde_json::Value,
         outbound_tx: &mpsc::Sender<ChannelSendMessage>,
+        permission_tx: &mpsc::Sender<PermissionResponse>,
+        pending_permissions: &mut HashMap<String, serde_json::Value>,
     ) -> Result<Option<serde_json::Value>, ChannelSdkError> {
         let method = msg.get("method").and_then(|m| m.as_str()).unwrap_or("");
         let id = msg.get("id").cloned();
@@ -113,7 +136,9 @@ impl<C: Channel> ChannelHarness<C> {
                     }
                     self.channel.on_initialize(init_params).await?;
                 }
-                self.channel.on_ready(outbound_tx.clone()).await?;
+                self.channel
+                    .on_ready(outbound_tx.clone(), permission_tx.clone())
+                    .await?;
                 if let Some(req_id) = id {
                     return Ok(Some(serde_json::json!({
                         "jsonrpc": "2.0",
@@ -135,15 +160,10 @@ impl<C: Channel> ChannelHarness<C> {
             "channel/requestPermission" => {
                 if let Ok(req) = serde_json::from_value::<ChannelRequestPermission>(params) {
                     tracing::debug!(request_id = %req.request_id, description = %req.description, "permission request dispatched to channel");
-                    let resp = self.channel.request_permission(req).await?;
-                    tracing::debug!(request_id = %resp.request_id, option_id = %resp.option_id, "permission response ready");
                     if let Some(req_id) = id {
-                        return Ok(Some(serde_json::json!({
-                            "jsonrpc": "2.0",
-                            "id": req_id,
-                            "result": serde_json::to_value(&resp)?,
-                        })));
+                        pending_permissions.insert(req.request_id.clone(), req_id);
                     }
+                    self.channel.show_permission_prompt(req).await?;
                 }
             }
             _ => {
@@ -180,7 +200,8 @@ mod tests {
     struct TestChannel {
         on_ready_called: Arc<Mutex<bool>>,
         delivered: Arc<Mutex<Vec<DeliverMessage>>>,
-        permission_response: PermissionResponse,
+        permission_tx: Arc<Mutex<Option<mpsc::Sender<PermissionResponse>>>>,
+        default_option_id: String,
     }
 
     impl TestChannel {
@@ -188,10 +209,8 @@ mod tests {
             Self {
                 on_ready_called: Arc::new(Mutex::new(false)),
                 delivered: Arc::new(Mutex::new(Vec::new())),
-                permission_response: PermissionResponse {
-                    request_id: String::new(),
-                    option_id: "allow".into(),
-                },
+                permission_tx: Arc::new(Mutex::new(None)),
+                default_option_id: "allow".into(),
             }
         }
     }
@@ -207,8 +226,10 @@ mod tests {
         async fn on_ready(
             &mut self,
             _outbound: mpsc::Sender<ChannelSendMessage>,
+            permission_tx: mpsc::Sender<PermissionResponse>,
         ) -> Result<(), ChannelSdkError> {
             *self.on_ready_called.lock().unwrap() = true;
+            *self.permission_tx.lock().unwrap() = Some(permission_tx);
             Ok(())
         }
 
@@ -217,14 +238,21 @@ mod tests {
             Ok(())
         }
 
-        async fn request_permission(
+        async fn show_permission_prompt(
             &mut self,
             req: ChannelRequestPermission,
-        ) -> Result<PermissionResponse, ChannelSdkError> {
-            Ok(PermissionResponse {
-                request_id: req.request_id,
-                ..self.permission_response.clone()
-            })
+        ) -> Result<(), ChannelSdkError> {
+            // Simulate immediate user response for testing.
+            let tx = self.permission_tx.lock().unwrap().clone();
+            if let Some(tx) = tx {
+                let _ = tx
+                    .send(PermissionResponse {
+                        request_id: req.request_id,
+                        option_id: self.default_option_id.clone(),
+                    })
+                    .await;
+            }
+            Ok(())
         }
     }
 

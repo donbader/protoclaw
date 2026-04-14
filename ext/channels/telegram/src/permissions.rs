@@ -34,6 +34,19 @@ pub async fn process_callback(request_id: &str, option_id: &str, state: &SharedS
         .await
         .resolve(request_id, option_id);
     state.permission_messages.lock().await.remove(request_id);
+
+    // Send the response through the permission channel so the harness can
+    // write the JSON-RPC response without blocking the dispatch loop.
+    let tx = state.permission_tx.lock().await.clone();
+    if let Some(tx) = tx {
+        let resp = anyclaw_sdk_types::PermissionResponse {
+            request_id: request_id.to_string(),
+            option_id: option_id.to_string(),
+        };
+        if let Err(e) = tx.send(resp).await {
+            tracing::warn!(error = %e, "failed to send permission response to harness");
+        }
+    }
 }
 
 #[cfg(test)]

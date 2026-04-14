@@ -7,6 +7,7 @@ use tokio::sync::mpsc;
 
 struct SdkTestChannel {
     outbound: Option<mpsc::Sender<ChannelSendMessage>>,
+    permission_tx: Option<mpsc::Sender<PermissionResponse>>,
 }
 
 impl Channel for SdkTestChannel {
@@ -20,8 +21,10 @@ impl Channel for SdkTestChannel {
     async fn on_ready(
         &mut self,
         outbound: mpsc::Sender<ChannelSendMessage>,
+        permission_tx: mpsc::Sender<PermissionResponse>,
     ) -> Result<(), ChannelSdkError> {
         self.outbound = Some(outbound);
+        self.permission_tx = Some(permission_tx);
         Ok(())
     }
 
@@ -44,27 +47,36 @@ impl Channel for SdkTestChannel {
         Ok(())
     }
 
-    async fn request_permission(
+    async fn show_permission_prompt(
         &mut self,
         req: ChannelRequestPermission,
-    ) -> Result<PermissionResponse, ChannelSdkError> {
-        let option_id = req
-            .options
-            .first()
-            .map(|o| o.option_id.clone())
-            .unwrap_or_else(|| "allow".into());
-        Ok(PermissionResponse {
-            request_id: req.request_id,
-            option_id,
-        })
+    ) -> Result<(), ChannelSdkError> {
+        // Auto-approve: immediately send back the first option.
+        if let Some(tx) = &self.permission_tx {
+            let option_id = req
+                .options
+                .first()
+                .map(|o| o.option_id.clone())
+                .unwrap_or_else(|| "allow".into());
+            let _ = tx
+                .send(PermissionResponse {
+                    request_id: req.request_id,
+                    option_id,
+                })
+                .await;
+        }
+        Ok(())
     }
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    ChannelHarness::new(SdkTestChannel { outbound: None })
-        .run_stdio()
-        .await?;
+    ChannelHarness::new(SdkTestChannel {
+        outbound: None,
+        permission_tx: None,
+    })
+    .run_stdio()
+    .await?;
     Ok(())
 }
 
@@ -74,7 +86,10 @@ mod tests {
 
     #[test]
     fn capabilities_no_streaming() {
-        let ch = SdkTestChannel { outbound: None };
+        let ch = SdkTestChannel {
+            outbound: None,
+            permission_tx: None,
+        };
         let caps = ch.capabilities();
         assert!(!caps.streaming);
         assert!(!caps.rich_text);
@@ -82,17 +97,24 @@ mod tests {
 
     #[tokio::test]
     async fn on_ready_stores_sender() {
-        let mut ch = SdkTestChannel { outbound: None };
+        let mut ch = SdkTestChannel {
+            outbound: None,
+            permission_tx: None,
+        };
         assert!(ch.outbound.is_none());
         let (tx, _rx) = mpsc::channel(1);
-        ch.on_ready(tx).await.unwrap();
+        let (perm_tx, _perm_rx) = mpsc::channel(1);
+        ch.on_ready(tx, perm_tx).await.unwrap();
         assert!(ch.outbound.is_some());
     }
 
     #[tokio::test]
     async fn deliver_echoes_back() {
         let (tx, mut rx) = mpsc::channel(4);
-        let mut ch = SdkTestChannel { outbound: Some(tx) };
+        let mut ch = SdkTestChannel {
+            outbound: Some(tx),
+            permission_tx: None,
+        };
         let msg = DeliverMessage {
             session_id: "s1".into(),
             content: serde_json::json!("hello from agent"),
