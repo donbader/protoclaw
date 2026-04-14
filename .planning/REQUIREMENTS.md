@@ -23,13 +23,13 @@ Requirements for the code quality milestone. Each maps to roadmap phases.
 
 ### Error Handling
 
-- [ ] **ERRH-01**: Verify thiserror used in all library crates — no anyhow leaking into library code
+- [x] **ERRH-01**: Verify thiserror used in all library crates — no anyhow leaking into library code
 - [ ] **ERRH-02**: Verify each manager crate has a proper typed error enum
-- [ ] **ERRH-03**: Eliminate bare `.unwrap()` in all production code (replace with `.expect("reason")` or `?`)
+- [x] **ERRH-03**: Eliminate bare `.unwrap()` in all production code (replace with `.expect("reason")` or `?`)
 
 ### Typed JSON
 
-- [ ] **JSON-01**: Replace `serde_json::Value` with typed structs in `anyclaw-sdk-types`
+- [x] **JSON-01**: Replace `serde_json::Value` with typed structs in `anyclaw-sdk-types`
 - [ ] **JSON-02**: Replace `serde_json::Value` with typed structs in `anyclaw-jsonrpc`
 - [ ] **JSON-03**: Replace `serde_json::Value` with typed structs in `anyclaw-core`
 - [ ] **JSON-04**: Replace `serde_json::Value` with typed structs in `anyclaw-agents`
@@ -40,8 +40,8 @@ Requirements for the code quality milestone. Each maps to roadmap phases.
 
 ### Serde Patterns
 
-- [ ] **SERD-01**: All SDK wire types use `#[serde(rename_all = "camelCase")]` consistently
-- [ ] **SERD-02**: All config types use `snake_case` consistently
+- [x] **SERD-01**: All SDK wire types use `#[serde(rename_all = "camelCase")]` consistently
+- [x] **SERD-02**: All config types use `snake_case` consistently
 - [ ] **SERD-03**: Round-trip serialization tests exist for all wire types
 
 ### Clone Reduction
@@ -119,10 +119,10 @@ Tracked but not in current milestone.
 | HYGN-01 | Phase 1 | Complete |
 | HYGN-02 | Phase 1 | Complete |
 | HYGN-03 | Phase 1 | Complete |
-| ERRH-01 | Phase 2 | Pending |
+| ERRH-01 | Phase 2 | Complete |
 | ERRH-02 | Phase 2 | Pending |
-| ERRH-03 | Phase 2 | Pending |
-| JSON-01 | Phase 2 | Pending |
+| ERRH-03 | Phase 2 | Complete |
+| JSON-01 | Phase 2 | Complete |
 | JSON-02 | Phase 2 | Pending |
 | JSON-03 | Phase 2 | Pending |
 | JSON-04 | Phase 3 | Pending |
@@ -130,8 +130,8 @@ Tracked but not in current milestone.
 | JSON-06 | Phase 3 | Pending |
 | JSON-07 | Phase 4 | Pending |
 | JSON-08 | Phase 4 | Pending |
-| SERD-01 | Phase 2 | Pending |
-| SERD-02 | Phase 2 | Pending |
+| SERD-01 | Phase 2 | Complete |
+| SERD-02 | Phase 2 | Complete |
 | SERD-03 | Phase 4 | Pending |
 | CLON-01 | Phase 3 | Pending |
 | CLON-02 | Phase 3 | Pending |

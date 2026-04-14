@@ -48,7 +48,7 @@ Plans:
   4. All SDK wire types use `#[serde(rename_all = "camelCase")]` and all config types use `snake_case`
 **Plans:** 3 plans
 Plans:
-- [ ] 02-01-PLAN.md — Type anyclaw-sdk-types: replace Value with typed structs, fix unwraps, serde consistency
+- [x] 02-01-PLAN.md — Type anyclaw-sdk-types: replace Value with typed structs, fix unwraps, serde consistency
 - [ ] 02-02-PLAN.md — Type anyclaw-jsonrpc: typed RequestId, typed codec, error audit
 - [ ] 02-03-PLAN.md — Type anyclaw-core + fix downstream compilation for workspace build
 
