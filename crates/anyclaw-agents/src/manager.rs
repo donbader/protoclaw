@@ -1021,7 +1021,10 @@ impl AgentsManager {
         Ok(new_session_id)
     }
 
-    async fn list_sessions(&self, agent_name: &str) -> Result<serde_json::Value, AgentsError> {
+    async fn list_sessions(
+        &self,
+        agent_name: &str,
+    ) -> Result<anyclaw_sdk_types::SessionListResult, AgentsError> {
         let slot_idx = find_slot_by_name(&self.slots, agent_name)
             .ok_or_else(|| AgentsError::AgentNotFound(agent_name.to_string()))?;
 
@@ -1043,7 +1046,8 @@ impl AgentsManager {
             .map_err(|_| AgentsError::Timeout(acp_timeout))?
             .map_err(|_| AgentsError::ConnectionClosed)?;
 
-        Ok(resp)
+        let typed: anyclaw_sdk_types::SessionListResult = serde_json::from_value(resp)?;
+        Ok(typed)
     }
 
     async fn cancel_session(

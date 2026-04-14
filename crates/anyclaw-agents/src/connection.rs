@@ -89,7 +89,13 @@ fn spawn_writer_task(
         use futures::SinkExt;
         let mut framed = FramedWrite::new(stdin, NdJsonCodec);
         while let Some(msg) = stdin_rx.recv().await {
-            if framed.send(msg).await.is_err() {
+            // Convert Value → JsonRpcMessage at codec boundary (Phase 3 will type the full pipeline)
+            let Ok(typed_msg) = serde_json::from_value::<anyclaw_jsonrpc::JsonRpcMessage>(msg)
+            else {
+                tracing::warn!("skipping non-JSON-RPC message to agent stdin");
+                continue;
+            };
+            if framed.send(typed_msg).await.is_err() {
                 break;
             }
         }
@@ -175,13 +181,16 @@ fn spawn_reader_task(
     tokio::spawn(async move {
         let mut framed = FramedRead::new(stdout, NdJsonCodec);
         while let Some(frame) = framed.next().await {
-            let value = match frame {
+            let typed_msg = match frame {
                 Ok(v) => v,
                 Err(e) => {
                     tracing::warn!(error = %e, "skipping malformed line from agent stdout");
                     continue;
                 }
             };
+
+            // Convert JsonRpcMessage → Value at codec boundary (Phase 3 will type the full pipeline)
+            let value = serde_json::to_value(&typed_msg).unwrap_or_default();
 
             tracing::debug!(raw = %value, "agent stdout line");
 

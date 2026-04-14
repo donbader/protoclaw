@@ -292,7 +292,7 @@ async fn handle_session_prompt<W: AsyncWrite + Unpin>(
                     "sessionId": session_id,
                     "update": {
                         "sessionUpdate": "agent_thought_chunk",
-                        "content": thought
+                        "content": { "type": "text", "text": thought }
                     }
                 }
             });
@@ -318,14 +318,14 @@ async fn handle_session_prompt<W: AsyncWrite + Unpin>(
     let chunk1 = json!({
         "jsonrpc": "2.0",
         "method": "session/update",
-        "params": { "sessionId": session_id, "update": { "sessionUpdate": "agent_message_chunk", "content": format!("{prefix}: ") } }
+        "params": { "sessionId": session_id, "update": { "sessionUpdate": "agent_message_chunk", "content": { "type": "text", "text": format!("{prefix}: ") } } }
     });
     write_message(stdout, &chunk1).await;
 
     let chunk2 = json!({
         "jsonrpc": "2.0",
         "method": "session/update",
-        "params": { "sessionId": session_id, "update": { "sessionUpdate": "agent_message_chunk", "content": user_msg } }
+        "params": { "sessionId": session_id, "update": { "sessionUpdate": "agent_message_chunk", "content": { "type": "text", "text": user_msg } } }
     });
     write_message(stdout, &chunk2).await;
 
@@ -447,11 +447,13 @@ mod tests {
 
         let t1 = &msgs[0]["params"]["update"];
         assert_eq!(t1["sessionUpdate"], "agent_thought_chunk");
-        assert_eq!(t1["content"], "Analyzing your message...");
+        assert_eq!(t1["content"]["type"], "text");
+        assert_eq!(t1["content"]["text"], "Analyzing your message...");
 
         let t2 = &msgs[1]["params"]["update"];
         assert_eq!(t2["sessionUpdate"], "agent_thought_chunk");
-        assert_eq!(t2["content"], "Formulating response...");
+        assert_eq!(t2["content"]["type"], "text");
+        assert_eq!(t2["content"]["text"], "Formulating response...");
     }
 
     #[tokio::test]
@@ -460,11 +462,13 @@ mod tests {
 
         let echo_chunk = &msgs[2]["params"]["update"];
         assert_eq!(echo_chunk["sessionUpdate"], "agent_message_chunk");
-        assert_eq!(echo_chunk["content"], "Echo: ");
+        assert_eq!(echo_chunk["content"]["type"], "text");
+        assert_eq!(echo_chunk["content"]["text"], "Echo: ");
 
         let echo_content = &msgs[3]["params"]["update"];
         assert_eq!(echo_content["sessionUpdate"], "agent_message_chunk");
-        assert_eq!(echo_content["content"], "test msg");
+        assert_eq!(echo_content["content"]["type"], "text");
+        assert_eq!(echo_content["content"]["text"], "test msg");
 
         let result = &msgs[4]["params"]["update"];
         assert_eq!(result["sessionUpdate"], "result");

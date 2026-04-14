@@ -103,7 +103,13 @@ impl ChannelConnection {
             use futures::SinkExt;
             let mut framed = FramedWrite::new(stdin, NdJsonCodec);
             while let Some(msg) = stdin_rx.recv().await {
-                if framed.send(msg).await.is_err() {
+                // Convert Value → JsonRpcMessage at codec boundary (Phase 3 will type the full pipeline)
+                let Ok(typed_msg) = serde_json::from_value::<anyclaw_jsonrpc::JsonRpcMessage>(msg)
+                else {
+                    tracing::warn!("skipping non-JSON-RPC message to channel stdin");
+                    continue;
+                };
+                if framed.send(typed_msg).await.is_err() {
                     break;
                 }
             }
@@ -114,7 +120,9 @@ impl ChannelConnection {
         let pending_for_reader = pending_requests.clone();
         let reader_handle = tokio::spawn(async move {
             let mut framed = FramedRead::new(stdout, NdJsonCodec);
-            while let Some(Ok(value)) = framed.next().await {
+            while let Some(Ok(typed_msg)) = framed.next().await {
+                // Convert JsonRpcMessage → Value at codec boundary (Phase 3 will type the full pipeline)
+                let value = serde_json::to_value(&typed_msg).unwrap_or_default();
                 let has_id = value.get("id").is_some_and(|v| !v.is_null());
                 let has_method = value.get("method").is_some();
 
