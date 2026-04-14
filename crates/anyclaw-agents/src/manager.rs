@@ -25,9 +25,10 @@ use tokio_util::sync::CancellationToken;
 use crate::connection::{AgentConnection, IncomingMessage};
 use crate::error::AgentsError;
 use anyclaw_core::{DynSessionStore, NoopSessionStore};
+use anyclaw_jsonrpc::types::{JsonRpcRequest, JsonRpcResponse, RequestId};
 
 pub(crate) struct PendingPermission {
-    pub request: serde_json::Value,
+    pub request: JsonRpcRequest,
     pub description: String,
     pub options: Vec<PermissionOption>,
     #[allow(dead_code)] // Used by permission timeout logging (channels manager reads elapsed time)
@@ -234,7 +235,7 @@ impl AgentsManager {
             .map_err(|_| AgentsError::Timeout(acp_timeout))?
             .map_err(|_| AgentsError::ConnectionClosed)?;
 
-        let result: InitializeResult = serde_json::from_value(resp)?;
+        let result: InitializeResult = serde_json::from_value(resp.result.unwrap_or_default())?;
         if result.protocol_version != 1 && result.protocol_version != 2 {
             return Err(AcpError::ProtocolMismatch {
                 expected: 2,
@@ -305,7 +306,8 @@ impl AgentsManager {
             .map_err(|_| AgentsError::Timeout(acp_timeout))?
             .map_err(|_| AgentsError::ConnectionClosed)?;
 
-        let result: crate::acp_types::SessionNewResult = serde_json::from_value(resp)?;
+        let result: crate::acp_types::SessionNewResult =
+            serde_json::from_value(resp.result.unwrap_or_default())?;
         tracing::info!(agent = %slot.name(), session_id = %result.session_id, "session started");
         Ok(result.session_id)
     }
@@ -432,16 +434,15 @@ impl AgentsManager {
                     if let Some(perm) = slot.pending_permissions.remove(&request_id) {
                         tracing::info!(agent = %slot.name(), %request_id, %option_id, "permission response received from channel");
                         if let Some(conn) = slot.connection.as_ref() {
-                            let resp = serde_json::json!({
-                                "jsonrpc": "2.0",
-                                "id": perm.request.get("id").cloned().unwrap_or(serde_json::Value::Null),
-                                "result": {
+                            let resp = JsonRpcResponse::success(
+                                perm.request.id.clone(),
+                                serde_json::json!({
                                     "outcome": {
                                         "outcome": "selected",
                                         "optionId": option_id,
                                     }
-                                }
-                            });
+                                }),
+                            );
                             let _ = conn.send_raw(resp).await;
                             tracing::info!(agent = %slot.name(), %request_id, "permission response sent to agent");
                         }
@@ -708,9 +709,9 @@ impl AgentsManager {
                 match response_rx.await {
                     Ok(response) => {
                         // Check if the agent returned a JSON-RPC error
-                        if let Some(error) = response.get("__jsonrpc_error") {
-                            let msg = error["message"].as_str().unwrap_or("agent error");
-                            tracing::warn!(session_key = %sk, error = %error, "agent returned error for prompt");
+                        if let Some(error) = &response.error {
+                            let msg = &error.message;
+                            tracing::warn!(session_key = %sk, error = %msg, "agent returned error for prompt");
                             if let Some(sender) = &channels_tx {
                                 let error_content = serde_json::json!({
                                     "error": msg,
@@ -848,7 +849,11 @@ impl AgentsManager {
 
             if let Ok(rx) = conn.send_request("session/resume", params).await
                 && let Ok(Ok(resp)) = tokio::time::timeout(acp_timeout, rx).await
-                && resp.get("sessionId").is_some()
+                && resp
+                    .result
+                    .as_ref()
+                    .and_then(|r| r.get("sessionId"))
+                    .is_some()
             {
                 tracing::info!(
                     agent = %agent_name,
@@ -902,7 +907,11 @@ impl AgentsManager {
 
             if let Ok(rx) = conn.send_request("session/load", params).await
                 && let Ok(Ok(resp)) = tokio::time::timeout(acp_timeout, rx).await
-                && resp.get("sessionId").is_some()
+                && resp
+                    .result
+                    .as_ref()
+                    .and_then(|r| r.get("sessionId"))
+                    .is_some()
             {
                 tracing::info!(
                     agent = %agent_name,
@@ -1008,7 +1017,7 @@ impl AgentsManager {
             .map_err(|_| AgentsError::Timeout(acp_timeout))?
             .map_err(|_| AgentsError::ConnectionClosed)?;
 
-        let result: SessionForkResult = serde_json::from_value(resp)?;
+        let result: SessionForkResult = serde_json::from_value(resp.result.unwrap_or_default())?;
         let new_session_id = result.session_id.clone();
 
         let fork_key = SessionKey::new(session_key.channel_name(), "fork", &new_session_id);
@@ -1046,7 +1055,8 @@ impl AgentsManager {
             .map_err(|_| AgentsError::Timeout(acp_timeout))?
             .map_err(|_| AgentsError::ConnectionClosed)?;
 
-        let typed: anyclaw_sdk_types::SessionListResult = serde_json::from_value(resp)?;
+        let typed: anyclaw_sdk_types::SessionListResult =
+            serde_json::from_value(resp.result.unwrap_or_default())?;
         Ok(typed)
     }
 
@@ -1077,33 +1087,30 @@ impl AgentsManager {
     }
 
     async fn handle_incoming(&mut self, slot_idx: usize, msg: IncomingMessage) {
-        let value = match &msg {
-            IncomingMessage::AgentNotification(v) | IncomingMessage::AgentRequest(v) => v.clone(),
+        let request = match &msg {
+            IncomingMessage::AgentNotification(r) | IncomingMessage::AgentRequest(r) => r.clone(),
         };
-        let method = value["method"].as_str().unwrap_or("");
-        let params = value
-            .get("params")
-            .cloned()
-            .unwrap_or(serde_json::Value::Null);
+        let method = request.method.as_str();
+        let params = request.params.clone().unwrap_or(serde_json::Value::Null);
 
         match method {
             "session/update" => {
                 self.handle_session_update(slot_idx, params).await;
             }
             "session/request_permission" => {
-                self.handle_permission_request(slot_idx, &value, &params)
+                self.handle_permission_request(slot_idx, &request, &params)
                     .await;
             }
             "fs/read_text_file" => {
-                Self::handle_fs_read(&self.slots[slot_idx], &value, &params).await;
+                Self::handle_fs_read(&self.slots[slot_idx], &request, &params).await;
             }
             "fs/write_text_file" => {
-                Self::handle_fs_write(&self.slots[slot_idx], &value, &params).await;
+                Self::handle_fs_write(&self.slots[slot_idx], &request, &params).await;
             }
             _ => {
                 Self::send_error_response(
                     &self.slots[slot_idx],
-                    &value,
+                    &request,
                     -32601,
                     "Method not found",
                 )
@@ -1252,7 +1259,7 @@ impl AgentsManager {
     async fn handle_permission_request(
         &mut self,
         slot_idx: usize,
-        request: &serde_json::Value,
+        request: &JsonRpcRequest,
         params: &serde_json::Value,
     ) {
         let request_id = params["requestId"]
@@ -1261,10 +1268,11 @@ impl AgentsManager {
             .map(std::string::ToString::to_string)
             .unwrap_or_else(|| {
                 // OpenCode uses JSON-RPC id field instead of params.requestId
-                request
-                    .get("id")
-                    .map(std::string::ToString::to_string)
-                    .unwrap_or_default()
+                match &request.id {
+                    Some(RequestId::Number(n)) => n.to_string(),
+                    Some(RequestId::String(s)) => s.clone(),
+                    None => String::new(),
+                }
             });
         let description = params["description"]
             .as_str()
@@ -1322,14 +1330,13 @@ impl AgentsManager {
                 .map(|o| o.option_id.clone())
                 .unwrap_or_else(|| "once".to_string());
             if let Some(conn) = self.slots[slot_idx].connection.as_ref() {
-                let resp = serde_json::json!({
-                    "jsonrpc": "2.0",
-                    "id": request.get("id").cloned().unwrap_or(serde_json::Value::Null),
-                    "result": {
+                let resp = JsonRpcResponse::success(
+                    request.id.clone(),
+                    serde_json::json!({
                         "requestId": request_id,
                         "optionId": auto_option,
-                    }
-                });
+                    }),
+                );
                 let _ = conn.send_raw(resp).await;
             }
         }
@@ -1337,7 +1344,7 @@ impl AgentsManager {
 
     async fn handle_fs_read(
         slot: &AgentSlot,
-        request: &serde_json::Value,
+        request: &JsonRpcRequest,
         params: &serde_json::Value,
     ) {
         let path = params["path"].as_str().unwrap_or("");
@@ -1366,7 +1373,7 @@ impl AgentsManager {
 
     async fn handle_fs_write(
         slot: &AgentSlot,
-        request: &serde_json::Value,
+        request: &JsonRpcRequest,
         params: &serde_json::Value,
     ) {
         let path = params["path"].as_str().unwrap_or("");
@@ -1391,31 +1398,30 @@ impl AgentsManager {
 
     async fn send_success_response(
         slot: &AgentSlot,
-        request: &serde_json::Value,
+        request: &JsonRpcRequest,
         result: serde_json::Value,
     ) {
         if let Some(conn) = slot.connection.as_ref() {
-            let resp = serde_json::json!({
-                "jsonrpc": "2.0",
-                "id": request.get("id").cloned().unwrap_or(serde_json::Value::Null),
-                "result": result,
-            });
+            let resp = JsonRpcResponse::success(request.id.clone(), result);
             let _ = conn.send_raw(resp).await;
         }
     }
 
     async fn send_error_response(
         slot: &AgentSlot,
-        request: &serde_json::Value,
+        request: &JsonRpcRequest,
         code: i64,
         message: &str,
     ) {
         if let Some(conn) = slot.connection.as_ref() {
-            let resp = serde_json::json!({
-                "jsonrpc": "2.0",
-                "id": request.get("id").cloned().unwrap_or(serde_json::Value::Null),
-                "error": { "code": code, "message": message },
-            });
+            let resp = JsonRpcResponse::error(
+                request.id.clone(),
+                anyclaw_jsonrpc::types::JsonRpcError {
+                    code,
+                    message: message.to_string(),
+                    data: None,
+                },
+            );
             let _ = conn.send_raw(resp).await;
         }
     }
@@ -1595,7 +1601,13 @@ impl AgentsManager {
             };
 
             match tokio::time::timeout(acp_timeout, rx).await {
-                Ok(Ok(resp)) if resp.get("sessionId").is_some() => {
+                Ok(Ok(resp))
+                    if resp
+                        .result
+                        .as_ref()
+                        .and_then(|r| r.get("sessionId"))
+                        .is_some() =>
+                {
                     tracing::info!(
                         agent = %agent_name,
                         step = "resume_attempted",
@@ -1643,7 +1655,13 @@ impl AgentsManager {
         };
 
         match tokio::time::timeout(acp_timeout, rx).await {
-            Ok(Ok(resp)) if resp.get("sessionId").is_some() => {
+            Ok(Ok(resp))
+                if resp
+                    .result
+                    .as_ref()
+                    .and_then(|r| r.get("sessionId"))
+                    .is_some() =>
+            {
                 tracing::info!(agent = %agent_name, "session restored via session/load");
                 let slot = &mut self.slots[slot_idx];
                 slot.session_map.extend(slot.stale_sessions.drain());
@@ -2289,17 +2307,17 @@ mod tests {
             .insert(acp_session_id.clone(), session_key.clone());
         m.slots.push(slot);
 
-        let result_notification = IncomingMessage::AgentNotification(serde_json::json!({
-            "jsonrpc": "2.0",
-            "method": "session/update",
-            "params": {
+        let result_notification = IncomingMessage::AgentNotification(JsonRpcRequest::new(
+            "session/update",
+            None,
+            Some(serde_json::json!({
                 "sessionId": acp_session_id,
                 "update": {
                     "sessionUpdate": "result",
                     "content": "Echo: hello"
                 }
-            }
-        }));
+            })),
+        ));
 
         m.handle_incoming(0, result_notification).await;
 
@@ -2342,17 +2360,17 @@ mod tests {
             .insert(acp_session_id.clone(), session_key.clone());
         m.slots.push(slot);
 
-        let chunk_notification = IncomingMessage::AgentNotification(serde_json::json!({
-            "jsonrpc": "2.0",
-            "method": "session/update",
-            "params": {
+        let chunk_notification = IncomingMessage::AgentNotification(JsonRpcRequest::new(
+            "session/update",
+            None,
+            Some(serde_json::json!({
                 "sessionId": acp_session_id,
                 "update": {
                     "sessionUpdate": "agent_message_chunk",
                     "content": "partial response"
                 }
-            }
-        }));
+            })),
+        ));
 
         m.handle_incoming(0, chunk_notification).await;
 
@@ -2521,22 +2539,22 @@ mod tests {
         let (incoming_tx, mut incoming_rx) = mpsc::channel::<SlotIncoming>(16);
 
         // Pre-populate incoming_rx with streaming events (simulating bridge lag)
-        let chunk1 = IncomingMessage::AgentNotification(serde_json::json!({
-            "jsonrpc": "2.0",
-            "method": "session/update",
-            "params": {
+        let chunk1 = IncomingMessage::AgentNotification(JsonRpcRequest::new(
+            "session/update",
+            None,
+            Some(serde_json::json!({
                 "sessionId": acp_session_id,
                 "update": { "sessionUpdate": "agent_message_chunk", "content": { "text": "hello", "type": "text" }, "messageId": "msg-1" }
-            }
-        }));
-        let result_event = IncomingMessage::AgentNotification(serde_json::json!({
-            "jsonrpc": "2.0",
-            "method": "session/update",
-            "params": {
+            })),
+        ));
+        let result_event = IncomingMessage::AgentNotification(JsonRpcRequest::new(
+            "session/update",
+            None,
+            Some(serde_json::json!({
                 "sessionId": acp_session_id,
                 "update": { "sessionUpdate": "result" }
-            }
-        }));
+            })),
+        ));
         incoming_tx
             .send(SlotIncoming {
                 slot_idx: 0,
@@ -2630,7 +2648,7 @@ mod tests {
             mock_agent_config_with_working_dir(dir.path()),
             &cancel,
         );
-        let request = serde_json::json!({"id": 1, "method": "fs/read_text_file"});
+        let request = JsonRpcRequest::new("fs/read_text_file", Some(RequestId::Number(1)), None);
         let params = serde_json::json!({"path": file_path.to_str().unwrap()});
 
         AgentsManager::handle_fs_read(&slot, &request, &params).await;
@@ -2646,7 +2664,7 @@ mod tests {
             mock_agent_config_with_working_dir(dir.path()),
             &cancel,
         );
-        let request = serde_json::json!({"id": 2, "method": "fs/read_text_file"});
+        let request = JsonRpcRequest::new("fs/read_text_file", Some(RequestId::Number(2)), None);
         let params =
             serde_json::json!({"path": dir.path().join("nonexistent.txt").to_str().unwrap()});
 
@@ -2665,7 +2683,7 @@ mod tests {
             mock_agent_config_with_working_dir(dir.path()),
             &cancel,
         );
-        let request = serde_json::json!({"id": 3, "method": "fs/write_text_file"});
+        let request = JsonRpcRequest::new("fs/write_text_file", Some(RequestId::Number(3)), None);
         let params =
             serde_json::json!({"path": file_path.to_str().unwrap(), "content": "written content"});
 
@@ -2684,7 +2702,7 @@ mod tests {
             mock_agent_config_with_working_dir(dir.path()),
             &cancel,
         );
-        let request = serde_json::json!({"id": 4, "method": "fs/write_text_file"});
+        let request = JsonRpcRequest::new("fs/write_text_file", Some(RequestId::Number(4)), None);
         let params = serde_json::json!({"path": dir.path().join("subdir/nonexistent/file.txt").to_str().unwrap(), "content": "data"});
 
         AgentsManager::handle_fs_write(&slot, &request, &params).await;
@@ -2702,7 +2720,7 @@ mod tests {
             mock_agent_config_with_working_dir(dir.path()),
             &cancel,
         );
-        let request = serde_json::json!({"id": 10, "method": "fs/read_text_file"});
+        let request = JsonRpcRequest::new("fs/read_text_file", Some(RequestId::Number(10)), None);
         let params = serde_json::json!({"path": "notes.txt"});
 
         AgentsManager::handle_fs_read(&slot, &request, &params).await;
@@ -2718,7 +2736,7 @@ mod tests {
             mock_agent_config_with_working_dir(dir.path()),
             &cancel,
         );
-        let request = serde_json::json!({"id": 11, "method": "fs/read_text_file"});
+        let request = JsonRpcRequest::new("fs/read_text_file", Some(RequestId::Number(11)), None);
         let params = serde_json::json!({"path": "../../etc/passwd"});
 
         AgentsManager::handle_fs_read(&slot, &request, &params).await;
@@ -2734,7 +2752,7 @@ mod tests {
             mock_agent_config_with_working_dir(dir.path()),
             &cancel,
         );
-        let request = serde_json::json!({"id": 12, "method": "fs/read_text_file"});
+        let request = JsonRpcRequest::new("fs/read_text_file", Some(RequestId::Number(12)), None);
         let params = serde_json::json!({"path": "/etc/hostname"});
 
         AgentsManager::handle_fs_read(&slot, &request, &params).await;
@@ -3101,7 +3119,11 @@ mod tests {
             .insert(acp_session_id.clone(), session_key.clone());
         m.slots.push(slot);
 
-        let request = serde_json::json!({"id": 0, "method": "session/request_permission"});
+        let request = JsonRpcRequest::new(
+            "session/request_permission",
+            Some(RequestId::Number(0)),
+            None,
+        );
         let params = serde_json::json!({
             "sessionId": acp_session_id,
             "options": [{"optionId": "once", "label": "Allow once"}],
@@ -3138,7 +3160,11 @@ mod tests {
             .insert(acp_session_id.clone(), session_key.clone());
         m.slots.push(slot);
 
-        let request = serde_json::json!({"id": 1, "method": "session/request_permission"});
+        let request = JsonRpcRequest::new(
+            "session/request_permission",
+            Some(RequestId::Number(1)),
+            None,
+        );
         let params = serde_json::json!({
             "sessionId": acp_session_id,
             "options": [{"optionId": "once", "label": "Allow once"}],
@@ -3166,7 +3192,11 @@ mod tests {
         let slot = AgentSlot::new("test-agent".into(), mock_agent_config(), &cancel);
         m.slots.push(slot);
 
-        let request = serde_json::json!({"id": 5, "method": "session/request_permission"});
+        let request = JsonRpcRequest::new(
+            "session/request_permission",
+            Some(RequestId::Number(5)),
+            None,
+        );
         let params = serde_json::json!({
             "sessionId": "unknown-session",
             "options": [{"optionId": "once", "label": "Allow once"}],
@@ -3200,7 +3230,11 @@ mod tests {
             .insert(acp_session_id.clone(), session_key.clone());
         m.slots.push(slot);
 
-        let request = serde_json::json!({"id": 2, "method": "session/request_permission"});
+        let request = JsonRpcRequest::new(
+            "session/request_permission",
+            Some(RequestId::Number(2)),
+            None,
+        );
         let params = serde_json::json!({
             "sessionId": acp_session_id,
             "options": [{"optionId": "once", "label": "Allow once"}],
@@ -3235,7 +3269,11 @@ mod tests {
             .insert(acp_session_id.clone(), session_key.clone());
         m.slots.push(slot);
 
-        let request = serde_json::json!({"id": 42, "method": "session/request_permission"});
+        let request = JsonRpcRequest::new(
+            "session/request_permission",
+            Some(RequestId::Number(42)),
+            None,
+        );
         let params = serde_json::json!({
             "sessionId": acp_session_id,
             "options": [{"optionId": "once", "label": "Allow once"}],
@@ -3278,7 +3316,11 @@ mod tests {
             .insert(acp_session_id.clone(), session_key.clone());
         m.slots.push(slot);
 
-        let request = serde_json::json!({"id": 3, "method": "session/request_permission"});
+        let request = JsonRpcRequest::new(
+            "session/request_permission",
+            Some(RequestId::Number(3)),
+            None,
+        );
         let params = serde_json::json!({
             "sessionId": acp_session_id,
             "options": [
@@ -3357,7 +3399,11 @@ mod tests {
         ));
 
         // Store a pending permission with original request id=0
-        let original_request = serde_json::json!({"id": 0, "method": "session/request_permission"});
+        let original_request = JsonRpcRequest::new(
+            "session/request_permission",
+            Some(RequestId::Number(0)),
+            None,
+        );
         slot.pending_permissions.insert(
             "0".to_string(),
             PendingPermission {

@@ -18,6 +18,7 @@ tracing = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+dashmap = { workspace = true }
 bollard = { workspace = true }
 uuid = { workspace = true }
 

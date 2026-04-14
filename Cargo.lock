@@ -147,6 +147,7 @@ dependencies = [
  "anyclaw-sdk-agent",
  "anyclaw-sdk-types",
  "bollard",
+ "dashmap",
  "futures",
  "rstest",
  "serde",

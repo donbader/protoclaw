@@ -1,15 +1,16 @@
-use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use dashmap::DashMap;
 use futures::StreamExt;
 use tokio::process::Command;
-use tokio::sync::{Mutex, mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot};
 use tokio_util::codec::{FramedRead, FramedWrite};
 
 use anyclaw_config::{AgentConfig, WorkspaceConfig};
 use anyclaw_jsonrpc::NdJsonCodec;
+use anyclaw_jsonrpc::types::{JsonRpcMessage, JsonRpcRequest, JsonRpcResponse, RequestId};
 
 use crate::backend::ProcessBackend;
 use crate::docker_backend::DockerBackend;
@@ -21,9 +22,9 @@ use crate::manager::SlotIncoming;
 #[derive(Debug)]
 pub enum IncomingMessage {
     /// Agent-initiated JSON-RPC request (has method + id).
-    AgentRequest(serde_json::Value),
+    AgentRequest(JsonRpcRequest),
     /// Agent-initiated JSON-RPC notification (has method, no id).
-    AgentNotification(serde_json::Value),
+    AgentNotification(JsonRpcRequest),
 }
 
 type StdioTriple = (
@@ -83,19 +84,13 @@ async fn build_backend(
 
 fn spawn_writer_task(
     stdin: Box<dyn tokio::io::AsyncWrite + Unpin + Send>,
-    mut stdin_rx: mpsc::Receiver<serde_json::Value>,
+    mut stdin_rx: mpsc::Receiver<JsonRpcMessage>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         use futures::SinkExt;
         let mut framed = FramedWrite::new(stdin, NdJsonCodec);
         while let Some(msg) = stdin_rx.recv().await {
-            // Convert Value → JsonRpcMessage at codec boundary (Phase 3 will type the full pipeline)
-            let Ok(typed_msg) = serde_json::from_value::<anyclaw_jsonrpc::JsonRpcMessage>(msg)
-            else {
-                tracing::warn!("skipping non-JSON-RPC message to agent stdin");
-                continue;
-            };
-            if framed.send(typed_msg).await.is_err() {
+            if framed.send(msg).await.is_err() {
                 break;
             }
         }
@@ -133,22 +128,15 @@ fn init_incoming_channels(
 }
 
 async fn handle_pending_response(
-    pending_requests: &Arc<Mutex<HashMap<u64, oneshot::Sender<serde_json::Value>>>>,
-    value: serde_json::Value,
+    pending_requests: &Arc<DashMap<u64, oneshot::Sender<JsonRpcResponse>>>,
+    response: JsonRpcResponse,
 ) {
-    let id = value["id"].as_u64().unwrap_or(0);
-    let mut pending = pending_requests.lock().await;
-    if let Some(tx) = pending.remove(&id) {
-        if let Some(error) = value.get("error").cloned() {
-            tracing::warn!(id, error = %error, "agent returned JSON-RPC error");
-            let _ = tx.send(serde_json::json!({"__jsonrpc_error": error}));
-        } else {
-            let result = value
-                .get("result")
-                .cloned()
-                .unwrap_or(serde_json::Value::Null);
-            let _ = tx.send(result);
-        }
+    let id = match &response.id {
+        Some(RequestId::Number(n)) => *n as u64,
+        _ => 0,
+    };
+    if let Some((_, tx)) = pending_requests.remove(&id) {
+        let _ = tx.send(response);
     }
 }
 
@@ -174,7 +162,7 @@ async fn route_incoming_message(
 
 fn spawn_reader_task(
     stdout: Box<dyn tokio::io::AsyncRead + Unpin + Send>,
-    pending_requests: Arc<Mutex<HashMap<u64, oneshot::Sender<serde_json::Value>>>>,
+    pending_requests: Arc<DashMap<u64, oneshot::Sender<JsonRpcResponse>>>,
     bridge: Option<(usize, mpsc::Sender<SlotIncoming>)>,
     local_incoming_tx: Option<mpsc::Sender<IncomingMessage>>,
 ) -> tokio::task::JoinHandle<()> {
@@ -189,28 +177,22 @@ fn spawn_reader_task(
                 }
             };
 
-            // Convert JsonRpcMessage → Value at codec boundary (Phase 3 will type the full pipeline)
-            let value = serde_json::to_value(&typed_msg).unwrap_or_default();
+            match typed_msg {
+                JsonRpcMessage::Response(response) => {
+                    tracing::debug!(id = ?response.id, "agent response received");
+                    handle_pending_response(&pending_requests, response).await;
+                }
+                JsonRpcMessage::Request(request) => {
+                    tracing::debug!(method = %request.method, "agent request/notification received");
+                    let msg = if request.id.is_some() {
+                        IncomingMessage::AgentRequest(request)
+                    } else {
+                        IncomingMessage::AgentNotification(request)
+                    };
 
-            tracing::debug!(raw = %value, "agent stdout line");
-
-            let has_id = value.get("id").is_some_and(|v| !v.is_null());
-            let has_method = value.get("method").is_some();
-
-            if has_id && !has_method {
-                handle_pending_response(&pending_requests, value).await;
-                continue;
-            }
-
-            if has_method {
-                let msg = if has_id {
-                    IncomingMessage::AgentRequest(value)
-                } else {
-                    IncomingMessage::AgentNotification(value)
-                };
-
-                if !route_incoming_message(&bridge, &local_incoming_tx, msg).await {
-                    break;
+                    if !route_incoming_message(&bridge, &local_incoming_tx, msg).await {
+                        break;
+                    }
                 }
             }
         }
@@ -239,9 +221,9 @@ impl std::fmt::Debug for AgentConnection {
 
 pub struct AgentConnection {
     backend: Box<dyn ProcessBackend>,
-    stdin_tx: mpsc::Sender<serde_json::Value>,
+    stdin_tx: mpsc::Sender<JsonRpcMessage>,
     incoming_rx: Option<mpsc::Receiver<IncomingMessage>>,
-    pending_requests: Arc<Mutex<HashMap<u64, oneshot::Sender<serde_json::Value>>>>,
+    pending_requests: Arc<DashMap<u64, oneshot::Sender<JsonRpcResponse>>>,
     next_id: Arc<AtomicU64>,
     reader_handle: tokio::task::JoinHandle<()>,
     writer_handle: tokio::task::JoinHandle<()>,
@@ -262,14 +244,18 @@ impl AgentConnection {
         name: &str,
         bridge: Option<(usize, mpsc::Sender<SlotIncoming>)>,
     ) -> Self {
-        let pending_requests: Arc<Mutex<HashMap<u64, oneshot::Sender<serde_json::Value>>>> =
-            Arc::new(Mutex::new(HashMap::new()));
+        let pending_requests: Arc<DashMap<u64, oneshot::Sender<JsonRpcResponse>>> =
+            Arc::new(DashMap::new());
         let next_id = Arc::new(AtomicU64::new(1));
-        let (stdin_tx, stdin_rx) = mpsc::channel::<serde_json::Value>(64);
+        let (stdin_tx, stdin_rx) = mpsc::channel::<JsonRpcMessage>(64);
         let (local_incoming_tx, incoming_rx) = init_incoming_channels(&bridge);
         let writer_handle = spawn_writer_task(stdin, stdin_rx);
-        let reader_handle =
-            spawn_reader_task(stdout, pending_requests.clone(), bridge, local_incoming_tx);
+        let reader_handle = spawn_reader_task(
+            stdout,
+            Arc::clone(&pending_requests),
+            bridge,
+            local_incoming_tx,
+        );
         let stderr_handle = spawn_stderr_task(name, stderr);
         Self {
             backend,
@@ -301,16 +287,20 @@ impl AgentConnection {
     ) -> Result<Self, AgentsError> {
         let (backend, stdin, stdout, stderr) = build_backend(config, name, log_level).await?;
 
-        let pending_requests: Arc<Mutex<HashMap<u64, oneshot::Sender<serde_json::Value>>>> =
-            Arc::new(Mutex::new(HashMap::new()));
+        let pending_requests: Arc<DashMap<u64, oneshot::Sender<JsonRpcResponse>>> =
+            Arc::new(DashMap::new());
         let next_id = Arc::new(AtomicU64::new(1));
 
-        let (stdin_tx, stdin_rx) = mpsc::channel::<serde_json::Value>(64);
+        let (stdin_tx, stdin_rx) = mpsc::channel::<JsonRpcMessage>(64);
         let (local_incoming_tx, incoming_rx) = init_incoming_channels(&bridge);
 
         let writer_handle = spawn_writer_task(stdin, stdin_rx);
-        let reader_handle =
-            spawn_reader_task(stdout, pending_requests.clone(), bridge, local_incoming_tx);
+        let reader_handle = spawn_reader_task(
+            stdout,
+            Arc::clone(&pending_requests),
+            bridge,
+            local_incoming_tx,
+        );
 
         let stderr_handle = spawn_stderr_task(name, stderr);
 
@@ -330,21 +320,16 @@ impl AgentConnection {
         &self,
         method: &str,
         params: serde_json::Value,
-    ) -> Result<oneshot::Receiver<serde_json::Value>, AgentsError> {
+    ) -> Result<oneshot::Receiver<JsonRpcResponse>, AgentsError> {
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
         let (tx, rx) = oneshot::channel();
 
-        self.pending_requests.lock().await.insert(id, tx);
+        self.pending_requests.insert(id, tx);
 
-        let msg = serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "method": method,
-            "params": params,
-        });
+        let request = JsonRpcRequest::new(method, Some(RequestId::Number(id as i64)), Some(params));
 
         self.stdin_tx
-            .send(msg)
+            .send(JsonRpcMessage::Request(request))
             .await
             .map_err(|_| AgentsError::ConnectionClosed)?;
 
@@ -356,24 +341,20 @@ impl AgentConnection {
         method: &str,
         params: serde_json::Value,
     ) -> Result<(), AgentsError> {
-        let msg = serde_json::json!({
-            "jsonrpc": "2.0",
-            "method": method,
-            "params": params,
-        });
+        let request = JsonRpcRequest::new(method, None, Some(params));
 
         self.stdin_tx
-            .send(msg)
+            .send(JsonRpcMessage::Request(request))
             .await
             .map_err(|_| AgentsError::ConnectionClosed)?;
 
         Ok(())
     }
 
-    pub async fn send_raw(&self, msg: serde_json::Value) -> Result<(), AgentsError> {
-        tracing::debug!(raw = %msg, "send_raw to agent stdin");
+    pub async fn send_raw(&self, msg: JsonRpcResponse) -> Result<(), AgentsError> {
+        tracing::debug!(id = ?msg.id, "send_raw to agent stdin");
         self.stdin_tx
-            .send(msg)
+            .send(JsonRpcMessage::Response(msg))
             .await
             .map_err(|_| AgentsError::ConnectionClosed)?;
 
@@ -530,7 +511,9 @@ mod tests {
             .expect("timeout waiting for response")
             .expect("oneshot cancelled");
 
-        assert_eq!(resp["protocolVersion"], 2);
+        // Response is now typed JsonRpcResponse — extract result for assertion
+        let result = resp.result.expect("expected result in response");
+        assert_eq!(result["protocolVersion"], 2);
         conn.kill().await.unwrap();
     }
 
@@ -550,13 +533,11 @@ mod tests {
             .await
             .unwrap();
 
-        let pending = conn.pending_requests.lock().await;
         assert!(
-            pending.is_empty(),
+            conn.pending_requests.is_empty(),
             "notification should not create pending request"
         );
 
-        drop(pending);
         conn.kill().await.unwrap();
     }
 
@@ -595,16 +576,15 @@ mod tests {
         // ACP permission response format per @agentclientprotocol/sdk@0.16.1:
         // result.outcome.outcome = "selected" | "cancelled"
         // result.outcome.optionId = string (when selected)
-        let permission_response = serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 0,
-            "result": {
+        let permission_response = JsonRpcResponse::success(
+            Some(RequestId::Number(0)),
+            serde_json::json!({
                 "outcome": {
                     "outcome": "selected",
                     "optionId": "once",
                 }
-            }
-        });
+            }),
+        );
 
         conn.send_raw(permission_response).await.unwrap();
 
