@@ -12,6 +12,7 @@ impl AgentAdapter for GenericAcpAdapter {}
 mod tests {
     use super::*;
     use crate::{AgentAdapter, DynAgentAdapter};
+    use anyclaw_sdk_types::{ClientCapabilities, InitializeParams};
     use rstest::rstest;
 
     #[rstest]
@@ -33,7 +34,11 @@ mod tests {
     #[tokio::test]
     async fn when_generic_adapter_on_initialize_params_called_from_own_module_then_passthrough() {
         let adapter = GenericAcpAdapter;
-        let input = serde_json::json!({"protocolVersion": 1});
+        let input = InitializeParams {
+            protocol_version: 1,
+            capabilities: ClientCapabilities { experimental: None },
+            options: None,
+        };
 
         let output = AgentAdapter::on_initialize_params(&adapter, input.clone())
             .await

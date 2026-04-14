@@ -10,8 +10,6 @@
 #![warn(missing_docs)]
 
 /// ACP message adapter trait and dyn-compatible wrapper.
-// Grandfathered: typed replacement in Phase 2-4
-#[allow(clippy::disallowed_types)]
 pub mod adapter;
 /// Error types for the agent SDK.
 pub mod error;
@@ -26,11 +24,19 @@ pub use generic::GenericAcpAdapter;
 mod tests {
     use super::*;
     use adapter::AgentAdapter;
+    use anyclaw_sdk_types::{
+        ClientCapabilities, ContentPart, InitializeParams, InitializeResult, PermissionOption,
+        PermissionRequest, SessionNewParams, SessionNewResult, SessionPromptParams,
+        SessionUpdateEvent, SessionUpdateType,
+    };
 
     #[tokio::test]
     async fn when_generic_adapter_on_initialize_result_called_then_passthrough() {
         let adapter = GenericAcpAdapter;
-        let input = serde_json::json!({"protocolVersion": 1, "capabilities": {}});
+        let input = InitializeResult {
+            protocol_version: 1,
+            agent_capabilities: None,
+        };
         let output = AgentAdapter::on_initialize_result(&adapter, input.clone())
             .await
             .unwrap();
@@ -40,7 +46,9 @@ mod tests {
     #[tokio::test]
     async fn when_generic_adapter_on_session_new_result_called_then_passthrough() {
         let adapter = GenericAcpAdapter;
-        let input = serde_json::json!({"sessionId": "sess-42"});
+        let input = SessionNewResult {
+            session_id: "sess-42".into(),
+        };
         let output = AgentAdapter::on_session_new_result(&adapter, input.clone())
             .await
             .unwrap();
@@ -55,7 +63,11 @@ mod tests {
     #[tokio::test]
     async fn when_generic_adapter_on_initialize_params_called_then_passthrough() {
         let adapter = GenericAcpAdapter;
-        let input = serde_json::json!({"protocolVersion": 1});
+        let input = InitializeParams {
+            protocol_version: 1,
+            capabilities: ClientCapabilities { experimental: None },
+            options: None,
+        };
         let output = AgentAdapter::on_initialize_params(&adapter, input.clone())
             .await
             .unwrap();
@@ -65,7 +77,11 @@ mod tests {
     #[tokio::test]
     async fn when_generic_adapter_on_session_new_params_called_then_passthrough() {
         let adapter = GenericAcpAdapter;
-        let input = serde_json::json!({"sessionId": null});
+        let input = SessionNewParams {
+            session_id: None,
+            cwd: "/tmp".into(),
+            mcp_servers: vec![],
+        };
         let output = AgentAdapter::on_session_new_params(&adapter, input.clone())
             .await
             .unwrap();
@@ -75,8 +91,10 @@ mod tests {
     #[tokio::test]
     async fn when_generic_adapter_on_session_prompt_params_called_then_passthrough() {
         let adapter = GenericAcpAdapter;
-        let input =
-            serde_json::json!({"sessionId": "s1", "message": {"role": "user", "content": "hi"}});
+        let input = SessionPromptParams {
+            session_id: "s1".into(),
+            prompt: vec![ContentPart::text("hi")],
+        };
         let output = AgentAdapter::on_session_prompt_params(&adapter, input.clone())
             .await
             .unwrap();
@@ -86,7 +104,12 @@ mod tests {
     #[tokio::test]
     async fn when_generic_adapter_on_session_update_called_then_passthrough() {
         let adapter = GenericAcpAdapter;
-        let input = serde_json::json!({"sessionId": "s1", "type": "agent_message_chunk", "content": "hello"});
+        let input = SessionUpdateEvent {
+            session_id: "s1".into(),
+            update: SessionUpdateType::Result {
+                content: Some("hello".into()),
+            },
+        };
         let output = AgentAdapter::on_session_update(&adapter, input.clone())
             .await
             .unwrap();
@@ -96,7 +119,14 @@ mod tests {
     #[tokio::test]
     async fn when_generic_adapter_on_permission_request_called_then_passthrough() {
         let adapter = GenericAcpAdapter;
-        let input = serde_json::json!({"requestId": "r1", "description": "Allow?"});
+        let input = PermissionRequest {
+            request_id: "r1".into(),
+            description: "Allow?".into(),
+            options: vec![PermissionOption {
+                option_id: "allow".into(),
+                label: "Allow".into(),
+            }],
+        };
         let output = AgentAdapter::on_permission_request(&adapter, input.clone())
             .await
             .unwrap();
@@ -122,11 +152,9 @@ mod tests {
     impl AgentAdapter for InjectingAdapter {
         async fn on_session_prompt_params(
             &self,
-            mut params: serde_json::Value,
-        ) -> Result<serde_json::Value, AgentSdkError> {
-            if let Some(obj) = params.as_object_mut() {
-                obj.insert("injected".into(), serde_json::json!(true));
-            }
+            mut params: SessionPromptParams,
+        ) -> Result<SessionPromptParams, AgentSdkError> {
+            params.prompt.push(ContentPart::text("injected"));
             Ok(params)
         }
     }
@@ -134,19 +162,25 @@ mod tests {
     #[tokio::test]
     async fn when_custom_adapter_overrides_hook_then_transformed_value_returned() {
         let adapter = InjectingAdapter;
-        let input =
-            serde_json::json!({"sessionId": "s1", "message": {"role": "user", "content": "hi"}});
-        let output = AgentAdapter::on_session_prompt_params(&adapter, input.clone())
+        let input = SessionPromptParams {
+            session_id: "s1".into(),
+            prompt: vec![ContentPart::text("hi")],
+        };
+        let output = AgentAdapter::on_session_prompt_params(&adapter, input)
             .await
             .unwrap();
-        assert_eq!(output["injected"], serde_json::json!(true));
-        assert_eq!(output["sessionId"], serde_json::json!("s1"));
+        assert_eq!(output.prompt.len(), 2);
+        assert_eq!(output.session_id, "s1");
     }
 
     #[tokio::test]
     async fn when_custom_adapter_non_overridden_hook_called_then_passthrough() {
         let adapter = InjectingAdapter;
-        let input = serde_json::json!({"protocolVersion": 1});
+        let input = InitializeParams {
+            protocol_version: 1,
+            capabilities: ClientCapabilities { experimental: None },
+            options: None,
+        };
         let output = AgentAdapter::on_initialize_params(&adapter, input.clone())
             .await
             .unwrap();

@@ -1,6 +1,11 @@
 use std::future::Future;
 use std::pin::Pin;
 
+use anyclaw_sdk_types::{
+    InitializeParams, InitializeResult, PermissionRequest, SessionNewParams, SessionNewResult,
+    SessionPromptParams, SessionUpdateEvent,
+};
+
 use crate::error::AgentSdkError;
 
 /// Per-method hooks for ACP lifecycle. Implement this trait to intercept and transform
@@ -11,56 +16,56 @@ pub trait AgentAdapter: Send + Sync + 'static {
     /// Transform `initialize` request params before they reach the agent.
     fn on_initialize_params(
         &self,
-        params: serde_json::Value,
-    ) -> impl Future<Output = Result<serde_json::Value, AgentSdkError>> + Send {
+        params: InitializeParams,
+    ) -> impl Future<Output = Result<InitializeParams, AgentSdkError>> + Send {
         async move { Ok(params) }
     }
 
     /// Transform `initialize` response before it reaches the supervisor.
     fn on_initialize_result(
         &self,
-        result: serde_json::Value,
-    ) -> impl Future<Output = Result<serde_json::Value, AgentSdkError>> + Send {
+        result: InitializeResult,
+    ) -> impl Future<Output = Result<InitializeResult, AgentSdkError>> + Send {
         async move { Ok(result) }
     }
 
     /// Transform `session/new` request params before they reach the agent.
     fn on_session_new_params(
         &self,
-        params: serde_json::Value,
-    ) -> impl Future<Output = Result<serde_json::Value, AgentSdkError>> + Send {
+        params: SessionNewParams,
+    ) -> impl Future<Output = Result<SessionNewParams, AgentSdkError>> + Send {
         async move { Ok(params) }
     }
 
     /// Transform `session/new` response before it reaches the supervisor.
     fn on_session_new_result(
         &self,
-        result: serde_json::Value,
-    ) -> impl Future<Output = Result<serde_json::Value, AgentSdkError>> + Send {
+        result: SessionNewResult,
+    ) -> impl Future<Output = Result<SessionNewResult, AgentSdkError>> + Send {
         async move { Ok(result) }
     }
 
     /// Transform `session/prompt` request params before they reach the agent.
     fn on_session_prompt_params(
         &self,
-        params: serde_json::Value,
-    ) -> impl Future<Output = Result<serde_json::Value, AgentSdkError>> + Send {
+        params: SessionPromptParams,
+    ) -> impl Future<Output = Result<SessionPromptParams, AgentSdkError>> + Send {
         async move { Ok(params) }
     }
 
     /// Transform a `session/update` streaming event before it reaches the supervisor.
     fn on_session_update(
         &self,
-        event: serde_json::Value,
-    ) -> impl Future<Output = Result<serde_json::Value, AgentSdkError>> + Send {
+        event: SessionUpdateEvent,
+    ) -> impl Future<Output = Result<SessionUpdateEvent, AgentSdkError>> + Send {
         async move { Ok(event) }
     }
 
     /// Transform a permission request event before it reaches the supervisor.
     fn on_permission_request(
         &self,
-        request: serde_json::Value,
-    ) -> impl Future<Output = Result<serde_json::Value, AgentSdkError>> + Send {
+        request: PermissionRequest,
+    ) -> impl Future<Output = Result<PermissionRequest, AgentSdkError>> + Send {
         async move { Ok(request) }
     }
 }
@@ -71,93 +76,93 @@ pub trait DynAgentAdapter: Send + Sync + 'static {
     /// Dyn-compatible version of [`AgentAdapter::on_initialize_params`].
     fn on_initialize_params<'a>(
         &'a self,
-        params: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>>;
+        params: InitializeParams,
+    ) -> Pin<Box<dyn Future<Output = Result<InitializeParams, AgentSdkError>> + Send + 'a>>;
 
     /// Dyn-compatible version of [`AgentAdapter::on_initialize_result`].
     fn on_initialize_result<'a>(
         &'a self,
-        result: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>>;
+        result: InitializeResult,
+    ) -> Pin<Box<dyn Future<Output = Result<InitializeResult, AgentSdkError>> + Send + 'a>>;
 
     /// Dyn-compatible version of [`AgentAdapter::on_session_new_params`].
     fn on_session_new_params<'a>(
         &'a self,
-        params: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>>;
+        params: SessionNewParams,
+    ) -> Pin<Box<dyn Future<Output = Result<SessionNewParams, AgentSdkError>> + Send + 'a>>;
 
     /// Dyn-compatible version of [`AgentAdapter::on_session_new_result`].
     fn on_session_new_result<'a>(
         &'a self,
-        result: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>>;
+        result: SessionNewResult,
+    ) -> Pin<Box<dyn Future<Output = Result<SessionNewResult, AgentSdkError>> + Send + 'a>>;
 
     /// Dyn-compatible version of [`AgentAdapter::on_session_prompt_params`].
     fn on_session_prompt_params<'a>(
         &'a self,
-        params: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>>;
+        params: SessionPromptParams,
+    ) -> Pin<Box<dyn Future<Output = Result<SessionPromptParams, AgentSdkError>> + Send + 'a>>;
 
     /// Dyn-compatible version of [`AgentAdapter::on_session_update`].
     fn on_session_update<'a>(
         &'a self,
-        event: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>>;
+        event: SessionUpdateEvent,
+    ) -> Pin<Box<dyn Future<Output = Result<SessionUpdateEvent, AgentSdkError>> + Send + 'a>>;
 
     /// Dyn-compatible version of [`AgentAdapter::on_permission_request`].
     fn on_permission_request<'a>(
         &'a self,
-        request: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>>;
+        request: PermissionRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<PermissionRequest, AgentSdkError>> + Send + 'a>>;
 }
 
 impl<T: AgentAdapter> DynAgentAdapter for T {
     fn on_initialize_params<'a>(
         &'a self,
-        params: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>> {
+        params: InitializeParams,
+    ) -> Pin<Box<dyn Future<Output = Result<InitializeParams, AgentSdkError>> + Send + 'a>> {
         Box::pin(AgentAdapter::on_initialize_params(self, params))
     }
 
     fn on_initialize_result<'a>(
         &'a self,
-        result: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>> {
+        result: InitializeResult,
+    ) -> Pin<Box<dyn Future<Output = Result<InitializeResult, AgentSdkError>> + Send + 'a>> {
         Box::pin(AgentAdapter::on_initialize_result(self, result))
     }
 
     fn on_session_new_params<'a>(
         &'a self,
-        params: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>> {
+        params: SessionNewParams,
+    ) -> Pin<Box<dyn Future<Output = Result<SessionNewParams, AgentSdkError>> + Send + 'a>> {
         Box::pin(AgentAdapter::on_session_new_params(self, params))
     }
 
     fn on_session_new_result<'a>(
         &'a self,
-        result: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>> {
+        result: SessionNewResult,
+    ) -> Pin<Box<dyn Future<Output = Result<SessionNewResult, AgentSdkError>> + Send + 'a>> {
         Box::pin(AgentAdapter::on_session_new_result(self, result))
     }
 
     fn on_session_prompt_params<'a>(
         &'a self,
-        params: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>> {
+        params: SessionPromptParams,
+    ) -> Pin<Box<dyn Future<Output = Result<SessionPromptParams, AgentSdkError>> + Send + 'a>> {
         Box::pin(AgentAdapter::on_session_prompt_params(self, params))
     }
 
     fn on_session_update<'a>(
         &'a self,
-        event: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>> {
+        event: SessionUpdateEvent,
+    ) -> Pin<Box<dyn Future<Output = Result<SessionUpdateEvent, AgentSdkError>> + Send + 'a>> {
         Box::pin(AgentAdapter::on_session_update(self, event))
     }
 
     fn on_permission_request<'a>(
         &'a self,
-        request: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>> {
+        request: PermissionRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<PermissionRequest, AgentSdkError>> + Send + 'a>> {
         Box::pin(AgentAdapter::on_permission_request(self, request))
     }
 }
@@ -165,145 +170,174 @@ impl<T: AgentAdapter> DynAgentAdapter for T {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use anyclaw_sdk_types::PermissionOption;
+    use anyclaw_sdk_types::{
+        ClientCapabilities, ContentPart, InitializeParams, InitializeResult, PermissionRequest,
+        SessionNewParams, SessionNewResult, SessionPromptParams, SessionUpdateEvent,
+        SessionUpdateType,
+    };
     use rstest::rstest;
-
-    type AdapterHook = for<'a> fn(
-        &'a DefaultAdapter,
-        serde_json::Value,
-    ) -> Pin<
-        Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>,
-    >;
 
     struct DefaultAdapter;
 
     impl AgentAdapter for DefaultAdapter {}
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_default_adapter_on_initialize_params_then_passthrough() {
+        let adapter = DefaultAdapter;
+        let params = InitializeParams {
+            protocol_version: 1,
+            capabilities: ClientCapabilities { experimental: None },
+            options: None,
+        };
+        let output = AgentAdapter::on_initialize_params(&adapter, params.clone())
+            .await
+            .unwrap();
+        assert_eq!(output, params);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_default_adapter_on_initialize_result_then_passthrough() {
+        let adapter = DefaultAdapter;
+        let result = InitializeResult {
+            protocol_version: 1,
+            agent_capabilities: None,
+        };
+        let output = AgentAdapter::on_initialize_result(&adapter, result.clone())
+            .await
+            .unwrap();
+        assert_eq!(output, result);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_default_adapter_on_session_new_params_then_passthrough() {
+        let adapter = DefaultAdapter;
+        let params = SessionNewParams {
+            session_id: None,
+            cwd: "/tmp".into(),
+            mcp_servers: vec![],
+        };
+        let output = AgentAdapter::on_session_new_params(&adapter, params.clone())
+            .await
+            .unwrap();
+        assert_eq!(output, params);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_default_adapter_on_session_new_result_then_passthrough() {
+        let adapter = DefaultAdapter;
+        let result = SessionNewResult {
+            session_id: "sess-1".into(),
+        };
+        let output = AgentAdapter::on_session_new_result(&adapter, result.clone())
+            .await
+            .unwrap();
+        assert_eq!(output, result);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_default_adapter_on_session_prompt_params_then_passthrough() {
+        let adapter = DefaultAdapter;
+        let params = SessionPromptParams {
+            session_id: "sess-1".into(),
+            prompt: vec![ContentPart::text("hello")],
+        };
+        let output = AgentAdapter::on_session_prompt_params(&adapter, params.clone())
+            .await
+            .unwrap();
+        assert_eq!(output, params);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_default_adapter_on_session_update_then_passthrough() {
+        let adapter = DefaultAdapter;
+        let event = SessionUpdateEvent {
+            session_id: "sess-1".into(),
+            update: SessionUpdateType::Result {
+                content: Some("done".into()),
+            },
+        };
+        let output = AgentAdapter::on_session_update(&adapter, event.clone())
+            .await
+            .unwrap();
+        assert_eq!(output, event);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_default_adapter_on_permission_request_then_passthrough() {
+        let adapter = DefaultAdapter;
+        let request = PermissionRequest {
+            request_id: "perm-1".into(),
+            description: "Allow?".into(),
+            options: vec![PermissionOption {
+                option_id: "allow".into(),
+                label: "Allow".into(),
+            }],
+        };
+        let output = AgentAdapter::on_permission_request(&adapter, request.clone())
+            .await
+            .unwrap();
+        assert_eq!(output, request);
+    }
 
     struct PermissionRewritingAdapter;
 
     impl AgentAdapter for PermissionRewritingAdapter {
         async fn on_permission_request(
             &self,
-            mut request: serde_json::Value,
-        ) -> Result<serde_json::Value, AgentSdkError> {
-            request["approved"] = serde_json::json!(true);
+            mut request: PermissionRequest,
+        ) -> Result<PermissionRequest, AgentSdkError> {
+            request.description = format!("REWRITTEN: {}", request.description);
             Ok(request)
         }
     }
 
-    fn call_on_initialize_params<'a>(
-        adapter: &'a DefaultAdapter,
-        value: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>> {
-        Box::pin(AgentAdapter::on_initialize_params(adapter, value))
-    }
-
-    fn call_on_initialize_result<'a>(
-        adapter: &'a DefaultAdapter,
-        value: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>> {
-        Box::pin(AgentAdapter::on_initialize_result(adapter, value))
-    }
-
-    fn call_on_session_new_params<'a>(
-        adapter: &'a DefaultAdapter,
-        value: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>> {
-        Box::pin(AgentAdapter::on_session_new_params(adapter, value))
-    }
-
-    fn call_on_session_new_result<'a>(
-        adapter: &'a DefaultAdapter,
-        value: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>> {
-        Box::pin(AgentAdapter::on_session_new_result(adapter, value))
-    }
-
-    fn call_on_session_prompt_params<'a>(
-        adapter: &'a DefaultAdapter,
-        value: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>> {
-        Box::pin(AgentAdapter::on_session_prompt_params(adapter, value))
-    }
-
-    fn call_on_session_update<'a>(
-        adapter: &'a DefaultAdapter,
-        value: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>> {
-        Box::pin(AgentAdapter::on_session_update(adapter, value))
-    }
-
-    fn call_on_permission_request<'a>(
-        adapter: &'a DefaultAdapter,
-        value: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<serde_json::Value, AgentSdkError>> + Send + 'a>> {
-        Box::pin(AgentAdapter::on_permission_request(adapter, value))
-    }
-
-    #[rstest]
-    #[case::initialize_params(
-        serde_json::json!({"protocolVersion": 1}),
-        call_on_initialize_params
-    )]
-    #[case::initialize_result(
-        serde_json::json!({"capabilities": {"streaming": true}}),
-        call_on_initialize_result
-    )]
-    #[case::session_new_params(
-        serde_json::json!({"sessionId": null}),
-        call_on_session_new_params
-    )]
-    #[case::session_new_result(
-        serde_json::json!({"sessionId": "sess-1"}),
-        call_on_session_new_result
-    )]
-    #[case::session_prompt_params(
-        serde_json::json!({"message": {"role": "user", "content": "hello"}}),
-        call_on_session_prompt_params
-    )]
-    #[case::session_update(
-        serde_json::json!({"type": "agent_message_chunk", "content": "hello"}),
-        call_on_session_update
-    )]
-    #[case::permission_request(
-        serde_json::json!({"requestId": "perm-1", "description": "Allow?"}),
-        call_on_permission_request
-    )]
-    #[tokio::test]
-    async fn when_default_adapter_hook_called_then_passthrough(
-        #[case] input: serde_json::Value,
-        #[case] hook: AdapterHook,
-    ) {
-        let adapter = DefaultAdapter;
-
-        let output = hook(&adapter, input.clone()).await.unwrap();
-
-        assert_eq!(output, input);
-    }
-
     #[rstest]
     #[tokio::test]
-    async fn when_custom_adapter_overrides_permission_request_then_overridden_value_returned() {
+    async fn when_custom_adapter_overrides_permission_request_then_transformed() {
         let adapter = PermissionRewritingAdapter;
-        let input = serde_json::json!({"requestId": "perm-1", "description": "Allow?"});
-
-        let output = AgentAdapter::on_permission_request(&adapter, input)
+        let request = PermissionRequest {
+            request_id: "perm-1".into(),
+            description: "Allow?".into(),
+            options: vec![],
+        };
+        let output = AgentAdapter::on_permission_request(&adapter, request)
             .await
             .unwrap();
-
-        assert_eq!(output["approved"], serde_json::json!(true));
-        assert_eq!(output["requestId"], serde_json::json!("perm-1"));
+        assert_eq!(output.description, "REWRITTEN: Allow?");
+        assert_eq!(output.request_id, "perm-1");
     }
 
     #[rstest]
     #[tokio::test]
-    async fn when_custom_adapter_on_non_overridden_hook_called_then_default_passthrough_used() {
+    async fn when_custom_adapter_on_non_overridden_hook_then_passthrough() {
         let adapter = PermissionRewritingAdapter;
-        let input = serde_json::json!({"sessionId": "sess-2"});
-
-        let output = AgentAdapter::on_session_new_result(&adapter, input.clone())
+        let result = SessionNewResult {
+            session_id: "sess-2".into(),
+        };
+        let output = AgentAdapter::on_session_new_result(&adapter, result.clone())
             .await
             .unwrap();
+        assert_eq!(output, result);
+    }
 
-        assert_eq!(output, input);
+    #[rstest]
+    #[tokio::test]
+    async fn when_dyn_adapter_dispatches_typed_params_then_compiles() {
+        let adapter: Box<dyn DynAgentAdapter> = Box::new(DefaultAdapter);
+        let params = InitializeParams {
+            protocol_version: 1,
+            capabilities: ClientCapabilities { experimental: None },
+            options: None,
+        };
+        let output = adapter.on_initialize_params(params.clone()).await.unwrap();
+        assert_eq!(output, params);
     }
 }
