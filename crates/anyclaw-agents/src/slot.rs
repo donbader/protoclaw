@@ -64,7 +64,8 @@ impl AgentSlot {
     pub(crate) fn has_session_capability(&self, check: fn(&SessionCapabilities) -> bool) -> bool {
         self.agent_capabilities
             .as_ref()
-            .and_then(|r| r.session_capabilities.as_ref())
+            .and_then(|r| r.agent_capabilities.as_ref())
+            .map(|c| &c.session_capabilities)
             .is_some_and(check)
     }
 }

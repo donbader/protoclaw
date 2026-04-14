@@ -7,6 +7,15 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+pub use agent_client_protocol_schema::{AgentCapabilities, McpCapabilities, PromptCapabilities};
+
+/// Session capabilities supported by the agent.
+///
+/// Anyclaw keeps a local definition because the `fork` and `resume` fields are
+/// behind unstable feature flags in the official crate. The stable-only
+/// `official::SessionCapabilities` only exposes `list`, which is wire-compatible.
+pub use agent_client_protocol_schema::SessionCapabilities;
+
 /// Capabilities advertised by the supervisor to the agent during `initialize`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ClientCapabilities {
@@ -28,63 +37,22 @@ pub struct InitializeParams {
     pub options: Option<HashMap<String, serde_json::Value>>,
 }
 
-/// MCP transport capabilities advertised by the agent.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct McpCapabilities {
-    /// Whether the agent supports HTTP-based MCP transport.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub http: Option<bool>,
-    /// Whether the agent supports SSE-based MCP transport.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sse: Option<bool>,
-}
-
-/// Prompt feature capabilities advertised by the agent.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct PromptCapabilities {
-    /// Whether the agent supports embedded context in prompts.
-    #[serde(rename = "embeddedContext", skip_serializing_if = "Option::is_none")]
-    pub embedded_context: Option<bool>,
-    /// Whether the agent supports image content in prompts.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub image: Option<bool>,
-}
-
-/// Session management capabilities advertised by the agent.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct SessionCapabilities {
-    /// Fork capability descriptor; present if the agent supports `session/fork`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub fork: Option<serde_json::Value>,
-    /// List capability descriptor; present if the agent supports `session/list`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub list: Option<serde_json::Value>,
-    /// Resume capability descriptor; present if the agent supports `session/load`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub resume: Option<serde_json::Value>,
-}
-
 /// Result returned by the agent in response to `initialize`.
+///
+/// Uses the official `AgentCapabilities` type (from `agent_client_protocol_schema`)
+/// nested under `agentCapabilities`, matching the wire format real ACP agents emit.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct InitializeResult {
     /// ACP protocol version the agent has accepted.
     #[serde(rename = "protocolVersion")]
     pub protocol_version: u32,
-    /// Whether the agent requests session history to be loaded on startup.
-    #[serde(rename = "loadSession", skip_serializing_if = "Option::is_none")]
-    pub load_session: Option<bool>,
-    /// MCP transport capabilities supported by the agent.
-    #[serde(rename = "mcpCapabilities", skip_serializing_if = "Option::is_none")]
-    pub mcp_capabilities: Option<McpCapabilities>,
-    /// Prompt feature capabilities supported by the agent.
-    #[serde(rename = "promptCapabilities", skip_serializing_if = "Option::is_none")]
-    pub prompt_capabilities: Option<PromptCapabilities>,
-    /// Session management capabilities supported by the agent.
+    /// Capabilities advertised by the agent, nested per the ACP wire format.
     #[serde(
-        rename = "sessionCapabilities",
+        rename = "agentCapabilities",
+        default,
         skip_serializing_if = "Option::is_none"
     )]
-    pub session_capabilities: Option<SessionCapabilities>,
+    pub agent_capabilities: Option<AgentCapabilities>,
 }
 
 /// Describes a single MCP server to be passed to the agent on `session/new`.
@@ -217,6 +185,12 @@ pub struct SessionLoadParams {
     /// ID of the session to load/resume.
     #[serde(rename = "sessionId")]
     pub session_id: String,
+    /// Working directory for the resumed session.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
+    /// MCP servers available for the resumed session.
+    #[serde(rename = "mcpServers", skip_serializing_if = "Option::is_none")]
+    pub mcp_servers: Option<Vec<McpServerInfo>>,
 }
 
 /// Status of a tool call, used in `SessionUpdateType::ToolCallUpdate`.
@@ -464,5 +438,43 @@ mod tests {
         assert_eq!(result.sessions.len(), 2);
         assert_eq!(result.sessions[0].session_id, "ses-1");
         assert_eq!(result.sessions[1].session_id, "ses-2");
+    }
+
+    /// Real OpenCode `initialize` response with nested `agentCapabilities` object.
+    /// The official ACP spec wraps capabilities under `agentCapabilities`; anyclaw's
+    /// old flat `InitializeResult` misses them, causing a deserialization bug.
+    #[test]
+    fn when_opencode_initialize_response_deserialized_then_agent_capabilities_populated() {
+        let json = serde_json::json!({
+            "protocolVersion": 1,
+            "agentCapabilities": {
+                "loadSession": true,
+                "promptCapabilities": {
+                    "embeddedContext": true,
+                    "image": false
+                },
+                "mcpCapabilities": {
+                    "http": false,
+                    "sse": true
+                },
+                "sessionCapabilities": {
+                    "list": {}
+                }
+            }
+        });
+        let result: InitializeResult = serde_json::from_value(json).unwrap();
+        let caps = result
+            .agent_capabilities
+            .expect("agent_capabilities should be present");
+        assert!(caps.load_session, "loadSession should be true");
+        assert!(
+            caps.prompt_capabilities.embedded_context,
+            "embeddedContext should be true"
+        );
+        assert!(caps.mcp_capabilities.sse, "sse should be true");
+        assert!(
+            caps.session_capabilities.list.is_some(),
+            "session list capability should be present"
+        );
     }
 }

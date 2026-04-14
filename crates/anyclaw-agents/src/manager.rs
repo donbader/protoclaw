@@ -606,8 +606,8 @@ impl AgentsManager {
         let supports_load = self.slots[slot_idx]
             .agent_capabilities
             .as_ref()
-            .and_then(|c| c.load_session)
-            .unwrap_or(false);
+            .and_then(|r| r.agent_capabilities.as_ref())
+            .map_or(false, |c| c.load_session);
 
         tracing::info!(
             agent = %agent_name,
@@ -621,6 +621,8 @@ impl AgentsManager {
         if supports_load && let Some(acp_id) = stale_acp_id {
             let params = match serde_json::to_value(SessionLoadParams {
                 session_id: acp_id.clone(),
+                cwd: None,
+                mcp_servers: None,
             }) {
                 Ok(v) => v,
                 Err(e) => {
@@ -716,7 +718,9 @@ impl AgentsManager {
             .ok_or_else(|| AgentsError::AgentNotFound(agent_name.to_string()))?;
 
         let slot = &self.slots[slot_idx];
-        if !slot.has_session_capability(|c| c.fork.is_some()) {
+        // `session/fork` requires `unstable_session_fork` feature in the official ACP schema;
+        // treat as unsupported until the stable capability exists.
+        if !slot.has_session_capability(|_c| false) {
             return Err(AgentsError::CapabilityNotSupported("fork".into()));
         }
 
@@ -1266,8 +1270,8 @@ impl AgentsManager {
         let supports_load = slot
             .agent_capabilities
             .as_ref()
-            .and_then(|c| c.load_session)
-            .unwrap_or(false);
+            .and_then(|r| r.agent_capabilities.as_ref())
+            .map_or(false, |c| c.load_session);
         if !supports_load {
             return false;
         }
@@ -1277,6 +1281,8 @@ impl AgentsManager {
         };
         let params = serde_json::to_value(SessionLoadParams {
             session_id: first_acp_id,
+            cwd: None,
+            mcp_servers: None,
         })
         .unwrap_or_else(|e| {
             tracing::warn!(error = %e, agent = %agent_name, "failed to serialize session/load params, using null");
