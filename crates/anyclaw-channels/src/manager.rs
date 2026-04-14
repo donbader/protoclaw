@@ -168,7 +168,11 @@ impl ChannelsManager {
             .map_err(|_| ChannelsError::Timeout(init_timeout))?
             .map_err(|_| ChannelsError::ConnectionClosed)?;
 
-        let result: ChannelInitializeResult = serde_json::from_value(resp)?;
+        // Extract the result payload from the typed JsonRpcResponse
+        let result_value = resp
+            .result
+            .ok_or_else(|| ChannelsError::InitializeFailed("no result in response".into()))?;
+        let result: ChannelInitializeResult = serde_json::from_value(result_value)?;
         let caps = result.capabilities;
         conn.set_capabilities(caps.clone());
 
@@ -306,9 +310,12 @@ impl ChannelsManager {
                                         };
 
                                         if let Some(resp_val) = result {
-                                            let option_id = resp_val["optionId"]
-                                                .as_str()
-                                                .or_else(|| resp_val["result"]["optionId"].as_str())
+                                            let option_id = resp_val
+                                                .result
+                                                .as_ref()
+                                                .and_then(|r| {
+                                                    r.get("optionId").and_then(|v| v.as_str())
+                                                })
                                                 .unwrap_or("once")
                                                 .to_string();
                                             tracing::info!(channel = %channel_name, request_id = %req_id, %option_id, "permission response from channel, forwarding to agents");
@@ -476,9 +483,10 @@ impl ChannelsManager {
                                 };
 
                                 if let Some(resp_val) = result {
-                                    let option_id = resp_val["optionId"]
-                                        .as_str()
-                                        .or_else(|| resp_val["result"]["optionId"].as_str())
+                                    let option_id = resp_val
+                                        .result
+                                        .as_ref()
+                                        .and_then(|r| r.get("optionId").and_then(|v| v.as_str()))
                                         .unwrap_or("once")
                                         .to_string();
                                     tracing::info!(channel = %channel_name, request_id = %req_id, %option_id, "permission response from channel, forwarding to agents");
@@ -558,16 +566,15 @@ impl ChannelsManager {
         }
     }
 
-    fn parse_channel_message(&self, msg: &IncomingChannelMessage) -> (String, serde_json::Value) {
-        let value = match msg {
-            IncomingChannelMessage::ChannelRequest(v)
-            | IncomingChannelMessage::ChannelNotification(v) => v.clone(),
+    // D-03: params is method-specific JSON — stays as Option<Value>
+    #[allow(clippy::disallowed_types)]
+    fn parse_channel_message(msg: &IncomingChannelMessage) -> (String, serde_json::Value) {
+        let req = match msg {
+            IncomingChannelMessage::ChannelRequest(r)
+            | IncomingChannelMessage::ChannelNotification(r) => r,
         };
-        let method = value["method"].as_str().unwrap_or("").to_string();
-        let params = value
-            .get("params")
-            .cloned()
-            .unwrap_or(serde_json::Value::Null);
+        let method = req.method.clone();
+        let params = req.params.clone().unwrap_or(serde_json::Value::Null);
 
         (method, params)
     }
@@ -898,7 +905,7 @@ impl ChannelsManager {
         msg: IncomingChannelMessage,
     ) -> Option<SessionKey> {
         let channel_name = self.slots[slot_index].name.clone();
-        let (method, params) = self.parse_channel_message(&msg);
+        let (method, params) = Self::parse_channel_message(&msg);
 
         match method.as_str() {
             "channel/sendMessage" => {

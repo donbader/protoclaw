@@ -10,6 +10,7 @@ anyclaw-core = { workspace = true }
 anyclaw-config = { workspace = true }
 anyclaw-sdk-types = { workspace = true }
 anyclaw-jsonrpc = { workspace = true }
+dashmap = { workspace = true }
 axum = { workspace = true }
 tokio = { workspace = true, default-features = false, features = ["io-util", "macros", "net", "process", "rt", "rt-multi-thread", "sync", "time"] }
 tokio-stream = { workspace = true }

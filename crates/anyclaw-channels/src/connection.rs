@@ -1,13 +1,14 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use anyclaw_config::ChannelConfig;
 use anyclaw_core::types::ChannelId;
 use anyclaw_jsonrpc::NdJsonCodec;
+use anyclaw_jsonrpc::types::{JsonRpcMessage, JsonRpcRequest, JsonRpcResponse, RequestId};
+use dashmap::DashMap;
 use futures::StreamExt;
 use tokio::process::{Child, Command};
-use tokio::sync::{Mutex, mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tokio_util::codec::{FramedRead, FramedWrite};
 
@@ -22,9 +23,9 @@ use anyclaw_sdk_types::ChannelCapabilities;
 #[derive(Debug)]
 pub enum IncomingChannelMessage {
     /// Channel-initiated JSON-RPC request (has method + id).
-    ChannelRequest(serde_json::Value),
+    ChannelRequest(JsonRpcRequest),
     /// Channel-initiated JSON-RPC notification (has method, no id).
-    ChannelNotification(serde_json::Value),
+    ChannelNotification(JsonRpcRequest),
 }
 
 /// Manages a bidirectional NDJSON JSON-RPC connection to a channel subprocess.
@@ -34,9 +35,9 @@ pub enum IncomingChannelMessage {
 pub struct ChannelConnection {
     channel_id: ChannelId,
     child: Child,
-    stdin_tx: mpsc::Sender<serde_json::Value>,
+    stdin_tx: mpsc::Sender<JsonRpcRequest>,
     incoming_rx: mpsc::Receiver<IncomingChannelMessage>,
-    pending_requests: Arc<Mutex<HashMap<u64, oneshot::Sender<serde_json::Value>>>>,
+    pending_requests: Arc<DashMap<u64, oneshot::Sender<JsonRpcResponse>>>,
     next_id: Arc<AtomicU64>,
     reader_handle: JoinHandle<()>,
     writer_handle: JoinHandle<()>,
@@ -91,62 +92,54 @@ impl ChannelConnection {
         let stdout = child.stdout.take().expect("stdout was piped");
         let stderr = child.stderr.take().expect("stderr was piped");
 
-        let pending_requests: Arc<Mutex<HashMap<u64, oneshot::Sender<serde_json::Value>>>> =
-            Arc::new(Mutex::new(HashMap::new()));
+        let pending_requests: Arc<DashMap<u64, oneshot::Sender<JsonRpcResponse>>> =
+            Arc::new(DashMap::new());
         let next_id = Arc::new(AtomicU64::new(1));
 
-        let (stdin_tx, mut stdin_rx) = mpsc::channel::<serde_json::Value>(64);
+        let (stdin_tx, mut stdin_rx) = mpsc::channel::<JsonRpcRequest>(64);
         let (incoming_tx, incoming_rx) = mpsc::channel::<IncomingChannelMessage>(64);
 
-        // Writer task: receive from stdin_tx, encode via NdJsonCodec, write to stdin
+        // Writer task: receive typed JsonRpcRequest from stdin_tx, encode via NdJsonCodec
         let writer_handle = tokio::spawn(async move {
             use futures::SinkExt;
             let mut framed = FramedWrite::new(stdin, NdJsonCodec);
-            while let Some(msg) = stdin_rx.recv().await {
-                // Convert Value → JsonRpcMessage at codec boundary (Phase 3 will type the full pipeline)
-                let Ok(typed_msg) = serde_json::from_value::<anyclaw_jsonrpc::JsonRpcMessage>(msg)
-                else {
-                    tracing::warn!("skipping non-JSON-RPC message to channel stdin");
-                    continue;
-                };
-                if framed.send(typed_msg).await.is_err() {
+            while let Some(req) = stdin_rx.recv().await {
+                if framed.send(req).await.is_err() {
                     break;
                 }
             }
         });
 
-        // Reader task: read NDJSON from stdout, route responses to pending_requests,
-        // route notifications/requests to incoming_rx
-        let pending_for_reader = pending_requests.clone();
+        // Reader task: read typed JsonRpcMessage from stdout, route responses to
+        // pending_requests, route notifications/requests to incoming_rx
+        let pending_for_reader = Arc::clone(&pending_requests);
         let reader_handle = tokio::spawn(async move {
             let mut framed = FramedRead::new(stdout, NdJsonCodec);
-            while let Some(Ok(typed_msg)) = framed.next().await {
-                // Convert JsonRpcMessage → Value at codec boundary (Phase 3 will type the full pipeline)
-                let value = serde_json::to_value(&typed_msg).unwrap_or_default();
-                let has_id = value.get("id").is_some_and(|v| !v.is_null());
-                let has_method = value.get("method").is_some();
-
-                if has_id && !has_method {
-                    // Response to our request
-                    let id = value["id"].as_u64().unwrap_or(0);
-                    let mut pending = pending_for_reader.lock().await;
-                    if let Some(tx) = pending.remove(&id) {
-                        let result = value
-                            .get("result")
-                            .cloned()
-                            .unwrap_or(serde_json::Value::Null);
-                        let _ = tx.send(result);
+            while let Some(Ok(msg)) = framed.next().await {
+                match msg {
+                    JsonRpcMessage::Response(resp) => {
+                        // Response to our request — correlate by id
+                        let id = match &resp.id {
+                            Some(RequestId::Number(n)) => *n as u64,
+                            _ => 0,
+                        };
+                        if let Some((_, tx)) = pending_for_reader.remove(&id) {
+                            let _ = tx.send(resp);
+                        }
                     }
-                } else if has_method && has_id {
-                    // Channel-initiated request
-                    let _ = incoming_tx
-                        .send(IncomingChannelMessage::ChannelRequest(value))
-                        .await;
-                } else if has_method {
-                    // Channel-initiated notification
-                    let _ = incoming_tx
-                        .send(IncomingChannelMessage::ChannelNotification(value))
-                        .await;
+                    JsonRpcMessage::Request(req) => {
+                        if req.id.is_some() {
+                            // Channel-initiated request
+                            let _ = incoming_tx
+                                .send(IncomingChannelMessage::ChannelRequest(req))
+                                .await;
+                        } else {
+                            // Channel-initiated notification
+                            let _ = incoming_tx
+                                .send(IncomingChannelMessage::ChannelNotification(req))
+                                .await;
+                        }
+                    }
                 }
             }
         });
@@ -185,25 +178,22 @@ impl ChannelConnection {
     }
 
     /// Send a JSON-RPC request and return a receiver for the correlated response.
+    // D-03: params is method-specific JSON — stays as Value
+    #[allow(clippy::disallowed_types)]
     pub async fn send_request(
         &self,
         method: &str,
         params: serde_json::Value,
-    ) -> Result<oneshot::Receiver<serde_json::Value>, ChannelsError> {
+    ) -> Result<oneshot::Receiver<JsonRpcResponse>, ChannelsError> {
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
         let (tx, rx) = oneshot::channel();
 
-        self.pending_requests.lock().await.insert(id, tx);
+        self.pending_requests.insert(id, tx);
 
-        let msg = serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "method": method,
-            "params": params,
-        });
+        let req = JsonRpcRequest::new(method, Some(RequestId::Number(id as i64)), Some(params));
 
         self.stdin_tx
-            .send(msg)
+            .send(req)
             .await
             .map_err(|_| ChannelsError::ConnectionClosed)?;
 
@@ -211,19 +201,17 @@ impl ChannelConnection {
     }
 
     /// Send a JSON-RPC notification (no response expected).
+    // D-03: params is method-specific JSON — stays as Value
+    #[allow(clippy::disallowed_types)]
     pub async fn send_notification(
         &self,
         method: &str,
         params: serde_json::Value,
     ) -> Result<(), ChannelsError> {
-        let msg = serde_json::json!({
-            "jsonrpc": "2.0",
-            "method": method,
-            "params": params,
-        });
+        let req = JsonRpcRequest::new(method, None, Some(params));
 
         self.stdin_tx
-            .send(msg)
+            .send(req)
             .await
             .map_err(|_| ChannelsError::ConnectionClosed)?;
 
@@ -293,6 +281,8 @@ impl ChannelConnection {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::*;
 
     fn cat_channel_config() -> ChannelConfig {
@@ -367,9 +357,7 @@ mod tests {
         assert!(!rx.is_terminated());
 
         // Verify pending_requests has our entry
-        let pending = conn.pending_requests.lock().await;
-        assert_eq!(pending.len(), 1);
-        drop(pending);
+        assert_eq!(conn.pending_requests.len(), 1);
 
         // Clean up — drop conn to close stdin, which makes cat exit
         drop(conn);
