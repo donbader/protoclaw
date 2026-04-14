@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1](https://github.com/donbader/anyclaw/compare/anyclaw-sdk-types-v0.5.0...anyclaw-sdk-types-v0.5.1) - 2026-04-14
+
+### Added
+
+- *(02-01)* type channel_event.rs, update lib.rs allows, fix downstream
+- *(02-01)* type acp.rs — replace Value fields with typed structs
+
+### Fixed
+
+- *(01-02)* resolve all clippy warnings across workspace
+
+### Other
+
+- *(01-01)* propagate lint inheritance to all 19 workspace crates
+
 ## [0.5.0](https://github.com/donbader/anyclaw/compare/anyclaw-sdk-types-v0.4.0...anyclaw-sdk-types-v0.5.0) - 2026-04-14
 
 ### Fixed
