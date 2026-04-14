@@ -66,7 +66,7 @@ Plans:
 - [x] 03-01-PLAN.md — Type anyclaw-tools: Value replacement, clone reduction, add dashmap workspace dep
 - [x] 03-02-PLAN.md — Type anyclaw-channels: DashMap migration, typed codec pipeline, clone reduction
 - [x] 03-03-PLAN.md — Type anyclaw-agents support files: DashMap in connection.rs, typed platform_commands + slot
-- [ ] 03-04-PLAN.md — Type anyclaw-agents manager.rs: Value replacement, 107-clone audit, error audit
+- [x] 03-04-PLAN.md — Type anyclaw-agents manager.rs: Value replacement, 107-clone audit, error audit
 
 ### Phase 4: SDK & External Polish
 **Goal**: SDK crates and external binaries have typed JSON, complete doc coverage, and inline limitation comments — the public-facing surface is polished

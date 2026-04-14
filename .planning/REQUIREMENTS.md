@@ -46,7 +46,7 @@ Requirements for the code quality milestone. Each maps to roadmap phases.
 
 ### Clone Reduction
 
-- [ ] **CLON-01**: Eliminate unnecessary `.clone()` calls in `anyclaw-agents` manager (103 clones baseline)
+- [x] **CLON-01**: Eliminate unnecessary `.clone()` calls in `anyclaw-agents` manager (103 clones baseline)
 - [x] **CLON-02**: Audit and reduce `.clone()` calls across all other crates
 - [x] **CLON-03**: Use borrowing or `&str` where ownership transfer isn't needed
 
@@ -133,7 +133,7 @@ Tracked but not in current milestone.
 | SERD-01 | Phase 2 | Complete |
 | SERD-02 | Phase 2 | Complete |
 | SERD-03 | Phase 4 | Pending |
-| CLON-01 | Phase 3 | Pending |
+| CLON-01 | Phase 3 | Complete |
 | CLON-02 | Phase 3 | Complete |
 | CLON-03 | Phase 3 | Complete |
 | DOCS-01 | Phase 4 | Pending |
