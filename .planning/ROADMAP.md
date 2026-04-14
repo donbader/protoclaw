@@ -35,7 +35,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 Plans:
 - [x] 01-01-PLAN.md — Lint config files (clippy.toml, rustfmt.toml, deny.toml, workspace lints) + propagation to all crates
 - [ ] 01-02-PLAN.md — Fix all clippy warnings, dead code removal, unused imports cleanup
-- [ ] 01-03-PLAN.md — Coverage baseline with cargo-llvm-cov
+- [x] 01-03-PLAN.md — Coverage baseline with cargo-llvm-cov
 
 ### Phase 2: Leaf Crate Quality
 **Goal**: Foundation crates (sdk-types, jsonrpc, core) use typed structs everywhere, have consistent error enums, and follow serde conventions — so manager crates can build on solid types

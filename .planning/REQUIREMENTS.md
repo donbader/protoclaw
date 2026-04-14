@@ -13,7 +13,7 @@ Requirements for the code quality milestone. Each maps to roadmap phases.
 - [x] **TOOL-02**: `clippy.toml` with `disallowed-types` banning raw `serde_json::Value` in new code
 - [x] **TOOL-03**: `rustfmt.toml` for consistent formatting across all crates
 - [x] **TOOL-04**: Expand `deny.toml` with advisories, bans, and sources sections (currently licenses only)
-- [ ] **TOOL-05**: Coverage measurement setup with cargo-llvm-cov and baseline report
+- [x] **TOOL-05**: Coverage measurement setup with cargo-llvm-cov and baseline report
 
 ### Dead Code & Hygiene
 
@@ -115,7 +115,7 @@ Tracked but not in current milestone.
 | TOOL-02 | Phase 1 | Complete |
 | TOOL-03 | Phase 1 | Complete |
 | TOOL-04 | Phase 1 | Complete |
-| TOOL-05 | Phase 1 | Pending |
+| TOOL-05 | Phase 1 | Complete |
 | HYGN-01 | Phase 1 | Pending |
 | HYGN-02 | Phase 1 | Pending |
 | HYGN-03 | Phase 1 | Pending |
