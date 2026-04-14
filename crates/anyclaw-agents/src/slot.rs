@@ -5,9 +5,9 @@ use anyclaw_config::AgentConfig;
 use anyclaw_core::{CrashTracker, ExponentialBackoff, SessionKey, SlotLifecycle};
 use tokio_util::sync::CancellationToken;
 
+use crate::PendingPermission;
 use crate::acp_types::{InitializeResult, SessionCapabilities};
 use crate::connection::AgentConnection;
-use crate::PendingPermission;
 
 pub struct AgentSlot {
     pub(crate) name: String,
