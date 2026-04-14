@@ -1,0 +1,93 @@
+# Baseline coverage captured: 2026-04-14
+# Total line coverage: 75.17%
+# Recommended CI floor: 70% (current minus 5% buffer for refactoring headroom)
+# Note: Integration tests excluded (require pre-built binaries, hang under instrumentation)
+# Run command: LLVM_COV=/opt/homebrew/opt/llvm@21/bin/llvm-cov LLVM_PROFDATA=/opt/homebrew/opt/llvm@21/bin/llvm-profdata cargo llvm-cov report
+# For Homebrew Rust installs, set LLVM_COV and LLVM_PROFDATA env vars pointing to Homebrew LLVM
+
+Filename                                            Regions    Missed Regions     Cover   Functions  Missed Functions  Executed       Lines      Missed Lines     Cover    Branches   Missed Branches     Cover
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+crates/anyclaw-agents/src/acp_error.rs                    2                 0   100.00%           1                 0   100.00%           1                 0   100.00%           0                 0         -
+crates/anyclaw-agents/src/connection.rs                 611                89    85.43%          57                 9    84.21%         431                54    87.47%           0                 0         -
+crates/anyclaw-agents/src/docker_backend.rs             500               379    24.20%          47                33    29.79%         398               284    28.64%           0                 0         -
+crates/anyclaw-agents/src/error.rs                        2                 0   100.00%           1                 0   100.00%           1                 0   100.00%           0                 0         -
+crates/anyclaw-agents/src/local_backend.rs               62                 0   100.00%          14                 0   100.00%          47                 0   100.00%           0                 0         -
+crates/anyclaw-agents/src/manager.rs                   3202               932    70.89%         214                54    74.77%        2047               557    72.79%           0                 0         -
+crates/anyclaw-agents/src/platform_commands.rs           59                 0   100.00%           6                 0   100.00%          32                 0   100.00%           0                 0         -
+crates/anyclaw-agents/src/slot.rs                       261                 6    97.70%          16                 0   100.00%         144                 3    97.92%           0                 0         -
+crates/anyclaw-channels/src/connection.rs               539                89    83.49%          41                 4    90.24%         323                46    85.76%           0                 0         -
+crates/anyclaw-channels/src/debug_http.rs               312                68    78.21%          24                 6    75.00%         195                39    80.00%           0                 0         -
+crates/anyclaw-channels/src/error.rs                      2                 0   100.00%           1                 0   100.00%           1                 0   100.00%           0                 0         -
+crates/anyclaw-channels/src/manager.rs                 1493               823    44.88%         105                39    62.86%        1067               564    47.14%           0                 0         -
+crates/anyclaw-channels/src/session_queue.rs            402                 8    98.01%          25                 1    96.00%         170                 6    96.47%           0                 0         -
+crates/anyclaw-config/src/lib.rs                        195                16    91.79%          18                 1    94.44%         151                13    91.39%           0                 0         -
+crates/anyclaw-config/src/parse.rs                      194                 9    95.36%          19                 0   100.00%         116                12    89.66%           0                 0         -
+crates/anyclaw-config/src/resolve.rs                    112                17    84.82%           8                 0   100.00%          77                 8    89.61%           0                 0         -
+crates/anyclaw-config/src/subst_yaml.rs                 190                29    84.74%          20                 3    85.00%         124                11    91.13%           0                 0         -
+crates/anyclaw-config/src/types.rs                     1041                45    95.68%         101                 5    95.05%         834                35    95.80%           0                 0         -
+crates/anyclaw-config/src/validate.rs                   532                21    96.05%          37                 2    94.59%         447                12    97.32%           0                 0         -
+crates/anyclaw-core/src/agents_command.rs                62                 3    95.16%           6                 0   100.00%          55                 1    98.18%           0                 0         -
+crates/anyclaw-core/src/backoff.rs                      189                 0   100.00%          21                 0   100.00%         122                 0   100.00%           0                 0         -
+crates/anyclaw-core/src/constants.rs                     30                 0   100.00%          10                 0   100.00%          30                 0   100.00%           0                 0         -
+crates/anyclaw-core/src/error.rs                         39                 0   100.00%           5                 0   100.00%          34                 0   100.00%           0                 0         -
+crates/anyclaw-core/src/health.rs                         5                 0   100.00%           1                 0   100.00%           8                 0   100.00%           0                 0         -
+crates/anyclaw-core/src/manager.rs                       58                 2    96.55%           9                 0   100.00%          35                 0   100.00%           0                 0         -
+crates/anyclaw-core/src/session_store.rs                 45                 5    88.89%          15                 1    93.33%          58                 6    89.66%           0                 0         -
+crates/anyclaw-core/src/slot_lifecycle.rs                20                 0   100.00%           3                 0   100.00%          23                 0   100.00%           0                 0         -
+crates/anyclaw-core/src/sqlite_session_store.rs         229                76    66.81%          41                21    48.78%         175                27    84.57%           0                 0         -
+crates/anyclaw-core/src/tools_command.rs                 59                 3    94.92%           5                 0   100.00%          44                 2    95.45%           0                 0         -
+crates/anyclaw-core/src/types.rs                         70                 0   100.00%          12                 0   100.00%          47                 0   100.00%           0                 0         -
+crates/anyclaw-jsonrpc/src/codec.rs                     416                11    97.36%          22                 2    90.91%         192                12    93.75%           0                 0         -
+crates/anyclaw-jsonrpc/src/error.rs                      20                 0   100.00%           1                 0   100.00%          15                 0   100.00%           0                 0         -
+crates/anyclaw-jsonrpc/src/types.rs                     175                 2    98.86%          13                 0   100.00%         111                 2    98.20%           0                 0         -
+crates/anyclaw-sdk-agent/src/adapter.rs                 111                35    68.47%          30                 7    76.67%         134                42    68.66%           0                 0         -
+crates/anyclaw-sdk-agent/src/lib.rs                     191                 2    98.95%          23                 0   100.00%         116                 0   100.00%           0                 0         -
+crates/anyclaw-sdk-channel/src/broker.rs                 29                 3    89.66%           4                 1    75.00%          22                 3    86.36%           0                 0         -
+crates/anyclaw-sdk-channel/src/content.rs                23                 4    82.61%           3                 1    66.67%          13                 4    69.23%           0                 0         -
+crates/anyclaw-sdk-channel/src/error.rs                  39                 2    94.87%           4                 0   100.00%          19                 0   100.00%           0                 0         -
+crates/anyclaw-sdk-channel/src/harness.rs               472                63    86.65%          36                 3    91.67%         293                33    88.74%           0                 0         -
+crates/anyclaw-sdk-channel/src/testing.rs               103                 9    91.26%          21                 2    90.48%         105                 7    93.33%           0                 0         -
+crates/anyclaw-sdk-channel/src/trait_def.rs             116                 4    96.55%          23                 2    91.30%         100                 4    96.00%           0                 0         -
+crates/anyclaw-sdk-tool/src/server.rs                   309                42    86.41%          43                10    76.74%         193                40    79.27%           0                 0         -
+crates/anyclaw-sdk-tool/src/trait_def.rs                 33                 0   100.00%           9                 0   100.00%          35                 0   100.00%           0                 0         -
+crates/anyclaw-sdk-types/src/acp.rs                      97                 0   100.00%           6                 0   100.00%          61                 0   100.00%           0                 0         -
+crates/anyclaw-sdk-types/src/channel.rs                 513                 6    98.83%          30                 0   100.00%         332                 4    98.80%           0                 0         -
+crates/anyclaw-sdk-types/src/channel_event.rs            92                 4    95.65%           4                 0   100.00%          43                 0   100.00%           0                 0         -
+crates/anyclaw-sdk-types/src/permission.rs              127                 0   100.00%           5                 0   100.00%          71                 0   100.00%           0                 0         -
+crates/anyclaw-sdk-types/src/session_key.rs              86                10    88.37%          11                 3    72.73%          48                12    75.00%           0                 0         -
+crates/anyclaw-supervisor/src/admin_server.rs            64                28    56.25%           7                 4    42.86%          52                33    36.54%           0                 0         -
+crates/anyclaw-supervisor/src/lib.rs                   1123               137    87.80%          77                 9    88.31%         723                83    88.52%           0                 0         -
+crates/anyclaw-test-helpers/src/config.rs               600               214    64.33%          23                10    56.52%         651               209    67.90%           0                 0         -
+crates/anyclaw-test-helpers/src/handles.rs               24                 0   100.00%           3                 0   100.00%          12                 0   100.00%           0                 0         -
+crates/anyclaw-test-helpers/src/paths.rs                 50                 0   100.00%          10                 0   100.00%          41                 0   100.00%           0                 0         -
+crates/anyclaw-test-helpers/src/poll.rs                  34                 1    97.06%           8                 0   100.00%          22                 1    95.45%           0                 0         -
+crates/anyclaw-test-helpers/src/ports.rs                 51                 1    98.04%           7                 0   100.00%          36                 1    97.22%           0                 0         -
+crates/anyclaw-test-helpers/src/sse.rs                  141                33    76.60%          13                 2    84.62%         104                25    75.96%           0                 0         -
+crates/anyclaw-test-helpers/src/supervisor.rs            29                29     0.00%           3                 3     0.00%          20                20     0.00%           0                 0         -
+crates/anyclaw-test-helpers/src/timeout.rs               20                 1    95.00%           6                 1    83.33%          16                 1    93.75%           0                 0         -
+crates/anyclaw-tools/src/error.rs                         2                 0   100.00%           1                 0   100.00%           1                 0   100.00%           0                 0         -
+crates/anyclaw-tools/src/external.rs                    111                55    50.45%          17                10    41.18%          85                43    49.41%           0                 0         -
+crates/anyclaw-tools/src/manager.rs                     996               137    86.24%          97                20    79.38%         638                94    85.27%           0                 0         -
+crates/anyclaw-tools/src/mcp_host.rs                    100                 0   100.00%          15                 0   100.00%          60                 0   100.00%           0                 0         -
+crates/anyclaw-tools/src/wasm_runner.rs                 224                28    87.50%          24                 9    62.50%         183                25    86.34%           0                 0         -
+crates/anyclaw-tools/src/wasm_tool.rs                   283                 7    97.53%          23                 2    91.30%         156                 2    98.72%           0                 0         -
+crates/anyclaw/src/banner.rs                            150                 5    96.67%           5                 0   100.00%         123                 2    98.37%           0                 0         -
+crates/anyclaw/src/cli.rs                                76                 6    92.11%           9                 0   100.00%          38                 0   100.00%           0                 0         -
+crates/anyclaw/src/init.rs                              175                 8    95.43%          15                 0   100.00%          96                 2    97.92%           0                 0         -
+crates/anyclaw/src/main.rs                               88                88     0.00%           5                 5     0.00%         108               108     0.00%           0                 0         -
+crates/anyclaw/src/status.rs                            259                14    94.59%          14                 1    92.86%         151                 8    94.70%           0                 0         -
+ext/agents/mock-agent/src/main.rs                       779               296    62.00%          55                16    70.91%         557               241    56.73%           0                 0         -
+ext/channels/debug-http/src/main.rs                     974               170    82.55%          75                21    72.00%         686               126    81.63%           0                 0         -
+ext/channels/sdk-test-channel/src/main.rs               108                25    76.85%          16                 6    62.50%          86                27    68.60%           0                 0         -
+ext/channels/telegram/src/channel.rs                    524               302    42.37%          52                30    42.31%         360               212    41.11%           0                 0         -
+ext/channels/telegram/src/deliver.rs                   1352              1122    17.01%          71                58    18.31%         772               641    16.97%           0                 0         -
+ext/channels/telegram/src/dispatcher.rs                 265               133    49.81%          24                11    54.17%         165                85    48.48%           0                 0         -
+ext/channels/telegram/src/formatting.rs                 261                 4    98.47%          23                 1    95.65%         110                 1    99.09%           0                 0         -
+ext/channels/telegram/src/main.rs                        25                25     0.00%           3                 3     0.00%          19                19     0.00%           0                 0         -
+ext/channels/telegram/src/peer.rs                        58                 0   100.00%           7                 0   100.00%          40                 0   100.00%           0                 0         -
+ext/channels/telegram/src/permissions.rs                230                 2    99.13%          21                 0   100.00%         158                 2    98.73%           0                 0         -
+ext/channels/telegram/src/state.rs                       58                 0   100.00%           5                 0   100.00%          30                 0   100.00%           0                 0         -
+ext/channels/telegram/src/turn.rs                       109                28    74.31%          15                 5    66.67%          86                10    88.37%           0                 0         -
+ext/tools/sdk-test-tool/src/main.rs                     105                 8    92.38%          17                 2    88.24%          75                 9    88.00%           0                 0         -
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+TOTAL                                                 22917              5724    75.02%        1937               439    77.34%       15600              3873    75.17%           0                 0         -
