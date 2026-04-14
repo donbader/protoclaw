@@ -309,6 +309,49 @@ impl AgentsManager {
         Ok(result.session_id)
     }
 
+    /// Fetch MCP server info for a given slot.
+    ///
+    /// Sends `ToolsCommand::GetMcpUrls` and maps the result to `McpServerInfo`.
+    /// Returns an empty vec on any error so that `session/load` can still be
+    /// attempted without tools.
+    async fn fetch_mcp_servers(&self, slot_idx: usize) -> Vec<McpServerInfo> {
+        let tool_names = if self.slots[slot_idx].config.tools.is_empty() {
+            None
+        } else {
+            Some(self.slots[slot_idx].config.tools.clone())
+        };
+        let (reply_tx, reply_rx) = oneshot::channel();
+        if self
+            .tools_handle
+            .send(ToolsCommand::GetMcpUrls {
+                tool_names,
+                reply: reply_tx,
+            })
+            .await
+            .is_err()
+        {
+            tracing::warn!("tools handle unavailable while fetching MCP URLs for session/load");
+            return Vec::new();
+        }
+        let urls: Vec<McpServerUrl> = reply_rx.await.unwrap_or_else(|_| {
+            tracing::warn!(
+                "tools handle dropped before providing MCP URLs for session/load — continuing with no tools"
+            );
+            Vec::new()
+        });
+        urls.iter()
+            .map(|u| McpServerInfo {
+                name: u.name.clone(),
+                server_type: "http".into(),
+                url: u.url.clone(),
+                command: String::new(),
+                args: vec![],
+                env: vec![],
+                headers: vec![],
+            })
+            .collect()
+    }
+
     async fn handle_command(&mut self, cmd: AgentsCommand) -> bool {
         match cmd {
             AgentsCommand::SendPrompt { message, reply } => {
@@ -607,7 +650,7 @@ impl AgentsManager {
             .agent_capabilities
             .as_ref()
             .and_then(|r| r.agent_capabilities.as_ref())
-            .map_or(false, |c| c.load_session);
+            .is_some_and(|c| c.load_session);
 
         tracing::info!(
             agent = %agent_name,
@@ -619,10 +662,14 @@ impl AgentsManager {
         );
 
         if supports_load && let Some(acp_id) = stale_acp_id {
+            let cwd = resolve_agent_cwd(&self.slots[slot_idx].config.workspace)
+                .to_string_lossy()
+                .into_owned();
+            let mcp_servers = self.fetch_mcp_servers(slot_idx).await;
             let params = match serde_json::to_value(SessionLoadParams {
                 session_id: acp_id.clone(),
-                cwd: None,
-                mcp_servers: None,
+                cwd: Some(cwd),
+                mcp_servers: Some(mcp_servers),
             }) {
                 Ok(v) => v,
                 Err(e) => {
@@ -1266,30 +1313,40 @@ impl AgentsManager {
         agent_name: &str,
         acp_timeout: Duration,
     ) -> bool {
-        let slot = &mut self.slots[slot_idx];
-        let supports_load = slot
-            .agent_capabilities
-            .as_ref()
-            .and_then(|r| r.agent_capabilities.as_ref())
-            .map_or(false, |c| c.load_session);
+        let (supports_load, first_acp_id) = {
+            let slot = &self.slots[slot_idx];
+            let supports_load = slot
+                .agent_capabilities
+                .as_ref()
+                .and_then(|r| r.agent_capabilities.as_ref())
+                .is_some_and(|c| c.load_session);
+            let first_acp_id = slot.stale_sessions.values().next().cloned();
+            (supports_load, first_acp_id)
+        };
+
         if !supports_load {
             return false;
         }
 
-        let Some(first_acp_id) = slot.stale_sessions.values().next().cloned() else {
+        let Some(first_acp_id) = first_acp_id else {
             return false;
         };
+
+        let cwd = resolve_agent_cwd(&self.slots[slot_idx].config.workspace)
+            .to_string_lossy()
+            .into_owned();
+        let mcp_servers = self.fetch_mcp_servers(slot_idx).await;
         let params = serde_json::to_value(SessionLoadParams {
             session_id: first_acp_id,
-            cwd: None,
-            mcp_servers: None,
+            cwd: Some(cwd),
+            mcp_servers: Some(mcp_servers),
         })
         .unwrap_or_else(|e| {
             tracing::warn!(error = %e, agent = %agent_name, "failed to serialize session/load params, using null");
             serde_json::Value::default()
         });
 
-        let conn = slot.connection.as_ref().expect("connection just spawned");
+        let conn = self.slots[slot_idx].connection.as_ref().expect("connection just spawned");
         let Ok(rx) = conn.send_request("session/load", params).await else {
             tracing::warn!(agent = %agent_name, "session/load failed, starting fresh session");
             return false;
