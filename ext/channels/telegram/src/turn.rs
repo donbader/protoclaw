@@ -84,6 +84,9 @@ pub struct ResponseTrack {
     pub msg_id: i32,
     pub buffer: String,
     pub last_edit: Instant,
+    /// Debounce handle for the first response send — lets chunks accumulate
+    /// before creating the Telegram message.
+    pub debounce_handle: Option<JoinHandle<()>>,
 }
 
 pub enum ToolCallStatus {
@@ -207,6 +210,7 @@ impl ChatTurn {
                     msg_id,
                     buffer: text.to_string(),
                     last_edit: Instant::now(),
+                    debounce_handle: None,
                 });
             }
         }
@@ -274,6 +278,11 @@ impl ChatTurn {
         {
             h.abort();
         }
+        if let Some(ref track) = self.response
+            && let Some(ref h) = track.debounce_handle
+        {
+            h.abort();
+        }
         self.thought = None;
         self.response = None;
         self.tool_calls.clear();
@@ -334,6 +343,7 @@ mod tests {
             msg_id: 100,
             buffer: "text".to_string(),
             last_edit: Instant::now() - Duration::from_secs(2),
+            debounce_handle: None,
         });
         assert!(turn.can_edit_response(Duration::from_millis(1000)));
     }

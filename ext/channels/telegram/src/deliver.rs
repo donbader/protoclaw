@@ -111,6 +111,27 @@ async fn send_flush(bot: &Bot, state: &Arc<SharedState>, chat_id: i64, flush: &P
                 })
                 .await;
             }
+        } else if !text.is_empty() && msg_id == 0 {
+            // Debounce was pending — send buffered text as new message
+            tracing::debug!(
+                chat_id,
+                buf_len = text.len(),
+                "flush: sending debounced response as new message"
+            );
+            let formatted = format_telegram_html(text);
+            let chunks = split_message(&formatted, 4096);
+            for chunk in &chunks {
+                let chunk = chunk.clone();
+                let _ = retry_telegram_op("flush_debounced_response", chat_id, || {
+                    let chunk = chunk.clone();
+                    async move {
+                        bot.send_message(ChatId(chat_id), &chunk)
+                            .parse_mode(ParseMode::Html)
+                            .await
+                    }
+                })
+                .await;
+            }
         } else {
             tracing::debug!(
                 chat_id,
@@ -564,25 +585,73 @@ pub async fn deliver_to_chat(
                     .await;
                 }
             } else {
-                let formatted = close_open_tags(&format_telegram_html(&accumulated));
-                let chunks = split_message(&formatted, 4096);
-                let chunk0 = chunks[0].clone();
-                if let Ok(sent) = retry_telegram_op("send_response_chunk", chat_id, || {
-                    let chunk0 = chunk0.clone();
-                    async move {
-                        bot.send_message(ChatId(chat_id), &chunk0)
-                            .parse_mode(ParseMode::Html)
-                            .await
+                // First response chunk — debounce to let more text accumulate
+                // before creating the Telegram message.
+                let has_debounce = {
+                    let turns = state.turns.read().await;
+                    turns
+                        .get(&chat_id)
+                        .and_then(|t| t.response.as_ref())
+                        .and_then(|r| r.debounce_handle.as_ref())
+                        .is_some()
+                };
+                if has_debounce {
+                    // Timer already running — chunks accumulate in buffer, nothing to do
+                    return Ok(());
+                }
+
+                let bot_clone = bot.clone();
+                let state_clone = Arc::clone(state);
+                let handle = tokio::spawn(async move {
+                    let debounce_ms = *state_clone.thought_debounce_ms.read().await;
+                    tokio::time::sleep(Duration::from_millis(debounce_ms)).await;
+                    let (accumulated, response_msg_id) = {
+                        let turns = state_clone.turns.read().await;
+                        match turns.get(&chat_id) {
+                            Some(turn) => match &turn.response {
+                                Some(track) => (track.buffer.clone(), track.msg_id),
+                                None => return,
+                            },
+                            None => return,
+                        }
+                    };
+                    if accumulated.is_empty() {
+                        return;
                     }
-                })
-                .await
-                {
-                    let mut turns = state.turns.write().await;
-                    if let Some(turn) = turns.get_mut(&chat_id)
-                        && let Some(track) = turn.response.as_mut()
+                    // If msg_id was set while we waited (e.g. by flush), skip send
+                    if response_msg_id != 0 {
+                        return;
+                    }
+                    let formatted = close_open_tags(&format_telegram_html(&accumulated));
+                    let chunks = split_message(&formatted, 4096);
+                    let chunk0 = chunks[0].clone();
+                    if let Ok(sent) = retry_telegram_op("debounce_send_response", chat_id, || {
+                        let chunk0 = chunk0.clone();
+                        let bot_clone = bot_clone.clone();
+                        async move {
+                            bot_clone
+                                .send_message(ChatId(chat_id), &chunk0)
+                                .parse_mode(ParseMode::Html)
+                                .await
+                        }
+                    })
+                    .await
                     {
-                        track.msg_id = sent.id.0;
+                        let mut turns = state_clone.turns.write().await;
+                        if let Some(turn) = turns.get_mut(&chat_id)
+                            && let Some(track) = turn.response.as_mut()
+                        {
+                            track.msg_id = sent.id.0;
+                            track.debounce_handle = None;
+                        }
                     }
+                });
+
+                let mut turns = state.turns.write().await;
+                if let Some(turn) = turns.get_mut(&chat_id)
+                    && let Some(track) = turn.response.as_mut()
+                {
+                    track.debounce_handle = Some(handle);
                 }
             }
             Ok(())
