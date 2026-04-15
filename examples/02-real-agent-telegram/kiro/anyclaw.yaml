@@ -2,6 +2,7 @@
 # Kiro CLI runs in an isolated container managed by anyclaw via bollard.
 # Auth: set KIRO_API_KEY env var (Pro+), or pre-authenticate and mount ~/.local/share/kiro-cli volume.
 # See README.md for both auth flows.
+# See ../CONFIGURATION.md for the full config reference.
 
 log_level: "debug,hyper=warn,reqwest=warn,h2=warn,hyper_util=warn,tower=warn"
 extensions_dir: "/usr/local/bin"

@@ -1,7 +1,8 @@
 # Anyclaw Real Agent Example — Docker Workspace
 # OpenCode runs in an isolated container managed by anyclaw via bollard.
 # The agent uses direct ACP mode (opencode acp) — no wrapper binary needed.
-# See README.md for switching to Claude Code or Kiro.
+# See ../AGENTS.md for adding new agent variants (e.g., Claude Code).
+# See ../CONFIGURATION.md for the full config reference.
 
 log_level: "debug,hyper=warn,reqwest=warn,h2=warn,hyper_util=warn,tower=warn"
 extensions_dir: "/usr/local/bin"

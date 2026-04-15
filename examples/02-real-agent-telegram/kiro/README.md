@@ -110,6 +110,30 @@ Then restart: `docker compose restart`
 
 API key auth (Option A) does not have this problem — keys are long-lived and don't expire unless revoked.
 
+## Configuration
+
+The `anyclaw.yaml` file configures the agent, channels, tools, and supervisor. It's baked into the Docker image at build time — edit and rebuild to apply changes.
+
+Key settings for this variant:
+
+```yaml
+agents_manager:
+  agents:
+    kiro:
+      entrypoint: ["kiro-cli", "acp"]
+      volumes:
+        - "kiro-auth-data:/home/kiro/.local/share/kiro-cli"
+        - "kiro-agent-workspace:/home/kiro/workspace"
+      env:
+        KIRO_API_KEY: "${KIRO_API_KEY:}"
+```
+
+The `KIRO_API_KEY` env var is passed through from `.env` via `${KIRO_API_KEY:}` substitution. If using browser login instead, the `kiro-auth-data` volume provides credentials.
+
+Kiro CLI settings (`.kiro/`) can optionally be placed in this directory before building. The Dockerfile creates `/home/kiro/.kiro` inside the agent image. However, runtime state (auth tokens, session data) lives in `/home/kiro/.local/share/kiro-cli/` and is persisted via the `kiro-auth-data` Docker volume — not baked into the image.
+
+For the full config schema and all available options, see the [Configuration Reference](../CONFIGURATION.md).
+
 ## Files
 
 | File                     | Purpose                                                             |

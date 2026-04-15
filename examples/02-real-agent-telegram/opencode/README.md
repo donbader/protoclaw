@@ -70,6 +70,35 @@ The [docker-socket-proxy](https://github.com/Tecnativa/docker-socket-proxy) rest
 
 See the [parent AGENTS.md](../AGENTS.md) for how to add a new agent variant (e.g., Claude Code).
 
+## Configuration
+
+The `anyclaw.yaml` file configures the agent, channels, tools, and supervisor. It's baked into the Docker image at build time — edit and rebuild to apply changes.
+
+Key settings for this variant:
+
+```yaml
+agents_manager:
+  agents:
+    opencode:
+      entrypoint: ["opencode", "acp"]
+      volumes:
+        - "opencode-agent-data:/home/node/.local/share"
+        - "opencode-agent-workspace:/home/node/workspace"
+      env:
+        XDG_CONFIG_HOME: "/home/node/.config"
+        XDG_DATA_HOME: "/home/node/.local/share"
+```
+
+OpenCode config (`.opencode/`) can optionally be baked into the agent image. To use it:
+
+1. Create `.opencode/opencode.json` with your OpenCode configuration
+2. Optionally add `.opencode/package.json` for MCP server dependencies
+3. Rebuild: `docker compose up --build -d`
+
+The Dockerfile detects these files and copies them to `/home/node/.config/opencode/` inside the agent image. If a `package.json` is present, `npm install` runs automatically. This directory is gitignored — each user provides their own.
+
+For the full config schema and all available options, see the [Configuration Reference](../CONFIGURATION.md).
+
 ## Files
 
 | File                     | Purpose                                                                       |

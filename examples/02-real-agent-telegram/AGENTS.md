@@ -72,6 +72,8 @@ agents_manager:
 
 Update `channels_manager.channels.*.agent` to match your agent name.
 
+For the full config schema (all sections, all options), see [CONFIGURATION.md](./CONFIGURATION.md).
+
 ### 3. docker-compose.yml
 
 Three services (same pattern for every variant):
