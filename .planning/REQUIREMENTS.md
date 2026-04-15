@@ -1,85 +1,44 @@
-# Requirements: Anyclaw Code Quality
+# Requirements: Anyclaw Config-Driven Architecture
 
-**Defined:** 2026-04-14
+**Defined:** 2026-04-15
 **Core Value:** Every line of code should be there for a reason, with typed data flowing through typed interfaces.
 
-## Current Milestone Requirements
+## v1.0.0 Requirements
 
-Requirements for the code quality milestone. Each maps to roadmap phases.
+Requirements for the config-driven architecture milestone. Each maps to roadmap phases.
 
-### Tooling & Infrastructure
+### Defaults Consolidation
 
-- [x] **TOOL-01**: Workspace-level lint configuration via `[workspace.lints]` in root Cargo.toml
-- [x] **TOOL-02**: `clippy.toml` with `disallowed-types` banning raw `serde_json::Value` in new code
-- [x] **TOOL-03**: `rustfmt.toml` for consistent formatting across all crates
-- [x] **TOOL-04**: Expand `deny.toml` with advisories, bans, and sources sections (currently licenses only)
-- [x] **TOOL-05**: Coverage measurement setup with cargo-llvm-cov and baseline report
+- [ ] **DFLT-01**: `defaults.yaml` expanded to cover all fields with fixed YAML paths (backoff, crash_tracker, wasm_sandbox, admin_port, tools_server_host, ttl_days)
+- [ ] **DFLT-02**: Drift-detection test asserts serde default fn values match `defaults.yaml` values for all shared fields
+- [ ] **DFLT-03**: `anyclaw init` generated YAML omits supervisor section — only emit sections user must customize (agents, channels)
+- [ ] **DFLT-04**: Defaults.yaml completeness test — deserializes defaults.yaml alone and asserts all non-HashMap-interior fields have values
 
-### Dead Code & Hygiene
+### Config Schema Cleanup
 
-- [x] **HYGN-01**: Remove all unused imports across workspace
-- [x] **HYGN-02**: Remove stale modules and unreachable branches
-- [x] **HYGN-03**: Zero clippy warnings across entire workspace (`cargo clippy --workspace`)
+- [ ] **SCHM-01**: All 4 legacy `#[serde(alias)]` attributes on `AnyclawConfig` removed (agents-manager, channels-manager, tools-manager, session-store)
+- [ ] **SCHM-02**: Unknown top-level config keys produce a warning log (not rejection). Optional `--strict` flag on `anyclaw validate` treats them as errors.
 
-### Error Handling
+### JSON Schema Generation
 
-- [x] **ERRH-01**: Verify thiserror used in all library crates — no anyhow leaking into library code
-- [x] **ERRH-02**: Verify each manager crate has a proper typed error enum
-- [x] **ERRH-03**: Eliminate bare `.unwrap()` in all production code (replace with `.expect("reason")` or `?`)
+- [ ] **JSCH-01**: `#[derive(JsonSchema)]` on all config types in `anyclaw-config`
+- [ ] **JSCH-02**: Manual `JsonSchema` impls for `StringOrArray`, `PullPolicy`, and `deserialize_string_map`
+- [ ] **JSCH-03**: Committed `anyclaw.schema.json` file in repository root
+- [ ] **JSCH-04**: `anyclaw schema` CLI subcommand that prints JSON Schema to stdout
+- [ ] **JSCH-05**: `anyclaw validate` validates config against JSON Schema (not just binary path checks)
 
-### Typed JSON
+### CI Integration
 
-- [x] **JSON-01**: Replace `serde_json::Value` with typed structs in `anyclaw-sdk-types`
-- [x] **JSON-02**: Replace `serde_json::Value` with typed structs in `anyclaw-jsonrpc`
-- [x] **JSON-03**: Replace `serde_json::Value` with typed structs in `anyclaw-core`
-- [x] **JSON-04**: Replace `serde_json::Value` with typed structs in `anyclaw-agents`
-- [x] **JSON-05**: Replace `serde_json::Value` with typed structs in `anyclaw-channels`
-- [x] **JSON-06**: Replace `serde_json::Value` with typed structs in `anyclaw-tools`
-- [x] **JSON-07**: Replace `serde_json::Value` with typed structs in SDK crates (sdk-agent, sdk-channel, sdk-tool)
-- [x] **JSON-08**: Replace `serde_json::Value` with typed structs in ext/ binaries and examples
+- [ ] **CI-01**: Schema drift test — regenerates schema, compares against committed file
+- [ ] **CI-02**: Example `anyclaw.yaml` files validated against schema in CI
 
-### Serde Patterns
+### IDE Support
 
-- [x] **SERD-01**: All SDK wire types use `#[serde(rename_all = "camelCase")]` consistently
-- [x] **SERD-02**: All config types use `snake_case` consistently
-- [x] **SERD-03**: Round-trip serialization tests exist for all wire types
+- [ ] **IDE-01**: `anyclaw init` output includes YAML modeline for yaml-language-server schema association
 
-### Clone Reduction
+### Per-Extension Defaults
 
-- [x] **CLON-01**: Eliminate unnecessary `.clone()` calls in `anyclaw-agents` manager (103 clones baseline)
-- [x] **CLON-02**: Audit and reduce `.clone()` calls across all other crates
-- [x] **CLON-03**: Use borrowing or `&str` where ownership transfer isn't needed
-
-### Documentation
-
-- [x] **DOCS-01**: `#![warn(missing_docs)]` enabled on all crates (not just SDK crates)
-- [x] **DOCS-02**: Meaningful doc comments on all public types and functions
-- [x] **DOCS-03**: Inline limitation comments added at relevant code locations (from AGENTS.md known issues)
-
-### Test Coverage
-
-- [x] **TEST-01**: Tests for `anyclaw-core/src/health.rs` (HealthSnapshot, HealthStatus)
-- [x] **TEST-02**: Tests for `anyclaw-sdk-agent/src/error.rs`
-- [x] **TEST-03**: Tests for `anyclaw-sdk-tool/src/error.rs` and `anyclaw-sdk-tool/src/lib.rs`
-- [x] **TEST-04**: Tests for `anyclaw-agents/src/acp_types.rs` and `anyclaw-agents/src/backend.rs`
-- [x] **TEST-05**: All new tests use rstest 0.23 with BDD naming convention
-
-### File Decomposition
-
-- [x] **DECO-01**: Break `anyclaw-agents/src/manager.rs` (3,708 lines) into focused modules (fs_sandbox, session_recovery, tool_events, run loop)
-- [x] **DECO-02**: Break `anyclaw-supervisor/src/lib.rs` (927 lines) into sub-modules (signal handling, shutdown orchestration, health monitoring)
-- [x] **DECO-03**: All extracted modules use `pub(crate)` boundaries, preserving public API surface
-
-### Advanced Quality
-
-- [x] **ADVN-01**: Replace `Arc<Mutex<HashMap<u64, oneshot::Sender>>>` with DashMap in connection crates
-- [x] **ADVN-02**: Property-based testing (proptest) for all ACP/MCP wire types
-- [x] **ADVN-03**: Inline TODO/LIMITATION comments from AGENTS.md into source code at relevant locations
-
-### Bug Fixes
-
-- [x] **BUGF-01**: Fix any code bugs discovered during the quality pass (logic errors, incorrect behavior, edge cases)
-- [x] **BUGF-02**: Fix any code smells that indicate latent bugs (unreachable match arms, silent error swallowing, incorrect type coercions)
+- [ ] **EXT-01**: Each extension can ship a `defaults.yaml` layered into Figment (base defaults → extension defaults → user config)
 
 ## Deferred Requirements
 
@@ -96,68 +55,45 @@ Tracked but not in current milestone.
 - **FEAT-01**: Rate limiting on inbound channel messages
 - **FEAT-02**: Multi-agent routing (different sessions to different agent types)
 
+### Config Enhancements
+
+- **CFGE-01**: Env var override layer (`ANYCLAW_` prefix with `__` separator) — documented but unimplemented
+
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| Dependency version upgrades | Doubles risk surface during refactoring — separate milestone |
-| Performance optimization | Quality pass is about correctness and clarity, not speed |
-| Feature-gating wasmtime/bollard | Feature change, not quality change — deferred |
-| Rewriting poll_channels() workaround | Behavioral change, not quality fix — architecture milestone |
-| Adding rate limiting | New capability, not quality improvement |
-| Cross-manager communication redesign | Architectural work — enforce existing pattern, don't redesign |
+| New runtime features | This is config architecture work, not new capabilities |
+| Performance optimization | Separate concern from config cleanup |
+| Env var override layer | Documented but unimplemented — separate milestone |
+| Feature-gating wasmtime/bollard | Feature change, not config change |
+| `deny_unknown_fields` on AnyclawConfig | Conflicts with extension defaults (EXT-01) and forward compatibility |
 
 ## Traceability
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| TOOL-01 | Phase 1 | Complete |
-| TOOL-02 | Phase 1 | Complete |
-| TOOL-03 | Phase 1 | Complete |
-| TOOL-04 | Phase 1 | Complete |
-| TOOL-05 | Phase 1 | Complete |
-| HYGN-01 | Phase 1 | Complete |
-| HYGN-02 | Phase 1 | Complete |
-| HYGN-03 | Phase 1 | Complete |
-| ERRH-01 | Phase 2 | Complete |
-| ERRH-02 | Phase 2 | Complete |
-| ERRH-03 | Phase 2 | Complete |
-| JSON-01 | Phase 2 | Complete |
-| JSON-02 | Phase 2 | Complete |
-| JSON-03 | Phase 2 | Complete |
-| JSON-04 | Phase 3 | Complete |
-| JSON-05 | Phase 3 | Complete |
-| JSON-06 | Phase 3 | Complete |
-| JSON-07 | Phase 4 | Complete |
-| JSON-08 | Phase 4 | Complete |
-| SERD-01 | Phase 2 | Complete |
-| SERD-02 | Phase 2 | Complete |
-| SERD-03 | Phase 4 | Complete |
-| CLON-01 | Phase 3 | Complete |
-| CLON-02 | Phase 3 | Complete |
-| CLON-03 | Phase 3 | Complete |
-| DOCS-01 | Phase 4 | Complete |
-| DOCS-02 | Phase 4 | Complete |
-| DOCS-03 | Phase 4 | Complete |
-| TEST-01 | Phase 5 | Complete |
-| TEST-02 | Phase 5 | Complete |
-| TEST-03 | Phase 5 | Complete |
-| TEST-04 | Phase 5 | Complete |
-| TEST-05 | Phase 5 | Complete |
-| DECO-01 | Phase 6 | Complete |
-| DECO-02 | Phase 6 | Complete |
-| DECO-03 | Phase 6 | Complete |
-| ADVN-01 | Phase 3 | Complete |
-| ADVN-02 | Phase 5 | Complete |
-| ADVN-03 | Phase 4 | Complete |
-| BUGF-01 | All phases | Complete |
-| BUGF-02 | All phases | Complete |
+| DFLT-01 | Phase 8 | Pending |
+| DFLT-02 | Phase 8 | Pending |
+| DFLT-03 | Phase 8 | Pending |
+| DFLT-04 | Phase 8 | Pending |
+| SCHM-01 | Phase 7 | Pending |
+| SCHM-02 | Phase 10 | Pending |
+| JSCH-01 | Phase 9 | Pending |
+| JSCH-02 | Phase 9 | Pending |
+| JSCH-03 | Phase 9 | Pending |
+| JSCH-04 | Phase 9 | Pending |
+| JSCH-05 | Phase 9 | Pending |
+| CI-01 | Phase 10 | Pending |
+| CI-02 | Phase 10 | Pending |
+| IDE-01 | Phase 10 | Pending |
+| EXT-01 | Phase 11 | Pending |
 
 **Coverage:**
-- Current milestone requirements: 41 total
-- Mapped to phases: 41 ✓
-- Unmapped: 0
+- v1.0.0 requirements: 15 total
+- Mapped to phases: 15
+- Unmapped: 0 ✓
 
 ---
-*Requirements defined: 2026-04-14*
-*Last updated: 2026-04-14 after roadmap creation*
+*Requirements defined: 2026-04-15*
+*Last updated: 2026-04-15 after Oracle design review*

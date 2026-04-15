@@ -1,8 +1,9 @@
-# Roadmap: Anyclaw Code Quality
+# Roadmap: Anyclaw
 
-## Overview
+## Milestones
 
-A crate-by-crate quality pass across the anyclaw workspace. Starts with tooling enforcement (so every subsequent phase benefits from automated checks), works through leaf crates → managers → SDK following the dependency graph, then fills test gaps and decomposes oversized files last (when the code they cover is in its final shape). Bug fixes (BUGF-01, BUGF-02) are opportunistic — fixed in whichever phase discovers them.
+- ✅ **v0.x Code Quality** - Phases 1-6 (shipped 2026-04-15)
+- 🚧 **v1.0.0 Config-Driven Architecture** - Phases 7-11 (in progress)
 
 ## Phases
 
@@ -12,119 +13,112 @@ A crate-by-crate quality pass across the anyclaw workspace. Starts with tooling 
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [x] **Phase 1: Tooling & Lint Infrastructure** - Workspace lints, clippy.toml, rustfmt.toml, deny.toml, coverage setup, dead code removal (completed 2026-04-14)
-- [x] **Phase 2: Leaf Crate Quality** - Typed JSON in sdk-types/jsonrpc/core, error enum audit, serde consistency (completed 2026-04-14)
-- [x] **Phase 3: Manager Crate Quality** - Typed JSON in agents/channels/tools, clone reduction, DashMap migration (completed 2026-04-14)
-- [x] **Phase 4: SDK & External Polish** - Typed JSON in SDK + ext binaries, docs enforcement, inline limitation comments (completed 2026-04-15)
-- [x] **Phase 5: Test Coverage & Verification** - Fill test gaps, coverage baseline, property-based testing for wire types (completed 2026-04-15)
-- [x] **Phase 6: File Decomposition** - Break up agents manager (3,708 lines) and supervisor (927 lines) (completed 2026-04-15)
+<details>
+<summary>✅ v0.x Code Quality (Phases 1-6) — SHIPPED 2026-04-15</summary>
+
+- [x] **Phase 1: Tooling & Lint Infrastructure** - Workspace lints, clippy.toml, rustfmt.toml, deny.toml, coverage setup, dead code removal
+- [x] **Phase 2: Leaf Crate Quality** - Typed JSON in sdk-types/jsonrpc/core, error enum audit, serde consistency
+- [x] **Phase 3: Manager Crate Quality** - Typed JSON in agents/channels/tools, clone reduction, DashMap migration
+- [x] **Phase 4: SDK & External Polish** - Typed JSON in SDK + ext binaries, docs enforcement, inline limitation comments
+- [x] **Phase 5: Test Coverage & Verification** - Fill test gaps, coverage baseline, property-based testing for wire types
+- [x] **Phase 6: File Decomposition** - Break up agents manager and supervisor into focused modules
+
+</details>
+
+### 🚧 v1.0.0 Config-Driven Architecture (In Progress)
+
+- [x] **Phase 7: Config Schema Cleanup** - Remove legacy serde aliases (breaking change, clean slate for downstream work) (completed 2026-04-15)
+- [x] **Phase 8: Defaults Consolidation** - Migrate all default_* fns into defaults.yaml, single source of truth (completed 2026-04-15)
+- [x] **Phase 9: JSON Schema Generation** - schemars derives, manual impls, committed schema, CLI subcommand, validate subcommand (completed 2026-04-15)
+- [x] **Phase 10: CI, IDE & Validation** - Schema drift test, example validation, YAML modeline, unknown-key warnings (completed 2026-04-15)
+- [ ] **Phase 11: Per-Extension Defaults** - Extension defaults.yaml layered into Figment chain
 
 ## Phase Details
 
-### Phase 1: Tooling & Lint Infrastructure
-**Goal**: Automated quality enforcement exists across the entire workspace — no code change can regress lint, format, or dependency policy
-**Depends on**: Nothing (first phase)
-**Requirements**: TOOL-01, TOOL-02, TOOL-03, TOOL-04, TOOL-05, HYGN-01, HYGN-02, HYGN-03, BUGF-01, BUGF-02
-**Success Criteria** (what must be TRUE):
-  1. `cargo clippy --workspace` produces zero warnings with the new workspace lint config
-  2. `cargo fmt --check` passes across all crates with the new rustfmt.toml
-  3. `cargo deny check` validates advisories, bans, and sources (not just licenses)
-  4. `cargo llvm-cov` runs successfully and produces a baseline coverage report
-  5. No unused imports or stale modules remain anywhere in the workspace
-**Plans:** 3/3 plans complete
-Plans:
-- [x] 01-01-PLAN.md — Lint config files (clippy.toml, rustfmt.toml, deny.toml, workspace lints) + propagation to all crates
-- [x] 01-02-PLAN.md — Fix all clippy warnings, dead code removal, unused imports cleanup
-- [x] 01-03-PLAN.md — Coverage baseline with cargo-llvm-cov
+<!-- v0.x phases collapsed above — detail preserved in git history -->
 
-### Phase 2: Leaf Crate Quality
-**Goal**: Foundation crates (sdk-types, jsonrpc, core) use typed structs everywhere, have consistent error enums, and follow serde conventions — so manager crates can build on solid types
-**Depends on**: Phase 1
-**Requirements**: JSON-01, JSON-02, JSON-03, ERRH-01, ERRH-02, ERRH-03, SERD-01, SERD-02, BUGF-01, BUGF-02
+### Phase 7: Config Schema Cleanup
+**Goal**: Config field names are clean and consistent — legacy aliases removed so the schema surface is correct before generation
+**Depends on**: Phase 6 (previous milestone)
+**Requirements**: SCHM-01
 **Success Criteria** (what must be TRUE):
-  1. Zero `serde_json::Value` usage remains in anyclaw-sdk-types, anyclaw-jsonrpc, and anyclaw-core
-  2. Every library crate uses thiserror with a typed error enum — no anyhow in library code
-  3. Zero bare `.unwrap()` calls exist in production code (all replaced with `.expect("reason")` or `?`)
-  4. All SDK wire types use `#[serde(rename_all = "camelCase")]` and all config types use `snake_case`
-**Plans:** 3/3 plans complete
+  1. All 4 legacy `#[serde(alias)]` attributes on `AnyclawConfig` are removed
+  2. Existing `anyclaw.yaml` files in examples/ use the canonical snake_case field names (no hyphenated keys)
+  3. Loading a config with old hyphenated keys silently ignores them (Figment behavior — fields get defaults instead of the intended values)
+**Plans:** 1/1 plans complete
 Plans:
-- [x] 02-01-PLAN.md — Type anyclaw-sdk-types: replace Value with typed structs, fix unwraps, serde consistency
-- [x] 02-02-PLAN.md — Type anyclaw-jsonrpc: typed RequestId, typed codec, error audit
-- [x] 02-03-PLAN.md — Type anyclaw-core + fix downstream compilation for workspace build
+- [x] 07-01-PLAN.md — Remove 4 legacy serde aliases from AnyclawConfig and update backward-compat test
 
-### Phase 3: Manager Crate Quality
-**Goal**: The three manager crates (agents, channels, tools) use typed data throughout, have reduced clone overhead, and use lock-free concurrent maps — the heaviest crates are clean
-**Depends on**: Phase 2
-**Requirements**: JSON-04, JSON-05, JSON-06, CLON-01, CLON-02, CLON-03, ADVN-01, BUGF-01, BUGF-02
+### Phase 8: Defaults Consolidation
+**Goal**: Every config default lives in defaults.yaml — no dual-default mechanism, no DEFAULT_* constants duplicating values
+**Depends on**: Phase 7
+**Requirements**: DFLT-01, DFLT-02, DFLT-03, DFLT-04
 **Success Criteria** (what must be TRUE):
-  1. Zero `serde_json::Value` usage remains in anyclaw-agents, anyclaw-channels, and anyclaw-tools
-  2. Clone count in anyclaw-agents manager is measurably reduced from the 103-clone baseline
-  3. Borrowing (`&str`, references) is used instead of ownership transfer where ownership isn't needed
-  4. `Arc<Mutex<HashMap<u64, oneshot::Sender>>>` in connection crates is replaced with DashMap
-**Plans:** 4/4 plans complete
-Plans:
-- [x] 03-01-PLAN.md — Type anyclaw-tools: Value replacement, clone reduction, add dashmap workspace dep
-- [x] 03-02-PLAN.md — Type anyclaw-channels: DashMap migration, typed codec pipeline, clone reduction
-- [x] 03-03-PLAN.md — Type anyclaw-agents support files: DashMap in connection.rs, typed platform_commands + slot
-- [x] 03-04-PLAN.md — Type anyclaw-agents manager.rs: Value replacement, 107-clone audit, error audit
-
-### Phase 4: SDK & External Polish
-**Goal**: SDK crates and external binaries have typed JSON, complete doc coverage, and inline limitation comments — the public-facing surface is polished
-**Depends on**: Phase 3
-**Requirements**: JSON-07, JSON-08, SERD-03, DOCS-01, DOCS-02, DOCS-03, ADVN-03, BUGF-01, BUGF-02
-**Success Criteria** (what must be TRUE):
-  1. Zero `serde_json::Value` usage remains in SDK crates (sdk-agent, sdk-channel, sdk-tool) and ext/ binaries
-  2. `#![warn(missing_docs)]` is enabled on all crates and produces zero warnings
-  3. Round-trip serialization tests exist for all wire types
-  4. Known limitations from AGENTS.md are documented as inline comments at the relevant code locations
-**Plans**: 4 plans
-Plans:
-- [x] 04-01-PLAN.md — Type SDK crates: replace Value in AgentAdapter, Channel, Tool traits + harnesses
-- [x] 04-02-PLAN.md — Round-trip serde tests for all public wire types across SDK crates
-- [x] 04-03-PLAN.md — Enable warn(missing_docs) on all crates + inline limitation comments from AGENTS.md
-- [x] 04-04-PLAN.md — Type ext/ binaries and examples, fix Channel trait compilation errors
-
-### Phase 5: Test Coverage & Verification
-**Goal**: Every identified test gap is filled, coverage baseline is established, and wire types have property-based tests — the codebase is verifiably correct
-**Depends on**: Phase 4
-**Requirements**: TEST-01, TEST-02, TEST-03, TEST-04, TEST-05, ADVN-02, BUGF-01, BUGF-02
-**Success Criteria** (what must be TRUE):
-  1. Tests exist for health.rs, sdk-agent error.rs, sdk-tool error.rs + lib.rs, agents acp_types.rs + backend.rs
-  2. All new tests use rstest 0.23 with BDD naming (`when_action_then_result` / `given_when_then`)
-  3. Property-based tests (proptest) exist for all ACP and MCP wire types
-  4. Coverage report shows improvement over the Phase 1 baseline
-**Plans:** 3/3 plans complete
-Plans:
-- [x] 05-01-PLAN.md — Fix sdk-channel LSP bug + unit tests for all identified test gaps
-- [x] 05-02-PLAN.md — Property-based testing (proptest) for all ACP/channel wire types
-- [x] 05-03-PLAN.md — Coverage measurement and baseline comparison
-
-### Phase 6: File Decomposition
-**Goal**: Oversized files are broken into focused modules with clear boundaries — the codebase is navigable and each module has a single responsibility
-**Depends on**: Phase 5
-**Requirements**: DECO-01, DECO-02, DECO-03, BUGF-01, BUGF-02
-**Success Criteria** (what must be TRUE):
-  1. `anyclaw-agents/src/manager.rs` is decomposed into focused modules (fs_sandbox, session_recovery, tool_events, run loop) — no single file exceeds ~500 lines
-  2. `anyclaw-supervisor/src/lib.rs` is decomposed into sub-modules (signal handling, shutdown orchestration, health monitoring)
-  3. All extracted modules use `pub(crate)` boundaries — the public API surface of each crate is unchanged
-  4. All existing tests pass without modification (decomposition is purely structural)
+  1. `defaults.yaml` covers all config fields (backoff, crash_tracker, wasm_sandbox, admin_port, tools_server_host, ttl_days)
+  2. A drift-detection test asserts that serde default fn values match defaults.yaml values for all shared fields
+  3. `anyclaw init` generated YAML omits the supervisor section — only emits sections the user must customize (agents, channels)
+  4. A completeness test deserializes defaults.yaml alone and asserts all non-HashMap-interior fields have values
+  5. All existing tests pass — no regressions from defaults migration
 **Plans:** 2/2 plans complete
 Plans:
-- [x] 06-01-PLAN.md — Decompose agents manager.rs into fs_sandbox, session_recovery, incoming modules
-- [x] 06-02-PLAN.md — Decompose supervisor lib.rs into shutdown, health, factory modules
+- [x] 08-01-PLAN.md — Expand defaults.yaml to full coverage + drift-detection and completeness tests
+- [x] 08-02-PLAN.md — Remove supervisor section from anyclaw init template
+
+### Phase 9: JSON Schema Generation
+**Goal**: A JSON Schema exists for anyclaw.yaml — generated from Rust types, committed to repo, accessible via CLI, and usable for config validation
+**Depends on**: Phase 8
+**Requirements**: JSCH-01, JSCH-02, JSCH-03, JSCH-04, JSCH-05
+**Success Criteria** (what must be TRUE):
+  1. All config types in anyclaw-config derive `JsonSchema` (schemars 1.2)
+  2. `StringOrArray` and `PullPolicy` have manual `JsonSchema` impls that accept all valid config forms (e.g., `binary: "opencode"` as string, not just array)
+  3. `anyclaw.schema.json` is committed at repository root and validates against known-good example configs
+  4. `anyclaw schema` CLI subcommand prints the JSON Schema to stdout
+  5. `anyclaw validate` validates config files against the JSON Schema (not just binary path checks)
+**Plans:** 2/2 plans complete
+Plans:
+- [x] 09-01-PLAN.md — Add schemars JsonSchema derives + manual impls for all config types
+- [x] 09-02-PLAN.md — Generate committed schema, CLI subcommand, validate enhancement
+
+### Phase 10: CI, IDE & Validation
+**Goal**: The schema is enforced in CI and surfaced in IDEs — config errors are caught before runtime
+**Depends on**: Phase 9
+**Requirements**: CI-01, CI-02, IDE-01, SCHM-02
+**Success Criteria** (what must be TRUE):
+  1. A schema drift test regenerates the schema and compares against the committed file — fails CI if they differ
+  2. All example `anyclaw.yaml` files in the repo validate against the committed schema in CI
+  3. `anyclaw init` output includes a YAML modeline (`# yaml-language-server: $schema=...`) for IDE schema association
+  4. Unknown top-level config keys produce a warning log at startup (not rejection), and `anyclaw validate --strict` treats them as errors
+**Plans:** 2/2 plans complete
+Plans:
+- [x] 10-01-PLAN.md — Add YAML modeline to anyclaw init output (IDE-01) + confirm CI-01/CI-02 already satisfied
+- [x] 10-02-PLAN.md — Unknown top-level key warnings + --strict flag on validate (SCHM-02)
+
+### Phase 11: Per-Extension Defaults
+**Goal**: Extensions can ship their own defaults.yaml that layers into the Figment chain — base defaults → extension defaults → user config
+**Depends on**: Phase 8
+**Requirements**: EXT-01
+**Success Criteria** (what must be TRUE):
+  1. An extension binary can include a `defaults.yaml` that provides default values for its config section
+  2. Extension defaults layer correctly: base defaults → extension defaults → user config (extension fills gaps, user overrides all)
+  3. Conflicting values between extension defaults and user config resolve in favor of user config
+**Plans**: TBD
 
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
+Phases execute in numeric order: 7 → 8 → 9 → 10 → 11
+(Phase 11 depends on Phase 8, not Phase 10 — can run in parallel with 9/10 if needed)
 
-**Cross-cutting:** BUGF-01 and BUGF-02 are opportunistic — bugs and code smells are fixed in whichever phase discovers them.
-
-| Phase | Plans Complete | Status | Completed |
-|-------|----------------|--------|-----------|
-| 1. Tooling & Lint Infrastructure | 3/3 | Complete    | 2026-04-14 |
-| 2. Leaf Crate Quality | 3/3 | Complete    | 2026-04-14 |
-| 3. Manager Crate Quality | 4/4 | Complete    | 2026-04-14 |
-| 4. SDK & External Polish | 4/4 | Complete    | 2026-04-15 |
-| 5. Test Coverage & Verification | 3/3 | Complete    | 2026-04-15 |
-| 6. File Decomposition | 2/2 | Complete    | 2026-04-15 |
+| Phase | Milestone | Plans Complete | Status | Completed |
+|-------|-----------|----------------|--------|-----------|
+| 1. Tooling & Lint Infrastructure | v0.x | 3/3 | Complete | 2026-04-14 |
+| 2. Leaf Crate Quality | v0.x | 3/3 | Complete | 2026-04-14 |
+| 3. Manager Crate Quality | v0.x | 4/4 | Complete | 2026-04-14 |
+| 4. SDK & External Polish | v0.x | 4/4 | Complete | 2026-04-15 |
+| 5. Test Coverage & Verification | v0.x | 3/3 | Complete | 2026-04-15 |
+| 6. File Decomposition | v0.x | 2/2 | Complete | 2026-04-15 |
+| 7. Config Schema Cleanup | v1.0.0 | 1/1 | Complete    | 2026-04-15 |
+| 8. Defaults Consolidation | v1.0.0 | 2/2 | Complete    | 2026-04-15 |
+| 9. JSON Schema Generation | v1.0.0 | 2/2 | Complete    | 2026-04-15 |
+| 10. CI, IDE & Validation | v1.0.0 | 2/2 | Complete    | 2026-04-15 |
+| 11. Per-Extension Defaults | v1.0.0 | 0/0 | Not started | - |

@@ -1,76 +1,96 @@
-# Anyclaw — Code Quality Milestone
+# Anyclaw
 
 ## What This Is
 
-A comprehensive code quality improvement pass across the entire anyclaw workspace — 12 core crates, external binaries, and examples. The goal is to make every crate feel intentional: typed JSON everywhere, consistent error handling, dead code removed, full test coverage, zero clippy warnings. Crate-by-crate, breaking changes allowed.
+Infrastructure sidecar connecting AI agents to messaging channels and tools. Manages agent subprocess lifecycle, routes messages via ACP protocol (JSON-RPC 2.0 over stdio), and provides tool access through MCP servers and WASM sandboxes. 12 core crates, external binaries, and examples.
 
 ## Core Value
 
 Every line of code should be there for a reason, with typed data flowing through typed interfaces — no `serde_json::Value` soup, no bare unwraps, no inconsistent patterns across crates.
 
+## Current Milestone: v1.0.0 Config-Driven Architecture
+
+**Goal:** Make anyclaw fully config-driven — all defaults externalized to YAML, JSON Schema for IDE validation, config structure clean and consistent.
+
+**Target features:**
+- JSON Schema generation (`schemars`) so IDEs autocomplete and validate `anyclaw.yaml`
+- Complete `defaults.yaml` — move all `default_*` fns out of Rust code into YAML, eliminate the dual-default mechanism
+- Per-extension defaults: each ext binary can ship its own `defaults.yaml` that layers into Figment
+- Per-manager defaults: backoff, crash tracker, WASM sandbox defaults all live in `defaults.yaml`
+- Config schema cleanup: consistent naming, flatten inconsistencies, clean structure
+- Breaking changes to config format are acceptable
+
 ## Requirements
 
 ### Validated
 
-<!-- Existing capabilities inferred from codebase map -->
-
-- ✓ Three-manager architecture (tools → agents → channels) with supervisor orchestration — existing
-- ✓ ACP protocol layer with JSON-RPC 2.0 over stdio — existing
-- ✓ MCP host and WASM sandbox for tool execution — existing
-- ✓ Channel subprocess routing (Telegram, debug-http) — existing
-- ✓ Session persistence (SQLite + noop stores) — existing
-- ✓ Figment-based config loading with env var overlay — existing
-- ✓ SDK crates for external channel/tool/agent implementors — existing
-- ✓ Exponential backoff and crash loop detection — existing
-- ✓ Filesystem sandboxing for agent operations — existing
-- ✓ Integration test suite with mock-agent — existing
+- ✓ Three-manager architecture (tools → agents → channels) with supervisor orchestration — v0.x
+- ✓ ACP protocol layer with JSON-RPC 2.0 over stdio — v0.x
+- ✓ MCP host and WASM sandbox for tool execution — v0.x
+- ✓ Channel subprocess routing (Telegram, debug-http) — v0.x
+- ✓ Session persistence (SQLite + noop stores) — v0.x
+- ✓ Figment-based config loading (defaults.yaml → anyclaw.yaml) — v0.x
+- ✓ SDK crates for external channel/tool/agent implementors — v0.x
+- ✓ Exponential backoff and crash loop detection — v0.x
+- ✓ Filesystem sandboxing for agent operations — v0.x
+- ✓ Integration test suite with mock-agent — v0.x
+- ✓ Typed JSON across all crates (zero serde_json::Value soup) — code quality milestone
+- ✓ Consistent error handling (thiserror in libs, anyhow at entry points) — code quality milestone
+- ✓ Zero clippy warnings, dead code removed — code quality milestone
+- ✓ Full test coverage with rstest + proptest — code quality milestone
+- ✓ File decomposition (agents manager, supervisor) — code quality milestone
+- ✓ Consistent serde patterns, doc comments on all public items — code quality milestone
+- ✓ Legacy serde aliases removed from AnyclawConfig — Phase 7
+- ✓ Defaults.yaml covers all fixed-path fields, drift/completeness tests — Phase 8
 
 ### Active
 
-<!-- Quality improvements to make -->
-
-- [ ] Replace all `serde_json::Value` manipulation with typed structs
-- [ ] Consistent error handling: thiserror in libraries, anyhow at entry points only
-- [ ] Remove dead code, unused imports, stale modules
-- [ ] Zero clippy warnings across entire workspace
-- [ ] Meaningful test coverage for every public function and type
-- [ ] Break up oversized files (agents manager at 3,708 lines)
-- [ ] Eliminate unnecessary `.clone()` calls
-- [ ] Consistent serde patterns across all crates
-- [ ] Clean up `Arc<Mutex<>>` patterns where alternatives exist
-- [ ] Add missing doc comments on public items
+- [ ] JSON Schema generation for `anyclaw.yaml` via `schemars`
+- [ ] All defaults externalized to `defaults.yaml` — no dual-default mechanism
+- [ ] Per-extension/manager `defaults.yaml` files layered into Figment
+- [ ] Config schema cleanup: consistent naming, structural consistency
+- [ ] `constants.rs` `DEFAULT_*` consts consolidated with config defaults
+- [ ] `init.rs` generated YAML template reads from defaults instead of hardcoding
+- [ ] CI: schema drift check (committed schema matches schemars output)
+- [ ] CI: example `anyclaw.yaml` files validated against schema
 
 ### Out of Scope
 
-- New features or capabilities — this is purely quality work
-- Performance optimization beyond what falls out of cleanup naturally
-- Dependency version upgrades (unless required by refactoring)
-- CI/CD pipeline changes
+- New runtime features or capabilities — this is config architecture work
+- Performance optimization
+- Env var override layer (`ANYCLAW_` prefix) — documented but unimplemented, separate concern
 - Feature-gating wasmtime/bollard (separate milestone)
 
 ## Context
 
-Anyclaw is a Rust workspace (12 core crates + ext binaries + examples) acting as an infrastructure sidecar connecting AI agents to channels and tools. The codebase is functional but has accumulated inconsistencies: arbitrary JSON handling via `serde_json::Value`, a 3,708-line agents manager, 103 clone() calls in one file, files without test coverage, and patterns that vary across crates.
+The config system uses Figment with two layers: embedded `defaults.yaml` → user `anyclaw.yaml`. A `defaults.yaml` already exists at `crates/anyclaw-config/src/defaults.yaml` but only covers ~40% of actual defaults. The remaining defaults are hardcoded as 23 `#[serde(default = "fn")]` functions in `types.rs`. Additionally, `constants.rs` has `DEFAULT_*` consts that duplicate some config defaults.
 
-The codebase map (`.planning/codebase/`) documents current conventions, architecture, and known concerns in detail. Key reference files:
-- `CONVENTIONS.md` — established patterns to enforce consistently
-- `CONCERNS.md` — specific issues identified with file references and line numbers
+Key files:
+- `crates/anyclaw-config/src/types.rs` — all config types, 23 `default_*` fns
+- `crates/anyclaw-config/src/lib.rs` — Figment loading (defaults.yaml → SubstYaml::file)
+- `crates/anyclaw-config/src/defaults.yaml` — embedded defaults (incomplete)
+- `crates/anyclaw-core/src/constants.rs` — `DEFAULT_*` consts duplicating config values
+- `crates/anyclaw/src/init.rs` — generated YAML template with hardcoded supervisor values
 
 ## Constraints
 
 - **No unsafe**: Zero unsafe blocks exist. Do not introduce any.
-- **No mod.rs**: Flat lib.rs with pub mod + pub use. Convention must be maintained.
-- **Manager communication**: tokio::sync::mpsc via ManagerHandle only. No shared mutable state across managers.
+- **No mod.rs**: Flat lib.rs with pub mod + pub use.
+- **Manager communication**: tokio::sync::mpsc via ManagerHandle only.
 - **Boot order**: tools → agents → channels. Do not change MANAGER_ORDER.
-- **Test framework**: rstest 0.23 with BDD naming. All new tests must follow this.
+- **Test framework**: rstest 0.23 with BDD naming.
+- **Breaking config OK**: Config format changes are acceptable for this milestone.
 
 ## Key Decisions
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Crate-by-crate approach | Keeps each PR reviewable, allows incremental progress | — Pending |
-| Breaking changes allowed | Quality over backward compat for this milestone | — Pending |
-| Entire workspace in scope | Consistency requires touching everything | — Pending |
+| Crate-by-crate approach (v0.x quality) | Keeps each PR reviewable | ✓ Good |
+| Breaking changes allowed (v0.x quality) | Quality over backward compat | ✓ Good |
+| Entire workspace in scope (v0.x quality) | Consistency requires touching everything | ✓ Good |
+| Breaking config format OK (v1.0.0) | Clean over backward compatible | — Pending |
+| schemars for JSON Schema | De facto Rust JSON Schema crate, derives alongside serde | — Pending |
+| Single source of truth in defaults.yaml | Eliminate dual-default mechanism (YAML + serde fns) | — Pending |
 
 ## Evolution
 
@@ -90,4 +110,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-14 after initialization*
+*Last updated: 2026-04-15 after milestone v1.0.0 initialization*
