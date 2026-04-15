@@ -36,7 +36,7 @@ Requirements for the code quality milestone. Each maps to roadmap phases.
 - [x] **JSON-05**: Replace `serde_json::Value` with typed structs in `anyclaw-channels`
 - [x] **JSON-06**: Replace `serde_json::Value` with typed structs in `anyclaw-tools`
 - [x] **JSON-07**: Replace `serde_json::Value` with typed structs in SDK crates (sdk-agent, sdk-channel, sdk-tool)
-- [ ] **JSON-08**: Replace `serde_json::Value` with typed structs in ext/ binaries and examples
+- [x] **JSON-08**: Replace `serde_json::Value` with typed structs in ext/ binaries and examples
 
 ### Serde Patterns
 
@@ -129,7 +129,7 @@ Tracked but not in current milestone.
 | JSON-05 | Phase 3 | Complete |
 | JSON-06 | Phase 3 | Complete |
 | JSON-07 | Phase 4 | Complete |
-| JSON-08 | Phase 4 | Pending |
+| JSON-08 | Phase 4 | Complete |
 | SERD-01 | Phase 2 | Complete |
 | SERD-02 | Phase 2 | Complete |
 | SERD-03 | Phase 4 | Complete |
