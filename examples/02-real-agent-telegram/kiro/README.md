@@ -68,15 +68,15 @@ Tests require either `KIRO_API_KEY` in `.env` or a `kiro-auth-data` Docker volum
 
 ```
 ┌─────────────────────────────────────────────────┐
-│  anyclaw-internal network (no internet)       │
-│                                                  │
+│  anyclaw-internal network (no internet)         │
+│                                                 │
 │  ┌──────────┐    bollard     ┌──────────────┐   │
-│  │ anyclaw │──────────────→│ socket-proxy │   │
+│  │ anyclaw │──────────────→. │ socket-proxy │   │
 │  │          │    tcp:2375    │ (haproxy)    │   │
-│  └────┬─────┘               └──────┬───────┘   │
-│       │                            │ :ro        │
-│       │                            ▼            │
-│       │                    /var/run/docker.sock  │
+│  └────┬─────┘                └──────┬───────┘   │
+│       │                             │ :ro       │
+│       │                             ▼           │
+│       │                    /var/run/docker.sock │
 └───────┼─────────────────────────────────────────┘
         │
         │ anyclaw-external network (internet)
@@ -90,6 +90,7 @@ Tests require either `KIRO_API_KEY` in `.env` or a `kiro-auth-data` Docker volum
 ```
 
 Two Docker networks:
+
 - `anyclaw-internal` — socket-proxy communication, no internet access
 - `anyclaw-external` — anyclaw + agent containers, internet for API calls and Telegram
 
@@ -111,15 +112,15 @@ API key auth (Option A) does not have this problem — keys are long-lived and d
 
 ## Files
 
-| File | Purpose |
-|------|---------|
-| `Dockerfile` | Multi-stage: pulls ghcr.io base + kiro-cli download + agent image |
-| `docker-compose.yml` | Socket-proxy + anyclaw + agent image build |
-| `anyclaw.yaml` | Agent, channel, tool, and supervisor config |
-| `.env.example` | Environment template (KIRO_API_KEY, Telegram) |
-| `test.sh` | E2E tests (Docker-only, requires auth) |
+| File                     | Purpose                                                             |
+| ------------------------ | ------------------------------------------------------------------- |
+| `Dockerfile`             | Multi-stage: pulls ghcr.io base + kiro-cli download + agent image   |
+| `docker-compose.yml`     | Socket-proxy + anyclaw + agent image build                          |
+| `anyclaw.yaml`           | Agent, channel, tool, and supervisor config                         |
+| `.env.example`           | Environment template (KIRO_API_KEY, Telegram)                       |
+| `test.sh`                | E2E tests (Docker-only, requires auth)                              |
 | `docker-compose.dev.yml` | Contributor-only: dev build override (builds from workspace source) |
-| `Dockerfile.dev-builder` | Contributor-only: local source build with cargo-chef caching |
+| `Dockerfile.dev-builder` | Contributor-only: local source build with cargo-chef caching        |
 
 ## Development
 

@@ -40,15 +40,15 @@ Tests cover: health check, message acceptance, SSE streaming, result delivery, a
 
 ```
 ┌─────────────────────────────────────────────────┐
-│  anyclaw-internal network (no internet)       │
-│                                                  │
+│  anyclaw-internal network (no internet)         │
+│                                                 │
 │  ┌──────────┐    bollard     ┌──────────────┐   │
-│  │ anyclaw │──────────────→│ socket-proxy │   │
+│  │ anyclaw │──────────────→. │ socket-proxy │   │
 │  │          │    tcp:2375    │ (haproxy)    │   │
-│  └────┬─────┘               └──────┬───────┘   │
-│       │                            │ :ro        │
-│       │                            ▼            │
-│       │                    /var/run/docker.sock  │
+│  └────┬─────┘                └──────┬───────┘   │
+│       │                             │ :ro       │
+│       │                             ▼           │
+│       │                    /var/run/docker.sock │
 └───────┼─────────────────────────────────────────┘
         │
         │ anyclaw-external network (internet)
@@ -62,6 +62,7 @@ Tests cover: health check, message acceptance, SSE streaming, result delivery, a
 ```
 
 Two Docker networks:
+
 - `anyclaw-internal` — socket-proxy communication, no internet access
 - `anyclaw-external` — anyclaw + agent containers, internet for API calls and Telegram
 
@@ -71,16 +72,16 @@ See the [parent AGENTS.md](../AGENTS.md) for how to add a new agent variant (e.g
 
 ## Files
 
-| File | Purpose |
-|------|---------|
-| `Dockerfile` | Multi-stage: pulls ghcr.io base + opencode target + agent image |
-| `docker-compose.yml` | Socket-proxy + anyclaw + agent image build |
-| `anyclaw.yaml` | Agent, channel, tool, and supervisor config |
-| `.opencode/` | OpenCode config baked into agent image (gitignored — create your own or omit) |
-| `.env.example` | Environment template |
-| `test.sh` | E2E tests (Docker-only) |
-| `docker-compose.dev.yml` | Contributor-only: dev build override (builds from workspace source) |
-| `Dockerfile.dev-builder` | Contributor-only: local source build with cargo-chef caching |
+| File                     | Purpose                                                                       |
+| ------------------------ | ----------------------------------------------------------------------------- |
+| `Dockerfile`             | Multi-stage: pulls ghcr.io base + opencode target + agent image               |
+| `docker-compose.yml`     | Socket-proxy + anyclaw + agent image build                                    |
+| `anyclaw.yaml`           | Agent, channel, tool, and supervisor config                                   |
+| `.opencode/`             | OpenCode config baked into agent image (gitignored — create your own or omit) |
+| `.env.example`           | Environment template                                                          |
+| `test.sh`                | E2E tests (Docker-only)                                                       |
+| `docker-compose.dev.yml` | Contributor-only: dev build override (builds from workspace source)           |
+| `Dockerfile.dev-builder` | Contributor-only: local source build with cargo-chef caching                  |
 
 ## Development
 

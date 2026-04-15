@@ -12,6 +12,7 @@ examples/02-real-agent-telegram/
 ## Requirements
 
 Any ACP-compatible agent can be added. The agent must:
+
 1. Speak ACP (JSON-RPC 2.0 over stdio) — `initialize`, `session/new`, `session/prompt`, etc.
 2. Be packageable as a Docker image
 3. Run non-interactively (no TTY, no browser prompts during normal operation)
@@ -37,6 +38,7 @@ example-<name>   ← Anyclaw sidecar + ext/ binaries + anyclaw.yaml
 ```
 
 Key decisions:
+
 - **Base image**: `node:20-slim` for npm agents, `debian:bookworm-slim` for native binaries
 - **User**: Create a non-root user (e.g., `node`, `claude`, `kiro`). The agent container runs as this user.
 - **Entrypoint**: The ACP command (e.g., `["claude", "--acp"]`, `["opencode", "acp"]`, `["kiro-cli", "acp"]`)
@@ -76,9 +78,9 @@ Three services (same pattern for every variant):
 
 ```yaml
 services:
-  socket-proxy:    # Docker socket proxy (unchanged)
-  anyclaw:         # Anyclaw sidecar (target: example-<name>)
-  <agent>-agent-image:  # Build-only service to tag the agent image
+  socket-proxy: # Docker socket proxy (unchanged)
+  anyclaw: # Anyclaw sidecar (target: example-<name>)
+  <agent>-agent-image: # Build-only service to tag the agent image
     build:
       target: <agent>-agent
     image: anyclaw-<agent-name>-agent:latest
@@ -89,6 +91,7 @@ services:
 ### 4. docker-compose.dev.yml
 
 Dev override for building from workspace source. Update:
+
 - `context: ../../..` (three levels up to workspace root)
 - `dockerfile: examples/02-real-agent-telegram/<variant>/Dockerfile.dev-builder`
 
@@ -99,6 +102,7 @@ Same as Dockerfile but replaces `ghcr.io/donbader/anyclaw-builder` with a local 
 ### 6. Supporting files
 
 Copy from an existing variant and adjust:
+
 - `.env.example` — agent-specific env vars (API keys, tokens)
 - `.dockerignore` — ensure `anyclaw.yaml` is not excluded
 - `.gitignore` — agent-specific credential dirs
@@ -109,12 +113,12 @@ Copy from an existing variant and adjust:
 
 Agents handle authentication differently. Document the auth flow in your README.
 
-| Pattern | Example | When to use |
-|---------|---------|-------------|
-| No auth needed | OpenCode | Agent is free / uses ambient credentials |
-| API key env var | Kiro (`KIRO_API_KEY`) | Agent supports headless API key auth |
-| Pre-authenticated volume | Kiro (device flow) | Agent requires interactive login, credentials stored on disk |
-| Config file baked into image | OpenCode (`.opencode/`) | Agent reads config from a known path |
+| Pattern                      | Example                 | When to use                                                  |
+| ---------------------------- | ----------------------- | ------------------------------------------------------------ |
+| No auth needed               | OpenCode                | Agent is free / uses ambient credentials                     |
+| API key env var              | Kiro (`KIRO_API_KEY`)   | Agent supports headless API key auth                         |
+| Pre-authenticated volume     | Kiro (device flow)      | Agent requires interactive login, credentials stored on disk |
+| Config file baked into image | OpenCode (`.opencode/`) | Agent reads config from a known path                         |
 
 For volume-based auth, the key is finding where the agent stores credentials. Run the agent interactively with the full home mounted, complete login, then `find` to locate the credential files:
 
