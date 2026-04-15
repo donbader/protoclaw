@@ -17,7 +17,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 3: Manager Crate Quality** - Typed JSON in agents/channels/tools, clone reduction, DashMap migration (completed 2026-04-14)
 - [x] **Phase 4: SDK & External Polish** - Typed JSON in SDK + ext binaries, docs enforcement, inline limitation comments (completed 2026-04-15)
 - [x] **Phase 5: Test Coverage & Verification** - Fill test gaps, coverage baseline, property-based testing for wire types (completed 2026-04-15)
-- [ ] **Phase 6: File Decomposition** - Break up agents manager (3,708 lines) and supervisor (927 lines)
+- [x] **Phase 6: File Decomposition** - Break up agents manager (3,708 lines) and supervisor (927 lines) (completed 2026-04-15)
 
 ## Phase Details
 
@@ -108,7 +108,7 @@ Plans:
   2. `anyclaw-supervisor/src/lib.rs` is decomposed into sub-modules (signal handling, shutdown orchestration, health monitoring)
   3. All extracted modules use `pub(crate)` boundaries — the public API surface of each crate is unchanged
   4. All existing tests pass without modification (decomposition is purely structural)
-**Plans:** 2 plans
+**Plans:** 2/2 plans complete
 Plans:
 - [x] 06-01-PLAN.md — Decompose agents manager.rs into fs_sandbox, session_recovery, incoming modules
 - [x] 06-02-PLAN.md — Decompose supervisor lib.rs into shutdown, health, factory modules
@@ -127,4 +127,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 3. Manager Crate Quality | 4/4 | Complete    | 2026-04-14 |
 | 4. SDK & External Polish | 4/4 | Complete    | 2026-04-15 |
 | 5. Test Coverage & Verification | 3/3 | Complete    | 2026-04-15 |
-| 6. File Decomposition | 0/2 | Planned | - |
+| 6. File Decomposition | 2/2 | Complete    | 2026-04-15 |
