@@ -36,6 +36,8 @@ pub enum Commands {
     },
     /// Validate the config file without starting the supervisor.
     Validate,
+    /// Print the JSON Schema for anyclaw.yaml to stdout.
+    Schema,
     /// Query the running supervisor's health endpoint.
     Status {
         /// Admin server port to connect to.
@@ -90,6 +92,19 @@ mod tests {
     fn when_validate_subcommand_given_then_command_is_validate() {
         let cli = Cli::parse_from(["anyclaw", "validate"]);
         assert!(matches!(cli.command, Some(Commands::Validate)));
+    }
+
+    #[test]
+    fn when_schema_subcommand_given_then_command_is_schema() {
+        let cli = Cli::parse_from(["anyclaw", "schema"]);
+        assert!(matches!(cli.command, Some(Commands::Schema)));
+    }
+
+    #[test]
+    fn when_schema_subcommand_given_without_config_flag_then_uses_default_config() {
+        let cli = Cli::parse_from(["anyclaw", "schema"]);
+        assert!(matches!(cli.command, Some(Commands::Schema)));
+        assert_eq!(cli.config, "anyclaw.yaml");
     }
 
     #[test]

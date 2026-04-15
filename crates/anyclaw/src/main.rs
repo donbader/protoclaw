@@ -51,6 +51,14 @@ async fn main() -> Result<()> {
                 Some(cli::Commands::Init { force }) => {
                     init::run_init(&cli.config, force)?;
                 }
+                Some(cli::Commands::Schema) => {
+                    let schema = anyclaw_config::generate_schema();
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&schema)
+                            .expect("schema serialization cannot fail")
+                    );
+                }
                 Some(cli::Commands::Validate) => {
                     let config = anyclaw_config::AnyclawConfig::load(Some(&cli.config))
                         .map_err(|e| anyhow::anyhow!("failed to load config: {e}"))?;
