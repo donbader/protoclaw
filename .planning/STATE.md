@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 5 context gathered
-last_updated: "2026-04-15T01:05:43.362Z"
-last_activity: 2026-04-15 -- Phase 05 execution started
+last_updated: "2026-04-15T01:11:21.374Z"
+last_activity: 2026-04-15
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 17
-  completed_plans: 15
-  percent: 88
+  completed_plans: 16
+  percent: 94
 ---
 
 # Project State
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-04-14)
 ## Current Position
 
 Phase: 05 (Test Coverage & Verification) — EXECUTING
-Plan: 1 of 3
-Status: Executing Phase 05
-Last activity: 2026-04-15 -- Phase 05 execution started
+Plan: 2 of 3
+Status: Ready to execute
+Last activity: 2026-04-15
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -77,6 +77,7 @@ Recent decisions affecting current work:
 - [Phase 04]: AgentAdapter hooks use typed ACP structs — zero serde_json::Value in sdk-agent
 - [Phase 04]: LIMITATION comment format: title + full explanation + See also reference — self-contained at code site
 - [Phase 05]: BUGF-01 root cause was broken relative path in ext/tools/system-info/Cargo.toml, not a rust-analyzer issue
+- [Phase 05]: Skip SessionUpdateType/SessionUpdateEvent from proptest — serde flatten on internally-tagged enums makes round-trip unreliable; hand-written tests cover these
 
 ### Pending Todos
 

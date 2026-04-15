@@ -73,7 +73,7 @@ Requirements for the code quality milestone. Each maps to roadmap phases.
 ### Advanced Quality
 
 - [x] **ADVN-01**: Replace `Arc<Mutex<HashMap<u64, oneshot::Sender>>>` with DashMap in connection crates
-- [ ] **ADVN-02**: Property-based testing (proptest) for all ACP/MCP wire types
+- [x] **ADVN-02**: Property-based testing (proptest) for all ACP/MCP wire types
 - [x] **ADVN-03**: Inline TODO/LIMITATION comments from AGENTS.md into source code at relevant locations
 
 ### Bug Fixes
@@ -148,7 +148,7 @@ Tracked but not in current milestone.
 | DECO-02 | Phase 6 | Pending |
 | DECO-03 | Phase 6 | Pending |
 | ADVN-01 | Phase 3 | Complete |
-| ADVN-02 | Phase 5 | Pending |
+| ADVN-02 | Phase 5 | Complete |
 | ADVN-03 | Phase 4 | Complete |
 | BUGF-01 | All phases | Complete |
 | BUGF-02 | All phases | Complete |
