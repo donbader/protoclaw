@@ -1,3 +1,4 @@
+use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -93,6 +94,21 @@ impl Serialize for StringOrArray {
     }
 }
 
+impl schemars::JsonSchema for StringOrArray {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "StringOrArray".into()
+    }
+
+    fn json_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "oneOf": [
+                { "type": "string" },
+                { "type": "array", "items": { "type": "string" } }
+            ]
+        })
+    }
+}
+
 /// Embedded defaults YAML — loaded as base layer in Figment.
 pub const DEFAULTS_YAML: &str = include_str!("defaults.yaml");
 
@@ -101,7 +117,7 @@ pub const DEFAULTS_YAML: &str = include_str!("defaults.yaml");
 /// `pretty` is the default and suitable for development. `json` emits
 /// structured JSON lines, which is preferable in production environments
 /// where log aggregators (e.g., Datadog, CloudWatch) ingest structured output.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum LogFormat {
     /// Human-readable colored output (default, suitable for development).
@@ -112,7 +128,7 @@ pub enum LogFormat {
 }
 
 /// SQLite-backed session store configuration.
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema)]
 pub struct SqliteStoreConfig {
     /// Path to the SQLite database file. Defaults to an in-memory database when absent.
     #[serde(default)]
@@ -138,7 +154,7 @@ fn default_ttl_days() -> u32 {
 /// Selects the session persistence backend.
 ///
 /// Configured under `session_store.type` in `anyclaw.yaml`.
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Default)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Default, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SessionStoreConfig {
     /// No session persistence (default). Sessions are not saved across restarts.
@@ -152,7 +168,7 @@ pub enum SessionStoreConfig {
 ///
 /// Loaded from layered providers: defaults → YAML file → environment variables.
 /// Manager-hierarchy: each manager owns its children as named maps.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct AnyclawConfig {
     /// Tracing filter directive (e.g. `"info,hyper=warn"`).
     #[serde(default = "default_log_level")]
@@ -181,7 +197,7 @@ pub struct AnyclawConfig {
 }
 
 /// Per-subprocess backoff configuration for restart delays.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct BackoffConfig {
     /// Initial delay before the first restart attempt (milliseconds).
     #[serde(default = "default_backoff_base_ms")]
@@ -208,7 +224,7 @@ impl Default for BackoffConfig {
 ///
 /// This is distinct from `SupervisorConfig.max_restarts` / `restart_window_secs`,
 /// which govern manager-level restart attempts by the Supervisor itself.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct CrashTrackerConfig {
     /// Maximum number of subprocess crashes allowed within `window_secs`.
     #[serde(default = "default_crash_max")]
@@ -228,7 +244,7 @@ impl Default for CrashTrackerConfig {
 }
 
 /// Configuration for the agents manager and its named agent map.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct AgentsManagerConfig {
     /// Default ACP request timeout in seconds (overridable per-agent).
     #[serde(default = "default_acp_timeout_secs")]
@@ -252,7 +268,7 @@ impl Default for AgentsManagerConfig {
 }
 
 /// Configuration for the channels manager and its named channel map.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct ChannelsManagerConfig {
     /// Timeout for the `initialize` handshake with channel subprocesses (seconds).
     #[serde(default = "default_init_timeout_secs")]
@@ -276,7 +292,7 @@ impl Default for ChannelsManagerConfig {
 }
 
 /// Configuration for the tools manager and its named tool map.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct ToolsManagerConfig {
     /// Named tool configurations (keys are tool names advertised to agents).
     #[serde(default)]
@@ -327,8 +343,22 @@ impl<'de> serde::Deserialize<'de> for PullPolicy {
     }
 }
 
+impl schemars::JsonSchema for PullPolicy {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "PullPolicy".into()
+    }
+
+    fn json_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "type": "string",
+            "enum": ["always", "never", "if_not_present"],
+            "default": "if_not_present"
+        })
+    }
+}
+
 /// Local workspace: agent runs as a native subprocess on the host.
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema)]
 pub struct LocalWorkspaceConfig {
     /// Executable path (or `@built-in/` prefix resolved at boot).
     pub binary: StringOrArray,
@@ -341,7 +371,7 @@ pub struct LocalWorkspaceConfig {
 }
 
 /// Docker workspace: agent runs inside a Docker container.
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema)]
 pub struct DockerWorkspaceConfig {
     /// Docker image name (e.g. `"anyclaw/opencode:latest"`).
     pub image: String,
@@ -378,7 +408,7 @@ pub struct DockerWorkspaceConfig {
 }
 
 /// Tagged enum selecting the agent's execution environment.
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum WorkspaceConfig {
     /// Run the agent as a local subprocess.
@@ -395,7 +425,7 @@ pub enum WorkspaceConfig {
 // See also: AGENTS.md §Anti-Patterns
 
 /// Per-agent configuration. Names come from the HashMap key in [`AgentsManagerConfig`].
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct AgentConfig {
     /// Execution environment (local subprocess or Docker container).
     pub workspace: WorkspaceConfig,
@@ -420,7 +450,7 @@ pub struct AgentConfig {
 }
 
 /// Per-channel configuration. Names come from the HashMap key in [`ChannelsManagerConfig`].
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct ChannelConfig {
     /// Path to the channel binary (resolved via `@built-in/` at boot).
     pub binary: String,
@@ -457,7 +487,7 @@ pub struct ChannelConfig {
 ///
 /// - `remove`: the reaction is deleted once the response is sent
 /// - `replace_done`: the in-progress reaction is swapped for a "done" checkmark emoji
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ReactionLifecycle {
     /// Remove the reaction emoji after the agent finishes (default).
@@ -477,7 +507,7 @@ impl std::fmt::Display for ReactionLifecycle {
 }
 
 /// Message acknowledgement configuration for a channel.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct AckConfig {
     /// Whether to add a reaction emoji when a message is received.
     #[serde(default)]
@@ -519,7 +549,7 @@ impl From<AckConfig> for anyclaw_sdk_types::ChannelAckConfig {
 ///
 /// - `mcp`: spawn an external binary and communicate over JSON-RPC/stdio
 /// - `wasm`: load a `.wasm` module and execute in the built-in sandboxed runner
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum ToolType {
     /// External MCP server subprocess communicating over JSON-RPC/stdio (default).
@@ -530,7 +560,7 @@ pub enum ToolType {
 }
 
 /// Per-tool configuration. Names come from the HashMap key in [`ToolsManagerConfig`].
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct ToolConfig {
     /// Whether this tool is an external MCP server or a WASM module.
     #[serde(default)]
@@ -562,7 +592,7 @@ pub struct ToolConfig {
 }
 
 /// WASM sandbox resource limits for sandboxed tool execution.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct WasmSandboxConfig {
     /// Maximum fuel (instruction count) per tool invocation.
     #[serde(default = "default_fuel_limit")]
@@ -579,7 +609,7 @@ pub struct WasmSandboxConfig {
 }
 
 /// A host directory pre-opened for WASI filesystem access inside the WASM sandbox.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct PreopenedDir {
     /// Path on the host filesystem.
     pub host: PathBuf,
@@ -598,7 +628,7 @@ pub struct PreopenedDir {
 ///
 /// This is distinct from `CrashTrackerConfig`, which limits restarts of individual
 /// agent or channel *subprocesses* within a manager's crash recovery loop.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct SupervisorConfig {
     /// Total shutdown timeout divided equally among managers (seconds).
     #[serde(default = "default_shutdown_timeout")]
@@ -1622,5 +1652,124 @@ workspace:
         let yaml = "";
         let config: SupervisorConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(config.permission_timeout_secs, None);
+    }
+
+    #[test]
+    fn when_anyclaw_config_schema_generated_then_has_2020_12_dialect() {
+        let schema = schemars::schema_for!(AnyclawConfig);
+        let value = serde_json::to_value(&schema).expect("schema serializes");
+        let schema_field = value.get("$schema").expect("schema has $schema field");
+        assert!(
+            schema_field.as_str().unwrap_or("").contains("2020-12"),
+            "expected 2020-12 dialect, got: {schema_field}"
+        );
+    }
+
+    #[test]
+    fn when_anyclaw_config_schema_generated_then_has_expected_property_keys() {
+        let schema = schemars::schema_for!(AnyclawConfig);
+        let value = serde_json::to_value(&schema).expect("schema serializes");
+        let properties = value
+            .get("properties")
+            .expect("schema has properties")
+            .as_object()
+            .expect("properties is an object");
+        for key in &[
+            "log_level",
+            "log_format",
+            "extensions_dir",
+            "agents_manager",
+            "channels_manager",
+            "tools_manager",
+            "supervisor",
+            "session_store",
+        ] {
+            assert!(properties.contains_key(*key), "missing property: {key}");
+        }
+    }
+
+    #[test]
+    fn when_session_store_config_schema_generated_then_has_type_discriminator() {
+        let schema = schemars::schema_for!(SessionStoreConfig);
+        let value = serde_json::to_value(&schema).expect("schema serializes");
+        let schema_str = serde_json::to_string(&value).expect("serializes to string");
+        assert!(
+            schema_str.contains("\"type\""),
+            "schema should reference discriminator 'type': {schema_str}"
+        );
+    }
+
+    #[test]
+    fn when_workspace_config_schema_generated_then_has_type_discriminator() {
+        let schema = schemars::schema_for!(WorkspaceConfig);
+        let value = serde_json::to_value(&schema).expect("schema serializes");
+        let schema_str = serde_json::to_string(&value).expect("serializes to string");
+        assert!(
+            schema_str.contains("\"type\""),
+            "schema should reference discriminator 'type': {schema_str}"
+        );
+    }
+
+    #[test]
+    fn when_string_or_array_schema_generated_then_has_one_of_with_string_and_array() {
+        let schema = schemars::schema_for!(StringOrArray);
+        let value = serde_json::to_value(&schema).expect("schema serializes");
+        let one_of = value
+            .get("oneOf")
+            .expect("StringOrArray schema has oneOf")
+            .as_array()
+            .expect("oneOf is an array");
+        assert_eq!(one_of.len(), 2, "oneOf should have exactly 2 entries");
+        let types: Vec<&str> = one_of
+            .iter()
+            .filter_map(|v| v.get("type").and_then(|t| t.as_str()))
+            .collect();
+        assert!(types.contains(&"string"), "oneOf should contain string");
+        assert!(types.contains(&"array"), "oneOf should contain array");
+    }
+
+    #[test]
+    fn when_pull_policy_schema_generated_then_is_string_type_with_enum_variants() {
+        let schema = schemars::schema_for!(PullPolicy);
+        let value = serde_json::to_value(&schema).expect("schema serializes");
+        assert_eq!(
+            value.get("type").and_then(|t| t.as_str()),
+            Some("string"),
+            "PullPolicy schema type should be string"
+        );
+        let enum_values = value
+            .get("enum")
+            .expect("PullPolicy schema has enum")
+            .as_array()
+            .expect("enum is array");
+        let variants: Vec<&str> = enum_values.iter().filter_map(|v| v.as_str()).collect();
+        assert!(variants.contains(&"always"), "enum should contain 'always'");
+        assert!(variants.contains(&"never"), "enum should contain 'never'");
+        assert!(
+            variants.contains(&"if_not_present"),
+            "enum should contain 'if_not_present'"
+        );
+    }
+
+    #[test]
+    fn when_pull_policy_schema_generated_then_has_default_if_not_present() {
+        let schema = schemars::schema_for!(PullPolicy);
+        let value = serde_json::to_value(&schema).expect("schema serializes");
+        assert_eq!(
+            value.get("default").and_then(|d| d.as_str()),
+            Some("if_not_present"),
+            "PullPolicy schema default should be 'if_not_present'"
+        );
+    }
+
+    #[test]
+    fn when_local_workspace_config_schema_generated_then_binary_field_references_string_or_array() {
+        let schema = schemars::schema_for!(LocalWorkspaceConfig);
+        let value = serde_json::to_value(&schema).expect("schema serializes");
+        let schema_str = serde_json::to_string(&value).expect("serializes to string");
+        assert!(
+            schema_str.contains("StringOrArray"),
+            "LocalWorkspaceConfig schema should reference StringOrArray: {schema_str}"
+        );
     }
 }

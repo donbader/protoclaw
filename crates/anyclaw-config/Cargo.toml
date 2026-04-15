@@ -13,6 +13,7 @@ thiserror.workspace = true
 tracing.workspace = true
 serde_yaml.workspace = true
 subst.workspace = true
+schemars = "1"
 anyclaw-sdk-types = { path = "../anyclaw-sdk-types" }
 
 [dev-dependencies]
