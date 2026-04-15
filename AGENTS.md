@@ -59,7 +59,7 @@ anyclaw/
 | Add test helper | `crates/anyclaw-test-helpers/` | Shared across all crate tests |
 | Integration tests | `tests/integration/tests/e2e.rs` | Requires `cargo build` first (needs mock-agent binary) |
 | Add agent variant | `examples/02-real-agent-telegram/AGENTS.md` | Copy existing variant, follow the guide |
-| Dev iteration (contributor) | `examples/02-real-agent-telegram/opencode/docker-compose.dev.yml` | Override: `docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build` |
+| Dev iteration (contributor) | `examples/02-real-agent-telegram/dev/Makefile` | From variant dir: `make -f ../dev/Makefile dev` |
 
 ## Crate Dependency Flow
 

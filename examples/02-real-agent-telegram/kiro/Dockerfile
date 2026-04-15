@@ -38,10 +38,10 @@ ENTRYPOINT ["anyclaw"]
 # Kiro agent image (for Docker workspace mode)
 # Auth: either KIRO_API_KEY env var (Pro+) or pre-authenticated volume at ~/.local/share/kiro-cli.
 # See README.md for both auth flows.
-FROM debian:bookworm-slim@sha256:4724b8cc51e33e398f0e2e15e18d5ec2851ff0c2280647e1310bc1642182655d AS kiro-agent
+# Rebased on kiro-deps to avoid redundant apt-get update on every build.
+FROM kiro-deps AS kiro-agent
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates sudo && rm -rf /var/lib/apt/lists/*
-COPY --from=kiro-deps /usr/local/bin/kiro-cli /usr/local/bin/kiro-cli-chat /usr/local/bin/kiro-cli-term /usr/local/bin/q /usr/local/bin/qchat /usr/local/bin/
+    sudo && rm -rf /var/lib/apt/lists/*
 RUN useradd -m -s /bin/bash kiro && \
     mkdir -p /home/kiro/.kiro /home/kiro/.local/share /home/kiro/.local/state && \
     chown -R kiro:kiro /home/kiro && \

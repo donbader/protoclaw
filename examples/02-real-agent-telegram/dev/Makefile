@@ -1,9 +1,9 @@
-# Dev workflow for OpenCode variant
-# Usage: make dev       — build from source + start
-#        make dev-base  — rebuild anyclaw binaries only
-#        make down      — stop everything
+# Shared dev workflow for agent variants
+# Run from a variant directory: make -f ../shared/Makefile dev
+#
+# Expects docker-compose.yml and docker-compose.dev.yml in CWD.
 
-ROOT := $(shell git -C ../../../ rev-parse --show-toplevel)
+ROOT := $(shell git rev-parse --show-toplevel)
 COMPOSE := docker compose -f docker-compose.yml -f docker-compose.dev.yml
 
 .PHONY: dev dev-base up down logs

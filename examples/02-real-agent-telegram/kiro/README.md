@@ -51,7 +51,7 @@ SSE events stream back with the agent's response.
 ## Run Tests
 
 ```sh
-./test.sh
+../dev/test.sh
 ```
 
 Tests require either `KIRO_API_KEY` in `.env` or a `kiro-auth-data` Docker volume.
@@ -145,9 +145,8 @@ For the full config schema and all available options, see the [Configuration Ref
 | `docker-compose.yml`     | Socket-proxy + anyclaw + agent image build                          |
 | `anyclaw.yaml`           | Agent, channel, tool, and supervisor config                         |
 | `.env.example`           | Environment template (KIRO_API_KEY, Telegram)                       |
-| `test.sh`                | E2E tests (Docker-only, requires auth)                              |
+| `test-auth.sh`           | Auth validation hook (sourced by `../dev/test.sh`)                  |
 | `docker-compose.dev.yml` | Contributor-only: dev build override (passes `BUILDER_IMAGE` arg)   |
-| `Makefile`               | Contributor-only: `make dev` builds base + starts everything        |
 
 ## Development
 
@@ -158,9 +157,9 @@ For the full config schema and all available options, see the [Configuration Ref
 For iterating on anyclaw source code:
 
 ```sh
-make dev    # Build base image + variant from source, start everything
-make logs   # Follow anyclaw logs
-make down   # Stop everything
+make -f ../dev/Makefile dev    # Build base image + variant from source, start everything
+make -f ../dev/Makefile logs   # Follow anyclaw logs
+make -f ../dev/Makefile down   # Stop everything
 ```
 
 The `Makefile` first builds `anyclaw-dev-base:latest` from the root `Dockerfile` (cargo-chef + mold + BuildKit cache mounts), then runs `docker compose` with the dev override which passes `BUILDER_IMAGE=anyclaw-dev-base:latest` to the same `Dockerfile` used in production.

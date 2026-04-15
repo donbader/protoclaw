@@ -31,13 +31,11 @@ USER node
 ENTRYPOINT ["anyclaw"]
 
 # OpenCode agent image (for Docker workspace mode)
-# node:20-slim
-FROM node:20-slim@sha256:f93745c153377ee2fbbdd6e24efcd03cd2e86d6ab1d8aa9916a3790c40313a55 AS opencode-agent
+# Rebased on opencode-deps to avoid redundant apt-get update on every build.
+FROM opencode-deps AS opencode-agent
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates sudo && rm -rf /var/lib/apt/lists/* && \
     echo "node ALL=(ALL) NOPASSWD: /usr/bin/apt-get" >> /etc/sudoers.d/node
-COPY --from=opencode-deps /usr/local/lib/node_modules /usr/local/lib/node_modules
-COPY --from=opencode-deps /usr/local/bin /usr/local/bin
 # .opencode/ is gitignored — users provide their own config or run without it.
 # Glob trick: README.md always exists so COPY never fails; .opencode is optional.
 RUN mkdir -p /home/node/.config/opencode

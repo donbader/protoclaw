@@ -32,7 +32,7 @@ SSE events stream back with the agent's response.
 ## Run Tests
 
 ```sh
-./test.sh
+../dev/test.sh
 ```
 
 Tests require `ANTHROPIC_API_KEY` in `.env`.
@@ -130,9 +130,8 @@ See [Claude Code settings docs](https://docs.anthropic.com/en/docs/claude-code/s
 | `.claude/settings.json`  | Claude Code permissions and settings (baked into agent image)          |
 | `.claude.json`           | Claude Code preferences and MCP config (baked into agent image)        |
 | `.env.example`           | Environment template (ANTHROPIC_API_KEY, Telegram)                     |
-| `test.sh`                | E2E tests (Docker-only, requires API key)                              |
-| `docker-compose.dev.yml` | Contributor-only: dev build override (passes `BUILDER_IMAGE` arg)  |
-| `Makefile`               | Contributor-only: `make dev` builds base + starts everything           |
+| `test-auth.sh`           | Auth validation hook (sourced by `../dev/test.sh`)                     |
+| `docker-compose.dev.yml` | Contributor-only: dev build override (passes `BUILDER_IMAGE` arg)      |
 
 ## Development
 
@@ -143,7 +142,7 @@ See [Claude Code settings docs](https://docs.anthropic.com/en/docs/claude-code/s
 For iterating on anyclaw source code:
 
 ```sh
-make dev    # Build base image + variant from source, start everything
-make logs   # Follow anyclaw logs
-make down   # Stop everything
+make -f ../dev/Makefile dev    # Build base image + variant from source, start everything
+make -f ../dev/Makefile logs   # Follow anyclaw logs
+make -f ../dev/Makefile down   # Stop everything
 ```

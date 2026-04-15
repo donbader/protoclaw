@@ -4,6 +4,7 @@ This directory contains agent variants for the real-agent Telegram bot example. 
 
 ```
 examples/02-real-agent-telegram/
+├── dev/          # Shared Makefile and test runner
 ├── opencode/     # OpenCode (npm, opencode acp)
 ├── kiro/         # Kiro CLI (native binary, kiro-cli acp)
 ├── claude-code/  # Claude Code (npm, claude-agent-acp)
@@ -126,20 +127,28 @@ services:
         BUILDER_IMAGE: anyclaw-dev-base:latest
 ```
 
-Not invoked directly — use `make dev` instead.
+Not invoked directly — use `make -f ../dev/Makefile dev` instead.
 
-### 5. Makefile
+### 5. Shared dev tooling
 
-Each variant includes a `Makefile` that orchestrates the two-step dev build:
+The `dev/` directory contains shared tooling used by all variants:
+
+- `dev/Makefile` — orchestrates the two-step dev build. Run from a variant directory:
 
 ```sh
-make dev       # Build base image + variant from source, start everything
-make dev-base  # Rebuild anyclaw binaries only
-make logs      # Follow anyclaw logs
-make down      # Stop everything
+make -f ../dev/Makefile dev       # Build base image + variant from source, start everything
+make -f ../dev/Makefile dev-base  # Rebuild anyclaw binaries only
+make -f ../dev/Makefile logs      # Follow anyclaw logs
+make -f ../dev/Makefile down      # Stop everything
 ```
 
-The `Makefile` builds `anyclaw-dev-base:latest` first, then runs `docker compose` with the dev override. Copy from an existing variant — the only difference is the directory name.
+- `dev/test.sh` — shared E2E test runner. Run from a variant directory:
+
+```sh
+../dev/test.sh [base_url]
+```
+
+The test runner handles the full lifecycle (build, start, test, teardown). If `./test-auth.sh` exists in the variant directory, it is sourced before starting containers — use this hook to validate agent-specific credentials. OpenCode needs no auth hook. Kiro and Claude Code each have a `test-auth.sh` that checks for their respective credentials.
 
 ### 6. Supporting files
 
@@ -148,7 +157,7 @@ Copy from an existing variant and adjust:
 - `.env.example` — agent-specific env vars (API keys, tokens)
 - `.dockerignore` — ensure `anyclaw.yaml` is not excluded
 - `.gitignore` — agent-specific credential dirs
-- `test.sh` — adjust auth checks and agent name in test output
+- `test-auth.sh` — auth validation hook sourced by `../dev/test.sh` (optional — omit if no auth needed)
 - `README.md` — document auth flow, quick start, architecture
 
 ## Auth Patterns
@@ -181,6 +190,7 @@ Before submitting a new variant:
 - [ ] `curl http://localhost:8080/health` returns `{"status":"ok"}`
 - [ ] `curl -X POST http://localhost:8080/message -H 'Content-Type: application/json' -d '{"message":"hello"}'` gets a response via SSE
 - [ ] `docker compose down` cleans up without orphans
+- [ ] `../dev/test.sh` passes all assertions
 - [ ] README documents auth flow, quick start, and architecture
 - [ ] `.env.example` lists all required env vars (commented out)
 - [ ] No secrets committed (check `.gitignore`)

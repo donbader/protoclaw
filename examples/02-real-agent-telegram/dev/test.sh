@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Docker-only E2E test for Kiro agent
-# Requires either KIRO_API_KEY in .env or a pre-authenticated kiro-auth-data volume.
-# See README.md for auth setup.
-# Usage: ./test.sh [base_url]
+# Shared E2E test runner for agent variants.
+# Run from a variant directory: ../shared/test.sh [base_url]
+#
+# Hook: if ./test-auth.sh exists in CWD, it is sourced before starting
+# containers. It should exit 1 on auth failure or return silently.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+VARIANT_DIR="$(pwd)"
 
 BASE_URL="${1:-http://localhost:8080}"
 PASS=0
@@ -30,25 +31,12 @@ if [ ! -f .env ]; then
   cp .env.example .env
 fi
 
-# --- Auth check ---
-HAS_API_KEY=false
-if grep -q '^KIRO_API_KEY=.\+' .env 2>/dev/null; then
-  HAS_API_KEY=true
+# --- Auth hook ---
+if [ -f ./test-auth.sh ]; then
+  source ./test-auth.sh
 fi
 
-HAS_AUTH_VOLUME=false
-if docker volume inspect kiro-auth-data >/dev/null 2>&1; then
-  HAS_AUTH_VOLUME=true
-fi
-
-if [ "$HAS_API_KEY" = false ] && [ "$HAS_AUTH_VOLUME" = false ]; then
-  printf "ERROR: No Kiro authentication found.\n"
-  printf "Either set KIRO_API_KEY in .env, or run the browser login step.\n"
-  printf "See README.md for details.\n"
-  exit 1
-fi
-
-# --- Build agent image + start ---
+# --- Build + start ---
 printf "Building and starting containers...\n"
 docker compose build || { printf "FAIL: agent image build failed\n"; exit 1; }
 docker compose up -d || { printf "FAIL: docker compose up failed\n"; exit 1; }

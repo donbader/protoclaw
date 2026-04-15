@@ -23,7 +23,7 @@ SSE events stream back with the agent's response.
 ## Run Tests
 
 ```sh
-./test.sh
+../dev/test.sh
 ```
 
 Tests cover: health check, message acceptance, SSE streaming, result delivery, and message merging (5 rapid messages → fewer agent turns). Takes ~2 minutes due to real AI response times.
@@ -111,9 +111,7 @@ For the full config schema and all available options, see the [Configuration Ref
 | `anyclaw.yaml`           | Agent, channel, tool, and supervisor config                                   |
 | `.opencode/`             | OpenCode config baked into agent image (gitignored — create your own or omit) |
 | `.env.example`           | Environment template                                                          |
-| `test.sh`                | E2E tests (Docker-only)                                                       |
-| `docker-compose.dev.yml` | Contributor-only: dev build override (passes `BUILDER_IMAGE` arg)    |
-| `Makefile`               | Contributor-only: `make dev` builds base + starts everything                  |
+| `docker-compose.dev.yml` | Contributor-only: dev build override (passes `BUILDER_IMAGE` arg)             |
 
 ## Development
 
@@ -124,9 +122,9 @@ For the full config schema and all available options, see the [Configuration Ref
 For iterating on anyclaw source code:
 
 ```sh
-make dev    # Build base image + variant from source, start everything
-make logs   # Follow anyclaw logs
-make down   # Stop everything
+make -f ../dev/Makefile dev    # Build base image + variant from source, start everything
+make -f ../dev/Makefile logs   # Follow anyclaw logs
+make -f ../dev/Makefile down   # Stop everything
 ```
 
-The `Makefile` first builds `anyclaw-dev-base:latest` from the root `Dockerfile` (cargo-chef + mold + BuildKit cache mounts), then runs `docker compose` with the dev override which passes `BUILDER_IMAGE=anyclaw-dev-base:latest` to the same `Dockerfile` used in production.
+The shared `Makefile` builds `anyclaw-dev-base:latest` from the root `Dockerfile` (cargo-chef + mold + BuildKit cache mounts), then runs `docker compose` with the dev override which passes `BUILDER_IMAGE=anyclaw-dev-base:latest` to the same `Dockerfile` used in production.
