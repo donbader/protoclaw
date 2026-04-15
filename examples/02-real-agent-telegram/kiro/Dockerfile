@@ -6,7 +6,7 @@ FROM ${BUILDER_IMAGE} AS builder
 FROM debian:bookworm-slim@sha256:4724b8cc51e33e398f0e2e15e18d5ec2851ff0c2280647e1310bc1642182655d AS kiro-deps
 ARG TARGETARCH
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates curl unzip && rm -rf /var/lib/apt/lists/*
+    ca-certificates curl sudo unzip && rm -rf /var/lib/apt/lists/*
 RUN ARCH=$(case "${TARGETARCH}" in \
       amd64) echo "x86_64" ;; \
       arm64) echo "aarch64" ;; \
@@ -40,8 +40,6 @@ ENTRYPOINT ["anyclaw"]
 # See README.md for both auth flows.
 # Rebased on kiro-deps to avoid redundant apt-get update on every build.
 FROM kiro-deps AS kiro-agent
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    sudo && rm -rf /var/lib/apt/lists/*
 RUN useradd -m -s /bin/bash kiro && \
     mkdir -p /home/kiro/.kiro /home/kiro/.local/share /home/kiro/.local/state && \
     chown -R kiro:kiro /home/kiro && \
