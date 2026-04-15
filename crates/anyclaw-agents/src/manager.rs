@@ -2364,4 +2364,109 @@ mod tests {
             "forwarded event must be DeliverMessage, got: {event:?}"
         );
     }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_heal_session_resume_returns_new_id_then_session_map_uses_returned_id() {
+        let mut config = mock_agent_config();
+        config
+            .options
+            .insert("support_resume".into(), serde_json::json!(true));
+        config.options.insert(
+            "recovery_new_id".into(),
+            serde_json::json!("new-acp-from-resume"),
+        );
+
+        let (handle, rx) = make_tools_handle();
+        let tools_task = tokio::spawn(serve_tools_urls(rx));
+
+        let mut m = AgentsManager::new(
+            mock_agents_manager_config_with(HashMap::from([("default".into(), config)])),
+            handle,
+        );
+        m.start().await.unwrap();
+
+        let session_key = SessionKey::new("telegram", "direct", "bob");
+        m.slots[0]
+            .stale_sessions
+            .insert(session_key.clone(), "stale-acp-old".to_string());
+
+        let result = m.heal_session(0, "default", &session_key).await;
+        assert!(
+            result.is_ok(),
+            "heal_session should succeed via resume: {result:?}"
+        );
+
+        let acp_id = m.slots[0]
+            .session_map
+            .get(&session_key)
+            .expect("session_map must contain the healed session key");
+        assert_eq!(
+            acp_id, "new-acp-from-resume",
+            "session_map must use the ID returned by session/resume, not the stale ID"
+        );
+        assert!(
+            m.slots[0].reverse_map.contains_key("new-acp-from-resume"),
+            "reverse_map must contain the returned ID"
+        );
+        assert!(
+            !m.slots[0].stale_sessions.contains_key(&session_key),
+            "stale_sessions must be cleared after successful heal"
+        );
+
+        m.shutdown_all().await;
+        tools_task.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_heal_session_load_returns_new_id_then_session_map_uses_returned_id() {
+        let mut config = mock_agent_config();
+        config.options.insert(
+            "recovery_new_id".into(),
+            serde_json::json!("new-acp-from-load"),
+        );
+
+        let (handle, rx) = make_tools_handle();
+        let tools_task = tokio::spawn(serve_tools_urls(rx));
+
+        let mut m = AgentsManager::new(
+            mock_agents_manager_config_with(HashMap::from([("default".into(), config)])),
+            handle,
+        );
+        m.start().await.unwrap();
+
+        let session_key = SessionKey::new("telegram", "direct", "carol");
+        m.slots[0]
+            .stale_sessions
+            .insert(session_key.clone(), "stale-acp-old".to_string());
+
+        let result = m.heal_session(0, "default", &session_key).await;
+        assert!(
+            result.is_ok(),
+            "heal_session should succeed via load: {result:?}"
+        );
+
+        let acp_id = m.slots[0]
+            .session_map
+            .get(&session_key)
+            .expect("session_map must contain the healed session key");
+        assert_eq!(
+            acp_id, "new-acp-from-load",
+            "session_map must use the ID returned by session/load, not the stale ID"
+        );
+        assert!(
+            m.slots[0].reverse_map.contains_key("new-acp-from-load"),
+            "reverse_map must contain the returned ID"
+        );
+        assert!(
+            m.slots[0]
+                .awaiting_first_prompt
+                .contains("new-acp-from-load"),
+            "awaiting_first_prompt must contain the returned ID"
+        );
+
+        m.shutdown_all().await;
+        tools_task.abort();
+    }
 }

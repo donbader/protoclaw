@@ -19,6 +19,10 @@ struct AgentOptions {
     thinking_time_ms: Option<u64>,
     request_permission: bool,
     reject_load: bool,
+    reject_resume: bool,
+    support_resume: bool,
+    /// When set, session/resume and session/load return this ID instead of the sent one.
+    recovery_new_id: Option<String>,
     echo_prefix: String,
     echo_mcp_count: bool,
 }
@@ -30,6 +34,9 @@ impl Default for AgentOptions {
             thinking_time_ms: None,
             request_permission: false,
             reject_load: false,
+            reject_resume: false,
+            support_resume: false,
+            recovery_new_id: None,
             echo_prefix: "Echo".to_string(),
             echo_mcp_count: false,
         }
@@ -44,6 +51,9 @@ impl AgentOptions {
             thinking_time_ms: options["thinking_time_ms"].as_u64(),
             request_permission: options["request_permission"].as_bool().unwrap_or(false),
             reject_load: options["reject_load"].as_bool().unwrap_or(false),
+            reject_resume: options["reject_resume"].as_bool().unwrap_or(false),
+            support_resume: options["support_resume"].as_bool().unwrap_or(false),
+            recovery_new_id: options["recovery_new_id"].as_str().map(String::from),
             echo_prefix: options["echo_prefix"]
                 .as_str()
                 .unwrap_or("Echo")
@@ -137,6 +147,9 @@ async fn main() {
             "session/load" => {
                 handle_session_load(&mut stdout, id, opts().reject_load, &mut session_id).await;
             }
+            "session/resume" => {
+                handle_session_resume(&mut stdout, id, opts().reject_resume, &mut session_id).await;
+            }
             _ => {
                 let resp = json!({
                     "jsonrpc": "2.0",
@@ -179,6 +192,12 @@ async fn handle_initialize(stdout: &mut tokio::io::Stdout, id: Option<Value>, ms
 
     let _ = AGENT_OPTIONS.set(AgentOptions::from_initialize_params(params));
 
+    let session_caps = if opts().support_resume {
+        json!({ "resume": {} })
+    } else {
+        json!({})
+    };
+
     let resp = json!({
         "jsonrpc": "2.0",
         "id": id,
@@ -188,7 +207,7 @@ async fn handle_initialize(stdout: &mut tokio::io::Stdout, id: Option<Value>, ms
                 "loadSession": true,
                 "mcpCapabilities": { "http": true, "sse": true },
                 "promptCapabilities": { "embeddedContext": true },
-                "sessionCapabilities": {}
+                "sessionCapabilities": session_caps
             }
         }
     });
@@ -376,8 +395,39 @@ async fn handle_session_load(
         });
         write_message(stdout, &resp).await;
     } else {
-        let sid = session_id
+        let sid = opts()
+            .recovery_new_id
             .clone()
+            .or_else(|| session_id.clone())
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        *session_id = Some(sid.clone());
+        let resp = json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "result": { "sessionId": sid }
+        });
+        write_message(stdout, &resp).await;
+    }
+}
+
+async fn handle_session_resume(
+    stdout: &mut tokio::io::Stdout,
+    id: Option<Value>,
+    reject: bool,
+    session_id: &mut Option<String>,
+) {
+    if reject {
+        let resp = json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": { "code": -32000, "message": "Session resume rejected" }
+        });
+        write_message(stdout, &resp).await;
+    } else {
+        let sid = opts()
+            .recovery_new_id
+            .clone()
+            .or_else(|| session_id.clone())
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
         *session_id = Some(sid.clone());
         let resp = json!({

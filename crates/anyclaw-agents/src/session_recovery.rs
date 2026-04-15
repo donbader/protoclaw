@@ -133,8 +133,16 @@ impl AgentsManager {
                         .result
                         .as_ref()
                         .and_then(|r| r.get("sessionId"))
+                        .and_then(|v| v.as_str())
                         .is_some() =>
                 {
+                    let returned_id = resp
+                        .result
+                        .as_ref()
+                        .and_then(|r| r.get("sessionId"))
+                        .and_then(|v| v.as_str())
+                        .expect("guard verified sessionId is present")
+                        .to_owned();
                     tracing::info!(
                         agent = %agent_name,
                         step = "resume_attempted",
@@ -142,7 +150,14 @@ impl AgentsManager {
                         "session restored via session/resume"
                     );
                     let slot = &mut self.slots[slot_idx];
-                    slot.session_map.extend(slot.stale_sessions.drain());
+                    for (key, val) in slot.stale_sessions.drain() {
+                        let id = if val == first_acp_id {
+                            returned_id.clone()
+                        } else {
+                            val
+                        };
+                        slot.session_map.insert(key, id);
+                    }
                     // No awaiting_first_prompt for resume — no replay needed.
                     slot.lifecycle.backoff.reset();
                     return true;
@@ -163,7 +178,7 @@ impl AgentsManager {
             .into_owned();
         let mcp_servers = self.fetch_mcp_servers(slot_idx).await;
         let params = serde_json::to_value(SessionLoadParams {
-             session_id: first_acp_id,
+             session_id: first_acp_id.clone(),
              cwd: Some(cwd),
              mcp_servers: Some(mcp_servers),
          })
@@ -187,11 +202,26 @@ impl AgentsManager {
                     .result
                     .as_ref()
                     .and_then(|r| r.get("sessionId"))
+                    .and_then(|v| v.as_str())
                     .is_some() =>
             {
+                let returned_id = resp
+                    .result
+                    .as_ref()
+                    .and_then(|r| r.get("sessionId"))
+                    .and_then(|v| v.as_str())
+                    .expect("guard verified sessionId is present")
+                    .to_owned();
                 tracing::info!(agent = %agent_name, "session restored via session/load");
                 let slot = &mut self.slots[slot_idx];
-                slot.session_map.extend(slot.stale_sessions.drain());
+                for (key, val) in slot.stale_sessions.drain() {
+                    let id = if val == first_acp_id {
+                        returned_id.clone()
+                    } else {
+                        val
+                    };
+                    slot.session_map.insert(key, id);
+                }
                 for acp_id in slot.session_map.values() {
                     slot.awaiting_first_prompt.insert(acp_id.clone());
                 }
@@ -289,11 +319,12 @@ impl AgentsManager {
 
             if let Ok(rx) = conn.send_request("session/resume", params).await
                 && let Ok(Ok(resp)) = tokio::time::timeout(acp_timeout, rx).await
-                && resp
+                && let Some(returned_id) = resp
                     .result
                     .as_ref()
                     .and_then(|r| r.get("sessionId"))
-                    .is_some()
+                    .and_then(|v| v.as_str())
+                    .map(str::to_owned)
             {
                 tracing::info!(
                     agent = %agent_name,
@@ -312,10 +343,12 @@ impl AgentsManager {
                 let slot = &mut self.slots[slot_idx];
                 slot.stale_sessions.remove(session_key);
                 slot.session_map
-                    .insert(session_key.clone(), acp_id.to_owned());
+                    .insert(session_key.clone(), returned_id.clone());
                 slot.reverse_map
-                    .insert(acp_id.to_owned(), session_key.clone());
+                    .insert(returned_id.clone(), session_key.clone());
                 // No awaiting_first_prompt for resume — no replay needed.
+                self.update_session_store(agent_name, session_key, &returned_id)
+                    .await;
                 return Ok(());
             }
             tracing::info!(
@@ -349,11 +382,12 @@ impl AgentsManager {
 
             if let Ok(rx) = conn.send_request("session/load", params).await
                 && let Ok(Ok(resp)) = tokio::time::timeout(acp_timeout, rx).await
-                && resp
+                && let Some(returned_id) = resp
                     .result
                     .as_ref()
                     .and_then(|r| r.get("sessionId"))
-                    .is_some()
+                    .and_then(|v| v.as_str())
+                    .map(str::to_owned)
             {
                 tracing::info!(
                     agent = %agent_name,
@@ -371,9 +405,13 @@ impl AgentsManager {
                 );
                 let slot = &mut self.slots[slot_idx];
                 slot.stale_sessions.remove(session_key);
-                slot.session_map.insert(session_key.clone(), acp_id.clone());
-                slot.reverse_map.insert(acp_id.clone(), session_key.clone());
-                slot.awaiting_first_prompt.insert(acp_id);
+                slot.session_map
+                    .insert(session_key.clone(), returned_id.clone());
+                slot.reverse_map
+                    .insert(returned_id.clone(), session_key.clone());
+                slot.awaiting_first_prompt.insert(returned_id.clone());
+                self.update_session_store(agent_name, session_key, &returned_id)
+                    .await;
                 return Ok(());
             }
             tracing::info!(
@@ -423,6 +461,34 @@ impl AgentsManager {
             "session recovery complete"
         );
         Ok(())
+    }
+
+    async fn update_session_store(
+        &self,
+        agent_name: &str,
+        session_key: &SessionKey,
+        acp_session_id: &str,
+    ) {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let persisted = anyclaw_core::PersistedSession {
+            session_key: session_key.to_string(),
+            agent_name: agent_name.to_string(),
+            acp_session_id: acp_session_id.to_string(),
+            created_at: now,
+            last_active_at: now,
+            closed: false,
+        };
+        if let Err(e) = self.session_store.upsert_session(&persisted).await {
+            tracing::warn!(
+                agent = %agent_name,
+                session_key = %session_key,
+                error = %e,
+                "failed to persist recovered session to store"
+            );
+        }
     }
 
     /// Remove any Docker containers left over from a previous (crashed) run.
