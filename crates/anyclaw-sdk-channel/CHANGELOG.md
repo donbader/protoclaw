@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1](https://github.com/donbader/anyclaw/compare/anyclaw-sdk-channel-v0.3.0...anyclaw-sdk-channel-v0.3.1) - 2026-04-15
+
+### Other
+
+- *(04-03)* inline all known limitations from AGENTS.md and CONCERNS.md
+
 ## [0.3.0](https://github.com/donbader/anyclaw/compare/anyclaw-sdk-channel-v0.2.8...anyclaw-sdk-channel-v0.3.0) - 2026-04-14
 
 ### Added

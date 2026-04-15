@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.8](https://github.com/donbader/anyclaw/compare/anyclaw-sdk-agent-v0.2.7...anyclaw-sdk-agent-v0.2.8) - 2026-04-15
+
+### Other
+
+- *(04-02)* add error display tests for all SDK crate error enums
+
 ## [0.2.7](https://github.com/donbader/anyclaw/compare/anyclaw-sdk-agent-v0.2.6...anyclaw-sdk-agent-v0.2.7) - 2026-04-14
 
 ### Added
