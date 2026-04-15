@@ -6,21 +6,25 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyclaw_config::{AnyclawConfig, SessionStoreConfig, resolve_all_binary_paths};
-use anyclaw_core::{
-    CrashAction, CrashTracker, ExponentialBackoff, HealthSnapshot, HealthStatus, Manager,
-    ManagerError, ManagerHandle, SlotLifecycle,
-};
+use anyclaw_config::{AnyclawConfig, resolve_all_binary_paths};
+use anyclaw_core::{CrashTracker, ExponentialBackoff, HealthSnapshot, SlotLifecycle};
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 
-use anyclaw_agents::{AgentsCommand, AgentsManager};
-use anyclaw_channels::{ChannelsCommand, ChannelsManager};
 use anyclaw_core::ChannelEvent;
-use anyclaw_tools::{ToolsCommand, ToolsManager};
+use anyclaw_tools::ToolsCommand;
+
+use crate::factory::ManagerKind;
 
 /// Admin HTTP server exposing `/health` and `/metrics` endpoints.
 pub mod admin_server;
+
+/// Manager creation factory, session store builder, and ManagerKind dispatch enum.
+pub(crate) mod factory;
+/// Health snapshot refresh and crash-restart monitoring.
+pub(crate) mod health;
+/// Signal handling and ordered manager shutdown.
+pub(crate) mod shutdown;
 
 /// Errors from the supervisor layer.
 #[derive(Debug, thiserror::Error)]
@@ -32,7 +36,7 @@ pub enum SupervisorError {
         manager: String,
         /// The underlying manager error.
         #[source]
-        source: ManagerError,
+        source: anyclaw_core::ManagerError,
     },
 }
 
@@ -41,8 +45,8 @@ pub enum SupervisorError {
 pub struct Supervisor {
     config: AnyclawConfig,
     tools_tx: Option<tokio::sync::mpsc::Sender<ToolsCommand>>,
-    agents_cmd_tx: Option<tokio::sync::mpsc::Sender<AgentsCommand>>,
-    channels_cmd_tx: Option<tokio::sync::mpsc::Sender<ChannelsCommand>>,
+    agents_cmd_tx: Option<tokio::sync::mpsc::Sender<anyclaw_agents::AgentsCommand>>,
+    channels_cmd_tx: Option<tokio::sync::mpsc::Sender<anyclaw_channels::ChannelsCommand>>,
     channel_events_tx: Option<tokio::sync::mpsc::Sender<ChannelEvent>>,
     channel_events_rx: Option<tokio::sync::mpsc::Receiver<ChannelEvent>>,
     debug_http_port_tx: tokio::sync::watch::Sender<u16>,
@@ -51,10 +55,10 @@ pub struct Supervisor {
     health: Arc<RwLock<HealthSnapshot>>,
 }
 
-struct ManagerSlot {
-    name: String,
-    join_handle: Option<tokio::task::JoinHandle<Result<(), ManagerError>>>,
-    lifecycle: SlotLifecycle,
+pub(crate) struct ManagerSlot {
+    pub(crate) name: String,
+    pub(crate) join_handle: Option<tokio::task::JoinHandle<Result<(), anyclaw_core::ManagerError>>>,
+    pub(crate) lifecycle: SlotLifecycle,
 }
 
 // LIMITATION: Do not change MANAGER_ORDER
@@ -65,21 +69,7 @@ struct ManagerSlot {
 // order causes race conditions where agents try to reach tools that aren't started yet,
 // or channels route messages to agents that haven't initialized.
 // See also: AGENTS.md §Anti-Patterns
-const MANAGER_ORDER: [&str; 3] = ["tools", "agents", "channels"];
-
-async fn shutdown_signal() {
-    use tokio::signal::unix::SignalKind;
-
-    let mut sigterm =
-        tokio::signal::unix::signal(SignalKind::terminate()).expect("failed to register SIGTERM");
-    let mut sigint =
-        tokio::signal::unix::signal(SignalKind::interrupt()).expect("failed to register SIGINT");
-
-    tokio::select! {
-        _ = sigterm.recv() => tracing::info!("received SIGTERM"),
-        _ = sigint.recv() => tracing::info!("received SIGINT"),
-    }
-}
+pub(crate) const MANAGER_ORDER: [&str; 3] = ["tools", "agents", "channels"];
 
 impl Supervisor {
     /// Create a new supervisor from the given config. Resolves all binary paths at construction.
@@ -120,7 +110,7 @@ impl Supervisor {
         let cancel_clone = cancel.clone();
 
         let signal_handle = tokio::spawn(async move {
-            shutdown_signal().await;
+            shutdown::shutdown_signal().await;
             cancel_clone.cancel();
         });
 
@@ -210,7 +200,7 @@ impl Supervisor {
                 None
             };
 
-            let mut manager = create_manager(
+            let mut manager = factory::create_manager(
                 &slot.name,
                 &self.config,
                 &tools_tx,
@@ -261,285 +251,6 @@ impl Supervisor {
             tracing::info!(manager = %slot.name, "booted");
         }
         Ok(())
-    }
-
-    async fn shutdown_ordered(&self, slots: &mut [ManagerSlot], per_manager_timeout: Duration) {
-        for slot in slots.iter_mut().rev() {
-            tracing::info!(manager = %slot.name, "shutting down");
-            slot.lifecycle.cancel_token.cancel();
-
-            if let Some(handle) = slot.join_handle.take() {
-                match tokio::time::timeout(per_manager_timeout, handle).await {
-                    Ok(Ok(Ok(()))) => {
-                        tracing::info!(manager = %slot.name, "shut down cleanly");
-                    }
-                    Ok(Ok(Err(e))) => {
-                        tracing::error!(manager = %slot.name, error = %e, "error during shutdown");
-                    }
-                    Ok(Err(e)) => {
-                        tracing::error!(manager = %slot.name, error = %e, "panicked during shutdown");
-                    }
-                    Err(_) => {
-                        tracing::warn!(manager = %slot.name, "shutdown timed out, aborting");
-                        slot.join_handle.as_ref().inspect(|h| h.abort());
-                    }
-                }
-            }
-        }
-    }
-
-    async fn check_and_restart_managers(
-        &mut self,
-        slots: &mut [ManagerSlot],
-        root_cancel: &CancellationToken,
-    ) {
-        for slot in slots.iter_mut() {
-            let needs_restart = matches!(&slot.join_handle, Some(handle) if handle.is_finished());
-
-            if !needs_restart {
-                continue;
-            }
-
-            if let Some(handle) = slot.join_handle.take() {
-                match handle.await {
-                    Ok(Ok(())) => {
-                        tracing::info!(manager = %slot.name, "exited cleanly, not restarting");
-                        continue;
-                    }
-                    Ok(Err(e)) => {
-                        tracing::warn!(manager = %slot.name, error = %e, "crashed");
-                    }
-                    Err(e) => {
-                        tracing::error!(manager = %slot.name, error = %e, "panicked");
-                    }
-                }
-            }
-
-            match slot.lifecycle.record_crash_and_check() {
-                CrashAction::Disabled => {
-                    tracing::error!(
-                        manager = %slot.name,
-                        max_restarts = self.config.supervisor.max_restarts,
-                        restart_window_secs = self.config.supervisor.restart_window_secs,
-                        "crash loop detected, marking disabled — restart circuit breaker tripped"
-                    );
-                    if slot.name == "agents" || slot.name == "channels" {
-                        tracing::error!(
-                            manager = %slot.name,
-                            max_restarts = self.config.supervisor.max_restarts,
-                            restart_window_secs = self.config.supervisor.restart_window_secs,
-                            "critical manager crash loop — initiating shutdown"
-                        );
-                        root_cancel.cancel();
-                    }
-                    continue;
-                }
-                CrashAction::RestartAfter(delay) => {
-                    tracing::info!(manager = %slot.name, delay_ms = delay.as_millis(), "restarting after backoff");
-                    tokio::time::sleep(delay).await;
-                }
-            }
-
-            let tools_tx = self.tools_tx.clone().unwrap_or_else(|| {
-                let (tx, _) = tokio::sync::mpsc::channel::<ToolsCommand>(
-                    anyclaw_core::constants::CMD_CHANNEL_CAPACITY,
-                );
-                tx
-            });
-            let tools_rx = if slot.name == "tools" {
-                let (new_tx, rx) = tokio::sync::mpsc::channel::<ToolsCommand>(
-                    anyclaw_core::constants::CMD_CHANNEL_CAPACITY,
-                );
-                self.tools_tx = Some(new_tx);
-                Some(rx)
-            } else {
-                None
-            };
-            let mut manager = create_manager(
-                &slot.name,
-                &self.config,
-                &tools_tx,
-                tools_rx,
-                self.agents_cmd_tx.as_ref(),
-                None,
-                None,
-            );
-            if let Err(e) = manager.start().await {
-                tracing::error!(manager = %slot.name, error = %e, "restart boot failed");
-                continue;
-            }
-
-            slot.lifecycle.cancel_token = root_cancel.child_token();
-            let token = slot.lifecycle.cancel_token.clone();
-            let handle = tokio::spawn(async move { manager.run(token).await });
-            slot.join_handle = Some(handle);
-
-            metrics::counter!("anyclaw_manager_restarts_total", "manager" => slot.name.clone())
-                .increment(1);
-
-            tracing::info!(manager = %slot.name, "restarted");
-        }
-
-        self.refresh_health_snapshot(slots).await;
-    }
-
-    async fn refresh_health_snapshot(&self, slots: &[ManagerSlot]) {
-        let agents_running = slots
-            .iter()
-            .any(|s| s.name == "agents" && s.join_handle.is_some());
-        let channels_running = slots
-            .iter()
-            .any(|s| s.name == "channels" && s.join_handle.is_some());
-
-        let agents: Vec<anyclaw_core::AgentHealth> = self
-            .config
-            .agents_manager
-            .agents
-            .keys()
-            .map(|name| anyclaw_core::AgentHealth {
-                name: name.clone(),
-                connected: agents_running,
-                session_count: 0,
-            })
-            .collect();
-
-        let channels: Vec<String> = if channels_running {
-            self.config
-                .channels_manager
-                .channels
-                .keys()
-                .cloned()
-                .collect()
-        } else {
-            Vec::new()
-        };
-
-        let mcp_servers: Vec<String> = self
-            .config
-            .tools_manager
-            .tools
-            .iter()
-            .filter(|(_, t)| t.enabled && t.tool_type == anyclaw_config::ToolType::Mcp)
-            .map(|(name, _)| name.clone())
-            .collect();
-
-        let degraded = agents.iter().any(|a| !a.connected);
-        let status = if degraded {
-            HealthStatus::Degraded
-        } else {
-            HealthStatus::Healthy
-        };
-
-        let mut snapshot = self.health.write().await;
-        *snapshot = HealthSnapshot {
-            status,
-            agents,
-            channels,
-            mcp_servers,
-        };
-
-        metrics::gauge!("anyclaw_agents_connected")
-            .set(snapshot.agents.iter().filter(|a| a.connected).count() as f64);
-        metrics::gauge!("anyclaw_channels_running").set(snapshot.channels.len() as f64);
-    }
-}
-
-fn build_session_store(
-    config: &SessionStoreConfig,
-) -> std::sync::Arc<dyn anyclaw_core::DynSessionStore> {
-    match config {
-        SessionStoreConfig::None => std::sync::Arc::new(anyclaw_core::NoopSessionStore),
-        SessionStoreConfig::Sqlite(sqlite_cfg) => {
-            let result = match &sqlite_cfg.path {
-                Some(path) => anyclaw_core::SqliteSessionStore::open(path),
-                None => anyclaw_core::SqliteSessionStore::open_in_memory(),
-            };
-            match result {
-                Ok(s) => std::sync::Arc::new(s),
-                Err(e) => {
-                    tracing::error!(error = %e, "failed to open session store, falling back to noop");
-                    std::sync::Arc::new(anyclaw_core::NoopSessionStore)
-                }
-            }
-        }
-    }
-}
-
-fn create_manager(
-    name: &str,
-    config: &AnyclawConfig,
-    tools_tx: &tokio::sync::mpsc::Sender<ToolsCommand>,
-    tools_rx: Option<tokio::sync::mpsc::Receiver<ToolsCommand>>,
-    agents_cmd_tx: Option<&tokio::sync::mpsc::Sender<AgentsCommand>>,
-    channel_events_tx: Option<tokio::sync::mpsc::Sender<ChannelEvent>>,
-    channel_events_rx: Option<tokio::sync::mpsc::Receiver<ChannelEvent>>,
-) -> ManagerKind {
-    match name {
-        "tools" => {
-            let m = ToolsManager::new(
-                config.tools_manager.tools.clone(),
-                config.tools_manager.tools_server_host.clone(),
-            )
-            .with_cmd_rx(tools_rx.expect("tools_rx required for tools manager"));
-            ManagerKind::Tools(m)
-        }
-        "agents" => {
-            let handle = anyclaw_core::ManagerHandle::new(tools_tx.clone());
-            let session_store = build_session_store(&config.session_store);
-            let mut agents = AgentsManager::new(config.agents_manager.clone(), handle)
-                .with_log_level(config.log_level.clone())
-                .with_session_store(session_store);
-            if let SessionStoreConfig::Sqlite(ref sqlite_cfg) = config.session_store {
-                agents = agents.with_session_ttl_secs(i64::from(sqlite_cfg.ttl_days) * 86400);
-            }
-            if let Some(tx) = channel_events_tx {
-                agents = agents.with_channels_sender(tx);
-            }
-            ManagerKind::Agents(Box::new(agents))
-        }
-        "channels" => {
-            let tx = agents_cmd_tx.expect("agents_cmd_tx required for channels manager");
-            let agents_handle = ManagerHandle::new(tx.clone());
-            let default_agent = config.default_agent_name().unwrap_or("default").to_string();
-            let mut cm = ChannelsManager::new(
-                config.channels_manager.channels.clone(),
-                config.channels_manager.init_timeout_secs,
-                config.channels_manager.exit_timeout_secs,
-                default_agent,
-            )
-            .with_agents_handle(agents_handle)
-            .with_permission_timeout(config.supervisor.permission_timeout_secs)
-            .with_log_level(config.log_level.clone());
-            if let Some(rx) = channel_events_rx {
-                cm = cm.with_channel_events_rx(rx);
-            }
-            ManagerKind::Channels(cm)
-        }
-        _ => unreachable!("unknown manager: {name}"),
-    }
-}
-
-enum ManagerKind {
-    Tools(ToolsManager),
-    Agents(Box<AgentsManager>),
-    Channels(ChannelsManager),
-}
-
-impl ManagerKind {
-    async fn start(&mut self) -> Result<(), ManagerError> {
-        match self {
-            Self::Tools(m) => m.start().await,
-            Self::Agents(m) => m.start().await,
-            Self::Channels(m) => m.start().await,
-        }
-    }
-
-    async fn run(self, cancel: CancellationToken) -> Result<(), ManagerError> {
-        match self {
-            Self::Tools(m) => m.run(cancel).await,
-            Self::Agents(m) => m.run(cancel).await,
-            Self::Channels(m) => m.run(cancel).await,
-        }
     }
 }
 
@@ -706,7 +417,7 @@ mod tests {
             let handle = tokio::spawn(async move {
                 t.cancelled().await;
                 order.lock().unwrap().push(n);
-                Ok::<(), ManagerError>(())
+                Ok::<(), anyclaw_core::ManagerError>(())
             });
             slots.push(ManagerSlot {
                 name: name.to_string(),
@@ -737,7 +448,7 @@ mod tests {
             let t = lifecycle.cancel_token.clone();
             let handle = tokio::spawn(async move {
                 t.cancelled().await;
-                Ok::<(), ManagerError>(())
+                Ok::<(), anyclaw_core::ManagerError>(())
             });
             slots.push(ManagerSlot {
                 name: name.to_string(),
@@ -760,7 +471,7 @@ mod tests {
         let mut slots = Vec::with_capacity(1);
         let handle = tokio::spawn(async move {
             tokio::time::sleep(Duration::from_secs(60)).await;
-            Ok::<(), ManagerError>(())
+            Ok::<(), anyclaw_core::ManagerError>(())
         });
         slots.push(ManagerSlot {
             name: "stuck".to_string(),
@@ -786,10 +497,11 @@ mod tests {
         let mut sup = Supervisor::new(config);
 
         let mut slots = Vec::with_capacity(1);
-        let handle =
-            tokio::spawn(
-                async move { Err::<(), ManagerError>(ManagerError::Internal("crash".into())) },
-            );
+        let handle = tokio::spawn(async move {
+            Err::<(), anyclaw_core::ManagerError>(anyclaw_core::ManagerError::Internal(
+                "crash".into(),
+            ))
+        });
         slots.push(ManagerSlot {
             name: "tools".to_string(),
             join_handle: Some(handle),
@@ -822,10 +534,11 @@ mod tests {
         let mut sup = Supervisor::new(test_config());
 
         let mut slots = Vec::with_capacity(1);
-        let handle =
-            tokio::spawn(
-                async move { Err::<(), ManagerError>(ManagerError::Internal("crash".into())) },
-            );
+        let handle = tokio::spawn(async move {
+            Err::<(), anyclaw_core::ManagerError>(anyclaw_core::ManagerError::Internal(
+                "crash".into(),
+            ))
+        });
 
         let mut crash_tracker = CrashTracker::new(3, Duration::from_secs(60));
         crash_tracker.record_crash();
@@ -910,8 +623,11 @@ mod tests {
         let mut sup = Supervisor::new(test_config());
 
         let mut slots = Vec::with_capacity(1);
-        let handle =
-            tokio::spawn(async { Err::<(), ManagerError>(ManagerError::Internal("crash".into())) });
+        let handle = tokio::spawn(async {
+            Err::<(), anyclaw_core::ManagerError>(anyclaw_core::ManagerError::Internal(
+                "crash".into(),
+            ))
+        });
         slots.push(ManagerSlot {
             name: "tools".to_string(),
             join_handle: Some(handle),
@@ -932,7 +648,9 @@ mod tests {
         }
 
         let handle2 = tokio::spawn(async {
-            Err::<(), ManagerError>(ManagerError::Internal("crash2".into()))
+            Err::<(), anyclaw_core::ManagerError>(anyclaw_core::ManagerError::Internal(
+                "crash2".into(),
+            ))
         });
         slots[0].join_handle = Some(handle2);
         slots[0].lifecycle.cancel_token = CancellationToken::new();
