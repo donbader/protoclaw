@@ -111,7 +111,7 @@ Plans:
 **Plans:** 2 plans
 Plans:
 - [x] 06-01-PLAN.md — Decompose agents manager.rs into fs_sandbox, session_recovery, incoming modules
-- [ ] 06-02-PLAN.md — Decompose supervisor lib.rs into shutdown, health, factory modules
+- [x] 06-02-PLAN.md — Decompose supervisor lib.rs into shutdown, health, factory modules
 
 ## Progress
 

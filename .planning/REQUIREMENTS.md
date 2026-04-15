@@ -67,7 +67,7 @@ Requirements for the code quality milestone. Each maps to roadmap phases.
 ### File Decomposition
 
 - [x] **DECO-01**: Break `anyclaw-agents/src/manager.rs` (3,708 lines) into focused modules (fs_sandbox, session_recovery, tool_events, run loop)
-- [ ] **DECO-02**: Break `anyclaw-supervisor/src/lib.rs` (927 lines) into sub-modules (signal handling, shutdown orchestration, health monitoring)
+- [x] **DECO-02**: Break `anyclaw-supervisor/src/lib.rs` (927 lines) into sub-modules (signal handling, shutdown orchestration, health monitoring)
 - [x] **DECO-03**: All extracted modules use `pub(crate)` boundaries, preserving public API surface
 
 ### Advanced Quality
@@ -145,7 +145,7 @@ Tracked but not in current milestone.
 | TEST-04 | Phase 5 | Complete |
 | TEST-05 | Phase 5 | Complete |
 | DECO-01 | Phase 6 | Complete |
-| DECO-02 | Phase 6 | Pending |
+| DECO-02 | Phase 6 | Complete |
 | DECO-03 | Phase 6 | Complete |
 | ADVN-01 | Phase 3 | Complete |
 | ADVN-02 | Phase 5 | Complete |
