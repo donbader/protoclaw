@@ -118,6 +118,20 @@ For deeper context on design decisions, architecture rationale, and failure mode
 
 Load when making architectural changes, debugging crash recovery, or questioning why a pattern exists.
 
+## Contribution Rules
+
+All AI agents working on this codebase must follow the project's contribution and conduct standards:
+
+- **Code of Conduct**: Follow the [Rust Code of Conduct](https://www.rust-lang.org/policies/code-of-conduct). Be respectful and inclusive in all generated code comments, documentation, commit messages, and PR descriptions. See `CODE_OF_CONDUCT.md`.
+- **Commit messages**: Use [Conventional Commits](https://www.conventionalcommits.org/) — `<type>: <short description>`. Types: `feat`, `fix`, `docs`, `chore`, `refactor`, `test`, `ci`. Imperative mood, lowercase after type, no trailing period, max 72 chars. Body explains *why*, not *what*.
+- **PR descriptions**: Include `## Motivation`, `## Solution`, and `## Testing` sections.
+- **Before submitting**: Ensure `cargo test`, `cargo clippy --workspace`, and `cargo fmt --all -- --check` all pass.
+- **Integration tests**: Build required binaries first — `cargo build --bin mock-agent --bin debug-http --bin sdk-test-tool --bin sdk-test-channel`, then `cargo test -p anyclaw-integration-tests`.
+- **Test conventions**: rstest with BDD naming (`when_action_then_result`), no `test_` prefix, fixtures named `given_*`, parameterised cases use `#[case::label_name]`.
+- **License**: All contributions are licensed under MIT OR Apache-2.0.
+
+Full details in `CONTRIBUTING.md` and `CODE_OF_CONDUCT.md`.
+
 ## Commands
 
 ```bash
