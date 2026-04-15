@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Completed 04-02-PLAN.md
-last_updated: "2026-04-14T23:20:07.199Z"
-last_activity: 2026-04-14
+last_updated: "2026-04-15T00:05:14.867Z"
+last_activity: 2026-04-15
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 14
-  completed_plans: 12
-  percent: 86
+  completed_plans: 13
+  percent: 93
 ---
 
 # Project State
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-04-14)
 ## Current Position
 
 Phase: 04 (SDK & External Polish) — EXECUTING
-Plan: 3 of 4
+Plan: 4 of 4
 Status: Ready to execute
-Last activity: 2026-04-14
+Last activity: 2026-04-15
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -74,6 +74,7 @@ Recent decisions affecting current work:
 - [Phase 03]: All serde_json::Value usages in tools crate are D-03 extensible boundaries — documented, not replaced
 - [Phase 03]: PendingPermission.request typed as JsonRpcRequest — eliminates Value indexing in permission flow
 - [Phase 04]: AgentAdapter hooks use typed ACP structs — zero serde_json::Value in sdk-agent
+- [Phase 04]: LIMITATION comment format: title + full explanation + See also reference — self-contained at code site
 
 ### Pending Todos
 

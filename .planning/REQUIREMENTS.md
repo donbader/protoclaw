@@ -52,9 +52,9 @@ Requirements for the code quality milestone. Each maps to roadmap phases.
 
 ### Documentation
 
-- [ ] **DOCS-01**: `#![warn(missing_docs)]` enabled on all crates (not just SDK crates)
-- [ ] **DOCS-02**: Meaningful doc comments on all public types and functions
-- [ ] **DOCS-03**: Inline limitation comments added at relevant code locations (from AGENTS.md known issues)
+- [x] **DOCS-01**: `#![warn(missing_docs)]` enabled on all crates (not just SDK crates)
+- [x] **DOCS-02**: Meaningful doc comments on all public types and functions
+- [x] **DOCS-03**: Inline limitation comments added at relevant code locations (from AGENTS.md known issues)
 
 ### Test Coverage
 
@@ -74,7 +74,7 @@ Requirements for the code quality milestone. Each maps to roadmap phases.
 
 - [x] **ADVN-01**: Replace `Arc<Mutex<HashMap<u64, oneshot::Sender>>>` with DashMap in connection crates
 - [ ] **ADVN-02**: Property-based testing (proptest) for all ACP/MCP wire types
-- [ ] **ADVN-03**: Inline TODO/LIMITATION comments from AGENTS.md into source code at relevant locations
+- [x] **ADVN-03**: Inline TODO/LIMITATION comments from AGENTS.md into source code at relevant locations
 
 ### Bug Fixes
 
@@ -136,9 +136,9 @@ Tracked but not in current milestone.
 | CLON-01 | Phase 3 | Complete |
 | CLON-02 | Phase 3 | Complete |
 | CLON-03 | Phase 3 | Complete |
-| DOCS-01 | Phase 4 | Pending |
-| DOCS-02 | Phase 4 | Pending |
-| DOCS-03 | Phase 4 | Pending |
+| DOCS-01 | Phase 4 | Complete |
+| DOCS-02 | Phase 4 | Complete |
+| DOCS-03 | Phase 4 | Complete |
 | TEST-01 | Phase 5 | Pending |
 | TEST-02 | Phase 5 | Pending |
 | TEST-03 | Phase 5 | Pending |
@@ -149,7 +149,7 @@ Tracked but not in current milestone.
 | DECO-03 | Phase 6 | Pending |
 | ADVN-01 | Phase 3 | Complete |
 | ADVN-02 | Phase 5 | Pending |
-| ADVN-03 | Phase 4 | Pending |
+| ADVN-03 | Phase 4 | Complete |
 | BUGF-01 | All phases | Complete |
 | BUGF-02 | All phases | Complete |
 
