@@ -20,13 +20,13 @@ It runs as a sidecar alongside your agent binary. You bring the AI logic; anycla
 
 ```
                         ┌─────────────────────────────┐
-                        │         Supervisor           │
-                        │  (boot: tools→agents→chans)  │
+                        │         Supervisor          │
+                        │  (boot: tools→agents→chans) │
                         └──────────────┬──────────────┘
                                        │
           ┌────────────────────────────┼────────────────────────────┐
           │                            │                            │
- ┌────────▼────────┐        ┌──────────▼──────────┐     ┌──────────▼──────────┐
+ ┌────────▼────────┐        ┌──────────▼───────────┐     ┌──────────▼──────────┐
  │  ToolsManager   │        │   AgentsManager      │     │  ChannelsManager    │
  │                 │        │                      │     │                     │
  │  MCP servers    │        │  ACP subprocess      │     │  Telegram           │
@@ -59,12 +59,12 @@ See the [example README](examples/01-fake-agent-telegram-bot/README.md) for deta
 
 Build your own agents, channels, and tools using the SDK crates:
 
-| Crate | Description | docs.rs |
-|-------|-------------|---------|
-| `anyclaw-sdk-types` | Shared types for the anyclaw SDK | [docs](https://docs.rs/anyclaw-sdk-types) |
-| `anyclaw-sdk-agent` | Build ACP-compatible agents | [docs](https://docs.rs/anyclaw-sdk-agent) |
+| Crate                 | Description                          | docs.rs                                     |
+| --------------------- | ------------------------------------ | ------------------------------------------- |
+| `anyclaw-sdk-types`   | Shared types for the anyclaw SDK     | [docs](https://docs.rs/anyclaw-sdk-types)   |
+| `anyclaw-sdk-agent`   | Build ACP-compatible agents          | [docs](https://docs.rs/anyclaw-sdk-agent)   |
 | `anyclaw-sdk-channel` | Build messaging channel integrations | [docs](https://docs.rs/anyclaw-sdk-channel) |
-| `anyclaw-sdk-tool` | Build MCP-compatible tool servers | [docs](https://docs.rs/anyclaw-sdk-tool) |
+| `anyclaw-sdk-tool`    | Build MCP-compatible tool servers    | [docs](https://docs.rs/anyclaw-sdk-tool)    |
 
 The `ChannelHarness` and `ToolServer` in the channel and tool SDKs handle all JSON-RPC framing, the initialize handshake, and message routing. You only implement the `Channel` or `Tool` trait with your business logic.
 

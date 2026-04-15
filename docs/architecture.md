@@ -7,16 +7,16 @@ System overview and design of the anyclaw supervisor.
 Anyclaw is an infrastructure sidecar: it runs alongside your AI agent binary and handles subprocess management, message routing, crash recovery, and tool access. You bring the intelligence; anyclaw handles the plumbing.
 
 ```
-                        ┌─────────────────────────────────┐
+                        ┌──────────────────────────────────┐
                         │           Supervisor             │
                         │                                  │
                         │  boot: tools → agents → channels │
                         │  shutdown: reverse order         │
-                        └───────────────┬─────────────────┘
+                        └───────────────┬──────────────────┘
                                         │
           ┌─────────────────────────────┼──────────────────────────┐
           │                             │                          │
- ┌────────▼──────────┐      ┌───────────▼──────────┐   ┌──────────▼──────────┐
+ ┌────────▼──────────┐      ┌───────────▼───────────┐   ┌──────────▼──────────┐
  │   ToolsManager    │      │    AgentsManager      │   │  ChannelsManager    │
  │                   │      │                       │   │                     │
  │  McpHost          │      │  ACP subprocess       │   │  Telegram           │
