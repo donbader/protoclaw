@@ -6,6 +6,7 @@ This directory contains agent variants for the real-agent Telegram bot example. 
 examples/02-real-agent-telegram/
 ├── opencode/     # OpenCode (npm, opencode acp)
 ├── kiro/         # Kiro CLI (native binary, kiro-cli acp)
+├── claude-code/  # Claude Code (npm, claude-agent-acp)
 └── AGENTS.md     # This file
 ```
 
@@ -17,13 +18,20 @@ Any ACP-compatible agent can be added. The agent must:
 2. Be packageable as a Docker image
 3. Run non-interactively (no TTY, no browser prompts during normal operation)
 
+**Not all agents have native ACP support.** Some agents (e.g., OpenCode, Kiro) have a built-in ACP mode (`opencode acp`, `kiro-cli acp`). Others (e.g., Claude Code) do not — they require an ACP adapter package that bridges their SDK to the ACP protocol.
+
+Before starting, check:
+1. Does the agent CLI have an `--acp` flag or `acp` subcommand? → Use it directly.
+2. If not, search npm/GitHub for `<agent-name> acp adapter` — community adapters often exist (e.g., `@agentclientprotocol/claude-agent-acp` for Claude Code).
+3. If no adapter exists, you'll need to write one or wait for upstream ACP support.
+
 ## Step-by-Step: Add a New Variant
 
-Use an existing variant as your starting point. Copy `opencode/` for npm-based agents, or `kiro/` for native binary agents.
+Use an existing variant as your starting point. Copy `opencode/` for npm-based agents with native ACP, `kiro/` for native binary agents, or `claude-code/` for agents that need an ACP adapter package.
 
 ```sh
-cp -r opencode/ claude-code/
-cd claude-code/
+cp -r opencode/ <your-agent>/
+cd <your-agent>/
 ```
 
 ### 1. Dockerfile
@@ -32,7 +40,7 @@ Multi-stage build with four targets. Modify the deps and agent stages:
 
 ```
 builder          ← ghcr.io/donbader/anyclaw-builder (unchanged)
-<agent>-deps     ← Install the agent CLI (npm, curl, apt, etc.)
+<agent>-deps     ← Install the agent CLI or ACP adapter (npm, curl, apt, etc.)
 example-<name>   ← Anyclaw sidecar + ext/ binaries + anyclaw.yaml
 <agent>-agent    ← Agent image (spawned by bollard at runtime)
 ```
@@ -40,8 +48,11 @@ example-<name>   ← Anyclaw sidecar + ext/ binaries + anyclaw.yaml
 Key decisions:
 
 - **Base image**: `node:20-slim` for npm agents, `debian:bookworm-slim` for native binaries
+- **Deps stage**: Install either the agent CLI (if it has native ACP) or the ACP adapter package (if it doesn't). The adapter pulls in the agent SDK as a dependency — you don't need to install both.
 - **User**: Create a non-root user (e.g., `node`, `claude`, `kiro`). The agent container runs as this user.
-- **Entrypoint**: The ACP command (e.g., `["claude", "--acp"]`, `["opencode", "acp"]`, `["kiro-cli", "acp"]`)
+- **Entrypoint**: The ACP command. This varies by agent:
+  - Native ACP: `["opencode", "acp"]`, `["kiro-cli", "acp"]`
+  - ACP adapter: `["claude-agent-acp"]` (npm package that wraps the agent's SDK)
 - **Home dirs**: Create `~/.local/share`, `~/.local/state`, and any agent-specific config dirs. `chown` them to the agent user.
 
 ### 2. anyclaw.yaml
@@ -55,7 +66,7 @@ agents_manager:
       workspace:
         type: docker
         image: "anyclaw-<agent-name>-agent:latest"
-        entrypoint: ["<binary>", "<acp-flag>"]
+        entrypoint: ["<acp-binary-or-adapter>"]
         docker_host: "tcp://socket-proxy:2375"
         network: "anyclaw-external"
         working_dir: "/home/<user>/workspace"
@@ -119,7 +130,7 @@ make down      # Stop everything
 
 The `Makefile` builds `anyclaw-dev-base:latest` first, then runs `docker compose` with the dev override. Copy from an existing variant — the only difference is the directory name.
 
-### 6. Supporting files
+### 7. Supporting files
 
 Copy from an existing variant and adjust:
 
@@ -133,12 +144,13 @@ Copy from an existing variant and adjust:
 
 Agents handle authentication differently. Document the auth flow in your README.
 
-| Pattern                      | Example                 | When to use                                                  |
-| ---------------------------- | ----------------------- | ------------------------------------------------------------ |
-| No auth needed               | OpenCode                | Agent is free / uses ambient credentials                     |
-| API key env var              | Kiro (`KIRO_API_KEY`)   | Agent supports headless API key auth                         |
-| Pre-authenticated volume     | Kiro (device flow)      | Agent requires interactive login, credentials stored on disk |
-| Config file baked into image | OpenCode (`.opencode/`) | Agent reads config from a known path                         |
+| Pattern                      | Example                              | When to use                                                  |
+| ---------------------------- | ------------------------------------ | ------------------------------------------------------------ |
+| No auth needed               | OpenCode                             | Agent is free / uses ambient credentials                     |
+| API key env var              | Kiro (`KIRO_API_KEY`)                | Agent supports headless API key auth                         |
+| API key + custom base URL    | Claude Code (`ANTHROPIC_API_KEY` + `ANTHROPIC_BASE_URL`) | Agent supports API key auth with optional proxy/local server |
+| Pre-authenticated volume     | Kiro (device flow)                   | Agent requires interactive login, credentials stored on disk |
+| Config file baked into image | OpenCode (`.opencode/`)              | Agent reads config from a known path                         |
 
 For volume-based auth, the key is finding where the agent stores credentials. Run the agent interactively with the full home mounted, complete login, then `find` to locate the credential files:
 
@@ -161,3 +173,36 @@ Before submitting a new variant:
 - [ ] README documents auth flow, quick start, and architecture
 - [ ] `.env.example` lists all required env vars (commented out)
 - [ ] No secrets committed (check `.gitignore`)
+
+## Troubleshooting
+
+### Config changes not taking effect
+
+The `anyclaw-data` volume persists `/workspace` (including `anyclaw.yaml`) across restarts. If you change `anyclaw.yaml` and rebuild, the old config in the volume takes precedence over the one baked into the image. Fix with:
+
+```sh
+docker compose down -v   # removes volumes
+docker compose up -d --build
+```
+
+### Agent binary not found
+
+If you see `exec: "<binary>": executable file not found in $PATH`, the entrypoint in `anyclaw.yaml` doesn't match what's installed in the agent image. Run this to check what's available:
+
+```sh
+docker run --rm --entrypoint ls <image> /usr/local/bin/ | grep -i <agent>
+```
+
+### Agent doesn't speak ACP
+
+If the agent CLI has no `--acp` flag or `acp` subcommand, you need an ACP adapter. Check:
+
+```sh
+# Does the agent have native ACP?
+docker run --rm --entrypoint <binary> <image> --help 2>&1 | grep -i acp
+
+# If not, search for an adapter
+npm search acp <agent-name>
+```
+
+See the `claude-code/` variant for a working example of the adapter pattern.

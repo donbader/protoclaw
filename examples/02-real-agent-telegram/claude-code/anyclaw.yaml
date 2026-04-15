@@ -1,0 +1,72 @@
+# Anyclaw Claude Code Example — Docker Workspace
+# Claude Code runs in an isolated container managed by anyclaw via bollard.
+# The agent uses claude-agent-acp (ACP adapter wrapping Claude Agent SDK).
+# Auth: set ANTHROPIC_API_KEY in .env.
+# See ../AGENTS.md for adding new agent variants.
+# See ../CONFIGURATION.md for the full config reference.
+
+log_level: "debug,hyper=warn,reqwest=warn,h2=warn,hyper_util=warn,tower=warn"
+extensions_dir: "/usr/local/bin"
+
+agents_manager:
+  acp_timeout_secs: 120
+  agents:
+    claude-code:
+      workspace:
+        type: docker
+        image: "anyclaw-claude-code-agent:latest"
+        entrypoint: ["claude-agent-acp"]
+        docker_host: "tcp://socket-proxy:2375"
+        network: "anyclaw-external"
+        working_dir: "/home/node/workspace"
+        pull_policy: "never"
+        volumes:
+          - "claude-code-agent-data:/home/node/.claude"
+          - "claude-code-agent-workspace:/home/node/workspace"
+        env:
+          ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:}"
+          ANTHROPIC_BASE_URL: "${ANTHROPIC_BASE_URL:}"
+          ACP_PERMISSION_MODE: "bypassPermissions"
+      enabled: true
+      tools:
+        - "system-info"
+
+channels_manager:
+  channels:
+    debug-http:
+      binary: "@built-in/channels/debug-http"
+      agent: "claude-code"
+      options:
+        HOST: "0.0.0.0"
+        PORT: "8080"
+      ack:
+        reaction: false
+        typing: false
+    telegram:
+      binary: "@built-in/channels/telegram"
+      enabled: "${TELEGRAM_ENABLED:false}"
+      agent: "claude-code"
+      options:
+        TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:}"
+      ack:
+        reaction: true
+        reaction_emoji: "👀"
+        typing: true
+        reaction_lifecycle: "remove"
+
+tools_manager:
+  tools_server_host: "anyclaw"
+  tools:
+    system-info:
+      binary: "@built-in/tools/system-info"
+
+session_store:
+  type: sqlite
+  path: "/workspace/data/sessions.db"
+  ttl_days: 7
+
+supervisor:
+  shutdown_timeout_secs: 30
+  health_check_interval_secs: 5
+  max_restarts: 5
+  restart_window_secs: 60
