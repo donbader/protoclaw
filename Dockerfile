@@ -11,31 +11,33 @@ COPY . .
 RUN cargo chef prepare --recipe-path recipe.json
 
 # Stage 3: Builder — cook deps from recipe, then build all workspace binaries
+# PROFILE: "release" (default) or "debug" (for dev builds)
 FROM chef AS builder
+ARG PROFILE=release
 COPY --from=planner /build/recipe.json recipe.json
 COPY .cargo .cargo
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/build/target \
-    cargo chef cook --release --locked --recipe-path recipe.json
+    cargo chef cook $(if [ "$PROFILE" = "release" ]; then echo "--release"; fi) --locked --recipe-path recipe.json
 
 COPY . .
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/build/target \
-    cargo build --release --locked \
+    cargo build $(if [ "$PROFILE" = "release" ]; then echo "--release"; fi) --locked \
     --bin anyclaw \
     --bin telegram-channel \
     --bin debug-http \
     --bin mock-agent \
     --bin system-info \
-    && cp target/release/anyclaw \
-        target/release/telegram-channel \
-        target/release/debug-http \
-        target/release/mock-agent \
-        target/release/system-info \
+    && cp target/$PROFILE/anyclaw \
+        target/$PROFILE/telegram-channel \
+        target/$PROFILE/debug-http \
+        target/$PROFILE/mock-agent \
+        target/$PROFILE/system-info \
         /tmp/
 
 # Stage 4: Core runtime — anyclaw only (static, no OS packages)

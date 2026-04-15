@@ -11,7 +11,7 @@ COMPOSE := docker compose -f docker-compose.yml -f docker-compose.dev.yml
 dev: dev-base up
 
 dev-base:
-	docker build -f ../Dockerfile.dev-builder -t anyclaw-dev-base:latest $(ROOT)
+	docker build -f $(ROOT)/Dockerfile --build-arg PROFILE=debug --target builder-export -t anyclaw-dev-base:latest $(ROOT)
 
 up:
 	$(COMPOSE) up -d --build

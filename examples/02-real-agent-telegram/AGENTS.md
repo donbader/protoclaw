@@ -104,7 +104,7 @@ Not invoked directly — use `make dev` instead.
 
 Each variant has its own `Dockerfile.dev-builder` that starts with `FROM anyclaw-dev-base:latest AS builder` and adds agent-specific stages. These are identical to the production `Dockerfile` stages but reference the dev base instead of `ghcr.io/donbader/anyclaw-builder`.
 
-The shared base (`../Dockerfile.dev-builder`) compiles all anyclaw + ext binaries from workspace source. Do not modify it when adding a variant.
+The dev base is built from the root `Dockerfile` with `--build-arg PROFILE=debug --target builder-export`. No separate shared dev Dockerfile needed.
 
 ### 6. Makefile
 
