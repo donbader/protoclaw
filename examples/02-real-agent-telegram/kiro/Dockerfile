@@ -39,11 +39,12 @@ ENTRYPOINT ["anyclaw"]
 # See README.md for both auth flows.
 FROM debian:bookworm-slim@sha256:4724b8cc51e33e398f0e2e15e18d5ec2851ff0c2280647e1310bc1642182655d AS kiro-agent
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates && rm -rf /var/lib/apt/lists/*
+    ca-certificates sudo && rm -rf /var/lib/apt/lists/*
 COPY --from=kiro-deps /usr/local/bin/kiro-cli /usr/local/bin/kiro-cli-chat /usr/local/bin/kiro-cli-term /usr/local/bin/q /usr/local/bin/qchat /usr/local/bin/
 RUN useradd -m -s /bin/bash kiro && \
     mkdir -p /home/kiro/.kiro /home/kiro/.local/share /home/kiro/.local/state && \
-    chown -R kiro:kiro /home/kiro
+    chown -R kiro:kiro /home/kiro && \
+    echo "kiro ALL=(ALL) NOPASSWD: /usr/bin/apt-get" >> /etc/sudoers.d/kiro
 USER kiro
 WORKDIR /home/kiro
 ENTRYPOINT ["kiro-cli", "acp"]

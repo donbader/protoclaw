@@ -33,7 +33,8 @@ ENTRYPOINT ["anyclaw"]
 # node:20-slim
 FROM node:20-slim@sha256:f93745c153377ee2fbbdd6e24efcd03cd2e86d6ab1d8aa9916a3790c40313a55 AS claude-code-agent
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates && rm -rf /var/lib/apt/lists/*
+    ca-certificates sudo && rm -rf /var/lib/apt/lists/* && \
+    echo "node ALL=(ALL) NOPASSWD: /usr/bin/apt-get" >> /etc/sudoers.d/node
 COPY --from=claude-deps /usr/local/lib/node_modules /usr/local/lib/node_modules
 COPY --from=claude-deps /usr/local/bin /usr/local/bin
 RUN mkdir -p /home/node/.claude /home/node/.local/share /home/node/.local/state && \
