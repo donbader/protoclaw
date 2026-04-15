@@ -50,6 +50,7 @@ temp-env = "0.3"
 metrics = "0.24"
 metrics-exporter-prometheus = "0.18"
 dashmap = "6"
+proptest = "1"
 
 [workspace.lints.clippy]
 unwrap_used = "warn"

@@ -34,3 +34,6 @@ pub use channel::*;
 pub use channel_event::*;
 pub use permission::*;
 pub use session_key::*;
+
+#[cfg(test)]
+mod proptest_impls;
