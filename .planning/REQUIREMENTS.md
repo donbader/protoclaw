@@ -58,11 +58,11 @@ Requirements for the code quality milestone. Each maps to roadmap phases.
 
 ### Test Coverage
 
-- [ ] **TEST-01**: Tests for `anyclaw-core/src/health.rs` (HealthSnapshot, HealthStatus)
-- [ ] **TEST-02**: Tests for `anyclaw-sdk-agent/src/error.rs`
-- [ ] **TEST-03**: Tests for `anyclaw-sdk-tool/src/error.rs` and `anyclaw-sdk-tool/src/lib.rs`
-- [ ] **TEST-04**: Tests for `anyclaw-agents/src/acp_types.rs` and `anyclaw-agents/src/backend.rs`
-- [ ] **TEST-05**: All new tests use rstest 0.23 with BDD naming convention
+- [x] **TEST-01**: Tests for `anyclaw-core/src/health.rs` (HealthSnapshot, HealthStatus)
+- [x] **TEST-02**: Tests for `anyclaw-sdk-agent/src/error.rs`
+- [x] **TEST-03**: Tests for `anyclaw-sdk-tool/src/error.rs` and `anyclaw-sdk-tool/src/lib.rs`
+- [x] **TEST-04**: Tests for `anyclaw-agents/src/acp_types.rs` and `anyclaw-agents/src/backend.rs`
+- [x] **TEST-05**: All new tests use rstest 0.23 with BDD naming convention
 
 ### File Decomposition
 
@@ -139,11 +139,11 @@ Tracked but not in current milestone.
 | DOCS-01 | Phase 4 | Complete |
 | DOCS-02 | Phase 4 | Complete |
 | DOCS-03 | Phase 4 | Complete |
-| TEST-01 | Phase 5 | Pending |
-| TEST-02 | Phase 5 | Pending |
-| TEST-03 | Phase 5 | Pending |
-| TEST-04 | Phase 5 | Pending |
-| TEST-05 | Phase 5 | Pending |
+| TEST-01 | Phase 5 | Complete |
+| TEST-02 | Phase 5 | Complete |
+| TEST-03 | Phase 5 | Complete |
+| TEST-04 | Phase 5 | Complete |
+| TEST-05 | Phase 5 | Complete |
 | DECO-01 | Phase 6 | Pending |
 | DECO-02 | Phase 6 | Pending |
 | DECO-03 | Phase 6 | Pending |

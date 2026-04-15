@@ -15,7 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Tooling & Lint Infrastructure** - Workspace lints, clippy.toml, rustfmt.toml, deny.toml, coverage setup, dead code removal (completed 2026-04-14)
 - [x] **Phase 2: Leaf Crate Quality** - Typed JSON in sdk-types/jsonrpc/core, error enum audit, serde consistency (completed 2026-04-14)
 - [x] **Phase 3: Manager Crate Quality** - Typed JSON in agents/channels/tools, clone reduction, DashMap migration (completed 2026-04-14)
-- [ ] **Phase 4: SDK & External Polish** - Typed JSON in SDK + ext binaries, docs enforcement, inline limitation comments
+- [x] **Phase 4: SDK & External Polish** - Typed JSON in SDK + ext binaries, docs enforcement, inline limitation comments (completed 2026-04-15)
 - [ ] **Phase 5: Test Coverage & Verification** - Fill test gaps, coverage baseline, property-based testing for wire types
 - [ ] **Phase 6: File Decomposition** - Break up agents manager (3,708 lines) and supervisor (927 lines)
 
@@ -93,7 +93,11 @@ Plans:
   2. All new tests use rstest 0.23 with BDD naming (`when_action_then_result` / `given_when_then`)
   3. Property-based tests (proptest) exist for all ACP and MCP wire types
   4. Coverage report shows improvement over the Phase 1 baseline
-**Plans**: TBD
+**Plans:** 3 plans
+Plans:
+- [x] 05-01-PLAN.md — Fix sdk-channel LSP bug + unit tests for all identified test gaps
+- [ ] 05-02-PLAN.md — Property-based testing (proptest) for all ACP/channel wire types
+- [ ] 05-03-PLAN.md — Coverage measurement and baseline comparison
 
 ### Phase 6: File Decomposition
 **Goal**: Oversized files are broken into focused modules with clear boundaries — the codebase is navigable and each module has a single responsibility
@@ -118,6 +122,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 1. Tooling & Lint Infrastructure | 3/3 | Complete    | 2026-04-14 |
 | 2. Leaf Crate Quality | 3/3 | Complete    | 2026-04-14 |
 | 3. Manager Crate Quality | 4/4 | Complete    | 2026-04-14 |
-| 4. SDK & External Polish | 0/4 | Planning    | - |
-| 5. Test Coverage & Verification | 0/0 | Not started | - |
+| 4. SDK & External Polish | 4/4 | Complete    | 2026-04-15 |
+| 5. Test Coverage & Verification | 0/3 | Planned | - |
 | 6. File Decomposition | 0/0 | Not started | - |
