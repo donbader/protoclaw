@@ -20,7 +20,8 @@ pub fn detect_agent_binary() -> Option<String> {
 /// Generate a starter `anyclaw.yaml` config file for the given agent binary.
 pub fn generate_config_yaml(agent_binary: &str) -> String {
     format!(
-        r#"# Anyclaw configuration
+        r#"# yaml-language-server: $schema=./anyclaw.schema.json
+# Anyclaw configuration
 # Docs: https://github.com/user/anyclaw
 
 agents_manager:
@@ -116,6 +117,15 @@ mod tests {
         let yaml = generate_config_yaml("opencode");
         let result = serde_yaml::from_str::<anyclaw_config::AnyclawConfig>(&yaml);
         assert!(result.is_ok(), "YAML failed to parse: {:?}", result.err());
+    }
+
+    #[test]
+    fn when_generate_config_yaml_called_then_first_line_is_yaml_language_server_modeline() {
+        let yaml = generate_config_yaml("opencode");
+        assert_eq!(
+            yaml.lines().next().unwrap(),
+            "# yaml-language-server: $schema=./anyclaw.schema.json"
+        );
     }
 
     #[test]
