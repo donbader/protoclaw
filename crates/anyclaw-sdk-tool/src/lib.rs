@@ -25,3 +25,27 @@ pub mod trait_def;
 pub use error::ToolSdkError;
 pub use server::ToolServer;
 pub use trait_def::{DynTool, Tool};
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::rstest;
+
+    #[rstest]
+    fn when_tool_sdk_error_reexported_then_accessible() {
+        let err = ToolSdkError::ExecutionFailed("test".into());
+        assert!(err.to_string().contains("test"));
+    }
+
+    #[rstest]
+    fn when_tool_trait_reexported_then_accessible() {
+        // Verify Tool trait is usable as a bound through the re-export
+        fn _accepts_tool<T: Tool>(_t: &T) {}
+    }
+
+    #[rstest]
+    fn when_dyn_tool_alias_reexported_then_accessible() {
+        // Verify DynTool is a valid trait object type through the re-export
+        fn _accepts_dyn_tool(_t: &dyn DynTool) {}
+    }
+}

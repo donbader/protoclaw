@@ -47,3 +47,81 @@ impl Default for HealthSnapshot {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::rstest;
+    use serde_json::json;
+
+    #[rstest]
+    fn when_health_status_healthy_serialized_then_lowercase_string() {
+        let val = serde_json::to_value(&HealthStatus::Healthy).unwrap();
+        assert_eq!(val, json!("healthy"));
+    }
+
+    #[rstest]
+    fn when_health_status_degraded_serialized_then_lowercase_string() {
+        let val = serde_json::to_value(&HealthStatus::Degraded).unwrap();
+        assert_eq!(val, json!("degraded"));
+    }
+
+    #[rstest]
+    #[case::healthy(HealthStatus::Healthy)]
+    #[case::degraded(HealthStatus::Degraded)]
+    fn when_health_status_round_trips_then_identical(#[case] status: HealthStatus) {
+        let json = serde_json::to_string(&status).unwrap();
+        let restored: HealthStatus = serde_json::from_str(&json).unwrap();
+        assert_eq!(status, restored);
+    }
+
+    #[rstest]
+    fn when_agent_health_round_trips_then_identical() {
+        let original = AgentHealth {
+            name: "test-agent".into(),
+            connected: true,
+            session_count: 3,
+        };
+        let json = serde_json::to_string(&original).unwrap();
+        let restored: AgentHealth = serde_json::from_str(&json).unwrap();
+        assert_eq!(original.name, restored.name);
+        assert_eq!(original.connected, restored.connected);
+        assert_eq!(original.session_count, restored.session_count);
+    }
+
+    #[rstest]
+    fn when_health_snapshot_default_then_healthy_with_empty_vecs() {
+        let snap = HealthSnapshot::default();
+        assert_eq!(snap.status, HealthStatus::Healthy);
+        assert!(snap.agents.is_empty());
+        assert!(snap.channels.is_empty());
+        assert!(snap.mcp_servers.is_empty());
+    }
+
+    #[rstest]
+    fn when_health_snapshot_populated_round_trips_then_identical() {
+        let original = HealthSnapshot {
+            status: HealthStatus::Degraded,
+            agents: vec![
+                AgentHealth {
+                    name: "agent-1".into(),
+                    connected: true,
+                    session_count: 2,
+                },
+                AgentHealth {
+                    name: "agent-2".into(),
+                    connected: false,
+                    session_count: 0,
+                },
+            ],
+            channels: vec!["telegram".into(), "debug-http".into()],
+            mcp_servers: vec!["tools-server".into()],
+        };
+        let json = serde_json::to_string(&original).unwrap();
+        let restored: HealthSnapshot = serde_json::from_str(&json).unwrap();
+        assert_eq!(original.status, restored.status);
+        assert_eq!(original.agents.len(), restored.agents.len());
+        assert_eq!(original.channels, restored.channels);
+        assert_eq!(original.mcp_servers, restored.mcp_servers);
+    }
+}
