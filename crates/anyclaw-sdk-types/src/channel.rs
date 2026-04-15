@@ -305,14 +305,18 @@ pub struct AckNotification {
     pub message_id: Option<String>,
 }
 
-/// Anyclaw → Channel: ack lifecycle event (e.g., response started).
+/// Anyclaw → Channel: ack lifecycle event.
 /// Channel uses this to remove/replace reaction based on its ack config.
+///
+/// Actions:
+/// - `"response_started"` — agent began streaming a response
+/// - `"response_completed"` — agent finished responding (session idle)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct AckLifecycleNotification {
     /// ACP session the lifecycle event relates to.
     pub session_id: String,
-    /// Lifecycle action (e.g., `"response_started"`).
+    /// Lifecycle action: `"response_started"` or `"response_completed"`.
     pub action: String,
 }
 

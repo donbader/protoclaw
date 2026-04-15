@@ -412,6 +412,21 @@ impl ChannelsManager {
     }
 
     async fn handle_session_complete(&mut self, session_key: SessionKey) {
+        // Notify channel that the agent finished responding so it can
+        // remove/replace the ack reaction emoji.
+        if let Some(entry) = self.routing_table.get(&session_key) {
+            let slot = &self.slots[entry.slot_index];
+            if let Some(conn) = &slot.connection {
+                let lifecycle_params = serde_json::json!({
+                    "sessionId": entry.acp_session_id,
+                    "action": "response_completed",
+                });
+                let _ = conn
+                    .send_notification("channel/ackLifecycle", lifecycle_params)
+                    .await;
+            }
+        }
+
         if let Some(next_msg) = self.queue.mark_idle(&session_key) {
             let agent_name = self.routing_table
                 .get(&session_key)

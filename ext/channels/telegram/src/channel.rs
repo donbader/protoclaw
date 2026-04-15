@@ -84,7 +84,7 @@ impl TelegramChannel {
     }
 
     async fn handle_ack_lifecycle(&self, lifecycle: AckLifecycleNotification) {
-        if lifecycle.action != "response_started" {
+        if lifecycle.action != "response_completed" {
             return;
         }
 
@@ -419,5 +419,84 @@ mod tests {
     fn parse_chat_id_invalid() {
         assert_eq!(TelegramChannel::parse_chat_id("slack:12345"), None);
         assert_eq!(TelegramChannel::parse_chat_id("telegram:abc"), None);
+    }
+
+    #[tokio::test]
+    async fn when_ack_lifecycle_response_started_then_ignored() {
+        let state = Arc::new(SharedState::new());
+        let mut ch = TelegramChannel::new(state.clone());
+        let params = ChannelInitializeParams {
+            protocol_version: 1,
+            channel_id: "telegram".into(),
+            ack: Some(ChannelAckConfig {
+                reaction: true,
+                typing: false,
+                reaction_emoji: "👀".into(),
+                reaction_lifecycle: "remove".into(),
+            }),
+            options: make_options_with_token(),
+        };
+        ch.on_initialize(params).await.unwrap();
+
+        // Populate session_chat_map and last_message_ids so the only guard
+        // that should stop execution is the action check.
+        state
+            .session_chat_map
+            .write()
+            .await
+            .insert("sess-1".into(), 12345);
+        state.last_message_ids.write().await.insert(12345, 100);
+
+        // response_started should be a no-op — reaction stays until response_completed
+        let result = ch
+            .handle_unknown(
+                "channel/ackLifecycle",
+                serde_json::json!({ "sessionId": "sess-1", "action": "response_started" }),
+            )
+            .await;
+        assert!(result.is_ok(), "response_started must be a no-op");
+    }
+
+    #[tokio::test]
+    async fn when_ack_lifecycle_response_completed_without_bot_then_graceful_noop() {
+        let state = Arc::new(SharedState::new());
+        // No bot initialized — channel created without on_initialize
+        let mut ch = TelegramChannel::new(state);
+
+        let result = ch
+            .handle_unknown(
+                "channel/ackLifecycle",
+                serde_json::json!({ "sessionId": "sess-1", "action": "response_completed" }),
+            )
+            .await;
+        assert!(
+            result.is_ok(),
+            "response_completed without bot must not error"
+        );
+    }
+
+    #[tokio::test]
+    async fn when_ack_lifecycle_response_completed_without_ack_config_then_graceful_noop() {
+        let state = Arc::new(SharedState::new());
+        let mut ch = TelegramChannel::new(state);
+        // Initialize without ack config
+        let params = ChannelInitializeParams {
+            protocol_version: 1,
+            channel_id: "telegram".into(),
+            ack: None,
+            options: make_options_with_token(),
+        };
+        ch.on_initialize(params).await.unwrap();
+
+        let result = ch
+            .handle_unknown(
+                "channel/ackLifecycle",
+                serde_json::json!({ "sessionId": "sess-1", "action": "response_completed" }),
+            )
+            .await;
+        assert!(
+            result.is_ok(),
+            "response_completed without ack config must not error"
+        );
     }
 }
