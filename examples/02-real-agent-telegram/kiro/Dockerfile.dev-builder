@@ -1,0 +1,45 @@
+# Dev builder for Kiro variant.
+# Requires anyclaw-dev-base:latest to be built first (see docker-compose.dev.yml).
+
+FROM anyclaw-dev-base:latest AS builder
+
+# --- Agent deps + sidecar + agent image (same as production Dockerfile) ---
+
+FROM debian:bookworm-slim@sha256:4724b8cc51e33e398f0e2e15e18d5ec2851ff0c2280647e1310bc1642182655d AS kiro-deps
+ARG TARGETARCH
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates curl unzip && rm -rf /var/lib/apt/lists/*
+RUN ARCH=$(case "${TARGETARCH}" in \
+      amd64) echo "x86_64" ;; \
+      arm64) echo "aarch64" ;; \
+      *) echo "x86_64" ;; \
+    esac) && \
+    curl --proto '=https' --tlsv1.2 -sSf \
+      "https://desktop-release.q.us-east-1.amazonaws.com/latest/kirocli-${ARCH}-linux.zip" \
+      -o /tmp/kirocli.zip && \
+    unzip /tmp/kirocli.zip -d /tmp/kirocli && \
+    cp /tmp/kirocli/kirocli/bin/* /usr/local/bin/ && \
+    chmod +x /usr/local/bin/kiro-cli /usr/local/bin/kiro-cli-chat /usr/local/bin/kiro-cli-term && \
+    rm -rf /tmp/kirocli.zip /tmp/kirocli
+
+FROM debian:bookworm-slim@sha256:4724b8cc51e33e398f0e2e15e18d5ec2851ff0c2280647e1310bc1642182655d AS example-02-kiro
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /usr/local/bin/anyclaw /usr/local/bin/anyclaw
+COPY --from=builder /usr/local/bin/channels/debug-http /usr/local/bin/channels/debug-http
+COPY --from=builder /usr/local/bin/channels/telegram /usr/local/bin/channels/telegram
+COPY --from=builder /usr/local/bin/tools/system-info /usr/local/bin/tools/system-info
+WORKDIR /workspace
+COPY examples/02-real-agent-telegram/kiro/anyclaw.yaml /workspace/anyclaw.yaml
+ENTRYPOINT ["anyclaw"]
+
+FROM debian:bookworm-slim@sha256:4724b8cc51e33e398f0e2e15e18d5ec2851ff0c2280647e1310bc1642182655d AS kiro-agent
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY --from=kiro-deps /usr/local/bin/kiro-cli /usr/local/bin/kiro-cli-chat /usr/local/bin/kiro-cli-term /usr/local/bin/q /usr/local/bin/qchat /usr/local/bin/
+RUN useradd -m -s /bin/bash kiro && \
+    mkdir -p /home/kiro/.kiro /home/kiro/.local/share /home/kiro/.local/state && \
+    chown -R kiro:kiro /home/kiro
+USER kiro
+WORKDIR /home/kiro
+ENTRYPOINT ["kiro-cli", "acp"]

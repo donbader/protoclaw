@@ -33,7 +33,6 @@ anyclaw/
 │   └── project-structure.md        # This file
 ├── examples/telegram-bot/          # Example config + docker-compose (no Rust source)
 └── examples/01-fake-agent-telegram-bot/  # Runnable example (Docker, mock-agent, debug-http)
-    └── tools/system-info/          # Demo MCP tool binary (uses anyclaw-sdk-tool)
 ```
 
 ## Where to Look
@@ -47,7 +46,7 @@ anyclaw/
 | Add channel type | `crates/anyclaw-channels/` + `ext/channels/` | Manager routes, binary in ext/ |
 | Add MCP tool | `crates/anyclaw-tools/src/mcp_host.rs` | McpHost manages external MCP server connections |
 | Add WASM tool | `crates/anyclaw-tools/src/wasm_runner.rs` | WasmToolRunner + WasmTool for sandboxed execution |
-| Build demo tool | `examples/01-fake-agent-telegram-bot/tools/system-info/` | Workspace member, uses anyclaw-sdk-tool |
+| Build demo tool | `ext/tools/system-info/` | Demo MCP tool binary, uses anyclaw-sdk-tool |
 | Change config schema | `crates/anyclaw-config/src/types.rs` | Serde structs (`WorkspaceConfig` enum, `AgentConfig`) |
 | Modify JSON-RPC framing | `crates/anyclaw-jsonrpc/src/codec.rs` | LinesCodec-based, line-delimited JSON |
 | Build a channel (SDK) | `crates/anyclaw-sdk-channel/` | Channel trait + ChannelHarness |

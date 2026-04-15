@@ -24,7 +24,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - anyclaw-data:/workspace/data
+      - anyclaw-data:/workspace
     env_file:
       - .env
     networks:

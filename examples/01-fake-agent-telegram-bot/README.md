@@ -99,4 +99,3 @@ Security: socket proxy restricts Docker API to containers/images only. Agent con
 | `anyclaw.yaml`       | Agent, channel, tool, and supervisor config  |
 | `.env.example`       | Environment template                         |
 | `test.sh`            | E2E tests (`--docker` for Docker workspace)  |
-| `tools/system-info/` | Demo MCP tool binary                         |

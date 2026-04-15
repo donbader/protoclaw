@@ -26,10 +26,11 @@ anyclaw/
 │   └── channels/
 │       ├── telegram/               # Telegram channel implementation
 │       └── debug-http/             # Debug HTTP channel (minimal)
+│   └── tools/
+│       └── system-info/            # Demo MCP tool binary (uses anyclaw-sdk-tool)
 ├── tests/
 │   └── integration/                # E2E tests (spawn real supervisor + mock-agent)
 ├── examples/01-fake-agent-telegram-bot/  # Fake agent example (Docker, mock-agent, debug-http)
-│   └── tools/system-info/          # Demo MCP tool binary (uses anyclaw-sdk-tool)
 └── examples/02-real-agent-telegram/      # Real agent examples (Docker, debug-http + telegram)
     ├── opencode/                           # OpenCode agent variant
     └── kiro/                               # Kiro CLI agent variant
@@ -46,7 +47,7 @@ anyclaw/
 | Add channel type | `crates/anyclaw-channels/` + `ext/channels/` | Manager routes, binary in ext/ |
 | Add MCP tool | `crates/anyclaw-tools/src/mcp_host.rs` | McpHost manages external MCP server connections |
 | Add WASM tool | `crates/anyclaw-tools/src/wasm_runner.rs` | WasmToolRunner + WasmTool for sandboxed execution |
-| Build demo tool | `examples/01-fake-agent-telegram-bot/tools/system-info/` | Workspace member, uses anyclaw-sdk-tool |
+| Build demo tool | `ext/tools/system-info/` | Demo MCP tool binary, uses anyclaw-sdk-tool |
 | Change config schema | `crates/anyclaw-config/src/types.rs` | Serde structs (`WorkspaceConfig` enum, `AgentConfig`) |
 | Change session persistence | `crates/anyclaw-core/src/session_store.rs` | SessionStore trait, DynSessionStore, NoopSessionStore |
 | Change SQLite store impl | `crates/anyclaw-core/src/sqlite_session_store.rs` | SqliteSessionStore (rusqlite, bundled) |

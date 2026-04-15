@@ -1,0 +1,43 @@
+# Dev base: compile anyclaw + ext binaries from workspace source.
+# Shared across all agent variants. Build this first, then variant Dockerfiles
+# reference it via `FROM anyclaw-dev-base:latest AS builder`.
+#
+# Build context: workspace root
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+
+FROM lukemathwalker/cargo-chef:latest-rust-1.94-alpine AS chef
+WORKDIR /build
+RUN apk add --no-cache clang mold
+
+FROM chef AS planner
+COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
+
+FROM chef AS builder
+COPY --from=planner /build/recipe.json recipe.json
+COPY .cargo .cargo
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/build/target \
+    cargo chef cook --locked --recipe-path recipe.json
+COPY . .
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/build/target \
+    cargo build --locked \
+    --bin anyclaw \
+    --bin telegram-channel \
+    --bin debug-http \
+    --bin system-info \
+    && cp target/debug/anyclaw \
+        target/debug/telegram-channel \
+        target/debug/debug-http \
+        target/debug/system-info \
+        /usr/local/bin/
+
+# Final stage: just the binaries in a minimal image
+FROM alpine:3.21 AS base
+COPY --from=builder /usr/local/bin/anyclaw /usr/local/bin/anyclaw
+COPY --from=builder /usr/local/bin/telegram-channel /usr/local/bin/channels/telegram
+COPY --from=builder /usr/local/bin/debug-http /usr/local/bin/channels/debug-http
+COPY --from=builder /usr/local/bin/system-info /usr/local/bin/tools/system-info
