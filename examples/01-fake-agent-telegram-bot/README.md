@@ -57,17 +57,17 @@ Docker workspace mode (spawns mock-agent in a separate container via bollard):
 
 ```
 ┌──────────────────────────────────────────────────┐
-│  anyclaw container                             │
+│  anyclaw container                               │
 │                                                  │
-│  ┌────────────┐  stdio  ┌──────────────┐        │
-│  │ anyclaw  │────────→│ mock-agent   │        │
-│  │ supervisor │         │ (echo+think) │        │
-│  │            │────┐    └──────────────┘        │
+│  ┌────────────┐  stdio  ┌──────────────┐         │
+│  │ anyclaw    │────────→│ mock-agent   │         │
+│  │ supervisor │         │ (echo+think) │         │
+│  │            │────┐    └──────────────┘         │
 │  └────────────┘    │                             │
-│       │            │    ┌──────────────┐        │
-│       │ stdio      └───→│ system-info  │        │
-│       ▼                 │ (MCP tool)   │        │
-│  ┌────────────┐         └──────────────┘        │
+│       │            │    ┌──────────────┐         │
+│       │ stdio      └───→│ system-info  │         │
+│       ▼                 │ (MCP tool)   │         │
+│  ┌────────────┐         └──────────────┘         │
 │  │ debug-http │ :8080                            │
 │  │ channel    │                                  │
 │  └────────────┘                                  │
@@ -93,10 +93,10 @@ Security: socket proxy restricts Docker API to containers/images only. Agent con
 
 ## Files
 
-| File | Purpose |
-|------|---------|
+| File                 | Purpose                                      |
+| -------------------- | -------------------------------------------- |
 | `docker-compose.yml` | Anyclaw + socket-proxy (uses ghcr.io images) |
-| `anyclaw.yaml` | Agent, channel, tool, and supervisor config |
-| `.env.example` | Environment template |
-| `test.sh` | E2E tests (`--docker` for Docker workspace) |
-| `tools/system-info/` | Demo MCP tool binary |
+| `anyclaw.yaml`       | Agent, channel, tool, and supervisor config  |
+| `.env.example`       | Environment template                         |
+| `test.sh`            | E2E tests (`--docker` for Docker workspace)  |
+| `tools/system-info/` | Demo MCP tool binary                         |
