@@ -3,14 +3,12 @@
 services:
   anyclaw:
     build:
-      context: ../../..
-      dockerfile: examples/02-real-agent-telegram/kiro/Dockerfile.dev-builder
-      target: example-02-kiro
+      args:
+        BUILDER_IMAGE: anyclaw-dev-base:latest
     volumes:
       - ./anyclaw.yaml:/workspace/anyclaw.yaml:ro
 
   kiro-agent-image:
     build:
-      context: ../../..
-      dockerfile: examples/02-real-agent-telegram/kiro/Dockerfile.dev-builder
-      target: kiro-agent
+      args:
+        BUILDER_IMAGE: anyclaw-dev-base:latest

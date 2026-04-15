@@ -3,14 +3,12 @@
 services:
   anyclaw:
     build:
-      context: ../../..
-      dockerfile: examples/02-real-agent-telegram/claude-code/Dockerfile.dev-builder
-      target: example-02-claude-code
+      args:
+        BUILDER_IMAGE: anyclaw-dev-base:latest
     volumes:
       - ./anyclaw.yaml:/workspace/anyclaw.yaml:ro
 
   claude-code-agent-image:
     build:
-      context: ../../..
-      dockerfile: examples/02-real-agent-telegram/claude-code/Dockerfile.dev-builder
-      target: claude-code-agent
+      args:
+        BUILDER_IMAGE: anyclaw-dev-base:latest

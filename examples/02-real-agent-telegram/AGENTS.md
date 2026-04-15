@@ -10,6 +10,8 @@ examples/02-real-agent-telegram/
 └── AGENTS.md     # This file
 ```
 
+
+
 ## Requirements
 
 Any ACP-compatible agent can be added. The agent must:
@@ -39,7 +41,8 @@ cd <your-agent>/
 Multi-stage build with four targets. Modify the deps and agent stages:
 
 ```
-builder          ← ghcr.io/donbader/anyclaw-builder (unchanged)
+ARG BUILDER_IMAGE=ghcr.io/donbader/anyclaw-builder:latest
+builder          ← ${BUILDER_IMAGE} (overridden to anyclaw-dev-base:latest for dev builds)
 <agent>-deps     ← Install the agent CLI or ACP adapter (npm, curl, apt, etc.)
 example-<name>   ← Anyclaw sidecar + ext/ binaries + anyclaw.yaml
 <agent>-agent    ← Agent image (spawned by bollard at runtime)
@@ -106,21 +109,26 @@ services:
 
 ### 4. docker-compose.dev.yml
 
-Dev override for building from workspace source. Points at your variant's `Dockerfile.dev-builder`:
+Dev override that swaps the builder image via build arg. No separate Dockerfile needed:
 
-- `context: ../../..` (three levels up to workspace root)
-- `dockerfile: examples/02-real-agent-telegram/<variant>/Dockerfile.dev-builder`
-- `target:` — use your variant's sidecar and agent target names
+```yaml
+services:
+  anyclaw:
+    build:
+      args:
+        BUILDER_IMAGE: anyclaw-dev-base:latest
+    volumes:
+      - ./anyclaw.yaml:/workspace/anyclaw.yaml:ro
+
+  <agent>-agent-image:
+    build:
+      args:
+        BUILDER_IMAGE: anyclaw-dev-base:latest
+```
 
 Not invoked directly — use `make dev` instead.
 
-### 5. Dockerfile.dev-builder (per-variant)
-
-Each variant has its own `Dockerfile.dev-builder` that starts with `FROM anyclaw-dev-base:latest AS builder` and adds agent-specific stages. These are identical to the production `Dockerfile` stages but reference the dev base instead of `ghcr.io/donbader/anyclaw-builder`.
-
-The dev base is built from the root `Dockerfile` with `--build-arg PROFILE=debug --target builder-export`. No separate shared dev Dockerfile needed.
-
-### 6. Makefile
+### 5. Makefile
 
 Each variant includes a `Makefile` that orchestrates the two-step dev build:
 
@@ -133,7 +141,7 @@ make down      # Stop everything
 
 The `Makefile` builds `anyclaw-dev-base:latest` first, then runs `docker compose` with the dev override. Copy from an existing variant — the only difference is the directory name.
 
-### 7. Supporting files
+### 6. Supporting files
 
 Copy from an existing variant and adjust:
 

@@ -131,8 +131,7 @@ See [Claude Code settings docs](https://docs.anthropic.com/en/docs/claude-code/s
 | `.claude.json`           | Claude Code preferences and MCP config (baked into agent image)        |
 | `.env.example`           | Environment template (ANTHROPIC_API_KEY, Telegram)                     |
 | `test.sh`                | E2E tests (Docker-only, requires API key)                              |
-| `docker-compose.dev.yml` | Contributor-only: dev build override (builds from workspace source)    |
-| `Dockerfile.dev-builder` | Contributor-only: agent stages for dev build (references shared base)  |
+| `docker-compose.dev.yml` | Contributor-only: dev build override (passes `BUILDER_IMAGE` arg)  |
 | `Makefile`               | Contributor-only: `make dev` builds base + starts everything           |
 
 ## Development

@@ -1,4 +1,5 @@
-FROM ghcr.io/donbader/anyclaw-builder:latest AS builder
+ARG BUILDER_IMAGE=ghcr.io/donbader/anyclaw-builder:latest
+FROM ${BUILDER_IMAGE} AS builder
 
 # Deps stage: download kiro-cli binary
 # kiro-cli is a native binary distributed as a zip, not an npm package.

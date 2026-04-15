@@ -146,8 +146,7 @@ For the full config schema and all available options, see the [Configuration Ref
 | `anyclaw.yaml`           | Agent, channel, tool, and supervisor config                         |
 | `.env.example`           | Environment template (KIRO_API_KEY, Telegram)                       |
 | `test.sh`                | E2E tests (Docker-only, requires auth)                              |
-| `docker-compose.dev.yml` | Contributor-only: dev build override (builds from workspace source) |
-| `Dockerfile.dev-builder` | Contributor-only: agent stages for dev build (references shared base) |
+| `docker-compose.dev.yml` | Contributor-only: dev build override (passes `BUILDER_IMAGE` arg)   |
 | `Makefile`               | Contributor-only: `make dev` builds base + starts everything        |
 
 ## Development
@@ -164,4 +163,4 @@ make logs   # Follow anyclaw logs
 make down   # Stop everything
 ```
 
-The `Makefile` first builds `anyclaw-dev-base:latest` from the shared `../Dockerfile.dev-builder` (cargo-chef + mold + BuildKit cache mounts), then runs `docker compose` with the dev override to build the variant images and start services.
+The `Makefile` first builds `anyclaw-dev-base:latest` from the root `Dockerfile` (cargo-chef + mold + BuildKit cache mounts), then runs `docker compose` with the dev override which passes `BUILDER_IMAGE=anyclaw-dev-base:latest` to the same `Dockerfile` used in production.

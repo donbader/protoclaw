@@ -1,4 +1,5 @@
-FROM ghcr.io/donbader/anyclaw-builder:latest AS builder
+ARG BUILDER_IMAGE=ghcr.io/donbader/anyclaw-builder:latest
+FROM ${BUILDER_IMAGE} AS builder
 
 # Deps stage: opencode-ai with pruned node_modules
 # node:20-slim

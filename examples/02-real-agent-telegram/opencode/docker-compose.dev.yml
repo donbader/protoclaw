@@ -3,14 +3,12 @@
 services:
   anyclaw:
     build:
-      context: ../../..
-      dockerfile: examples/02-real-agent-telegram/opencode/Dockerfile.dev-builder
-      target: example-02-opencode
+      args:
+        BUILDER_IMAGE: anyclaw-dev-base:latest
     volumes:
       - ./anyclaw.yaml:/workspace/anyclaw.yaml:ro
 
   opencode-agent-image:
     build:
-      context: ../../..
-      dockerfile: examples/02-real-agent-telegram/opencode/Dockerfile.dev-builder
-      target: opencode-agent
+      args:
+        BUILDER_IMAGE: anyclaw-dev-base:latest

@@ -1,4 +1,5 @@
-FROM ghcr.io/donbader/anyclaw-builder:latest AS builder
+ARG BUILDER_IMAGE=ghcr.io/donbader/anyclaw-builder:latest
+FROM ${BUILDER_IMAGE} AS builder
 
 # Deps stage: claude-agent-acp (ACP adapter wrapping Claude Agent SDK)
 # node:20-slim
