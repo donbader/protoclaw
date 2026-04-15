@@ -1,8 +1,7 @@
-// Grandfathered: typed replacement in Phase 2-4
-#[allow(clippy::disallowed_types)]
+// D-03: channel.rs uses Value for handle_unknown params/return (unknown methods have no schema)
+// and for ChannelInitializeParams.options (channel-specific config with channel-defined schemas)
 mod channel;
-// Grandfathered: typed replacement in Phase 2-4
-#[allow(clippy::disallowed_types)]
+// D-03: deliver.rs processes DeliverMessage.content (Value) — agent-defined content structure
 mod deliver;
 mod dispatcher;
 mod formatting;

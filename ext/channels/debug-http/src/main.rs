@@ -1,6 +1,3 @@
-// Grandfathered: typed replacement in Phase 2-4
-#![allow(clippy::disallowed_types)]
-
 use std::convert::Infallible;
 use std::sync::Arc;
 
@@ -9,7 +6,8 @@ use anyclaw_sdk_channel::{
     PermissionBroker, content_to_string,
 };
 use anyclaw_sdk_types::{
-    ChannelRequestPermission, ContentKind, DeliverMessage, PeerInfo, PermissionResponse,
+    ChannelRequestPermission, ContentKind, DeliverMessage, PeerInfo, PermissionOption,
+    PermissionResponse,
 };
 use axum::Router;
 use axum::extract::{Path, State};
@@ -34,7 +32,7 @@ struct PendingPermission {
     #[serde(rename = "sessionId")]
     session_id: String,
     description: String,
-    options: serde_json::Value,
+    options: Vec<PermissionOption>,
 }
 
 /// Shared state between Channel impl and HTTP handlers.
@@ -211,10 +209,7 @@ impl Channel for DebugHttpChannel {
                 request_id: req.request_id.clone(),
                 session_id: req.session_id,
                 description: req.description,
-                options: serde_json::to_value(&req.options).unwrap_or_else(|e| {
-                    tracing::warn!(error = %e, request_id = %req.request_id, "failed to serialize permission options, using null");
-                    serde_json::Value::default()
-                }),
+                options: req.options,
             });
 
         self.state
@@ -270,6 +265,7 @@ fn build_router(state: Arc<SharedState>) -> Router {
         .with_state(state)
 }
 
+// D-03: ad-hoc HTTP JSON responses — lightweight debug endpoints don't warrant dedicated response structs
 async fn handle_health() -> Json<serde_json::Value> {
     Json(serde_json::json!({"status": "ok"}))
 }
@@ -319,6 +315,7 @@ async fn handle_events(
     Sse::new(stream).keep_alive(KeepAlive::default())
 }
 
+// D-03: ad-hoc HTTP JSON response — debug endpoint status
 async fn handle_cancel(State(state): State<Arc<SharedState>>) -> Json<serde_json::Value> {
     let outbound = state.outbound.lock().await;
     if let Some(tx) = outbound.as_ref() {
@@ -337,15 +334,12 @@ async fn handle_cancel(State(state): State<Arc<SharedState>>) -> Json<serde_json
 
 async fn handle_permissions_pending(
     State(state): State<Arc<SharedState>>,
-) -> Json<serde_json::Value> {
+) -> Json<Vec<PendingPermission>> {
     let perms = state.pending_permissions.read().await;
-    let items: Vec<serde_json::Value> = perms
-        .iter()
-        .map(|p| serde_json::to_value(p).unwrap_or(serde_json::json!(null)))
-        .collect();
-    Json(serde_json::Value::Array(items))
+    Json(perms.clone())
 }
 
+// D-03: ad-hoc HTTP JSON response — debug endpoint status
 async fn handle_permission_respond(
     State(state): State<Arc<SharedState>>,
     Path(id): Path<String>,
@@ -644,7 +638,10 @@ mod tests {
                 request_id: "perm-1".into(),
                 session_id: "s1".into(),
                 description: "Allow?".into(),
-                options: serde_json::json!([{"optionId": "allow", "label": "Allow"}]),
+                options: vec![PermissionOption {
+                    option_id: "allow".into(),
+                    label: "Allow".into(),
+                }],
             });
         let rx = state.permission_broker.lock().await.register("perm-1");
 

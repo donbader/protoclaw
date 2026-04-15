@@ -216,6 +216,8 @@ pub(crate) fn format_tool_call_update_text(
     format!("{emoji} <code>{}</code>", escape_html(display_name))
 }
 
+// D-03: content is DeliverMessage.content (Value) — agents manager mutates raw JSON
+// (timestamps, normalization, command injection) so it cannot have a fixed Rust type.
 pub async fn deliver_to_chat(
     bot: &Bot,
     state: &Arc<SharedState>,

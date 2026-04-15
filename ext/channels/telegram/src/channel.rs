@@ -163,6 +163,8 @@ impl Channel for TelegramChannel {
         }
     }
 
+    // D-03: ChannelInitializeParams.options is HashMap<String, Value> — channel-specific
+    // config keys have channel-defined schemas, no fixed Rust type at compile time.
     async fn on_initialize(
         &mut self,
         params: ChannelInitializeParams,
@@ -295,6 +297,8 @@ impl Channel for TelegramChannel {
         Ok(())
     }
 
+    // D-03: handle_unknown params/return are Value — unknown methods have no schema,
+    // the channel cannot know the shape at compile time.
     async fn handle_unknown(
         &mut self,
         method: &str,

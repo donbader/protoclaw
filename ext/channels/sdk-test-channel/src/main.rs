@@ -29,6 +29,8 @@ impl Channel for SdkTestChannel {
     }
 
     async fn deliver_message(&mut self, msg: DeliverMessage) -> Result<(), ChannelSdkError> {
+        // D-03: DeliverMessage.content is Value — agent-defined content structure,
+        // no fixed Rust type at compile time.
         let content_str = match &msg.content {
             serde_json::Value::String(s) => s.clone(),
             other => other.to_string(),
