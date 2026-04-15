@@ -744,7 +744,9 @@ pub async fn deliver_to_chat(
         }
 
         ContentKind::ToolCall {
-            name, tool_call_id, ..
+            name,
+            tool_call_id,
+            input,
         } => {
             let display_name = if name.is_empty() {
                 "tool".to_string()
@@ -773,6 +775,7 @@ pub async fn deliver_to_chat(
                         ToolCallTrack {
                             name: display_name,
                             status: ToolCallStatus::Started,
+                            input,
                         },
                     );
                 }
@@ -825,6 +828,7 @@ pub async fn deliver_to_chat(
             tool_call_id,
             status,
             output,
+            input,
             ..
         } => {
             let (tools_text, tools_msg_id) = {
@@ -846,6 +850,11 @@ pub async fn deliver_to_chat(
                     );
                     return Ok(());
                 };
+
+                // Backfill input if the initial ToolCall arrived without it
+                if track.input.is_none() && input.is_some() {
+                    track.input = input;
+                }
 
                 track.status = match status.as_str() {
                     "in_progress" => ToolCallStatus::InProgress,

@@ -367,6 +367,16 @@ pub(crate) fn normalize_tool_event_fields(content: &mut serde_json::Value, updat
         update.insert("name".to_string(), title);
     }
 
+    // Promote rawInput → input (if input is absent or empty)
+    if !update.contains_key("input")
+        && let Some(raw_input) = update.get("rawInput").cloned()
+    {
+        // Only promote if rawInput is a non-empty object
+        if raw_input.is_object() && !raw_input.as_object().is_some_and(serde_json::Map::is_empty) {
+            update.insert("input".to_string(), raw_input);
+        }
+    }
+
     if update_type == "tool_call_update"
         && !update.contains_key("output")
         && let Some(raw) = update

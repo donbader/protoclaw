@@ -174,6 +174,9 @@ pub enum ContentKind {
         status: String,
         /// Tool output text, if available.
         output: Option<String>,
+        /// Tool input arguments (backfilled from rawInput if initial ToolCall had none).
+        // Extensible: tool input schema is tool-defined (D-03)
+        input: Option<serde_json::Value>,
     },
     /// Agent-provided list of available commands (e.g., for Telegram / menu).
     AvailableCommandsUpdate {
@@ -254,11 +257,13 @@ impl ContentKind {
                     .get("output")
                     .and_then(|v| v.as_str())
                     .map(std::string::ToString::to_string);
+                let input = update.get("input").cloned();
                 ContentKind::ToolCallUpdate {
                     name,
                     tool_call_id,
                     status,
                     output,
+                    input,
                 }
             }
             "available_commands_update" => ContentKind::AvailableCommandsUpdate {
@@ -764,6 +769,7 @@ mod tests {
                 tool_call_id,
                 status,
                 output,
+                ..
             } => {
                 assert_eq!(name, "read_file");
                 assert_eq!(tool_call_id, "tc-1");
@@ -789,6 +795,7 @@ mod tests {
                 tool_call_id,
                 status,
                 output,
+                ..
             } => {
                 assert_eq!(tool_call_id, "tc-2");
                 assert_eq!(name, "");

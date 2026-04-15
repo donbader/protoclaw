@@ -167,6 +167,7 @@ impl Channel for DebugHttpChannel {
                 tool_call_id,
                 status,
                 output,
+                ..
             } => SsePayload {
                 event_type: Some("tool_call_update".into()),
                 data: serde_json::json!({
