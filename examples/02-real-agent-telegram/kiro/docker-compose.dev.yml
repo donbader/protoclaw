@@ -2,28 +2,14 @@
 # NOT auto-loaded. Use via:
 # docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 services:
-  dev-base:
-    build:
-      context: ../../..
-      dockerfile: examples/02-real-agent-telegram/Dockerfile.dev-builder
-    image: anyclaw-dev-base:latest
-    entrypoint: ["true"]
-    restart: "no"
-
   anyclaw:
     build:
       context: ../../..
-      dockerfile: examples/02-real-agent-telegram/kiro/Dockerfile.dev-builder
+      dockerfile: examples/02-real-agent-telegram/Dockerfile.dev-builder
       target: example-02-kiro
-    depends_on:
-      dev-base:
-        condition: service_completed_successfully
 
   kiro-agent-image:
     build:
       context: ../../..
-      dockerfile: examples/02-real-agent-telegram/kiro/Dockerfile.dev-builder
+      dockerfile: examples/02-real-agent-telegram/Dockerfile.dev-builder
       target: kiro-agent
-    depends_on:
-      dev-base:
-        condition: service_completed_successfully

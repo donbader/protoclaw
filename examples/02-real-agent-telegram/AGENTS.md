@@ -92,28 +92,19 @@ services:
 
 ### 4. docker-compose.dev.yml
 
-Dev override for building from workspace source. Three services:
+Dev override for building from workspace source. Update:
 
-```yaml
-services:
-  dev-base:              # Builds shared Dockerfile.dev-builder → anyclaw-dev-base:latest
-  anyclaw:               # Builds variant Dockerfile.dev-builder → sidecar target
-  <agent>-agent-image:   # Builds variant Dockerfile.dev-builder → agent target
-```
+- `context: ../../..` (three levels up to workspace root)
+- `dockerfile: examples/02-real-agent-telegram/Dockerfile.dev-builder`
+- `target:` — use your variant's sidecar and agent target names
 
-Both `anyclaw` and `<agent>-agent-image` depend on `dev-base` completing first.
+### 5. Dockerfile.dev-builder (shared)
 
-### 5. Dockerfile.dev-builder (shared base)
+All variants share a single `Dockerfile.dev-builder` at the parent level. It contains the cargo-chef build stages once, then all variant-specific stages. Docker resolves stage references internally, so a single `docker compose up --build` works.
 
-The parent-level `Dockerfile.dev-builder` compiles all anyclaw + ext binaries from workspace source using cargo-chef. It produces `anyclaw-dev-base:latest` — a minimal image with just the compiled binaries.
+When adding a new variant, append your agent stages to the shared file. This avoids duplicating the cargo build and ensures all variants share the same BuildKit cache.
 
-Do not modify this file when adding a variant.
-
-### 6. Dockerfile.dev-builder (per-variant)
-
-Each variant has its own `Dockerfile.dev-builder` that starts with `FROM anyclaw-dev-base:latest AS builder` and adds the agent-specific stages (deps, sidecar, agent image). These are identical to the production `Dockerfile` stages but reference the dev base instead of `ghcr.io/donbader/anyclaw-builder`.
-
-### 7. Supporting files
+### 6. Supporting files
 
 Copy from an existing variant and adjust:
 

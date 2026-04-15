@@ -1,9 +1,19 @@
-# Dev base: compile anyclaw + ext binaries from workspace source.
-# Shared across all agent variants. Build this first, then variant Dockerfiles
-# reference it via `FROM anyclaw-dev-base:latest AS builder`.
+# Dev builder: compile anyclaw from workspace source instead of ghcr.io
+# Shared across all agent variants. Each variant's docker-compose.dev.yml
+# targets different stages from this single file.
 #
-# Build context: workspace root
+# Build context: workspace root (../../../ from variant dirs)
 # Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+#
+# Targets:
+#   example-02-opencode  — anyclaw sidecar with OpenCode
+#   opencode-agent       — OpenCode agent image
+#   example-02-kiro      — anyclaw sidecar with Kiro
+#   kiro-agent           — Kiro agent image
+
+# ============================================================
+# Shared: cargo-chef build (identical for all variants)
+# ============================================================
 
 FROM lukemathwalker/cargo-chef:latest-rust-1.94-alpine AS chef
 WORKDIR /build
@@ -33,11 +43,93 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
         target/debug/telegram-channel \
         target/debug/debug-http \
         target/debug/system-info \
-        /usr/local/bin/
+        /tmp/
 
-# Final stage: just the binaries in a minimal image
-FROM alpine:3.21 AS base
-COPY --from=builder /usr/local/bin/anyclaw /usr/local/bin/anyclaw
-COPY --from=builder /usr/local/bin/telegram-channel /usr/local/bin/channels/telegram
-COPY --from=builder /usr/local/bin/debug-http /usr/local/bin/channels/debug-http
-COPY --from=builder /usr/local/bin/system-info /usr/local/bin/tools/system-info
+# ============================================================
+# OpenCode variant
+# ============================================================
+
+FROM node:20-slim@sha256:f93745c153377ee2fbbdd6e24efcd03cd2e86d6ab1d8aa9916a3790c40313a55 AS opencode-deps
+RUN npm install -g opencode-ai@latest --omit=dev && \
+    find /usr/local/lib/node_modules \
+      -name "*.md" -o -name "*.map" -o -name "*.ts" -o -name "LICENSE*" \
+      -o -name "CHANGELOG*" -o -name "*.d.ts" | xargs rm -f 2>/dev/null && \
+    find /usr/local/lib/node_modules \
+      -type d \( -name "test" -o -name "tests" -o -name "__tests__" \
+      -o -name "docs" -o -name ".github" \) | xargs rm -rf 2>/dev/null; \
+    true
+
+FROM node:20-slim@sha256:f93745c153377ee2fbbdd6e24efcd03cd2e86d6ab1d8aa9916a3790c40313a55 AS example-02-opencode
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY --from=opencode-deps /usr/local/lib/node_modules /usr/local/lib/node_modules
+COPY --from=opencode-deps /usr/local/bin /usr/local/bin
+COPY --from=builder /tmp/anyclaw /usr/local/bin/anyclaw
+COPY --from=builder /tmp/debug-http /usr/local/bin/channels/debug-http
+COPY --from=builder /tmp/telegram-channel /usr/local/bin/channels/telegram
+COPY --from=builder /tmp/system-info /usr/local/bin/tools/system-info
+WORKDIR /workspace
+COPY examples/02-real-agent-telegram/opencode/anyclaw.yaml /workspace/anyclaw.yaml
+ENTRYPOINT ["anyclaw"]
+
+FROM node:20-slim@sha256:f93745c153377ee2fbbdd6e24efcd03cd2e86d6ab1d8aa9916a3790c40313a55 AS opencode-agent
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY --from=opencode-deps /usr/local/lib/node_modules /usr/local/lib/node_modules
+COPY --from=opencode-deps /usr/local/bin /usr/local/bin
+RUN mkdir -p /home/node/.config/opencode
+COPY examples/02-real-agent-telegram/opencode/README.md examples/02-real-agent-telegram/opencode/.opencode* /tmp/build-staging/
+RUN if [ -f /tmp/build-staging/opencode.json ]; then \
+      cp /tmp/build-staging/opencode.json /home/node/.config/opencode/ && \
+      cp /tmp/build-staging/package*.json /home/node/.config/opencode/ 2>/dev/null || true; \
+    fi && rm -rf /tmp/build-staging
+RUN if [ -f /home/node/.config/opencode/package.json ]; then \
+      cd /home/node/.config/opencode && npm install --omit=dev; \
+    fi
+RUN mkdir -p /home/node/.local/share /home/node/.local/state && chown -R node:node /home/node/.local
+USER node
+WORKDIR /home/node
+ENTRYPOINT ["opencode", "acp"]
+
+# ============================================================
+# Kiro variant
+# ============================================================
+
+FROM debian:bookworm-slim@sha256:4724b8cc51e33e398f0e2e15e18d5ec2851ff0c2280647e1310bc1642182655d AS kiro-deps
+ARG TARGETARCH
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates curl unzip && rm -rf /var/lib/apt/lists/*
+RUN ARCH=$(case "${TARGETARCH}" in \
+      amd64) echo "x86_64" ;; \
+      arm64) echo "aarch64" ;; \
+      *) echo "x86_64" ;; \
+    esac) && \
+    curl --proto '=https' --tlsv1.2 -sSf \
+      "https://desktop-release.q.us-east-1.amazonaws.com/latest/kirocli-${ARCH}-linux.zip" \
+      -o /tmp/kirocli.zip && \
+    unzip /tmp/kirocli.zip -d /tmp/kirocli && \
+    cp /tmp/kirocli/kirocli/bin/* /usr/local/bin/ && \
+    chmod +x /usr/local/bin/kiro-cli /usr/local/bin/kiro-cli-chat /usr/local/bin/kiro-cli-term && \
+    rm -rf /tmp/kirocli.zip /tmp/kirocli
+
+FROM debian:bookworm-slim@sha256:4724b8cc51e33e398f0e2e15e18d5ec2851ff0c2280647e1310bc1642182655d AS example-02-kiro
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /tmp/anyclaw /usr/local/bin/anyclaw
+COPY --from=builder /tmp/debug-http /usr/local/bin/channels/debug-http
+COPY --from=builder /tmp/telegram-channel /usr/local/bin/channels/telegram
+COPY --from=builder /tmp/system-info /usr/local/bin/tools/system-info
+WORKDIR /workspace
+COPY examples/02-real-agent-telegram/kiro/anyclaw.yaml /workspace/anyclaw.yaml
+ENTRYPOINT ["anyclaw"]
+
+FROM debian:bookworm-slim@sha256:4724b8cc51e33e398f0e2e15e18d5ec2851ff0c2280647e1310bc1642182655d AS kiro-agent
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY --from=kiro-deps /usr/local/bin/kiro-cli /usr/local/bin/kiro-cli-chat /usr/local/bin/kiro-cli-term /usr/local/bin/q /usr/local/bin/qchat /usr/local/bin/
+RUN useradd -m -s /bin/bash kiro && \
+    mkdir -p /home/kiro/.kiro /home/kiro/.local/share /home/kiro/.local/state && \
+    chown -R kiro:kiro /home/kiro
+USER kiro
+WORKDIR /home/kiro
+ENTRYPOINT ["kiro-cli", "acp"]
