@@ -218,6 +218,7 @@ pub(crate) fn format_tool_call_update_text(
 
 // D-03: content is DeliverMessage.content (Value) — agents manager mutates raw JSON
 // (timestamps, normalization, command injection) so it cannot have a fixed Rust type.
+#[allow(clippy::disallowed_types)]
 pub async fn deliver_to_chat(
     bot: &Bot,
     state: &Arc<SharedState>,

@@ -266,6 +266,7 @@ fn build_router(state: Arc<SharedState>) -> Router {
 }
 
 // D-03: ad-hoc HTTP JSON responses — lightweight debug endpoints don't warrant dedicated response structs
+#[allow(clippy::disallowed_types)]
 async fn handle_health() -> Json<serde_json::Value> {
     Json(serde_json::json!({"status": "ok"}))
 }
@@ -316,6 +317,7 @@ async fn handle_events(
 }
 
 // D-03: ad-hoc HTTP JSON response — debug endpoint status
+#[allow(clippy::disallowed_types)]
 async fn handle_cancel(State(state): State<Arc<SharedState>>) -> Json<serde_json::Value> {
     let outbound = state.outbound.lock().await;
     if let Some(tx) = outbound.as_ref() {
@@ -340,6 +342,7 @@ async fn handle_permissions_pending(
 }
 
 // D-03: ad-hoc HTTP JSON response — debug endpoint status
+#[allow(clippy::disallowed_types)]
 async fn handle_permission_respond(
     State(state): State<Arc<SharedState>>,
     Path(id): Path<String>,

@@ -1,4 +1,6 @@
-// Grandfathered: typed replacement in Phase 2-4
+// D-03: mock-agent is a standalone ACP test binary that speaks raw JSON-RPC over stdio.
+// It constructs protocol messages manually — there is no typed JSON-RPC envelope struct
+// because the mock intentionally exercises the raw wire format.
 #![allow(clippy::disallowed_types)]
 
 use serde_json::{Value, json};

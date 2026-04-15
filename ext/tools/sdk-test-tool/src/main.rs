@@ -1,4 +1,5 @@
-// Grandfathered: typed replacement in Phase 2-4
+// D-03: Tool trait I/O is serde_json::Value by design — JSON Schema input has no fixed
+// Rust type, and tool output is arbitrary JSON. See crates/anyclaw-sdk-tool/src/trait_def.rs.
 #![allow(clippy::disallowed_types)]
 
 use anyclaw_sdk_tool::{Tool, ToolSdkError, ToolServer};

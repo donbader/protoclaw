@@ -165,6 +165,7 @@ impl Channel for TelegramChannel {
 
     // D-03: ChannelInitializeParams.options is HashMap<String, Value> — channel-specific
     // config keys have channel-defined schemas, no fixed Rust type at compile time.
+    #[allow(clippy::disallowed_types)]
     async fn on_initialize(
         &mut self,
         params: ChannelInitializeParams,
@@ -299,6 +300,7 @@ impl Channel for TelegramChannel {
 
     // D-03: handle_unknown params/return are Value — unknown methods have no schema,
     // the channel cannot know the shape at compile time.
+    #[allow(clippy::disallowed_types)]
     async fn handle_unknown(
         &mut self,
         method: &str,
