@@ -1,6 +1,6 @@
 [package]
 name = "anyclaw-sdk-tool"
-version = "0.2.7"
+version = "0.2.8"
 description = "Tool SDK for anyclaw — build MCP-compatible tool servers"
 edition.workspace = true
 rust-version.workspace = true

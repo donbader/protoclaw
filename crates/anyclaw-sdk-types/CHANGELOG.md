@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2](https://github.com/donbader/anyclaw/compare/anyclaw-sdk-types-v0.5.1...anyclaw-sdk-types-v0.5.2) - 2026-04-15
+
+### Other
+
+- *(04-02)* add round-trip serde tests for all sdk-types wire types
+
 ## [0.5.1](https://github.com/donbader/anyclaw/compare/anyclaw-sdk-types-v0.5.0...anyclaw-sdk-types-v0.5.1) - 2026-04-14
 
 ### Added
