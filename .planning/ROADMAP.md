@@ -16,7 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: Leaf Crate Quality** - Typed JSON in sdk-types/jsonrpc/core, error enum audit, serde consistency (completed 2026-04-14)
 - [x] **Phase 3: Manager Crate Quality** - Typed JSON in agents/channels/tools, clone reduction, DashMap migration (completed 2026-04-14)
 - [x] **Phase 4: SDK & External Polish** - Typed JSON in SDK + ext binaries, docs enforcement, inline limitation comments (completed 2026-04-15)
-- [ ] **Phase 5: Test Coverage & Verification** - Fill test gaps, coverage baseline, property-based testing for wire types
+- [x] **Phase 5: Test Coverage & Verification** - Fill test gaps, coverage baseline, property-based testing for wire types (completed 2026-04-15)
 - [ ] **Phase 6: File Decomposition** - Break up agents manager (3,708 lines) and supervisor (927 lines)
 
 ## Phase Details
@@ -93,7 +93,7 @@ Plans:
   2. All new tests use rstest 0.23 with BDD naming (`when_action_then_result` / `given_when_then`)
   3. Property-based tests (proptest) exist for all ACP and MCP wire types
   4. Coverage report shows improvement over the Phase 1 baseline
-**Plans:** 3 plans
+**Plans:** 3/3 plans complete
 Plans:
 - [x] 05-01-PLAN.md — Fix sdk-channel LSP bug + unit tests for all identified test gaps
 - [x] 05-02-PLAN.md — Property-based testing (proptest) for all ACP/channel wire types
@@ -108,7 +108,10 @@ Plans:
   2. `anyclaw-supervisor/src/lib.rs` is decomposed into sub-modules (signal handling, shutdown orchestration, health monitoring)
   3. All extracted modules use `pub(crate)` boundaries — the public API surface of each crate is unchanged
   4. All existing tests pass without modification (decomposition is purely structural)
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 06-01-PLAN.md — Decompose agents manager.rs into fs_sandbox, session_recovery, incoming modules
+- [ ] 06-02-PLAN.md — Decompose supervisor lib.rs into shutdown, health, factory modules
 
 ## Progress
 
@@ -123,5 +126,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 2. Leaf Crate Quality | 3/3 | Complete    | 2026-04-14 |
 | 3. Manager Crate Quality | 4/4 | Complete    | 2026-04-14 |
 | 4. SDK & External Polish | 4/4 | Complete    | 2026-04-15 |
-| 5. Test Coverage & Verification | 0/3 | Planned | - |
-| 6. File Decomposition | 0/0 | Not started | - |
+| 5. Test Coverage & Verification | 3/3 | Complete    | 2026-04-15 |
+| 6. File Decomposition | 0/2 | Planned | - |
