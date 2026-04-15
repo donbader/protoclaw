@@ -92,17 +92,32 @@ services:
 
 ### 4. docker-compose.dev.yml
 
-Dev override for building from workspace source. Update:
+Dev override for building from workspace source. Points at your variant's `Dockerfile.dev-builder`:
 
 - `context: ../../..` (three levels up to workspace root)
-- `dockerfile: examples/02-real-agent-telegram/Dockerfile.dev-builder`
+- `dockerfile: examples/02-real-agent-telegram/<variant>/Dockerfile.dev-builder`
 - `target:` — use your variant's sidecar and agent target names
 
-### 5. Dockerfile.dev-builder (shared)
+Not invoked directly — use `make dev` instead.
 
-All variants share a single `Dockerfile.dev-builder` at the parent level. It contains the cargo-chef build stages once, then all variant-specific stages. Docker resolves stage references internally, so a single `docker compose up --build` works.
+### 5. Dockerfile.dev-builder (per-variant)
 
-When adding a new variant, append your agent stages to the shared file. This avoids duplicating the cargo build and ensures all variants share the same BuildKit cache.
+Each variant has its own `Dockerfile.dev-builder` that starts with `FROM anyclaw-dev-base:latest AS builder` and adds agent-specific stages. These are identical to the production `Dockerfile` stages but reference the dev base instead of `ghcr.io/donbader/anyclaw-builder`.
+
+The shared base (`../Dockerfile.dev-builder`) compiles all anyclaw + ext binaries from workspace source. Do not modify it when adding a variant.
+
+### 6. Makefile
+
+Each variant includes a `Makefile` that orchestrates the two-step dev build:
+
+```sh
+make dev       # Build base image + variant from source, start everything
+make dev-base  # Rebuild anyclaw binaries only
+make logs      # Follow anyclaw logs
+make down      # Stop everything
+```
+
+The `Makefile` builds `anyclaw-dev-base:latest` first, then runs `docker compose` with the dev override. Copy from an existing variant — the only difference is the directory name.
 
 ### 6. Supporting files
 

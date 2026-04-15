@@ -110,6 +110,8 @@ For the full config schema and all available options, see the [Configuration Ref
 | `.env.example`           | Environment template                                                          |
 | `test.sh`                | E2E tests (Docker-only)                                                       |
 | `docker-compose.dev.yml` | Contributor-only: dev build override (builds from workspace source)           |
+| `Dockerfile.dev-builder` | Contributor-only: agent stages for dev build (references shared base)         |
+| `Makefile`               | Contributor-only: `make dev` builds base + starts everything                  |
 
 ## Development
 
@@ -117,17 +119,12 @@ For the full config schema and all available options, see the [Configuration Ref
 
 ### Local Source Builds
 
-For iterating on anyclaw source code, use the dev override:
+For iterating on anyclaw source code:
 
 ```sh
-# Build from workspace source + start
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
-
-# Follow logs
-docker compose -f docker-compose.yml -f docker-compose.dev.yml logs -f anyclaw
-
-# Stop
-docker compose -f docker-compose.yml -f docker-compose.dev.yml down
+make dev    # Build base image + variant from source, start everything
+make logs   # Follow anyclaw logs
+make down   # Stop everything
 ```
 
-This uses `docker-compose.dev.yml` (override) and the shared `../Dockerfile.dev-builder` (cargo-chef + mold + BuildKit cache mounts). Neither is loaded by the default `docker compose up`.
+The `Makefile` first builds `anyclaw-dev-base:latest` from the shared `../Dockerfile.dev-builder` (cargo-chef + mold + BuildKit cache mounts), then runs `docker compose` with the dev override to build the variant images and start services.
