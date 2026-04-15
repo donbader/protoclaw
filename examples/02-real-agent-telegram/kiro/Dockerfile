@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1
 ARG BUILDER_IMAGE=ghcr.io/donbader/anyclaw-builder:latest
 FROM ${BUILDER_IMAGE} AS builder
 
@@ -6,10 +5,8 @@ FROM ${BUILDER_IMAGE} AS builder
 # kiro-cli is a native binary distributed as a zip, not an npm package.
 FROM debian:bookworm-slim@sha256:4724b8cc51e33e398f0e2e15e18d5ec2851ff0c2280647e1310bc1642182655d AS kiro-deps
 ARG TARGETARCH
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates curl sudo unzip
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates curl sudo unzip && rm -rf /var/lib/apt/lists/*
 RUN ARCH=$(case "${TARGETARCH}" in \
       amd64) echo "x86_64" ;; \
       arm64) echo "aarch64" ;; \
@@ -25,10 +22,8 @@ RUN ARCH=$(case "${TARGETARCH}" in \
 
 # Kiro target — anyclaw sidecar + ext/ binaries (no Node.js needed)
 FROM debian:bookworm-slim@sha256:4724b8cc51e33e398f0e2e15e18d5ec2851ff0c2280647e1310bc1642182655d AS example-02-kiro
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /usr/local/bin/anyclaw /usr/local/bin/anyclaw
 COPY --from=builder /usr/local/bin/channels/debug-http /usr/local/bin/channels/debug-http
 COPY --from=builder /usr/local/bin/channels/telegram /usr/local/bin/channels/telegram

@@ -1,14 +1,11 @@
-# syntax=docker/dockerfile:1
 ARG BUILDER_IMAGE=ghcr.io/donbader/anyclaw-builder:latest
 FROM ${BUILDER_IMAGE} AS builder
 
 # Deps stage: claude-agent-acp (ACP adapter wrapping Claude Agent SDK)
 # node:20-slim
 FROM node:20-slim@sha256:f93745c153377ee2fbbdd6e24efcd03cd2e86d6ab1d8aa9916a3790c40313a55 AS claude-deps
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates sudo
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates sudo && rm -rf /var/lib/apt/lists/*
 RUN npm install -g @agentclientprotocol/claude-agent-acp@latest --omit=dev && \
     find /usr/local/lib/node_modules \
       -name "*.md" -o -name "*.map" -o -name "*.ts" -o -name "LICENSE*" \
@@ -21,10 +18,8 @@ RUN npm install -g @agentclientprotocol/claude-agent-acp@latest --omit=dev && \
 # Claude Code target — anyclaw + ext/ binaries + Node.js + claude-agent-acp
 # node:20-slim
 FROM node:20-slim@sha256:f93745c153377ee2fbbdd6e24efcd03cd2e86d6ab1d8aa9916a3790c40313a55 AS example-02-claude-code
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY --from=claude-deps /usr/local/lib/node_modules /usr/local/lib/node_modules
 COPY --from=claude-deps /usr/local/bin /usr/local/bin
 COPY --from=builder /usr/local/bin/anyclaw /usr/local/bin/anyclaw
