@@ -10,13 +10,15 @@ channels_manager:
   init_timeout_secs: 10
   exit_timeout_secs: 5
 
-tools_manager: {}
+tools_manager:
+  tools_server_host: "127.0.0.1"
 
 supervisor:
   shutdown_timeout_secs: 30
   health_check_interval_secs: 5
   max_restarts: 5
   restart_window_secs: 60
+  admin_port: 3000
 
 session_store:
   type: none

@@ -970,6 +970,130 @@ tools_manager:
         assert_eq!(config.agents_manager.shutdown_grace_ms, 100);
         assert_eq!(config.channels_manager.init_timeout_secs, 10);
         assert_eq!(config.channels_manager.exit_timeout_secs, 5);
+        assert_eq!(config.tools_manager.tools_server_host, "127.0.0.1");
+        assert_eq!(config.supervisor.admin_port, 3000);
+    }
+
+    #[test]
+    fn when_defaults_yaml_values_match_serde_default_fns_then_no_drift() {
+        let config: AnyclawConfig = serde_yaml::from_str(DEFAULTS_YAML).unwrap();
+
+        assert_eq!(config.log_level, default_log_level(), "log_level drift");
+        assert_eq!(
+            config.extensions_dir,
+            default_extensions_dir(),
+            "extensions_dir drift"
+        );
+        assert_eq!(config.log_format, LogFormat::Pretty, "log_format drift");
+
+        assert_eq!(
+            config.agents_manager.acp_timeout_secs,
+            default_acp_timeout_secs(),
+            "acp_timeout_secs drift"
+        );
+        assert_eq!(
+            config.agents_manager.shutdown_grace_ms,
+            default_shutdown_grace_ms(),
+            "shutdown_grace_ms drift"
+        );
+
+        assert_eq!(
+            config.channels_manager.init_timeout_secs,
+            default_init_timeout_secs(),
+            "init_timeout_secs drift"
+        );
+        assert_eq!(
+            config.channels_manager.exit_timeout_secs,
+            default_exit_timeout_secs(),
+            "exit_timeout_secs drift"
+        );
+
+        assert_eq!(
+            config.tools_manager.tools_server_host,
+            default_tools_server_host(),
+            "tools_server_host drift"
+        );
+
+        assert_eq!(
+            config.supervisor.shutdown_timeout_secs,
+            default_shutdown_timeout(),
+            "shutdown_timeout_secs drift"
+        );
+        assert_eq!(
+            config.supervisor.health_check_interval_secs,
+            default_health_interval(),
+            "health_check_interval_secs drift"
+        );
+        assert_eq!(
+            config.supervisor.max_restarts,
+            default_max_restarts(),
+            "max_restarts drift"
+        );
+        assert_eq!(
+            config.supervisor.restart_window_secs,
+            default_restart_window(),
+            "restart_window_secs drift"
+        );
+        assert_eq!(
+            config.supervisor.admin_port,
+            default_admin_port(),
+            "admin_port drift"
+        );
+    }
+
+    #[test]
+    fn when_defaults_yaml_deserialized_alone_then_all_fixed_path_fields_populated() {
+        let config: AnyclawConfig = serde_yaml::from_str(DEFAULTS_YAML).unwrap();
+
+        assert!(
+            !config.log_level.is_empty(),
+            "log_level should not be empty"
+        );
+        assert!(
+            !config.extensions_dir.is_empty(),
+            "extensions_dir should not be empty"
+        );
+
+        assert!(
+            config.agents_manager.acp_timeout_secs > 0,
+            "acp_timeout_secs should be > 0"
+        );
+        assert!(
+            config.agents_manager.shutdown_grace_ms > 0,
+            "shutdown_grace_ms should be > 0"
+        );
+
+        assert!(
+            config.channels_manager.init_timeout_secs > 0,
+            "init_timeout_secs should be > 0"
+        );
+        assert!(
+            config.channels_manager.exit_timeout_secs > 0,
+            "exit_timeout_secs should be > 0"
+        );
+
+        assert!(
+            !config.tools_manager.tools_server_host.is_empty(),
+            "tools_server_host should not be empty"
+        );
+
+        assert!(
+            config.supervisor.shutdown_timeout_secs > 0,
+            "shutdown_timeout_secs should be > 0"
+        );
+        assert!(
+            config.supervisor.health_check_interval_secs > 0,
+            "health_check_interval_secs should be > 0"
+        );
+        assert!(
+            config.supervisor.max_restarts > 0,
+            "max_restarts should be > 0"
+        );
+        assert!(
+            config.supervisor.restart_window_secs > 0,
+            "restart_window_secs should be > 0"
+        );
+        assert!(config.supervisor.admin_port > 0, "admin_port should be > 0");
     }
 
     #[test]
