@@ -1,105 +1,89 @@
 # Feature Landscape
 
-**Domain:** Rust workspace code quality improvement (12 crates + ext binaries)
-**Researched:** 2026-04-14
+**Domain:** Config-driven architecture for Rust infrastructure sidecar
+**Researched:** 2026-04-15
 
 ## Table Stakes
 
-Features users (contributors, reviewers, future-you) expect from a quality pass. Missing any of these and the effort feels incomplete.
+Features users expect from a config-driven Rust project. Missing = config system feels half-baked.
 
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| Typed JSON replacement | `serde_json::Value` manipulation is the antithesis of Rust's type system. Untyped JSON hides bugs at compile time that surface at runtime. | High | Touches every crate that handles ACP/MCP wire data. Must define structs, update serialization, and fix all call sites. Highest-effort item. |
-| Error handling consistency | Mixed `thiserror`/`anyhow` boundaries erode trust in error propagation. Convention exists but may not be uniformly enforced. | Medium | Audit every crate for `anyhow` leaking into library code. Verify each manager crate has a proper error enum. Mechanical but wide-reaching. |
-| Dead code removal | Dead code signals abandonment. Unused imports, stale modules, unreachable branches — all noise that slows comprehension. | Low | `cargo clippy --workspace` + `#[warn(dead_code)]` catches most. Manual review for conditionally-dead paths. Quick wins. |
-| Zero clippy warnings | Clippy clean is the baseline for any Rust project that takes quality seriously. Non-negotiable. | Low | Already reportedly clean per CONVENTIONS.md, but verify after all other changes. May surface new warnings from refactoring. |
-| Consistent serde patterns | SDK types use `camelCase` rename, but internal crates may not follow a uniform pattern. Inconsistency causes subtle serialization bugs. | Medium | Audit all `#[serde(...)]` attributes. Ensure SDK wire types are `camelCase`, config types are `snake_case`, and round-trip tests exist. |
-| Remove unnecessary `.clone()` calls | 103 clones in one file signals structural issues. Unnecessary clones waste allocations and obscure ownership semantics. | Medium | Requires understanding each clone's purpose. Some are necessary (Arc, async moves). Target: eliminate clones where borrowing or `&str` suffices. |
-| Missing doc comments on public items | Public API without docs is incomplete API. SDK crates already enforce `#![warn(missing_docs)]`; internal crates should match. | Medium | Add `#![warn(missing_docs)]` to all crates. Write meaningful doc comments (not just "Returns the foo"). Tedious but straightforward. |
-| Test coverage for untested files | Files identified in CONCERNS.md with zero coverage: `health.rs`, SDK error types, `acp_types.rs`, `backend.rs`. Untested code is untrustworthy code. | Medium | Write rstest-based tests following BDD naming. Focus on public API behavior, not implementation details. |
+| Feature | Why Expected | Complexity | Dependencies | Notes |
+|---------|--------------|------------|--------------|-------|
+| Single source of truth for defaults | Dual-default mechanisms (YAML + serde fns) cause drift and confusion. Every mature config system has one canonical default location. | Medium | Existing `defaults.yaml`, 23 `default_*` fns in `types.rs` | Currently ~40% of defaults in YAML, rest in Rust fns. Must migrate all 23 fns + `constants.rs` `DEFAULT_*` consts into `defaults.yaml`. Serde `#[serde(default)]` (no fn) still needed for Figment to know fields are optional, but the *values* come from YAML layer. |
+| JSON Schema generation from types | Any project shipping a YAML config file should ship a schema. schemars 1.x is the de facto standard — 27M+ downloads/month, derives alongside serde, respects `#[serde(...)]` attributes. Without this, users guess at field names and valid values. | Medium | `schemars = "1.2"` added to `anyclaw-config`. `#[derive(JsonSchema)]` on all config types. | schemars 1.x (stable since 2025-06-23) generates JSON Schema 2020-12 by default. Handles `#[serde(tag = "type")]`, `#[serde(rename_all)]`, `#[serde(default)]`, `Option<T>`, `HashMap<K,V>` correctly. Custom types like `StringOrArray` and `PullPolicy` need manual `JsonSchema` impls since they have custom `Deserialize`. |
+| Schema committed to repo | Generated schema must be version-controlled so users and CI can reference it without building from source. Standard pattern: `schema/anyclaw.schema.json` at repo root. | Low | JSON Schema generation working first | A `cargo test` or dedicated binary generates schema, writes to known path. CI checks committed file matches generated output. |
+| Config schema cleanup | Consistent naming (`snake_case` everywhere), flatten structural inconsistencies, remove legacy aliases once breaking changes are acceptable. Users expect a clean, predictable config surface. | Medium | Breaking config format accepted per PROJECT.md | Aliases like `agents-manager` / `session-store` can be removed. Field naming should be uniform. |
+| Generated YAML template from schema | `anyclaw init` should produce a YAML template that reflects actual defaults, not hardcoded strings. Currently `init.rs` hardcodes supervisor values. | Low | Single source of truth + JSON Schema | Template generation reads from `defaults.yaml` or schema `default` values instead of duplicating them in Rust code. |
 
 ## Differentiators
 
-Features that go beyond basic cleanup. Not expected in a minimal quality pass, but elevate the codebase significantly.
+Features that set the config system apart. Not expected, but valued by power users and extension authors.
 
-| Feature | Value Proposition | Complexity | Notes |
-|---------|-------------------|------------|-------|
-| File decomposition (agents manager) | Breaking the 3,708-line `manager.rs` into focused modules (`fs_sandbox.rs`, `session_recovery.rs`, `tool_events.rs`, run loop) makes each concern independently testable and reviewable. | High | Highest-risk item. Must preserve public API surface. Extract modules behind `pub(crate)` boundaries. Requires careful integration test validation. |
-| Arc<Mutex> replacement in connection crates | Replace `Arc<Mutex<HashMap<u64, oneshot::Sender>>>` with `DashMap` or a lock-free pattern. Reduces contention risk and modernizes the pattern. | Medium | Low urgency per CONCERNS.md (locks are short-lived), but cleaner code. `DashMap` is the standard Rust ecosystem answer here. |
-| Inline documentation of known limitations | Zero TODO/FIXME comments means known limitations live only in AGENTS.md. Adding targeted inline comments (`// LIMITATION: single-agent routing`) helps developers encounter context where they need it. | Low | Quick pass through CONCERNS.md items, adding inline comments at the relevant code locations. |
-| Property-based testing for serialization | Round-trip serde tests with `proptest` or `quickcheck` for all wire types. Catches edge cases that hand-written tests miss (empty strings, unicode, large payloads). | Medium | Add `proptest` as dev-dependency. Write `Arbitrary` impls for key types. High value for ACP/MCP wire types specifically. |
-| Workspace-wide `#![warn(missing_docs)]` | Enforcing missing_docs on internal crates (not just SDK crates) prevents documentation rot going forward. | Low | Flip the lint, then fix all warnings. Mechanical but creates a quality ratchet. |
-| Supervisor file decomposition | `supervisor/src/lib.rs` at 927 lines is the second-largest file. Extracting signal handling, shutdown orchestration, and health monitoring into sub-modules improves navigability. | Medium | Lower priority than agents manager decomposition. Same approach: extract behind `pub(crate)`. |
+| Feature | Value Proposition | Complexity | Dependencies | Notes |
+|---------|-------------------|------------|--------------|-------|
+| Per-extension defaults.yaml | Each ext binary (mock-agent, telegram, debug-http, system-info) ships its own `defaults.yaml` that layers into Figment before user config. Extension authors define their own defaults without touching core config. | High | Figment layered loading, extension discovery | Figment supports arbitrary provider chaining: `Figment::from(core_defaults).merge(ext_defaults_1).merge(ext_defaults_2).merge(user_yaml)`. Challenge: discovering which extensions exist and where their defaults live at load time. Need a convention like `ext/<type>/<name>/defaults.yaml` or embedding defaults in the binary and extracting via a handshake. |
+| IDE autocomplete for anyclaw.yaml | VS Code + Red Hat YAML extension (yaml-language-server) provides autocomplete, hover docs, and validation when a JSON Schema is associated. Works via `yaml.schemas` setting, modeline comment (`# yaml-language-server: $schema=...`), or SchemaStore registration. | Low | Committed JSON Schema file | Three association methods: (1) modeline in YAML file: `# yaml-language-server: $schema=./schema/anyclaw.schema.json`, (2) `.vscode/settings.json` with `yaml.schemas` mapping, (3) eventual SchemaStore submission. Method 1 is zero-config for users. yaml-language-server supports JSON Schema drafts 04, 07, 2019-09, and 2020-12 — schemars 1.x outputs 2020-12 which is supported. |
+| CI schema drift check | CI step that regenerates the schema and diffs against committed version. Catches when someone changes config types but forgets to update the schema file. Standard pattern in Rust projects: a `#[test]` that generates and compares. | Low | Committed JSON Schema | Pattern: `#[test] fn schema_is_up_to_date()` generates schema, reads committed file, asserts equality. Fails with clear message: "run `cargo run --bin generate-schema` to update". Alternatively, a CI job runs the generator and `git diff --exit-code`. |
+| CI config validation | Example `anyclaw.yaml` files in `examples/` validated against the schema in CI. Catches schema-breaking changes before they ship. | Low | Committed JSON Schema, a JSON Schema validator | Use `jsonschema` crate (Rust) or `lintel` CLI (multi-format validator, Rust-based, SchemaStore-aware). `lintel check` in CI validates YAML files against schema with zero config. |
+| Per-manager defaults in YAML | Backoff config, crash tracker config, WASM sandbox defaults, tools server host — all live in `defaults.yaml` instead of scattered `default_*` fns. Makes the full default config visible in one file. | Medium | Single source of truth migration | Currently `BackoffConfig`, `CrashTrackerConfig`, `WasmSandboxConfig` defaults are Rust fns. Move to nested YAML sections. Figment's merge semantics handle partial overrides correctly (nested dicts are unioned). |
+| Doc comments → schema descriptions | schemars 1.x automatically converts `///` doc comments on structs and fields into JSON Schema `title` and `description` fields. These surface as hover documentation in IDEs. | Low | `#[derive(JsonSchema)]` on types | Already have doc comments on most public types. schemars picks them up automatically — no extra work beyond deriving `JsonSchema`. Free IDE documentation. |
+| Schema validation attributes | schemars respects `#[validate(...)]` attributes (from `validator` or `garde` crates) to add constraints like `min`, `max`, `pattern` to the schema. Makes the schema more precise than just types. | Medium | `schemars` + optionally `garde` | Not required for v1.0 but valuable later. Example: `acp_timeout_secs` could have `#[validate(range(min = 1))]` reflected in schema as `"minimum": 1`. |
 
 ## Anti-Features
 
-Things to deliberately NOT do during this quality pass. Tempting but counterproductive.
+Features to explicitly NOT build for this milestone.
 
 | Anti-Feature | Why Avoid | What to Do Instead |
 |--------------|-----------|-------------------|
-| Performance optimization | Quality pass is about correctness and clarity, not speed. Premature optimization obscures intent and introduces risk. | Note performance opportunities in comments/issues. Address in a dedicated performance milestone. |
-| Dependency version upgrades | Upgrading deps during a refactoring pass doubles the risk surface. Version bumps can introduce breaking changes that mask quality regressions. | Pin current versions. Upgrade in a separate milestone unless a refactor strictly requires it. |
-| Feature-gating wasmtime/bollard | Explicitly out of scope per PROJECT.md. Cargo feature flags are a feature change, not a quality change. | Document as a future milestone. Don't mix concerns. |
-| Rewriting the polling workaround | `poll_channels()` with 1ms timeout is a known architectural limitation. Replacing it with `FuturesUnordered`/`StreamMap` is a behavioral change, not a quality fix. | Document the limitation inline. Address in an architecture milestone. |
-| Adding rate limiting | New capability, not quality improvement. Mixing new features into a quality pass muddies the scope. | File as a separate issue/milestone. |
-| Changing public API signatures for aesthetics | Renaming types or restructuring public APIs "because it reads better" breaks downstream consumers for no functional gain. | Only change APIs where the quality fix requires it (e.g., replacing `Value` with a typed struct). |
-| Blanket `#[allow(...)]` suppressions | Suppressing warnings instead of fixing them defeats the purpose. Each `#[allow]` should have a justification comment. | Fix the underlying issue. If suppression is truly needed, add a `// REASON:` comment. |
-| Refactoring cross-manager communication | Changing mpsc patterns or ManagerHandle design is architectural work. Quality pass should enforce the existing pattern consistently, not redesign it. | Verify all managers follow the convention. Fix deviations. Don't redesign. |
+| Runtime schema validation of user YAML | Validating user config against JSON Schema at runtime adds a dependency (`jsonschema` crate) and duplicates what serde already does during deserialization. Serde + Figment already reject invalid types/unknown fields (when configured). | Keep using serde deserialization as the validation layer. Schema is for IDE/CI, not runtime. |
+| SchemaStore submission (now) | SchemaStore requires a stable schema URL and mature project. anyclaw is pre-1.0 with breaking config changes expected. Premature submission creates maintenance burden. | Ship schema in repo. Add modeline support to `anyclaw init`. Submit to SchemaStore after config format stabilizes post-v1.0. |
+| Config hot-reloading | Watching config file for changes and reloading at runtime. Massive complexity (partial updates, manager restarts, state consistency). Out of scope per PROJECT.md. | Require restart for config changes. Standard for infrastructure sidecars. |
+| GUI config editor | Visual config editor or web UI. Overkill for an infrastructure sidecar. | IDE autocomplete via JSON Schema covers the UX need. |
+| Env var override layer implementation | `ANYCLAW_` prefix env var overrides are documented but unimplemented. Explicitly out of scope per PROJECT.md. | Keep as future milestone. Figment already has the `.merge(Env::prefixed("ANYCLAW_").split("__"))` call ready in `lib.rs` — just not wired up yet. |
+| schemars 0.8.x | The 0.8 line is legacy. schemars 1.x has been stable since June 2025 with significant improvements (JSON Schema 2020-12, better serde compat, `transform` attribute, `no_std` support). | Use schemars 1.2.x exclusively. The API changed significantly from 0.8 — don't reference 0.8 patterns. |
+| Custom Figment provider for extension defaults discovery | Building a complex provider that auto-discovers extension defaults from filesystem at load time. Over-engineered for the current extension count. | Start with explicit extension default paths in the Figment chain. Iterate toward discovery if extension ecosystem grows. |
 
 ## Feature Dependencies
 
 ```
-Dead code removal → (unblocks) Clippy zero warnings
-    (removing dead code may resolve clippy warnings)
+Single source of truth (defaults.yaml migration)
+  → JSON Schema generation (schemars derives)
+    → Schema committed to repo
+      → CI schema drift check
+      → CI config validation (examples/)
+      → IDE autocomplete (modeline + yaml-language-server)
+    → Generated YAML template from schema (init.rs)
+  → Per-manager defaults in YAML
 
-Typed JSON replacement → (unblocks) Consistent serde patterns
-    (new typed structs need correct serde attributes from the start)
+Config schema cleanup (naming, structure)
+  → JSON Schema generation (clean schema output)
 
-Typed JSON replacement → (unblocks) Property-based testing for serialization
-    (can't property-test serde_json::Value — need typed structs first)
-
-Error handling consistency → (unblocks) Doc comments on public items
-    (error types may change during consistency pass — document after stabilized)
-
-File decomposition (agents manager) → (unblocks) Test coverage for untested files
-    (extracted modules are easier to test in isolation)
-
-File decomposition (agents manager) → (unblocks) Clone reduction
-    (smaller modules make ownership flow visible — easier to spot unnecessary clones)
+Per-extension defaults.yaml
+  → Single source of truth (core defaults pattern established first)
+  → Figment layered loading (provider chain design)
 ```
 
 ## MVP Recommendation
 
-A quality pass that stops before these items is incomplete:
+Prioritize (in order):
 
-1. **Dead code removal** — lowest effort, highest signal-to-noise improvement, unblocks clippy
-2. **Zero clippy warnings** — baseline hygiene, catches issues early
-3. **Error handling consistency** — enforces the existing convention uniformly
-4. **Typed JSON replacement** — the single highest-value change; makes the type system work for you
-5. **Consistent serde patterns** — natural follow-on from typed JSON; ensures wire format correctness
-6. **Remove unnecessary clones** — mechanical cleanup that improves clarity
-7. **Test coverage for untested files** — validates everything above actually works
-8. **Doc comments on public items** — documents the now-stable API surface
+1. **Single source of truth** — migrate all 23 `default_*` fns and `DEFAULT_*` consts into `defaults.yaml`. This is the foundation everything else builds on. Unblocks clean schema generation.
+2. **Config schema cleanup** — flatten inconsistencies, remove legacy aliases. Do this before generating the schema so the schema reflects the clean structure.
+3. **JSON Schema generation** — add `#[derive(JsonSchema)]` to all config types, implement `JsonSchema` for custom types (`StringOrArray`, `PullPolicy`), generate schema file.
+4. **Schema committed + CI drift check** — commit `schema/anyclaw.schema.json`, add `#[test]` for drift detection.
+5. **IDE autocomplete** — add modeline to `anyclaw init` output, document `.vscode/settings.json` setup.
+6. **Per-extension defaults** — design the layering convention, implement for existing extensions.
 
-Defer to differentiator phase:
-- **File decomposition**: High risk, high reward, but the quality pass delivers value without it. Do it when the codebase is otherwise clean so the diff is purely structural.
-- **Property-based testing**: Valuable but not blocking. Add after typed structs are stable.
-- **Arc<Mutex> replacement**: Low urgency per CONCERNS.md. Nice-to-have.
-
-## Complexity Budget
-
-| Category | Items | Estimated Effort | Risk |
-|----------|-------|-----------------|------|
-| Table stakes (all 8) | Dead code, clippy, errors, typed JSON, serde, clones, tests, docs | ~70% of milestone effort | Medium — typed JSON replacement is the riskiest |
-| Differentiators (all 6) | File decomposition ×2, Arc replacement, inline docs, proptest, workspace lints | ~30% of milestone effort | High — file decomposition carries regression risk |
+Defer:
+- **Schema validation attributes** (`garde`/`validate`): nice-to-have, not blocking. Add incrementally after core schema works.
+- **CI config validation**: trivial to add once schema exists, but lower priority than the generation pipeline.
+- **Per-extension defaults**: highest complexity, lowest urgency. Current extension count is small. Design the convention in v1.0, implement in a follow-up.
 
 ## Sources
 
-- `.planning/codebase/CONCERNS.md` — specific issues with file references and line numbers
-- `.planning/codebase/CONVENTIONS.md` — established patterns to enforce
-- `.planning/PROJECT.md` — project scope and constraints
-- `AGENTS.md` — anti-patterns and conventions
-
----
-
-*Feature landscape analysis: 2026-04-14*
+- schemars 1.x docs (Context7, HIGH confidence): `#[derive(JsonSchema)]` with serde compat, `transform` attribute, doc comment extraction
+- schemars changelog (GitHub, HIGH confidence): 1.2.1 released 2026-02-01, stable since 1.0.0 (2025-06-23), JSON Schema 2020-12 default
+- Figment docs (Context7, HIGH confidence): `merge()` / `join()` provider chaining, `Yaml::file()`, `Serialized::defaults()`
+- yaml-language-server (GitHub, HIGH confidence): supports JSON Schema 2020-12, modeline `# yaml-language-server: $schema=...`, `yaml.schemas` setting
+- lintel (GitHub, MEDIUM confidence): Rust-based multi-format JSON Schema linter, SchemaStore-aware, CI-friendly
+- Existing codebase: `types.rs` (23 `default_*` fns), `defaults.yaml` (23 lines, ~40% coverage), `lib.rs` (Figment loading chain)
