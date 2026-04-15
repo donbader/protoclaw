@@ -22,7 +22,9 @@ COPY --from=builder /usr/local/bin/anyclaw /usr/local/bin/anyclaw
 COPY --from=builder /usr/local/bin/channels/debug-http /usr/local/bin/channels/debug-http
 COPY --from=builder /usr/local/bin/channels/telegram /usr/local/bin/channels/telegram
 COPY --from=builder /usr/local/bin/tools/system-info /usr/local/bin/tools/system-info
+RUN mkdir -p /workspace && chown node:node /workspace
 WORKDIR /workspace
+USER node
 ENTRYPOINT ["anyclaw"]
 
 FROM node:20-slim@sha256:f93745c153377ee2fbbdd6e24efcd03cd2e86d6ab1d8aa9916a3790c40313a55 AS claude-code-agent

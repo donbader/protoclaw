@@ -27,8 +27,11 @@ COPY --from=builder /usr/local/bin/anyclaw /usr/local/bin/anyclaw
 COPY --from=builder /usr/local/bin/channels/debug-http /usr/local/bin/channels/debug-http
 COPY --from=builder /usr/local/bin/channels/telegram /usr/local/bin/channels/telegram
 COPY --from=builder /usr/local/bin/tools/system-info /usr/local/bin/tools/system-info
+RUN useradd -m -s /bin/bash anyclaw && \
+    mkdir -p /workspace && chown anyclaw:anyclaw /workspace
 WORKDIR /workspace
-COPY anyclaw.yaml /workspace/anyclaw.yaml
+COPY --chown=anyclaw:anyclaw anyclaw.yaml /workspace/anyclaw.yaml
+USER anyclaw
 ENTRYPOINT ["anyclaw"]
 
 # Kiro agent image (for Docker workspace mode)

@@ -49,7 +49,7 @@ Key decisions:
 
 - **Base image**: `node:20-slim` for npm agents, `debian:bookworm-slim` for native binaries
 - **Deps stage**: Install either the agent CLI (if it has native ACP) or the ACP adapter package (if it doesn't). The adapter pulls in the agent SDK as a dependency — you don't need to install both.
-- **User**: Create a non-root user (e.g., `node`, `claude`, `kiro`). The agent container runs as this user.
+- **User**: Both the sidecar (`example-<name>`) and agent (`<agent>-agent`) stages must run as a non-root user. For `node:20-slim` bases, use the built-in `node` user. For `debian:bookworm-slim` bases, create a dedicated user (e.g., `useradd -m -s /bin/bash anyclaw`). In the sidecar stage, `chown /workspace` to the user and add `USER <user>` before the entrypoint. In the agent stage, `chown` the home directory and add `USER <user>`.
 - **Entrypoint**: The ACP command. This varies by agent:
   - Native ACP: `["opencode", "acp"]`, `["kiro-cli", "acp"]`
   - ACP adapter: `["claude-agent-acp"]` (npm package that wraps the agent's SDK)

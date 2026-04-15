@@ -27,7 +27,10 @@ COPY --from=builder /usr/local/bin/anyclaw /usr/local/bin/anyclaw
 COPY --from=builder /usr/local/bin/channels/debug-http /usr/local/bin/channels/debug-http
 COPY --from=builder /usr/local/bin/channels/telegram /usr/local/bin/channels/telegram
 COPY --from=builder /usr/local/bin/tools/system-info /usr/local/bin/tools/system-info
+RUN useradd -m -s /bin/bash anyclaw && \
+    mkdir -p /workspace && chown anyclaw:anyclaw /workspace
 WORKDIR /workspace
+USER anyclaw
 ENTRYPOINT ["anyclaw"]
 
 FROM debian:bookworm-slim@sha256:4724b8cc51e33e398f0e2e15e18d5ec2851ff0c2280647e1310bc1642182655d AS kiro-agent

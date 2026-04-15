@@ -23,8 +23,10 @@ COPY --from=builder /usr/local/bin/anyclaw /usr/local/bin/anyclaw
 COPY --from=builder /usr/local/bin/channels/debug-http /usr/local/bin/channels/debug-http
 COPY --from=builder /usr/local/bin/channels/telegram /usr/local/bin/channels/telegram
 COPY --from=builder /usr/local/bin/tools/system-info /usr/local/bin/tools/system-info
+RUN mkdir -p /workspace && chown node:node /workspace
 WORKDIR /workspace
-COPY anyclaw.yaml /workspace/anyclaw.yaml
+COPY --chown=node:node anyclaw.yaml /workspace/anyclaw.yaml
+USER node
 ENTRYPOINT ["anyclaw"]
 
 # Claude Code agent image (for Docker workspace mode)
