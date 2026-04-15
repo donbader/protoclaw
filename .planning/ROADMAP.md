@@ -110,7 +110,7 @@ Plans:
   4. All existing tests pass without modification (decomposition is purely structural)
 **Plans:** 2 plans
 Plans:
-- [ ] 06-01-PLAN.md — Decompose agents manager.rs into fs_sandbox, session_recovery, incoming modules
+- [x] 06-01-PLAN.md — Decompose agents manager.rs into fs_sandbox, session_recovery, incoming modules
 - [ ] 06-02-PLAN.md — Decompose supervisor lib.rs into shutdown, health, factory modules
 
 ## Progress
