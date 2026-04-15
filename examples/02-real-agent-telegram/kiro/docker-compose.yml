@@ -20,7 +20,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      target: example-03-kiro
+      target: example-02-kiro
     ports:
       - "8080:8080"
     volumes:

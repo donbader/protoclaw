@@ -6,7 +6,7 @@ services:
     build:
       context: ../../..
       dockerfile: examples/02-real-agent-telegram/kiro/Dockerfile.dev-builder
-      target: example-03-kiro
+      target: example-02-kiro
 
   kiro-agent-image:
     build:

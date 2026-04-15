@@ -20,7 +20,7 @@ RUN ARCH=$(case "${TARGETARCH}" in \
     rm -rf /tmp/kirocli.zip /tmp/kirocli
 
 # Kiro target — anyclaw sidecar + ext/ binaries (no Node.js needed)
-FROM debian:bookworm-slim@sha256:4724b8cc51e33e398f0e2e15e18d5ec2851ff0c2280647e1310bc1642182655d AS example-03-kiro
+FROM debian:bookworm-slim@sha256:4724b8cc51e33e398f0e2e15e18d5ec2851ff0c2280647e1310bc1642182655d AS example-02-kiro
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /usr/local/bin/anyclaw /usr/local/bin/anyclaw
@@ -32,7 +32,7 @@ COPY anyclaw.yaml /workspace/anyclaw.yaml
 ENTRYPOINT ["anyclaw"]
 
 # Kiro agent image (for Docker workspace mode)
-# Auth: either KIRO_API_KEY env var (Pro+) or pre-authenticated ~/.kiro volume.
+# Auth: either KIRO_API_KEY env var (Pro+) or pre-authenticated volume at ~/.local/share/kiro-cli.
 # See README.md for both auth flows.
 FROM debian:bookworm-slim@sha256:4724b8cc51e33e398f0e2e15e18d5ec2851ff0c2280647e1310bc1642182655d AS kiro-agent
 RUN apt-get update && apt-get install -y --no-install-recommends \

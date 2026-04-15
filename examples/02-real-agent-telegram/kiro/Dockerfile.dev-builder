@@ -1,8 +1,8 @@
 # Dev builder: compile anyclaw from workspace source instead of ghcr.io
 # Used by docker-compose.dev.yml for local development
 #
-# Build context must be the workspace root (../../ from this file)
-# Produces the same targets as Dockerfile (example-03-kiro, kiro-agent)
+# Build context must be the workspace root (../../../ from this file)
+# Produces the same targets as Dockerfile (example-02-kiro, kiro-agent)
 
 FROM lukemathwalker/cargo-chef:latest-rust-1.94-alpine AS chef
 WORKDIR /build
@@ -53,7 +53,7 @@ RUN ARCH=$(case "${TARGETARCH}" in \
     chmod +x /usr/local/bin/kiro-cli /usr/local/bin/kiro-cli-chat /usr/local/bin/kiro-cli-term && \
     rm -rf /tmp/kirocli.zip /tmp/kirocli
 
-FROM debian:bookworm-slim@sha256:4724b8cc51e33e398f0e2e15e18d5ec2851ff0c2280647e1310bc1642182655d AS example-03-kiro
+FROM debian:bookworm-slim@sha256:4724b8cc51e33e398f0e2e15e18d5ec2851ff0c2280647e1310bc1642182655d AS example-02-kiro
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /tmp/anyclaw /usr/local/bin/anyclaw
