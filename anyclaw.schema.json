@@ -1,0 +1,815 @@
+{
+  "$defs": {
+    "AckConfig": {
+      "description": "Message acknowledgement configuration for a channel.",
+      "properties": {
+        "reaction": {
+          "default": false,
+          "description": "Whether to add a reaction emoji when a message is received.",
+          "type": "boolean"
+        },
+        "reaction_emoji": {
+          "default": "👀",
+          "description": "Emoji used for the \"in progress\" reaction.",
+          "type": "string"
+        },
+        "reaction_lifecycle": {
+          "$ref": "#/$defs/ReactionLifecycle",
+          "default": "remove",
+          "description": "What to do with the reaction after the agent finishes responding."
+        },
+        "typing": {
+          "default": false,
+          "description": "Whether to send a typing indicator while the agent is processing.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "AgentConfig": {
+      "description": "Per-agent configuration. Names come from the HashMap key in [`AgentsManagerConfig`].",
+      "properties": {
+        "acp_timeout_secs": {
+          "default": null,
+          "description": "Per-agent ACP timeout override (seconds). `None` = use manager default.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "backoff": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BackoffConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Per-agent backoff override. `None` = use default backoff."
+        },
+        "crash_tracker": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CrashTrackerConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Per-agent crash tracker override. `None` = use default crash tracker."
+        },
+        "enabled": {
+          "default": true,
+          "description": "Whether this agent is active. Disabled agents are not spawned.",
+          "type": "boolean"
+        },
+        "options": {
+          "additionalProperties": true,
+          "default": {},
+          "description": "Arbitrary key-value options passed to the agent during initialization.",
+          "type": "object"
+        },
+        "tools": {
+          "default": [],
+          "description": "Tool names this agent is allowed to use (matched against tool config keys).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "workspace": {
+          "$ref": "#/$defs/WorkspaceConfig",
+          "description": "Execution environment (local subprocess or Docker container)."
+        }
+      },
+      "required": [
+        "workspace"
+      ],
+      "type": "object"
+    },
+    "AgentsManagerConfig": {
+      "description": "Configuration for the agents manager and its named agent map.",
+      "properties": {
+        "acp_timeout_secs": {
+          "default": 30,
+          "description": "Default ACP request timeout in seconds (overridable per-agent).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "agents": {
+          "additionalProperties": {
+            "$ref": "#/$defs/AgentConfig"
+          },
+          "default": {},
+          "description": "Named agent configurations (keys are agent names used in routing).",
+          "type": "object"
+        },
+        "shutdown_grace_ms": {
+          "default": 100,
+          "description": "Grace period after sending shutdown before force-killing agent subprocesses (ms).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "BackoffConfig": {
+      "description": "Per-subprocess backoff configuration for restart delays.",
+      "properties": {
+        "base_delay_ms": {
+          "default": 100,
+          "description": "Initial delay before the first restart attempt (milliseconds).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_delay_secs": {
+          "default": 30,
+          "description": "Maximum delay cap — the backoff will never exceed this (seconds).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "ChannelConfig": {
+      "description": "Per-channel configuration. Names come from the HashMap key in [`ChannelsManagerConfig`].",
+      "properties": {
+        "ack": {
+          "$ref": "#/$defs/AckConfig",
+          "default": {
+            "reaction": false,
+            "reaction_emoji": "👀",
+            "reaction_lifecycle": "remove",
+            "typing": false
+          },
+          "description": "Message acknowledgement configuration (reactions, typing indicators)."
+        },
+        "agent": {
+          "default": "default",
+          "description": "Which agent to route messages to (matches an agent config key).",
+          "type": "string"
+        },
+        "args": {
+          "default": [],
+          "description": "Extra CLI arguments passed to the channel subprocess.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "backoff": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BackoffConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Per-channel backoff override. `None` = use default backoff."
+        },
+        "binary": {
+          "description": "Path to the channel binary (resolved via `@built-in/` at boot).",
+          "type": "string"
+        },
+        "crash_tracker": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CrashTrackerConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Per-channel crash tracker override. `None` = use default crash tracker."
+        },
+        "enabled": {
+          "default": true,
+          "description": "Whether this channel is active. Disabled channels are not spawned.",
+          "type": "boolean"
+        },
+        "exit_timeout_secs": {
+          "default": null,
+          "description": "Per-channel graceful shutdown timeout override (seconds). `None` = use manager default.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "init_timeout_secs": {
+          "default": null,
+          "description": "Per-channel init timeout override (seconds). `None` = use manager default.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "options": {
+          "additionalProperties": true,
+          "default": {},
+          "description": "Arbitrary key-value options passed to the channel during initialization.",
+          "type": "object"
+        }
+      },
+      "required": [
+        "binary"
+      ],
+      "type": "object"
+    },
+    "ChannelsManagerConfig": {
+      "description": "Configuration for the channels manager and its named channel map.",
+      "properties": {
+        "channels": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ChannelConfig"
+          },
+          "default": {},
+          "description": "Named channel configurations (keys are channel names used in routing).",
+          "type": "object"
+        },
+        "exit_timeout_secs": {
+          "default": 5,
+          "description": "Graceful shutdown wait before force-killing channel subprocesses (seconds).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "init_timeout_secs": {
+          "default": 10,
+          "description": "Timeout for the `initialize` handshake with channel subprocesses (seconds).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "CrashTrackerConfig": {
+      "description": "Per-subprocess crash recovery limits.\n\nControls how many times an individual agent or channel subprocess may crash\nwithin a rolling time window before the crash recovery loop gives up and\nlets the manager propagate the failure upward to the Supervisor.\n\nThis is distinct from `SupervisorConfig.max_restarts` / `restart_window_secs`,\nwhich govern manager-level restart attempts by the Supervisor itself.",
+      "properties": {
+        "max_crashes": {
+          "default": 5,
+          "description": "Maximum number of subprocess crashes allowed within `window_secs`.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "window_secs": {
+          "default": 60,
+          "description": "Rolling window in seconds over which crashes are counted.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "DockerWorkspaceConfig": {
+      "description": "Docker workspace: agent runs inside a Docker container.",
+      "properties": {
+        "cpu_limit": {
+          "default": null,
+          "description": "Docker CPU limit (e.g. `\"1.5\"` = 1.5 cores).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "docker_host": {
+          "default": null,
+          "description": "Docker daemon socket URI (e.g. `\"unix:///var/run/docker.sock\"`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "entrypoint": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StringOrArray"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Override the container entrypoint."
+        },
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "description": "Extra environment variables passed to the container.",
+          "type": "object"
+        },
+        "image": {
+          "description": "Docker image name (e.g. `\"anyclaw/opencode:latest\"`).",
+          "type": "string"
+        },
+        "memory_limit": {
+          "default": null,
+          "description": "Docker memory limit (K8s-style, e.g. `\"512m\"`, `\"2g\"`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "network": {
+          "default": null,
+          "description": "Docker network to attach the container to.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pull_policy": {
+          "$ref": "#/$defs/PullPolicy",
+          "default": "IfNotPresent",
+          "description": "Image pull policy before starting the container."
+        },
+        "volumes": {
+          "default": [],
+          "description": "Volume mounts in `host:container[:ro]` format.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "working_dir": {
+          "default": null,
+          "description": "Working directory to pass as `cwd` in the ACP `session/new` handshake.\nRefers to a path *inside* the agent container, not on the host.\nWhen unset, the supervisor's own working directory is used (which is\nusually wrong for Docker workspaces — set this to the container's WORKDIR).",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "image"
+      ],
+      "type": "object"
+    },
+    "LocalWorkspaceConfig": {
+      "description": "Local workspace: agent runs as a native subprocess on the host.",
+      "properties": {
+        "binary": {
+          "$ref": "#/$defs/StringOrArray",
+          "description": "Executable path (or `@built-in/` prefix resolved at boot)."
+        },
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "description": "Extra environment variables passed to the subprocess.",
+          "type": "object"
+        },
+        "working_dir": {
+          "default": null,
+          "description": "Working directory for the subprocess. `None` = inherit supervisor's cwd.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "binary"
+      ],
+      "type": "object"
+    },
+    "LogFormat": {
+      "description": "Output format for tracing/log output.\n\n`pretty` is the default and suitable for development. `json` emits\nstructured JSON lines, which is preferable in production environments\nwhere log aggregators (e.g., Datadog, CloudWatch) ingest structured output.",
+      "oneOf": [
+        {
+          "const": "pretty",
+          "description": "Human-readable colored output (default, suitable for development).",
+          "type": "string"
+        },
+        {
+          "const": "json",
+          "description": "Structured JSON lines (suitable for production log aggregators).",
+          "type": "string"
+        }
+      ]
+    },
+    "PreopenedDir": {
+      "description": "A host directory pre-opened for WASI filesystem access inside the WASM sandbox.",
+      "properties": {
+        "guest": {
+          "description": "Path visible to the WASM module.",
+          "type": "string"
+        },
+        "host": {
+          "description": "Path on the host filesystem.",
+          "type": "string"
+        },
+        "readonly": {
+          "default": true,
+          "description": "Whether the directory is mounted read-only (default: `true`).",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "host",
+        "guest"
+      ],
+      "type": "object"
+    },
+    "PullPolicy": {
+      "default": "if_not_present",
+      "enum": [
+        "always",
+        "never",
+        "if_not_present"
+      ],
+      "type": "string"
+    },
+    "ReactionLifecycle": {
+      "description": "What happens to the reaction emoji after the agent finishes responding.\n\n- `remove`: the reaction is deleted once the response is sent\n- `replace_done`: the in-progress reaction is swapped for a \"done\" checkmark emoji",
+      "oneOf": [
+        {
+          "const": "remove",
+          "description": "Remove the reaction emoji after the agent finishes (default).",
+          "type": "string"
+        },
+        {
+          "const": "replace_done",
+          "description": "Replace the in-progress emoji with a \"done\" checkmark.",
+          "type": "string"
+        }
+      ]
+    },
+    "SessionStoreConfig": {
+      "description": "Selects the session persistence backend.\n\nConfigured under `session_store.type` in `anyclaw.yaml`.",
+      "oneOf": [
+        {
+          "description": "No session persistence (default). Sessions are not saved across restarts.",
+          "properties": {
+            "type": {
+              "const": "none",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/SqliteStoreConfig",
+          "description": "Persist sessions to a SQLite database.",
+          "properties": {
+            "type": {
+              "const": "sqlite",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "SqliteStoreConfig": {
+      "description": "SQLite-backed session store configuration.",
+      "properties": {
+        "path": {
+          "default": null,
+          "description": "Path to the SQLite database file. Defaults to an in-memory database when absent.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ttl_days": {
+          "default": 7,
+          "description": "How many days of inactivity before a session is eligible for expiry cleanup.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "StringOrArray": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      ]
+    },
+    "SupervisorConfig": {
+      "description": "Supervisor-level manager restart limits.\n\nControls how many times the Supervisor will restart a *manager* (ToolsManager,\nAgentsManager, or ChannelsManager) if it exits unexpectedly, within a rolling\ntime window.\n\nThis is distinct from `CrashTrackerConfig`, which limits restarts of individual\nagent or channel *subprocesses* within a manager's crash recovery loop.",
+      "properties": {
+        "admin_port": {
+          "default": 3000,
+          "description": "TCP port for the admin HTTP server (`/health`, `/metrics`). Default: 3000.",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "health_check_interval_secs": {
+          "default": 5,
+          "description": "Interval between health check sweeps (seconds).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_restarts": {
+          "default": 5,
+          "description": "Maximum number of manager restart attempts within `restart_window_secs`.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "permission_timeout_secs": {
+          "default": null,
+          "description": "Optional permission response timeout. None = block indefinitely (default).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "restart_window_secs": {
+          "default": 60,
+          "description": "Rolling window in seconds over which manager crash attempts are counted.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "shutdown_timeout_secs": {
+          "default": 30,
+          "description": "Total shutdown timeout divided equally among managers (seconds).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "ToolConfig": {
+      "description": "Per-tool configuration. Names come from the HashMap key in [`ToolsManagerConfig`].",
+      "properties": {
+        "args": {
+          "default": [],
+          "description": "Extra CLI arguments passed to the tool binary.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "binary": {
+          "default": null,
+          "description": "Path to the MCP server binary (for `Mcp` type tools).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "description": {
+          "default": "",
+          "description": "Human-readable description of what the tool does.",
+          "type": "string"
+        },
+        "enabled": {
+          "default": true,
+          "description": "Whether this tool is active. Disabled tools are not started.",
+          "type": "boolean"
+        },
+        "input_schema": {
+          "default": null,
+          "description": "JSON Schema string describing the tool's input parameters.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "module": {
+          "default": null,
+          "description": "Path to the `.wasm` module file (for `Wasm` type tools).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "options": {
+          "additionalProperties": true,
+          "default": {},
+          "description": "Arbitrary key-value options passed to the tool during initialization.",
+          "type": "object"
+        },
+        "sandbox": {
+          "$ref": "#/$defs/WasmSandboxConfig",
+          "default": {
+            "epoch_timeout_secs": 30,
+            "fuel_limit": 1000000,
+            "memory_limit_bytes": 67108864,
+            "preopened_dirs": []
+          },
+          "description": "WASM sandbox limits (fuel, timeout, memory, filesystem preopens)."
+        },
+        "tool_type": {
+          "$ref": "#/$defs/ToolType",
+          "default": "mcp",
+          "description": "Whether this tool is an external MCP server or a WASM module."
+        }
+      },
+      "type": "object"
+    },
+    "ToolType": {
+      "description": "Whether a tool is served by an external MCP server process or a local WASM module.\n\n- `mcp`: spawn an external binary and communicate over JSON-RPC/stdio\n- `wasm`: load a `.wasm` module and execute in the built-in sandboxed runner",
+      "oneOf": [
+        {
+          "const": "mcp",
+          "description": "External MCP server subprocess communicating over JSON-RPC/stdio (default).",
+          "type": "string"
+        },
+        {
+          "const": "wasm",
+          "description": "WASM module executed in the built-in sandboxed runner.",
+          "type": "string"
+        }
+      ]
+    },
+    "ToolsManagerConfig": {
+      "description": "Configuration for the tools manager and its named tool map.",
+      "properties": {
+        "tools": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ToolConfig"
+          },
+          "default": {},
+          "description": "Named tool configurations (keys are tool names advertised to agents).",
+          "type": "object"
+        },
+        "tools_server_host": {
+          "default": "127.0.0.1",
+          "description": "Host/IP for the aggregated MCP HTTP endpoint. Default `127.0.0.1`.\nSet to the container hostname in Docker deployments so agent containers can reach it.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "WasmSandboxConfig": {
+      "description": "WASM sandbox resource limits for sandboxed tool execution.",
+      "properties": {
+        "epoch_timeout_secs": {
+          "default": 30,
+          "description": "Wall-clock timeout per invocation (seconds), enforced via epoch interruption.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "fuel_limit": {
+          "default": 1000000,
+          "description": "Maximum fuel (instruction count) per tool invocation.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "memory_limit_bytes": {
+          "default": 67108864,
+          "description": "Maximum memory the WASM module may allocate (bytes).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "preopened_dirs": {
+          "default": [],
+          "description": "Host directories pre-opened for WASI filesystem access.",
+          "items": {
+            "$ref": "#/$defs/PreopenedDir"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "WorkspaceConfig": {
+      "description": "Tagged enum selecting the agent's execution environment.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/LocalWorkspaceConfig",
+          "description": "Run the agent as a local subprocess.",
+          "properties": {
+            "type": {
+              "const": "local",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/DockerWorkspaceConfig",
+          "description": "Run the agent inside a Docker container.",
+          "properties": {
+            "type": {
+              "const": "docker",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Top-level anyclaw configuration.\n\nLoaded from layered providers: defaults → YAML file → environment variables.\nManager-hierarchy: each manager owns its children as named maps.",
+  "properties": {
+    "agents_manager": {
+      "$ref": "#/$defs/AgentsManagerConfig",
+      "default": {
+        "acp_timeout_secs": 30,
+        "agents": {},
+        "shutdown_grace_ms": 100
+      },
+      "description": "Agents manager configuration and named agent map."
+    },
+    "channels_manager": {
+      "$ref": "#/$defs/ChannelsManagerConfig",
+      "default": {
+        "channels": {},
+        "exit_timeout_secs": 5,
+        "init_timeout_secs": 10
+      },
+      "description": "Channels manager configuration and named channel map."
+    },
+    "extensions_dir": {
+      "default": "/usr/local/bin",
+      "description": "Base directory for resolving `@built-in/` binary paths.",
+      "type": "string"
+    },
+    "log_format": {
+      "$ref": "#/$defs/LogFormat",
+      "default": "pretty",
+      "description": "Output format for tracing logs."
+    },
+    "log_level": {
+      "default": "info,hyper=warn,reqwest=warn,h2=warn,hyper_util=warn,tower=warn",
+      "description": "Tracing filter directive (e.g. `\"info,hyper=warn\"`).",
+      "type": "string"
+    },
+    "session_store": {
+      "$ref": "#/$defs/SessionStoreConfig",
+      "default": {
+        "type": "none"
+      },
+      "description": "Session persistence backend selection."
+    },
+    "supervisor": {
+      "$ref": "#/$defs/SupervisorConfig",
+      "default": {
+        "admin_port": 3000,
+        "health_check_interval_secs": 5,
+        "max_restarts": 5,
+        "permission_timeout_secs": null,
+        "restart_window_secs": 60,
+        "shutdown_timeout_secs": 30
+      },
+      "description": "Supervisor-level settings (shutdown timeout, health interval, restart limits)."
+    },
+    "tools_manager": {
+      "$ref": "#/$defs/ToolsManagerConfig",
+      "default": {
+        "tools": {},
+        "tools_server_host": "127.0.0.1"
+      },
+      "description": "Tools manager configuration and named tool map."
+    }
+  },
+  "title": "AnyclawConfig",
+  "type": "object"
+}

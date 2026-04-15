@@ -21,6 +21,8 @@ figment = { workspace = true, features = ["test"] }
 tempfile.workspace = true
 serde_yaml.workspace = true
 rstest.workspace = true
+jsonschema = "0.28"
+glob = "0.3"
 
 [lints]
 workspace = true

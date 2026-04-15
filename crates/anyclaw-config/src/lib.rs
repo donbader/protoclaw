@@ -28,6 +28,15 @@ pub use validate::*;
 
 use figment::{Figment, providers::Format};
 
+/// Generate the JSON Schema for `AnyclawConfig` as a `serde_json::Value`.
+///
+/// Uses schemars to derive the schema from Rust types. The output follows
+/// JSON Schema Draft 2020-12.
+pub fn generate_schema() -> serde_json::Value {
+    let schema = schemars::schema_for!(AnyclawConfig);
+    serde_json::to_value(schema).expect("schema serialization cannot fail")
+}
+
 impl AnyclawConfig {
     /// Load configuration from layered providers: defaults → YAML file → env vars.
     ///
@@ -60,6 +69,35 @@ mod tests {
     use super::*;
     use crate::WorkspaceConfig;
     use figment::Jail;
+
+    fn coerce_yaml_strings(value: &mut serde_yaml::Value) {
+        match value {
+            serde_yaml::Value::String(s) => {
+                if s == "true" {
+                    *value = serde_yaml::Value::Bool(true);
+                } else if s == "false" {
+                    *value = serde_yaml::Value::Bool(false);
+                } else if let Ok(n) = s.parse::<i64>() {
+                    *value = serde_yaml::Value::Number(n.into());
+                } else if s.contains('.')
+                    && let Ok(f) = s.parse::<f64>()
+                {
+                    *value = serde_yaml::Value::Number(f.into());
+                }
+            }
+            serde_yaml::Value::Sequence(arr) => {
+                for v in arr {
+                    coerce_yaml_strings(v);
+                }
+            }
+            serde_yaml::Value::Mapping(map) => {
+                for (_, v) in map.iter_mut() {
+                    coerce_yaml_strings(v);
+                }
+            }
+            _ => {}
+        }
+    }
 
     #[test]
     fn when_valid_config_file_exists_then_loads_all_sections() {
@@ -216,5 +254,138 @@ supervisor:
             );
             Ok(())
         });
+    }
+
+    #[test]
+    fn when_generate_schema_called_then_schema_has_schema_key_with_draft_2020() {
+        let schema = generate_schema();
+        let schema_key = schema["$schema"]
+            .as_str()
+            .expect("$schema must be a string");
+        assert!(
+            schema_key.contains("2020-12"),
+            "$schema should reference Draft 2020-12, got: {schema_key}"
+        );
+    }
+
+    #[test]
+    fn when_generate_schema_called_then_title_is_anyclaw_config() {
+        let schema = generate_schema();
+        let title = schema["title"].as_str().expect("title must be a string");
+        assert_eq!(title, "AnyclawConfig");
+    }
+
+    #[test]
+    fn when_generate_schema_called_then_properties_contains_all_top_level_keys() {
+        let schema = generate_schema();
+        let properties = schema["properties"]
+            .as_object()
+            .expect("properties must be an object");
+        let required_keys = [
+            "log_level",
+            "log_format",
+            "extensions_dir",
+            "agents_manager",
+            "channels_manager",
+            "tools_manager",
+            "supervisor",
+            "session_store",
+        ];
+        for key in required_keys {
+            assert!(
+                properties.contains_key(key),
+                "properties missing key: {key}"
+            );
+        }
+    }
+
+    #[test]
+    fn when_committed_schema_file_exists_then_it_matches_generate_schema_output() {
+        let schema_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("crates/ dir")
+            .parent()
+            .expect("repo root")
+            .join("anyclaw.schema.json");
+        assert!(
+            schema_path.exists(),
+            "anyclaw.schema.json missing at {}",
+            schema_path.display()
+        );
+        let committed_raw =
+            std::fs::read_to_string(&schema_path).expect("failed to read anyclaw.schema.json");
+        let committed: serde_json::Value =
+            serde_json::from_str(&committed_raw).expect("anyclaw.schema.json is not valid JSON");
+        let generated = generate_schema();
+        assert_eq!(
+            committed, generated,
+            "anyclaw.schema.json is out of date — run `cargo test -- generate_and_write_schema --ignored`"
+        );
+    }
+
+    #[test]
+    fn when_example_configs_loaded_then_they_validate_against_schema() {
+        let schema = generate_schema();
+        let validator = jsonschema::validator_for(&schema).expect("schema must compile");
+
+        let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("crates/ dir")
+            .parent()
+            .expect("repo root");
+
+        let patterns = ["examples/*/anyclaw.yaml", "examples/*/*/anyclaw.yaml"];
+        let empty_vars: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
+
+        let mut validated_count = 0;
+        for pattern in patterns {
+            let full_pattern = repo_root.join(pattern);
+            let glob_str = full_pattern.to_str().expect("valid path");
+            for entry in glob::glob(glob_str).expect("valid glob").flatten() {
+                let content = std::fs::read_to_string(&entry)
+                    .unwrap_or_else(|e| panic!("failed to read {}: {e}", entry.display()));
+                let substituted = subst::substitute(&content, &empty_vars)
+                    .unwrap_or_else(|e| panic!("substitution failed for {}: {e}", entry.display()));
+                let mut yaml_value: serde_yaml::Value = serde_yaml::from_str(&substituted)
+                    .unwrap_or_else(|e| panic!("failed to parse {}: {e}", entry.display()));
+                coerce_yaml_strings(&mut yaml_value);
+                let json_value: serde_json::Value = serde_json::to_value(&yaml_value)
+                    .unwrap_or_else(|e| {
+                        panic!("YAML→JSON conversion failed for {}: {e}", entry.display())
+                    });
+                let errors: Vec<_> = validator.iter_errors(&json_value).collect();
+                assert!(
+                    errors.is_empty(),
+                    "{} failed schema validation:\n{}",
+                    entry.display(),
+                    errors
+                        .iter()
+                        .map(|e| format!("  - {e}"))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                );
+                validated_count += 1;
+            }
+        }
+        assert!(validated_count > 0, "no example configs found to validate");
+    }
+
+    #[test]
+    #[ignore]
+    fn generate_and_write_schema() {
+        let schema = generate_schema();
+        let pretty =
+            serde_json::to_string_pretty(&schema).expect("schema serialization cannot fail");
+        let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("crates/ dir")
+            .parent()
+            .expect("repo root");
+        let schema_path = repo_root.join("anyclaw.schema.json");
+        let content = format!("{pretty}\n");
+        std::fs::write(&schema_path, &content)
+            .unwrap_or_else(|e| panic!("failed to write {}: {e}", schema_path.display()));
+        println!("Wrote {}", schema_path.display());
     }
 }
