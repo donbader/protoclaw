@@ -22,6 +22,7 @@ agents_manager:
         volumes:
           - "kiro-auth-data:/home/kiro/.local/share/kiro-cli"
           - "kiro-agent-workspace:/home/kiro/workspace"
+          - "kiro-agent-packages:/usr/local"
         env:
           KIRO_API_KEY: "${KIRO_API_KEY:}"
       enabled: true

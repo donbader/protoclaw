@@ -84,10 +84,13 @@ agents_manager:
       volumes:
         - "opencode-agent-data:/home/node/.local/share"
         - "opencode-agent-workspace:/home/node/workspace"
+        - "opencode-agent-packages:/usr/local"
       env:
         XDG_CONFIG_HOME: "/home/node/.config"
         XDG_DATA_HOME: "/home/node/.local/share"
 ```
+
+The agent container runs as the `node` user with scoped sudo for `apt-get` only — the agent can install packages at runtime via `sudo apt-get install` without full root access. The `/usr/local` volume persists packages installed via `pip`, `npm install -g`, or `cargo install` across container restarts. Note that `apt-get` installs to system dirs (`/usr/bin`, `/usr/lib`) which are not on this volume — pre-install apt packages in the Dockerfile for persistence.
 
 OpenCode config (`.opencode/`) can optionally be baked into the agent image. To use it:
 

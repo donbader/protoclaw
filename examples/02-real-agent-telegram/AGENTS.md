@@ -50,10 +50,12 @@ Key decisions:
 - **Base image**: `node:20-slim` for npm agents, `debian:bookworm-slim` for native binaries
 - **Deps stage**: Install either the agent CLI (if it has native ACP) or the ACP adapter package (if it doesn't). The adapter pulls in the agent SDK as a dependency — you don't need to install both.
 - **User**: Both the sidecar (`example-<name>`) and agent (`<agent>-agent`) stages must run as a non-root user. For `node:20-slim` bases, use the built-in `node` user. For `debian:bookworm-slim` bases, create a dedicated user (e.g., `useradd -m -s /bin/bash anyclaw`). In the sidecar stage, `chown /workspace` to the user and add `USER <user>` before the entrypoint. In the agent stage, `chown` the home directory and add `USER <user>`.
+- **Scoped sudo**: Agent containers get passwordless `sudo apt-get` so the AI agent can install packages at runtime without full root. Add `sudo` to the apt install list and grant access via sudoers: `echo "<user> ALL=(ALL) NOPASSWD: /usr/bin/apt-get" >> /etc/sudoers.d/<user>`. Do not grant unrestricted sudo.
 - **Entrypoint**: The ACP command. This varies by agent:
   - Native ACP: `["opencode", "acp"]`, `["kiro-cli", "acp"]`
   - ACP adapter: `["claude-agent-acp"]` (npm package that wraps the agent's SDK)
 - **Home dirs**: Create `~/.local/share`, `~/.local/state`, and any agent-specific config dirs. `chown` them to the agent user.
+- **Package persistence**: Mount a named volume at `/usr/local` in the agent container so that packages installed via `pip`, `npm install -g`, `cargo install`, etc. survive container restarts. Note: `apt-get` installs to `/usr/bin` and `/usr/lib` which are not on this volume — use the Dockerfile for apt packages that must persist.
 
 ### 2. anyclaw.yaml
 
@@ -74,6 +76,7 @@ agents_manager:
         volumes:
           - "<agent-name>-agent-data:/home/<user>/.local/share"
           - "<agent-name>-agent-workspace:/home/<user>/workspace"
+          - "<agent-name>-agent-packages:/usr/local"
         env:
           # Agent-specific env vars (API keys, XDG paths, etc.)
       enabled: true

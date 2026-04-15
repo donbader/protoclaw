@@ -124,9 +124,12 @@ agents_manager:
       volumes:
         - "kiro-auth-data:/home/kiro/.local/share/kiro-cli"
         - "kiro-agent-workspace:/home/kiro/workspace"
+        - "kiro-agent-packages:/usr/local"
       env:
         KIRO_API_KEY: "${KIRO_API_KEY:}"
 ```
+
+The agent container runs as the `kiro` user with scoped sudo for `apt-get` only — the agent can install packages at runtime via `sudo apt-get install` without full root access. The `/usr/local` volume persists packages installed via `pip`, `npm install -g`, or `cargo install` across container restarts. Note that `apt-get` installs to system dirs (`/usr/bin`, `/usr/lib`) which are not on this volume — pre-install apt packages in the Dockerfile for persistence.
 
 The `KIRO_API_KEY` env var is passed through from `.env` via `${KIRO_API_KEY:}` substitution. If using browser login instead, the `kiro-auth-data` volume provides credentials.
 

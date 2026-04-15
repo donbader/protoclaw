@@ -23,6 +23,7 @@ agents_manager:
         volumes:
           - "claude-code-agent-data:/home/node/.claude"
           - "claude-code-agent-workspace:/home/node/workspace"
+          - "claude-code-agent-packages:/usr/local"
         env:
           ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:}"
           ANTHROPIC_BASE_URL: "${ANTHROPIC_BASE_URL:}"

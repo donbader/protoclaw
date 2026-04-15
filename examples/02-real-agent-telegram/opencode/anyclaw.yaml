@@ -22,6 +22,7 @@ agents_manager:
         volumes:
           - "opencode-agent-data:/home/node/.local/share"
           - "opencode-agent-workspace:/home/node/workspace"
+          - "opencode-agent-packages:/usr/local"
         env:
           XDG_CONFIG_HOME: "/home/node/.config"
           XDG_DATA_HOME: "/home/node/.local/share"
