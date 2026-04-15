@@ -387,6 +387,13 @@ pub enum WorkspaceConfig {
     Docker(DockerWorkspaceConfig),
 }
 
+// LIMITATION: Do not access binary/env/working_dir on AgentConfig directly
+// AgentConfig.workspace is a tagged enum (WorkspaceConfig::Local or WorkspaceConfig::Docker).
+// Binary, env, and working_dir live on the variant structs, not on AgentConfig itself.
+// Always match on agent.workspace to access these fields. Accessing them directly would
+// require adding redundant fields that drift out of sync with the workspace variant.
+// See also: AGENTS.md §Anti-Patterns
+
 /// Per-agent configuration. Names come from the HashMap key in [`AgentsManagerConfig`].
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AgentConfig {

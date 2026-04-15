@@ -1,3 +1,11 @@
+// LIMITATION: No std::env::var in channel/tool binaries
+// Config flows through the initialize handshake (ChannelInitializeParams.options),
+// not through environment variables. Channel and tool binaries must NOT read config
+// from std::env::var because: (1) the supervisor controls the subprocess environment,
+// (2) env vars set on the subprocess are visible in /proc/<pid>/environ, and
+// (3) the initialize handshake provides a typed, validated config path.
+// See also: AGENTS.md §Anti-Patterns
+
 //! Channel SDK for anyclaw.
 //!
 //! Provides the [`Channel`] trait for building messaging integrations and

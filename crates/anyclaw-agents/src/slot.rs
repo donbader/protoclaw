@@ -22,6 +22,12 @@ pub struct AgentSlot {
     /// Negotiated ACP protocol version, set after successful initialize handshake.
     /// 0 means not yet initialized.
     pub(crate) protocol_version: u32,
+    // LIMITATION: Single-agent limitation
+    // The current architecture supports one agent subprocess per slot. Multi-agent routing
+    // exists in integration tests but the session model ties each session to a single agent
+    // connection. Cannot route different sessions to different agent types without significant
+    // refactoring of the session_map and reverse_map structures.
+    // See also: CONCERNS.md §Architecture Concerns
     pub(crate) session_map: HashMap<SessionKey, String>,
     pub(crate) reverse_map: HashMap<String, SessionKey>,
     pub(crate) pending_permissions: HashMap<String, PendingPermission>,

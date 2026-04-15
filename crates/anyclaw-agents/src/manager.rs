@@ -1963,6 +1963,12 @@ impl Manager for AgentsManager {
     }
 
     async fn run(mut self, cancel: CancellationToken) -> Result<(), ManagerError> {
+        // LIMITATION: Do not call run() twice
+        // cmd_rx is consumed via .take() on first run(). A second call would panic on
+        // the .expect() because the receiver has already been moved into the select! loop.
+        // The Manager trait consumes self, so this is enforced at the type level — but
+        // internal Option<Receiver> fields add a runtime guard as defense in depth.
+        // See also: AGENTS.md §Anti-Patterns
         let mut cmd_rx = self.cmd_rx.take().expect("cmd_rx must exist");
         let mut incoming_rx = self.incoming_rx.take().expect("incoming_rx must exist");
         let mut completion_rx = self.completion_rx.take().expect("completion_rx must exist");

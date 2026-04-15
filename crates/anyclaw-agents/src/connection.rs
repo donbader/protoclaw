@@ -44,6 +44,12 @@ async fn build_backend(
             let work_dir = local.working_dir.as_deref().unwrap_or(Path::new("."));
 
             let (cmd_name, cmd_args) = local.binary.command_and_args();
+            // LIMITATION: Subprocess binary paths not validated at spawn time
+            // Agent binary paths from config are passed directly to Command::new() without
+            // path sanitization or allowlisting. Config is trusted (loaded from anyclaw.yaml),
+            // but a compromised config file could spawn arbitrary binaries. Current mitigation:
+            // config is file-based (not user-input-driven) and kill_on_drop(true) limits orphans.
+            // See also: CONCERNS.md §Security Concerns
             let mut cmd = Command::new(cmd_name);
             cmd.args(cmd_args)
                 .stdin(std::process::Stdio::piped())

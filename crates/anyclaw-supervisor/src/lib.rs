@@ -57,6 +57,14 @@ struct ManagerSlot {
     lifecycle: SlotLifecycle,
 }
 
+// LIMITATION: Do not change MANAGER_ORDER
+// Boot order tools → agents → channels is load-bearing. Tools must be ready before
+// agents request MCP URLs during session/new. Agents must be ready before channels
+// start routing inbound messages. Shutdown is reverse: channels stop accepting messages
+// first, then agents finish in-flight sessions, then tools shut down. Changing this
+// order causes race conditions where agents try to reach tools that aren't started yet,
+// or channels route messages to agents that haven't initialized.
+// See also: AGENTS.md §Anti-Patterns
 const MANAGER_ORDER: [&str; 3] = ["tools", "agents", "channels"];
 
 async fn shutdown_signal() {

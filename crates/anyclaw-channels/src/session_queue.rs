@@ -11,6 +11,13 @@ pub enum QueueAction {
     Enqueued,
 }
 
+// LIMITATION: No rate limiting on inbound messages
+// No rate limiting exists anywhere in the codebase. A misbehaving channel could flood
+// the agent with messages, causing the session queue to grow unbounded and overwhelming
+// the agent subprocess. Fix approach: add per-session or per-channel rate limiting in
+// ChannelsManager before dispatching to agents.
+// See also: CONCERNS.md §Architecture Concerns
+
 /// Per-session FIFO queue. Each session processes one message at a time.
 ///
 /// When a session is idle, the first message dispatches immediately.

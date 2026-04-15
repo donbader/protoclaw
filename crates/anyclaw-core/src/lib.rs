@@ -47,6 +47,13 @@ pub use types::*;
 // re-exports exist solely for backward compatibility — internal crates that
 // already depend on anyclaw-sdk-types should import directly from there.
 // See also: AGENTS.md §Anti-Patterns
+/// Re-exported from `anyclaw-sdk-types` for backward compatibility.
 pub use anyclaw_sdk_types::ChannelEvent;
+
+// LIMITATION: ACP wire types canonical location
+// ACP wire types (InitializeParams, SessionNewParams, etc.) live in anyclaw-sdk-types
+// as the canonical location. anyclaw-agents/acp_types.rs re-exports them for backward
+// compatibility. New code should import from anyclaw-sdk-types directly.
+// See also: AGENTS.md §Anti-Patterns
 /// Re-exported from `anyclaw-sdk-types` for backward compatibility.
 pub use anyclaw_sdk_types::SessionKey;

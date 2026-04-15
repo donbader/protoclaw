@@ -41,6 +41,12 @@ impl ExternalMcpServer {
         let binary = config.binary.as_deref().ok_or_else(|| {
             ToolsError::ExternalServerFailed(format!("{name}: no binary specified"))
         })?;
+        // LIMITATION: Subprocess binary paths not validated at spawn time
+        // Tool binary paths from config are passed directly to Command::new() without
+        // path sanitization or allowlisting. Config is trusted (loaded from anyclaw.yaml),
+        // but a compromised config file could spawn arbitrary binaries. Current mitigation:
+        // config is file-based (not user-input-driven) and kill_on_drop(true) limits orphans.
+        // See also: CONCERNS.md §Security Concerns
         let mut cmd = Command::new(binary);
         cmd.args(&config.args);
         for (key, value) in &config.options {

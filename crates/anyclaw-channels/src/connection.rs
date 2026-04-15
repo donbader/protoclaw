@@ -65,6 +65,12 @@ impl ChannelConnection {
         channel_id: ChannelId,
         log_level: Option<&str>,
     ) -> Result<Self, ChannelsError> {
+        // LIMITATION: Subprocess binary paths not validated at spawn time
+        // Channel binary paths from config are passed directly to Command::new() without
+        // path sanitization or allowlisting. Config is trusted (loaded from anyclaw.yaml),
+        // but a compromised config file could spawn arbitrary binaries. Current mitigation:
+        // config is file-based (not user-input-driven) and kill_on_drop(true) limits orphans.
+        // See also: CONCERNS.md §Security Concerns
         let mut cmd = Command::new(&config.binary);
         cmd.args(&config.args)
             .stdin(std::process::Stdio::piped())
@@ -76,6 +82,13 @@ impl ChannelConnection {
             cmd.env("RUST_LOG", level);
         }
 
+        // LIMITATION: Channel options passed as environment variables
+        // ChannelConfig.options are set as env vars on the subprocess. Secrets in options
+        // are visible in /proc/<pid>/environ on Linux. Low risk in typical deployments
+        // but worth noting for security-sensitive environments. The alternative would be
+        // passing options through the initialize handshake params, but that requires
+        // protocol changes.
+        // See also: CONCERNS.md §Security Concerns
         for (key, value) in &config.options {
             let env_val = match value {
                 serde_json::Value::String(s) => s.clone(),

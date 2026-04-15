@@ -980,6 +980,12 @@ impl ChannelsManager {
         }
     }
 
+    // LIMITATION: poll_channels() workaround
+    // Uses 1ms timeout polling per connection because tokio::select! cannot dynamically
+    // branch over a variable number of futures. This adds up to 50ms latency (poll interval)
+    // and CPU overhead from polling. Scales poorly with many channels. Consider replacing
+    // with FuturesUnordered or tokio::select! with StreamMap for better scalability.
+    // See also: CONCERNS.md §Architecture Concerns
     /// Poll all active channel connections for incoming messages.
     /// Drains all ready messages across all connections in one pass.
     async fn poll_channels(&mut self) -> Vec<(usize, Option<IncomingChannelMessage>)> {
@@ -1102,6 +1108,11 @@ impl Manager for ChannelsManager {
     }
 
     async fn run(mut self, cancel: CancellationToken) -> Result<(), ManagerError> {
+        // LIMITATION: Do not call run() twice
+        // cmd_rx is consumed via .take() on first run(). A second call would panic.
+        // The Manager trait consumes self, enforcing this at the type level, but the
+        // Option<Receiver> field adds a runtime guard as defense in depth.
+        // See also: AGENTS.md §Anti-Patterns
         let mut cmd_rx = self.cmd_rx.take().expect("cmd_rx must exist");
         let mut channel_events_rx = self.channel_events_rx.take();
 

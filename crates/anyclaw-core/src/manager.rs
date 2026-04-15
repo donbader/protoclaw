@@ -3,6 +3,21 @@ use tokio_util::sync::CancellationToken;
 
 use crate::error::ManagerError;
 
+// LIMITATION: No shared mutable state between managers
+// All cross-manager communication MUST use tokio::sync::mpsc via ManagerHandle<C>.
+// No Arc<Mutex<>> across manager boundaries. Each manager owns its subprocess
+// connections and internal state exclusively. Violating this breaks crash isolation —
+// a panicking manager could poison a shared mutex and take down other managers.
+// See also: AGENTS.md §Anti-Patterns
+
+// LIMITATION: No cross-manager crate imports
+// Manager crates (anyclaw-agents, anyclaw-channels, anyclaw-tools) must NOT import
+// each other directly. Use trait abstractions (e.g. AgentDispatch) or command enums
+// routed through ManagerHandle instead. Direct imports create circular dependencies
+// and couple manager lifecycles — a change in one manager's internals would force
+// recompilation of others.
+// See also: AGENTS.md §Anti-Patterns
+
 /// Contract that every manager (tools, agents, channels) must implement.
 ///
 /// Lifecycle: construct → [`start()`](Self::start) (synchronous setup: spawn subprocesses,
@@ -16,6 +31,12 @@ pub trait Manager: Send + 'static {
     fn name(&self) -> &str;
     /// Synchronous setup phase: spawn subprocesses, bind ports, validate config.
     fn start(&mut self) -> impl std::future::Future<Output = Result<(), ManagerError>> + Send;
+    // LIMITATION: Do not call run() without start()
+    // Manager lifecycle is start().await? then run(cancel).await. Both required, in order.
+    // start() performs synchronous setup (spawn subprocesses, bind ports). run() enters
+    // the async event loop. Calling run() without start() will panic or produce undefined
+    // behavior because connections, channels, and internal state are not initialized.
+    // See also: AGENTS.md §Anti-Patterns
     /// Async event loop that processes commands until the cancellation token fires.
     /// Consumes `self` — a manager cannot be run twice.
     fn run(

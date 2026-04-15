@@ -1,3 +1,11 @@
+// LIMITATION: No anyhow in library crates
+// All library crates (anyclaw-core, anyclaw-agents, anyclaw-channels, anyclaw-tools,
+// anyclaw-config, anyclaw-jsonrpc, SDK crates) must use thiserror typed error enums.
+// anyhow is permitted ONLY in application entry points: main.rs, supervisor.rs, init.rs,
+// status.rs. Using anyhow in libraries erases error types, making it impossible for callers
+// to match on specific error variants for recovery or user-facing messages.
+// See also: AGENTS.md §Anti-Patterns
+
 /// Errors originating from the supervisor layer (boot failures, crash loops, shutdown timeouts).
 #[derive(Debug, thiserror::Error)]
 pub enum SupervisorError {
