@@ -28,7 +28,7 @@ impl Tool for SystemInfoTool {
             "hostname": std::env::var("HOSTNAME").unwrap_or_else(|_| "unknown".into()),
             "os": std::env::consts::OS,
             "arch": std::env::consts::ARCH,
-            "anyclaw_version": env!("CARGO_PKG_VERSION")
+            "anyclaw_version": env!("ANYCLAW_VERSION")
         }))
     }
 }
@@ -90,6 +90,13 @@ mod tests {
     async fn tool_execute_returns_version() {
         let tool = SystemInfoTool;
         let result = tool.execute(serde_json::json!({})).await.unwrap();
-        assert!(result.get("anyclaw_version").is_some());
+        let version = result["anyclaw_version"]
+            .as_str()
+            .expect("anyclaw_version should be a string");
+        assert!(!version.is_empty(), "anyclaw_version should not be empty");
+        assert_ne!(
+            version, "unknown",
+            "anyclaw_version should resolve from git or ANYCLAW_VERSION env"
+        );
     }
 }
