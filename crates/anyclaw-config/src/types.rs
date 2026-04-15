@@ -164,19 +164,19 @@ pub struct AnyclawConfig {
     #[serde(default = "default_extensions_dir")]
     pub extensions_dir: String,
     /// Agents manager configuration and named agent map.
-    #[serde(alias = "agents-manager", default)]
+    #[serde(default)]
     pub agents_manager: AgentsManagerConfig,
     /// Channels manager configuration and named channel map.
-    #[serde(alias = "channels-manager", default)]
+    #[serde(default)]
     pub channels_manager: ChannelsManagerConfig,
     /// Tools manager configuration and named tool map.
-    #[serde(alias = "tools-manager", default)]
+    #[serde(default)]
     pub tools_manager: ToolsManagerConfig,
     /// Supervisor-level settings (shutdown timeout, health interval, restart limits).
     #[serde(default)]
     pub supervisor: SupervisorConfig,
     /// Session persistence backend selection.
-    #[serde(alias = "session-store", default)]
+    #[serde(default)]
     pub session_store: SessionStoreConfig,
 }
 
@@ -1063,7 +1063,7 @@ tools_manager:
     }
 
     #[test]
-    fn when_manager_keys_are_hyphenated_then_backward_compat_alias_parses_correctly() {
+    fn when_manager_keys_are_hyphenated_then_fields_are_silently_ignored() {
         let yaml = r#"
 agents-manager:
   agents:
@@ -1081,9 +1081,10 @@ tools-manager:
       binary: "mcp-server-filesystem"
 "#;
         let config: AnyclawConfig = serde_yaml::from_str(yaml).unwrap();
-        assert_eq!(config.agents_manager.agents.len(), 1);
-        assert_eq!(config.channels_manager.channels.len(), 1);
-        assert_eq!(config.tools_manager.tools.len(), 1);
+        // Hyphenated keys are unknown to serde — silently ignored, fields get defaults
+        assert_eq!(config.agents_manager.agents.len(), 0);
+        assert_eq!(config.channels_manager.channels.len(), 0);
+        assert_eq!(config.tools_manager.tools.len(), 0);
     }
 
     #[test]
