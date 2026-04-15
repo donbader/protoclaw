@@ -97,7 +97,7 @@ Plans:
 Plans:
 - [x] 05-01-PLAN.md — Fix sdk-channel LSP bug + unit tests for all identified test gaps
 - [x] 05-02-PLAN.md — Property-based testing (proptest) for all ACP/channel wire types
-- [ ] 05-03-PLAN.md — Coverage measurement and baseline comparison
+- [x] 05-03-PLAN.md — Coverage measurement and baseline comparison
 
 ### Phase 6: File Decomposition
 **Goal**: Oversized files are broken into focused modules with clear boundaries — the codebase is navigable and each module has a single responsibility
