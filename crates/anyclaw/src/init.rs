@@ -49,12 +49,6 @@ channels_manager:
 #       args:
 #         - "--root"
 #         - "."
-
-supervisor:
-  shutdown_timeout_secs: 30
-  health_check_interval_secs: 5
-  max_restarts: 5
-  restart_window_secs: 60
 "#
     )
 }
@@ -110,10 +104,11 @@ mod tests {
     }
 
     #[test]
-    fn when_generate_config_yaml_called_then_contains_agents_manager_and_supervisor_sections() {
+    fn when_generate_config_yaml_called_then_contains_agents_and_channels_but_not_supervisor() {
         let yaml = generate_config_yaml("opencode");
         assert!(yaml.contains("agents_manager:"));
-        assert!(yaml.contains("supervisor:"));
+        assert!(yaml.contains("channels_manager:"));
+        assert!(!yaml.contains("supervisor:"));
     }
 
     #[test]
