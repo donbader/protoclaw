@@ -60,6 +60,19 @@ async fn main() -> Result<()> {
                     );
                 }
                 Some(cli::Commands::Validate) => {
+                    let yaml_content = std::fs::read_to_string(&cli.config)
+                        .map_err(|e| anyhow::anyhow!("failed to read config: {e}"))?;
+                    let schema_errors = anyclaw_config::validate_schema(&yaml_content);
+                    for error in &schema_errors {
+                        eprintln!("  \u{2717} schema: {error}");
+                    }
+                    if !schema_errors.is_empty() {
+                        eprintln!(
+                            "\u{2717} Schema validation failed with {} error(s)",
+                            schema_errors.len()
+                        );
+                        std::process::exit(1);
+                    }
                     let config = anyclaw_config::AnyclawConfig::load(Some(&cli.config))
                         .map_err(|e| anyhow::anyhow!("failed to load config: {e}"))?;
                     let result = anyclaw_config::validate_config(&config);

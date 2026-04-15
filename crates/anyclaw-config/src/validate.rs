@@ -249,6 +249,32 @@ fn validate_tool_binaries(config: &AnyclawConfig, errors: &mut Vec<ValidationErr
     }
 }
 
+/// Validate a YAML config string against the JSON Schema generated from the Rust types.
+///
+/// Returns a list of schema violation messages. An empty list means the YAML is schema-valid.
+pub fn validate_schema(yaml_content: &str) -> Vec<String> {
+    let yaml_value: serde_json::Value = match serde_yaml::from_str(yaml_content) {
+        Ok(v) => v,
+        Err(e) => return vec![format!("YAML parse error: {e}")],
+    };
+    let schema_value = crate::generate_schema();
+    let validator = match jsonschema::validator_for(&schema_value) {
+        Ok(v) => v,
+        Err(e) => return vec![format!("Schema compilation error: {e}")],
+    };
+    validator
+        .iter_errors(&yaml_value)
+        .map(|error| {
+            let path = error.instance_path.to_string();
+            if path.is_empty() {
+                error.to_string()
+            } else {
+                format!("{path}: {error}")
+            }
+        })
+        .collect()
+}
+
 /// Validate the loaded configuration: check binary existence, working dirs, Docker limits, and host format.
 pub fn validate_config(config: &AnyclawConfig) -> ValidationResult {
     let mut errors = Vec::new();
@@ -742,5 +768,76 @@ mod tests {
         #[case] expected: &str,
     ) {
         assert_eq!(error.to_string(), expected);
+    }
+
+    #[test]
+    fn when_valid_yaml_given_then_validate_schema_returns_no_errors() {
+        let yaml = r#"
+log_level: info
+agents_manager:
+  agents:
+    default:
+      workspace:
+        type: local
+        binary: echo
+"#;
+        let errors = super::validate_schema(yaml);
+        assert!(
+            errors.is_empty(),
+            "expected no schema errors, got: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn when_log_level_is_wrong_type_then_validate_schema_returns_error_mentioning_log_level() {
+        let yaml = r#"
+log_level: 123
+"#;
+        let errors = super::validate_schema(yaml);
+        assert!(
+            !errors.is_empty(),
+            "expected schema errors for invalid log_level type"
+        );
+        let mentions_log_level = errors.iter().any(|e| e.contains("log_level"));
+        assert!(
+            mentions_log_level,
+            "expected error to mention 'log_level', got: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn when_unknown_top_level_keys_present_then_validate_schema_returns_no_errors() {
+        let yaml = r#"
+log_level: info
+totally_unknown_key: whatever
+"#;
+        let errors = super::validate_schema(yaml);
+        assert!(
+            errors.is_empty(),
+            "unknown top-level keys should be allowed, got: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn when_acp_timeout_secs_is_string_then_validate_schema_returns_type_error() {
+        let yaml = r#"
+agents_manager:
+  acp_timeout_secs: "not_a_number"
+"#;
+        let errors = super::validate_schema(yaml);
+        assert!(
+            !errors.is_empty(),
+            "expected schema errors for acp_timeout_secs string value"
+        );
+        let mentions_type = errors.iter().any(|e| {
+            e.contains("acp_timeout_secs")
+                || e.contains("integer")
+                || e.contains("type")
+                || e.contains("agents_manager")
+        });
+        assert!(
+            mentions_type,
+            "expected error to mention type mismatch, got: {errors:?}"
+        );
     }
 }
