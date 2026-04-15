@@ -10,7 +10,7 @@ use tokio::time::Instant;
 
 use crate::formatting::{close_open_tags, escape_html, format_telegram_html};
 use crate::state::SharedState;
-use crate::turn::{ChatTurn, ToolCallTrack, TurnPhase};
+use crate::turn::{ChatTurn, ToolCallStatus, ToolCallTrack, TurnPhase};
 
 const MAX_RETRY_ATTEMPTS: u32 = 3;
 const RETRY_BASE_DELAY_MS: u64 = 500;
@@ -191,29 +191,6 @@ pub fn split_message(text: &str, max_len: usize) -> Vec<String> {
 
 async fn thought_emoji(state: &SharedState) -> String {
     state.thought_emoji.read().await.clone()
-}
-
-pub(crate) fn format_tool_call_update_text(
-    display_name: &str,
-    status: &str,
-    output: Option<&str>,
-) -> String {
-    let emoji = match status {
-        "completed" => "✅",
-        "failed" => "❌",
-        "in_progress" => "⏳",
-        _ => "🔧",
-    };
-    if status == "failed"
-        && let Some(err) = output
-    {
-        return format!(
-            "{emoji} <code>{}</code>\n<pre>{}</pre>",
-            escape_html(display_name),
-            escape_html(err)
-        );
-    }
-    format!("{emoji} <code>{}</code>", escape_html(display_name))
 }
 
 // D-03: content is DeliverMessage.content (Value) — agents manager mutates raw JSON
@@ -769,82 +746,122 @@ pub async fn deliver_to_chat(
         ContentKind::ToolCall {
             name, tool_call_id, ..
         } => {
-            let display_name = if name.is_empty() { "tool" } else { &name };
-            let text = format!("🔧 <code>{}</code>…", escape_html(display_name));
+            let display_name = if name.is_empty() {
+                "tool".to_string()
+            } else {
+                name.clone()
+            };
 
-            let mut turns = state.turns.write().await;
-            let mid = message_id.unwrap_or("").to_string();
-            let turn = turns
-                .entry(chat_id)
-                .or_insert_with(|| ChatTurn::new(mid.clone()));
-            if !mid.is_empty() {
-                turn.message_id = mid;
-            }
-
-            if let Some(track) = turn.thought.as_mut() {
-                track.suppressed = false;
-            }
-
-            drop(turns);
-
-            if let Ok(sent) = retry_telegram_op("send_tool_call", chat_id, || {
-                let text = text.clone();
-                async move {
-                    bot.send_message(ChatId(chat_id), &text)
-                        .parse_mode(ParseMode::Html)
-                        .await
-                }
-            })
-            .await
-                && !tool_call_id.is_empty()
-            {
+            let (tools_text, existing_tools_msg_id) = {
                 let mut turns = state.turns.write().await;
-                if let Some(turn) = turns.get_mut(&chat_id) {
+                let mid = message_id.unwrap_or("").to_string();
+                let turn = turns
+                    .entry(chat_id)
+                    .or_insert_with(|| ChatTurn::new(mid.clone()));
+                if !mid.is_empty() {
+                    turn.message_id = mid;
+                }
+
+                if let Some(track) = turn.thought.as_mut() {
+                    track.suppressed = false;
+                }
+
+                if !tool_call_id.is_empty() {
+                    turn.tool_call_order.push(tool_call_id.clone());
                     turn.tool_calls.insert(
                         tool_call_id,
                         ToolCallTrack {
-                            msg_id: sent.id.0,
-                            name: name.clone(),
+                            name: display_name,
+                            status: ToolCallStatus::Started,
                         },
                     );
                 }
+
+                let tools_text = turn.render_tools_text();
+                let existing_tools_msg_id = turn.tools_msg_id;
+                (tools_text, existing_tools_msg_id)
+            };
+
+            if tools_text.is_empty() {
+                return Ok(());
+            }
+
+            if existing_tools_msg_id == 0 {
+                let tools_text_clone = tools_text.clone();
+                if let Ok(sent) = retry_telegram_op("send_tool_call", chat_id, || {
+                    let tools_text_clone = tools_text_clone.clone();
+                    async move {
+                        bot.send_message(ChatId(chat_id), &tools_text_clone)
+                            .parse_mode(ParseMode::Html)
+                            .await
+                    }
+                })
+                .await
+                {
+                    let mut turns = state.turns.write().await;
+                    if let Some(turn) = turns.get_mut(&chat_id) {
+                        turn.tools_msg_id = sent.id.0;
+                    }
+                }
+            } else {
+                let _ = retry_telegram_op("edit_tool_call", chat_id, || {
+                    let tools_text = tools_text.clone();
+                    async move {
+                        bot.edit_message_text(
+                            ChatId(chat_id),
+                            MessageId(existing_tools_msg_id),
+                            &tools_text,
+                        )
+                        .parse_mode(ParseMode::Html)
+                        .await
+                    }
+                })
+                .await;
             }
             Ok(())
         }
 
         ContentKind::ToolCallUpdate {
-            name,
             tool_call_id,
             status,
             output,
+            ..
         } => {
-            let (tracked_msg_id, tracked_name) = {
-                let turns = state.turns.read().await;
-                turns
-                    .get(&chat_id)
-                    .and_then(|turn| {
-                        turn.tool_calls
-                            .get(&tool_call_id)
-                            .map(|t| (t.msg_id, t.name.clone()))
-                    })
-                    .unwrap_or((0, String::new()))
+            let (tools_text, tools_msg_id) = {
+                let mut turns = state.turns.write().await;
+                let Some(turn) = turns.get_mut(&chat_id) else {
+                    tracing::warn!(
+                        chat_id,
+                        tool_call_id,
+                        "tool call update for unknown chat turn"
+                    );
+                    return Ok(());
+                };
+
+                let Some(track) = turn.tool_calls.get_mut(&tool_call_id) else {
+                    tracing::warn!(
+                        chat_id,
+                        tool_call_id,
+                        "tool call update for untracked tool_call_id"
+                    );
+                    return Ok(());
+                };
+
+                track.status = match status.as_str() {
+                    "in_progress" => ToolCallStatus::InProgress,
+                    "completed" => ToolCallStatus::Completed,
+                    "failed" => ToolCallStatus::Failed(output),
+                    _ => ToolCallStatus::InProgress,
+                };
+
+                (turn.render_tools_text(), turn.tools_msg_id)
             };
 
-            let display_name = if !name.is_empty() {
-                name.clone()
-            } else if !tracked_name.is_empty() {
-                tracked_name
-            } else {
-                "tool".to_string()
-            };
-
-            let text = format_tool_call_update_text(&display_name, &status, output.as_deref());
-
-            if tracked_msg_id != 0 {
+            if tools_msg_id != 0 && !tools_text.is_empty() {
                 let _ = retry_telegram_op("edit_tool_call_update", chat_id, || {
-                    let text = text.clone();
+                    let tools_text = tools_text.clone();
                     async move {
-                        bot.edit_message_text(ChatId(chat_id), MessageId(tracked_msg_id), &text)
+                        bot.edit_message_text(ChatId(chat_id), MessageId(tools_msg_id), &tools_text)
                             .parse_mode(ParseMode::Html)
                             .await
                     }
@@ -953,61 +970,6 @@ mod tests {
         assert!(
             state.turns.read().await.get(&12345).is_some(),
             "unknown update types must not destroy active turns"
-        );
-    }
-
-    #[rstest]
-    #[case::failed_with_output("failed", Some("path outside allowed directory"), true)]
-    #[case::failed_without_output("failed", None, false)]
-    #[case::completed_with_output("completed", Some("file contents"), false)]
-    #[case::in_progress("in_progress", None, false)]
-    fn when_tool_call_update_formatted_then_error_details_shown_only_on_failure(
-        #[case] status: &str,
-        #[case] output: Option<&str>,
-        #[case] expect_output_in_text: bool,
-    ) {
-        let text = format_tool_call_update_text("fs/read_text_file", status, output);
-        if expect_output_in_text {
-            assert!(
-                text.contains("path outside allowed directory"),
-                "failed tool with output must include error details, got: {text}"
-            );
-            assert!(
-                text.contains("<pre>"),
-                "error details must be wrapped in <pre> tag, got: {text}"
-            );
-        } else if let Some(out) = output {
-            assert!(
-                !text.contains(out),
-                "non-failed status must not include output text, got: {text}"
-            );
-        }
-        assert!(
-            text.contains("fs/read_text_file"),
-            "tool name must always be present, got: {text}"
-        );
-    }
-
-    #[rstest]
-    fn when_tool_call_update_failed_then_emoji_is_cross() {
-        let text = format_tool_call_update_text("my_tool", "failed", Some("err"));
-        assert!(
-            text.starts_with("❌"),
-            "failed status must use ❌ emoji, got: {text}"
-        );
-    }
-
-    #[rstest]
-    fn when_tool_call_update_failed_with_html_in_output_then_escaped() {
-        let text =
-            format_tool_call_update_text("tool", "failed", Some("<script>alert(1)</script>"));
-        assert!(
-            !text.contains("<script>"),
-            "HTML in error output must be escaped, got: {text}"
-        );
-        assert!(
-            text.contains("&lt;script&gt;"),
-            "angle brackets must be escaped, got: {text}"
         );
     }
 }

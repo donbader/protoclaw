@@ -34,7 +34,7 @@ Both channels use `ContentKind::from_content(&msg.content)` from `anyclaw-sdk-ty
 
 **debug-http:** Emits thoughts as named SSE event `"thought"`, tool calls as `"tool_call"`, tool call updates as `"tool_call_update"`, and user message chunks as `"user_message_chunk"` via `SsePayload` struct. Tool call SSE data is JSON with `toolCallId`, `name`, `input`/`status`/`output` fields. Regular messages use default SSE data events. SSE clients filter by event type.
 
-**telegram:** Streams thoughts as 🧠-prefixed messages with debounced edits (400ms internal timer). On `"result"`, collapses to "🧠 Thought for Xs" (timing only, no content). Tool calls render as separate 🔧-prefixed messages showing the tool name; tool call updates edit the original message in-place with status emoji (⏳ in_progress, ✅ completed, ❌ failed). Tool call state tracked in `ChatTurn.tool_calls: HashMap<String, ToolCallTrack>`. Emoji prefix configurable via `thought_emoji` option in `ChannelInitializeParams.options` (default: 🧠). Thinking state tracked inside `ChatTurn.thought` (see below).
+**telegram:** Streams thoughts as 🧠-prefixed messages with debounced edits (400ms internal timer). On `"result"`, collapses to "🧠 Thought for Xs" (timing only, no content). All tool calls in a turn are combined into a single Telegram message — the first tool call sends a new message, subsequent tool calls edit it to append a new line. Each line shows a status emoji (🔧 started, ⏳ in_progress, ✅ completed, ❌ failed) and the tool name. Tool call updates edit the combined message in-place, updating only the affected line's emoji. Failed tools include error output in a `<pre>` block. Tool call state tracked in `ChatTurn.tool_calls: HashMap<String, ToolCallTrack>` with insertion order preserved in `ChatTurn.tool_call_order: Vec<String>`. The single combined message ID is stored in `ChatTurn.tools_msg_id`. Emoji prefix configurable via `thought_emoji` option in `ChannelInitializeParams.options` (default: 🧠). Thinking state tracked inside `ChatTurn.thought` (see below).
 
 ## ChatTurn State Machine (telegram)
 
@@ -44,10 +44,11 @@ All per-chat streaming state is encapsulated in a single `ChatTurn` struct per c
 
 | Type | Purpose |
 |------|---------|
-| `ChatTurn` | One agent turn per chat. Owns `message_id`, `phase`, `thought`, `response`, `tool_calls`. |
+| `ChatTurn` | One agent turn per chat. Owns `message_id`, `phase`, `thought`, `response`, `tool_calls`, `tools_msg_id`, `tool_call_order`. |
 | `ThoughtTrack` | Telegram message ID, buffer, debounce handle, timing, suppression flag. |
 | `ResponseTrack` | Telegram message ID, buffer, last-edit timestamp (rate limiting). |
-| `ToolCallTrack` | Telegram message ID + tool name for edit-in-place status updates. |
+| `ToolCallTrack` | Tool name + `ToolCallStatus` enum for combined message rendering. |
+| `ToolCallStatus` | `Started`, `InProgress`, `Completed`, `Failed(Option<String>)` — drives emoji selection in combined tool message. |
 | `TurnPhase` | `Active` (streaming) or `Finalizing(JoinHandle<()>)` (waiting for late chunks). |
 
 ### Lifecycle

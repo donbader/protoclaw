@@ -3,6 +3,8 @@ use std::time::Duration;
 use tokio::task::JoinHandle;
 use tokio::time::Instant;
 
+use crate::formatting::escape_html;
+
 pub struct ThoughtTrack {
     pub msg_id: i32,
     pub started_at: Instant,
@@ -17,9 +19,16 @@ pub struct ResponseTrack {
     pub last_edit: Instant,
 }
 
+pub enum ToolCallStatus {
+    Started,
+    InProgress,
+    Completed,
+    Failed(Option<String>),
+}
+
 pub struct ToolCallTrack {
-    pub msg_id: i32,
     pub name: String,
+    pub status: ToolCallStatus,
 }
 
 pub enum TurnPhase {
@@ -33,6 +42,10 @@ pub struct ChatTurn {
     pub thought: Option<ThoughtTrack>,
     pub response: Option<ResponseTrack>,
     pub tool_calls: HashMap<String, ToolCallTrack>,
+    /// Telegram message ID for the single combined tools message in this turn.
+    pub tools_msg_id: i32,
+    /// Insertion-ordered tool_call_ids so the combined message preserves call order.
+    pub tool_call_order: Vec<String>,
 }
 
 impl ChatTurn {
@@ -43,7 +56,32 @@ impl ChatTurn {
             thought: None,
             response: None,
             tool_calls: HashMap::new(),
+            tools_msg_id: 0,
+            tool_call_order: Vec::new(),
         }
+    }
+
+    /// Render all tracked tool calls as a single combined HTML text block.
+    /// Each tool is one line with a status emoji and escaped name.
+    pub fn render_tools_text(&self) -> String {
+        let mut lines = Vec::with_capacity(self.tool_call_order.len());
+        for id in &self.tool_call_order {
+            let Some(track) = self.tool_calls.get(id) else {
+                continue;
+            };
+            let name = escape_html(&track.name);
+            let line = match &track.status {
+                ToolCallStatus::Started => format!("🔧 <code>{name}</code>…"),
+                ToolCallStatus::InProgress => format!("⏳ <code>{name}</code>"),
+                ToolCallStatus::Completed => format!("✅ <code>{name}</code>"),
+                ToolCallStatus::Failed(None) => format!("❌ <code>{name}</code>"),
+                ToolCallStatus::Failed(Some(err)) => {
+                    format!("❌ <code>{name}</code>\n<pre>{}</pre>", escape_html(err))
+                }
+            };
+            lines.push(line);
+        }
+        lines.join("\n")
     }
 
     pub fn append_response(&mut self, text: &str, msg_id: i32) {
@@ -126,6 +164,8 @@ impl ChatTurn {
         self.thought = None;
         self.response = None;
         self.tool_calls.clear();
+        self.tools_msg_id = 0;
+        self.tool_call_order.clear();
         self.phase = TurnPhase::Active;
     }
 }
@@ -318,5 +358,149 @@ mod tests {
         let (text, _) = turn.take_response_for_finalize().unwrap();
         assert_eq!(text, "hello world");
         assert!(matches!(turn.phase, TurnPhase::Finalizing(_)));
+    }
+
+    #[rstest]
+    fn when_render_tools_text_then_preserves_insertion_order() {
+        let mut turn = ChatTurn::new("msg-1".to_string());
+        turn.tool_call_order.push("tc-1".to_string());
+        turn.tool_calls.insert(
+            "tc-1".to_string(),
+            ToolCallTrack {
+                name: "read_file".to_string(),
+                status: ToolCallStatus::Started,
+            },
+        );
+        turn.tool_call_order.push("tc-2".to_string());
+        turn.tool_calls.insert(
+            "tc-2".to_string(),
+            ToolCallTrack {
+                name: "write_file".to_string(),
+                status: ToolCallStatus::Completed,
+            },
+        );
+        let text = turn.render_tools_text();
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines.len(), 2);
+        assert!(
+            lines[0].contains("read_file"),
+            "first line should be read_file, got: {}",
+            lines[0]
+        );
+        assert!(
+            lines[1].contains("write_file"),
+            "second line should be write_file, got: {}",
+            lines[1]
+        );
+    }
+
+    #[rstest]
+    #[case::started(ToolCallStatus::Started, "🔧")]
+    #[case::in_progress(ToolCallStatus::InProgress, "⏳")]
+    #[case::completed(ToolCallStatus::Completed, "✅")]
+    #[case::failed_no_output(ToolCallStatus::Failed(None), "❌")]
+    fn when_render_tools_text_then_status_emoji_correct(
+        #[case] status: ToolCallStatus,
+        #[case] expected_emoji: &str,
+    ) {
+        let mut turn = ChatTurn::new("msg-1".to_string());
+        turn.tool_call_order.push("tc-1".to_string());
+        turn.tool_calls.insert(
+            "tc-1".to_string(),
+            ToolCallTrack {
+                name: "my_tool".to_string(),
+                status,
+            },
+        );
+        let text = turn.render_tools_text();
+        assert!(
+            text.starts_with(expected_emoji),
+            "expected emoji {expected_emoji}, got: {text}"
+        );
+    }
+
+    #[rstest]
+    fn when_render_tools_text_failed_with_output_then_error_shown() {
+        let mut turn = ChatTurn::new("msg-1".to_string());
+        turn.tool_call_order.push("tc-1".to_string());
+        turn.tool_calls.insert(
+            "tc-1".to_string(),
+            ToolCallTrack {
+                name: "fs_read".to_string(),
+                status: ToolCallStatus::Failed(Some("path not found".to_string())),
+            },
+        );
+        let text = turn.render_tools_text();
+        assert!(
+            text.contains("❌"),
+            "failed status must use ❌, got: {text}"
+        );
+        assert!(
+            text.contains("<pre>path not found</pre>"),
+            "error output must be in <pre>, got: {text}"
+        );
+    }
+
+    #[rstest]
+    fn when_render_tools_text_then_html_in_name_escaped() {
+        let mut turn = ChatTurn::new("msg-1".to_string());
+        turn.tool_call_order.push("tc-1".to_string());
+        turn.tool_calls.insert(
+            "tc-1".to_string(),
+            ToolCallTrack {
+                name: "<script>alert(1)</script>".to_string(),
+                status: ToolCallStatus::Completed,
+            },
+        );
+        let text = turn.render_tools_text();
+        assert!(
+            !text.contains("<script>"),
+            "HTML in tool name must be escaped, got: {text}"
+        );
+        assert!(
+            text.contains("&lt;script&gt;"),
+            "angle brackets must be escaped, got: {text}"
+        );
+    }
+
+    #[rstest]
+    fn when_render_tools_text_failed_with_html_in_output_then_escaped() {
+        let mut turn = ChatTurn::new("msg-1".to_string());
+        turn.tool_call_order.push("tc-1".to_string());
+        turn.tool_calls.insert(
+            "tc-1".to_string(),
+            ToolCallTrack {
+                name: "tool".to_string(),
+                status: ToolCallStatus::Failed(Some("<b>bad</b>".to_string())),
+            },
+        );
+        let text = turn.render_tools_text();
+        assert!(
+            !text.contains("<b>bad</b>"),
+            "HTML in error output must be escaped, got: {text}"
+        );
+        assert!(
+            text.contains("&lt;b&gt;bad&lt;/b&gt;"),
+            "angle brackets must be escaped, got: {text}"
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_cleanup_called_then_tool_fields_cleared() {
+        let mut turn = ChatTurn::new("msg-1".to_string());
+        turn.tools_msg_id = 42;
+        turn.tool_call_order.push("tc-1".to_string());
+        turn.tool_calls.insert(
+            "tc-1".to_string(),
+            ToolCallTrack {
+                name: "tool".to_string(),
+                status: ToolCallStatus::Completed,
+            },
+        );
+        turn.cleanup();
+        assert_eq!(turn.tools_msg_id, 0);
+        assert!(turn.tool_call_order.is_empty());
+        assert!(turn.tool_calls.is_empty());
     }
 }
