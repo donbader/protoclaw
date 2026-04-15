@@ -6,7 +6,11 @@ Manages the agent subprocess lifecycle and implements the ACP (Agent Client Prot
 
 | File | Purpose |
 |------|---------|
-| `manager.rs` | `AgentsManager` — session lifecycle, command handling, crash recovery |
+| `manager.rs` | `AgentsManager` — struct, constructor, ACP handshake (`initialize_agent`, `start_session`), tool context, Manager trait impl, run loop |
+| `commands.rs` | Command dispatch (`handle_command`), session CRUD (`create_session`, `prompt_session`, `fork_session`, `list_sessions`, `cancel_session`), platform commands |
+| `fs_sandbox.rs` | Filesystem sandboxing: path validation (`validate_fs_path`, `validate_fs_write_path`), `handle_fs_read`, `handle_fs_write` |
+| `session_recovery.rs` | Crash recovery: `handle_crash`, session restore (`try_restore_session`, `heal_session`), stale container cleanup |
+| `incoming.rs` | Incoming message dispatch: `handle_incoming`, session update forwarding, tool event normalization, permission requests, `handle_prompt_completion` |
 | `connection.rs` | `AgentConnection` — subprocess spawn, typed JSON-RPC framing over piped stdio, direct bridge to manager |
 | `platform_commands.rs` | `PlatformCommand` — typed platform commands with `Serialize`, `platform_commands_json()` for D-03 merging |
 | `slot.rs` | `AgentSlot` — per-agent state: session maps, capabilities, pending permissions |
@@ -27,13 +31,14 @@ Manages the agent subprocess lifecycle and implements the ACP (Agent Client Prot
 
 Remaining `serde_json::Value` usages are documented D-03 extensible boundaries:
 
-- **Agent content mutation** (`add_received_timestamp`, `normalize_tool_event_fields`, `forward_session_update`): `DeliverMessage.content` stays as Value because the manager injects `_received_at_ms`, normalizes tool event fields, and merges platform commands — all raw JSON mutations
-- **Permission params** (`handle_permission_request`): agent-defined schemas where `requestId` location varies by agent implementation
-- **FS request params** (`handle_fs_read`, `handle_fs_write`): agent-defined path/content fields
-- **`session/update` params** (`handle_session_update`): deserialized into `SessionUpdateEvent` for typed dispatch, but raw Value forwarded as channel content
+- **Agent content mutation** (`add_received_timestamp`, `normalize_tool_event_fields`, `forward_session_update` in `incoming.rs`): `DeliverMessage.content` stays as Value because the manager injects `_received_at_ms`, normalizes tool event fields, and merges platform commands — all raw JSON mutations
+- **Permission params** (`handle_permission_request` in `incoming.rs`): agent-defined schemas where `requestId` location varies by agent implementation
+- **FS request params** (`handle_fs_read`, `handle_fs_write` in `fs_sandbox.rs`): agent-defined path/content fields
+- **`session/update` params** (`handle_session_update` in `incoming.rs`): deserialized into `SessionUpdateEvent` for typed dispatch, but raw Value forwarded as channel content
 - **`last_available_commands`** (slot.rs): stores arbitrary agent-reported `availableCommands` payload
 - **`platform_commands_json()`**: serialization boundary for merging typed `PlatformCommand` into agent content arrays
 - **`send_request`/`send_notification` params** (connection.rs): method-specific schemas cannot be typed at the connection layer
+- **Prompt completion error forwarding** (`prompt_session` in `commands.rs`): error content forwarded as raw JSON to channels
 
 ## ACP Methods (JSON-RPC 2.0)
 
@@ -111,8 +116,11 @@ This keeps `ContentKind` in `anyclaw-sdk-types` agent-agnostic — it only reads
 ## Anti-Patterns (this crate)
 
 - Do not reintroduce `spawn_incoming_bridge()` or any intermediate forwarding channel between `AgentConnection` and the manager's `incoming_rx` — the two-hop latency causes premature `SessionComplete` when `try_recv()` sees an empty channel while events are still in the bridge queue.
-- Do not send `SessionComplete` from the streaming path (`handle_incoming`) — it races with the RPC response and can cause duplicate completions that skip queued messages.
-- Do not skip the `incoming_rx` drain in `handle_prompt_completion` — without it, `select!` can process the RPC response before all streaming events are forwarded, causing lost updates.
+- Do not send `SessionComplete` from the streaming path (`handle_incoming` in `incoming.rs`) — it races with the RPC response and can cause duplicate completions that skip queued messages.
+- Do not skip the `incoming_rx` drain in `handle_prompt_completion` (`incoming.rs`) — without it, `select!` can process the RPC response before all streaming events are forwarded, causing lost updates.
+- `handle_crash` lives in `session_recovery.rs` — crash recovery, respawn, and session restore logic is co-located there.
+- `handle_incoming` and `handle_prompt_completion` live in `incoming.rs` — all agent→manager message dispatch is co-located there.
+- `handle_command`, `create_session`, `prompt_session`, `fork_session`, `list_sessions`, `cancel_session` live in `commands.rs` — all command dispatch and session CRUD is co-located there.
 - `_raw_response` sentinel removed in v0.3.1 — replaced by `AgentConnection::send_raw()` which writes pre-built JSON-RPC directly to stdin without wrapping in a method envelope. Do not reintroduce `_raw_response`.
 - Permission responses go through `send_raw()` because they're responses to agent-initiated requests, not client-initiated ones.
 - `__jsonrpc_error` is a read-side sentinel — the connection reader task uses it to forward errors without losing the error context. Do not repurpose it.

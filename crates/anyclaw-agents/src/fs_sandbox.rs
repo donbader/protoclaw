@@ -124,6 +124,8 @@ impl AgentsManager {
         }
     }
 
+    // D-03: FS response result is agent-defined JSON — typed at the agent boundary, not here
+    #[allow(clippy::disallowed_types)]
     pub(crate) async fn send_success_response(
         slot: &AgentSlot,
         request: &JsonRpcRequest,

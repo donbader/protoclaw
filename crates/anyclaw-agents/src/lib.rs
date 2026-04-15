@@ -14,6 +14,10 @@ pub mod acp_types;
 pub mod backend;
 /// [`AgentConnection`] — subprocess spawn, typed JSON-RPC framing, direct bridge to manager.
 pub mod connection;
+// D-03: commands.rs handles session content via prompt_session (completion_tx, channels_sender forwarding)
+#[allow(clippy::disallowed_types)]
+/// Command dispatch, session CRUD, and prompt handling.
+pub(crate) mod commands;
 /// [`DockerBackend`] — Docker container lifecycle via bollard.
 pub mod docker_backend;
 /// [`AgentsError`] — manager-level errors (spawn, timeout, connection).
