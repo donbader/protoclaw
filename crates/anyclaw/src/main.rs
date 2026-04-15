@@ -59,7 +59,7 @@ async fn main() -> Result<()> {
                             .expect("schema serialization cannot fail")
                     );
                 }
-                Some(cli::Commands::Validate) => {
+                Some(cli::Commands::Validate { strict }) => {
                     let yaml_content = std::fs::read_to_string(&cli.config)
                         .map_err(|e| anyhow::anyhow!("failed to read config: {e}"))?;
                     let schema_errors = anyclaw_config::validate_schema(&yaml_content);
@@ -70,6 +70,21 @@ async fn main() -> Result<()> {
                         eprintln!(
                             "\u{2717} Schema validation failed with {} error(s)",
                             schema_errors.len()
+                        );
+                        std::process::exit(1);
+                    }
+                    let unknown_keys = anyclaw_config::check_unknown_keys(&yaml_content);
+                    for key in &unknown_keys {
+                        if strict {
+                            eprintln!("  \u{2717} unknown key: {key}");
+                        } else {
+                            eprintln!("  \u{26a0} unknown key: {key}");
+                        }
+                    }
+                    if strict && !unknown_keys.is_empty() {
+                        eprintln!(
+                            "\u{2717} Found {} unknown top-level key(s) (--strict mode)",
+                            unknown_keys.len()
                         );
                         std::process::exit(1);
                     }

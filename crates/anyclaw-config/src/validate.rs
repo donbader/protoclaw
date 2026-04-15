@@ -275,6 +275,33 @@ pub fn validate_schema(yaml_content: &str) -> Vec<String> {
         .collect()
 }
 
+/// Compare top-level YAML keys against the JSON Schema `properties` and return unknown key names.
+///
+/// Only checks the top level — nested unknown keys are ignored.
+/// Returns an empty vec if the YAML is not a mapping or the schema has no properties.
+pub fn check_unknown_keys(yaml_content: &str) -> Vec<String> {
+    let yaml_value: serde_json::Value = match serde_yaml::from_str(yaml_content) {
+        Ok(v) => v,
+        Err(_) => return vec![],
+    };
+    let yaml_obj = match yaml_value.as_object() {
+        Some(obj) => obj,
+        None => return vec![],
+    };
+    let schema = crate::generate_schema();
+    let known_keys: std::collections::HashSet<&str> = schema
+        .get("properties")
+        .and_then(|p| p.as_object())
+        .map(|obj| obj.keys().map(|k| k.as_str()).collect())
+        .unwrap_or_default();
+
+    yaml_obj
+        .keys()
+        .filter(|k| !known_keys.contains(k.as_str()))
+        .cloned()
+        .collect()
+}
+
 /// Validate the loaded configuration: check binary existence, working dirs, Docker limits, and host format.
 pub fn validate_config(config: &AnyclawConfig) -> ValidationResult {
     let mut errors = Vec::new();
@@ -839,5 +866,37 @@ agents_manager:
             mentions_type,
             "expected error to mention type mismatch, got: {errors:?}"
         );
+    }
+
+    #[test]
+    fn when_yaml_has_unknown_top_level_key_then_check_unknown_keys_returns_it() {
+        let yaml = "log_level: info\ntotally_unknown: foo\n";
+        let unknown = super::check_unknown_keys(yaml);
+        assert_eq!(unknown, vec!["totally_unknown"]);
+    }
+
+    #[test]
+    fn when_yaml_has_only_known_keys_then_check_unknown_keys_returns_empty() {
+        let yaml = "log_level: info\n";
+        let unknown = super::check_unknown_keys(yaml);
+        assert!(
+            unknown.is_empty(),
+            "expected no unknown keys, got: {unknown:?}"
+        );
+    }
+
+    #[test]
+    fn when_yaml_has_multiple_unknown_keys_then_check_unknown_keys_returns_all() {
+        let yaml = "log_level: info\nfoo: 1\nbar: 2\n";
+        let mut unknown = super::check_unknown_keys(yaml);
+        unknown.sort();
+        assert_eq!(unknown, vec!["bar", "foo"]);
+    }
+
+    #[test]
+    fn when_yaml_is_not_a_mapping_then_check_unknown_keys_returns_empty() {
+        let yaml = "\"just a string\"";
+        let unknown = super::check_unknown_keys(yaml);
+        assert!(unknown.is_empty());
     }
 }

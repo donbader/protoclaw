@@ -35,7 +35,11 @@ pub enum Commands {
         force: bool,
     },
     /// Validate the config file without starting the supervisor.
-    Validate,
+    Validate {
+        /// Treat unknown top-level config keys as errors instead of warnings.
+        #[arg(long)]
+        strict: bool,
+    },
     /// Print the JSON Schema for anyclaw.yaml to stdout.
     Schema,
     /// Query the running supervisor's health endpoint.
@@ -91,7 +95,25 @@ mod tests {
     #[test]
     fn when_validate_subcommand_given_then_command_is_validate() {
         let cli = Cli::parse_from(["anyclaw", "validate"]);
-        assert!(matches!(cli.command, Some(Commands::Validate)));
+        assert!(matches!(cli.command, Some(Commands::Validate { .. })));
+    }
+
+    #[test]
+    fn when_validate_subcommand_given_then_strict_defaults_to_false() {
+        let cli = Cli::parse_from(["anyclaw", "validate"]);
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Validate { strict: false })
+        ));
+    }
+
+    #[test]
+    fn when_validate_subcommand_given_with_strict_flag_then_strict_is_true() {
+        let cli = Cli::parse_from(["anyclaw", "validate", "--strict"]);
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Validate { strict: true })
+        ));
     }
 
     #[test]
