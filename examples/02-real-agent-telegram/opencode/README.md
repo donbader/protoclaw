@@ -43,7 +43,7 @@ Tests cover: health check, message acceptance, SSE streaming, result delivery, a
 │  anyclaw-internal network (no internet)         │
 │                                                 │
 │  ┌──────────┐    bollard     ┌──────────────┐   │
-│  │ anyclaw │──────────────→. │ socket-proxy │   │
+│  │ anyclaw  │──────────────→.│ socket-proxy │   │
 │  │          │    tcp:2375    │ (haproxy)    │   │
 │  └────┬─────┘                └──────┬───────┘   │
 │       │                             │ :ro       │
