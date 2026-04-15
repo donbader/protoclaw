@@ -1,22 +1,19 @@
-use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 
 use crate::acp_error::AcpError;
 use crate::acp_types::{
     ClientCapabilities, ContentPart, InitializeParams, InitializeResult, McpServerInfo,
-    SessionCancelParams, SessionForkParams, SessionForkResult, SessionListParams,
-    SessionLoadParams, SessionNewParams, SessionPromptParams, SessionUpdateEvent,
-    SessionUpdateType,
+    SessionCancelParams, SessionForkParams, SessionForkResult, SessionListParams, SessionNewParams,
+    SessionPromptParams,
 };
 use crate::slot::{AgentSlot, find_slot_by_name};
-use anyclaw_config::{AgentConfig, AgentsManagerConfig, WorkspaceConfig};
+use anyclaw_config::{AgentConfig, AgentsManagerConfig};
 use anyclaw_core::{
-    AgentStatusInfo, AgentsCommand, CrashAction, Manager, ManagerError, ManagerHandle,
-    McpServerUrl, PendingPermissionInfo, PersistedSession, SessionKey, ToolDescription,
-    ToolsCommand, constants,
+    AgentStatusInfo, AgentsCommand, Manager, ManagerError, ManagerHandle, McpServerUrl,
+    PendingPermissionInfo, PersistedSession, SessionKey, ToolDescription, ToolsCommand, constants,
 };
 use anyclaw_sdk_agent::{DynAgentAdapter, GenericAcpAdapter};
 use anyclaw_sdk_types::{ChannelEvent, PermissionOption};
@@ -26,7 +23,7 @@ use tokio_util::sync::CancellationToken;
 use crate::connection::{AgentConnection, IncomingMessage};
 use crate::error::AgentsError;
 use anyclaw_core::{DynSessionStore, NoopSessionStore};
-use anyclaw_jsonrpc::types::{JsonRpcRequest, JsonRpcResponse, RequestId};
+use anyclaw_jsonrpc::types::{JsonRpcRequest, JsonRpcResponse};
 
 pub(crate) struct PendingPermission {
     pub request: JsonRpcRequest,
@@ -41,81 +38,15 @@ pub(crate) struct SlotIncoming {
     pub(crate) msg: Option<IncomingMessage>,
 }
 
-struct PromptCompletion {
-    session_key: SessionKey,
+pub(crate) struct PromptCompletion {
+    pub(crate) session_key: SessionKey,
     /// Set when the agent reports the session no longer exists,
     /// so `handle_prompt_completion` can invalidate the stale mapping.
     /// Read via `completion_rx` channel in `handle_prompt_completion`.
-    session_expired: bool,
+    pub(crate) session_expired: bool,
 }
 
-/// Resolve the effective working directory for an agent from its workspace config.
-fn resolve_agent_cwd(workspace: &WorkspaceConfig) -> std::path::PathBuf {
-    match workspace {
-        WorkspaceConfig::Local(local) => local.working_dir.clone().unwrap_or_else(|| {
-            std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("/"))
-        }),
-        WorkspaceConfig::Docker(docker) => docker.working_dir.clone().unwrap_or_else(|| {
-            std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("/"))
-        }),
-    }
-}
-
-/// Validate that `requested` resolves to a path inside `sandbox_root`.
-/// Uses `canonicalize()` so symlinks cannot escape the sandbox.
-/// Returns the canonical resolved path on success.
-fn validate_fs_path(
-    sandbox_root: &std::path::Path,
-    requested: &str,
-) -> Result<std::path::PathBuf, String> {
-    let requested_path = std::path::Path::new(requested);
-    let resolved = if requested_path.is_absolute() {
-        requested_path.to_path_buf()
-    } else {
-        sandbox_root.join(requested_path)
-    };
-    let canonical = resolved
-        .canonicalize()
-        .map_err(|e| format!("path resolution failed: {e}"))?;
-    let canonical_root = sandbox_root
-        .canonicalize()
-        .map_err(|e| format!("sandbox root resolution failed: {e}"))?;
-    if !canonical.starts_with(&canonical_root) {
-        return Err("path outside allowed directory".into());
-    }
-    Ok(canonical)
-}
-
-/// Validate that `requested` resolves to a path whose *parent directory* is inside `sandbox_root`.
-/// Used for writes where the file may not yet exist.
-/// Returns the validated write path (canonical parent + filename) on success.
-fn validate_fs_write_path(
-    sandbox_root: &std::path::Path,
-    requested: &str,
-) -> Result<std::path::PathBuf, String> {
-    let requested_path = std::path::Path::new(requested);
-    let resolved = if requested_path.is_absolute() {
-        requested_path.to_path_buf()
-    } else {
-        sandbox_root.join(requested_path)
-    };
-    let parent = resolved
-        .parent()
-        .ok_or_else(|| "invalid path: no parent directory".to_string())?;
-    let filename = resolved
-        .file_name()
-        .ok_or_else(|| "invalid path: no filename".to_string())?;
-    let canonical_parent = parent
-        .canonicalize()
-        .map_err(|e| format!("parent directory resolution failed: {e}"))?;
-    let canonical_root = sandbox_root
-        .canonicalize()
-        .map_err(|e| format!("sandbox root resolution failed: {e}"))?;
-    if !canonical_parent.starts_with(&canonical_root) {
-        return Err("path outside allowed directory".into());
-    }
-    Ok(canonical_parent.join(filename))
-}
+use crate::fs_sandbox::resolve_agent_cwd;
 
 /// Manages agent subprocess lifecycles, ACP session routing, and crash recovery.
 ///
@@ -124,24 +55,24 @@ fn validate_fs_write_path(
 /// the bridge-collapsed architecture where incoming agent messages flow directly
 /// to the manager's shared channel without an intermediate forwarding task.
 pub struct AgentsManager {
-    agent_configs: Vec<(String, AgentConfig)>,
-    manager_config: AgentsManagerConfig,
-    tools_handle: ManagerHandle<ToolsCommand>,
-    slots: Vec<AgentSlot>,
+    pub(crate) agent_configs: Vec<(String, AgentConfig)>,
+    pub(crate) manager_config: AgentsManagerConfig,
+    pub(crate) tools_handle: ManagerHandle<ToolsCommand>,
+    pub(crate) slots: Vec<AgentSlot>,
     cmd_rx: Option<tokio::sync::mpsc::Receiver<AgentsCommand>>,
     cmd_tx: tokio::sync::mpsc::Sender<AgentsCommand>,
-    channels_sender: Option<mpsc::Sender<ChannelEvent>>,
+    pub(crate) channels_sender: Option<mpsc::Sender<ChannelEvent>>,
     adapter: Box<dyn DynAgentAdapter>,
-    parent_cancel: CancellationToken,
-    incoming_tx: mpsc::Sender<SlotIncoming>,
+    pub(crate) parent_cancel: CancellationToken,
+    pub(crate) incoming_tx: mpsc::Sender<SlotIncoming>,
     incoming_rx: Option<mpsc::Receiver<SlotIncoming>>,
     completion_tx: mpsc::Sender<PromptCompletion>,
     completion_rx: Option<mpsc::Receiver<PromptCompletion>>,
-    streaming_completed: HashSet<SessionKey>,
-    update_seq: AtomicU64,
-    log_level: Option<String>,
+    pub(crate) streaming_completed: HashSet<SessionKey>,
+    pub(crate) update_seq: AtomicU64,
+    pub(crate) log_level: Option<String>,
     /// Persistent session store. Defaults to [`NoopSessionStore`].
-    session_store: Arc<dyn DynSessionStore>,
+    pub(crate) session_store: Arc<dyn DynSessionStore>,
     /// TTL for expired session cleanup at boot (seconds). Default: 7 days.
     session_ttl_secs: i64,
 }
@@ -216,7 +147,7 @@ impl AgentsManager {
     }
 
     /// Resolve ACP timeout for a specific agent, falling back to manager default.
-    fn acp_timeout_for(
+    pub(crate) fn acp_timeout_for(
         agent_config: &AgentConfig,
         manager_config: &AgentsManagerConfig,
     ) -> Duration {
@@ -227,7 +158,7 @@ impl AgentsManager {
     }
 
     #[tracing::instrument(skip(slot), fields(agent = %slot.name()))]
-    async fn initialize_agent(
+    pub(crate) async fn initialize_agent(
         slot: &mut AgentSlot,
         acp_timeout: Duration,
     ) -> Result<(), AgentsError> {
@@ -267,7 +198,7 @@ impl AgentsManager {
         Ok(())
     }
 
-    async fn start_session(
+    pub(crate) async fn start_session(
         slot: &mut AgentSlot,
         tools_handle: &ManagerHandle<ToolsCommand>,
         acp_timeout: Duration,
@@ -335,7 +266,7 @@ impl AgentsManager {
     /// Sends `ToolsCommand::GetMcpUrls` and maps the result to `McpServerInfo`.
     /// Returns an empty vec on any error so that `session/load` can still be
     /// attempted without tools.
-    async fn fetch_mcp_servers(&self, slot_idx: usize) -> Vec<McpServerInfo> {
+    pub(crate) async fn fetch_mcp_servers(&self, slot_idx: usize) -> Vec<McpServerInfo> {
         let tool_names = if self.slots[slot_idx].config.tools.is_empty() {
             None
         } else {
@@ -377,7 +308,7 @@ impl AgentsManager {
     ///
     /// Returns `None` if no tools are available or the tools handle is unavailable.
     /// The result is cached on the slot so it's only fetched once per agent lifecycle.
-    async fn fetch_tool_context(&self, slot_idx: usize) -> Option<String> {
+    pub(crate) async fn fetch_tool_context(&self, slot_idx: usize) -> Option<String> {
         let tool_names = if self.slots[slot_idx].config.tools.is_empty() {
             None
         } else {
@@ -578,7 +509,7 @@ impl AgentsManager {
     }
 
     #[tracing::instrument(skip(self), fields(agent = %agent_name, session_key = %session_key))]
-    async fn create_session(
+    pub(crate) async fn create_session(
         &mut self,
         agent_name: &str,
         session_key: SessionKey,
@@ -837,194 +768,6 @@ impl AgentsManager {
         }
     }
 
-    /// Attempt to recover a missing session before a prompt:
-    /// 1. Try `session/resume` if the agent supports it and a stale ACP session ID exists.
-    /// 2. Try `session/load` if the agent supports it and a stale ACP session ID exists.
-    /// 3. Fall back to `create_session` otherwise.
-    async fn heal_session(
-        &mut self,
-        slot_idx: usize,
-        agent_name: &str,
-        session_key: &SessionKey,
-    ) -> Result<(), AgentsError> {
-        let acp_timeout = Self::acp_timeout_for(&self.slots[slot_idx].config, &self.manager_config);
-
-        let stale_acp_id = self.slots[slot_idx]
-            .stale_sessions
-            .get(session_key)
-            .cloned();
-
-        let supports_resume = self.slots[slot_idx].has_session_capability(|c| c.resume.is_some());
-        let supports_load = self.slots[slot_idx]
-            .agent_capabilities
-            .as_ref()
-            .and_then(|r| r.agent_capabilities.as_ref())
-            .is_some_and(|c| c.load_session);
-
-        tracing::info!(
-            agent = %agent_name,
-            session_key = %session_key,
-            has_stale_acp_id = stale_acp_id.is_some(),
-            supports_resume = supports_resume,
-            supports_load = supports_load,
-            step = "recovery_started",
-            "session recovery initiated"
-        );
-
-        if supports_resume && let Some(acp_id) = stale_acp_id.as_deref() {
-            let cwd = resolve_agent_cwd(&self.slots[slot_idx].config.workspace)
-                .to_string_lossy()
-                .into_owned();
-            let mcp_servers = self.fetch_mcp_servers(slot_idx).await;
-            let params = serde_json::json!({
-                "sessionId": acp_id,
-                "cwd": cwd,
-                "mcpServers": serde_json::to_value(&mcp_servers).unwrap_or_default(),
-            });
-
-            let conn = self.slots[slot_idx]
-                .connection
-                .as_ref()
-                .ok_or(AgentsError::ConnectionClosed)?;
-
-            if let Ok(rx) = conn.send_request("session/resume", params).await
-                && let Ok(Ok(resp)) = tokio::time::timeout(acp_timeout, rx).await
-                && resp
-                    .result
-                    .as_ref()
-                    .and_then(|r| r.get("sessionId"))
-                    .is_some()
-            {
-                tracing::info!(
-                    agent = %agent_name,
-                    session_key = %session_key,
-                    step = "resume_attempted",
-                    success = true,
-                    "session/resume succeeded"
-                );
-                tracing::info!(
-                    agent = %agent_name,
-                    session_key = %session_key,
-                    step = "recovery_outcome",
-                    outcome = "resumed",
-                    "session recovery complete"
-                );
-                let slot = &mut self.slots[slot_idx];
-                slot.stale_sessions.remove(session_key);
-                slot.session_map
-                    .insert(session_key.clone(), acp_id.to_owned());
-                slot.reverse_map
-                    .insert(acp_id.to_owned(), session_key.clone());
-                // No awaiting_first_prompt for resume — no replay needed.
-                return Ok(());
-            }
-            tracing::info!(
-                agent = %agent_name,
-                session_key = %session_key,
-                step = "resume_attempted",
-                success = false,
-                "session/resume rejected, falling back to create"
-            );
-        } else if supports_load && let Some(acp_id) = stale_acp_id {
-            let cwd = resolve_agent_cwd(&self.slots[slot_idx].config.workspace)
-                .to_string_lossy()
-                .into_owned();
-            let mcp_servers = self.fetch_mcp_servers(slot_idx).await;
-            let params = match serde_json::to_value(SessionLoadParams {
-                session_id: acp_id.clone(),
-                cwd: Some(cwd),
-                mcp_servers: Some(mcp_servers),
-            }) {
-                Ok(v) => v,
-                Err(e) => {
-                    tracing::warn!(agent = %agent_name, error = %e, "failed to serialize session/load params");
-                    serde_json::json!({})
-                }
-            };
-
-            let conn = self.slots[slot_idx]
-                .connection
-                .as_ref()
-                .ok_or(AgentsError::ConnectionClosed)?;
-
-            if let Ok(rx) = conn.send_request("session/load", params).await
-                && let Ok(Ok(resp)) = tokio::time::timeout(acp_timeout, rx).await
-                && resp
-                    .result
-                    .as_ref()
-                    .and_then(|r| r.get("sessionId"))
-                    .is_some()
-            {
-                tracing::info!(
-                    agent = %agent_name,
-                    session_key = %session_key,
-                    step = "load_attempted",
-                    success = true,
-                    "session/load succeeded"
-                );
-                tracing::info!(
-                    agent = %agent_name,
-                    session_key = %session_key,
-                    step = "recovery_outcome",
-                    outcome = "loaded",
-                    "session recovery complete"
-                );
-                let slot = &mut self.slots[slot_idx];
-                slot.stale_sessions.remove(session_key);
-                slot.session_map.insert(session_key.clone(), acp_id.clone());
-                slot.reverse_map.insert(acp_id.clone(), session_key.clone());
-                slot.awaiting_first_prompt.insert(acp_id);
-                return Ok(());
-            }
-            tracing::info!(
-                agent = %agent_name,
-                session_key = %session_key,
-                step = "load_attempted",
-                success = false,
-                "session/load rejected, falling back to create"
-            );
-        }
-
-        self.slots[slot_idx].stale_sessions.remove(session_key);
-        let acp_session_id = match self.create_session(agent_name, session_key.clone()).await {
-            Ok(id) => id,
-            Err(e) => {
-                tracing::info!(
-                    agent = %agent_name,
-                    session_key = %session_key,
-                    step = "create_attempted",
-                    success = false,
-                    error = %e,
-                    "session creation failed during recovery"
-                );
-                tracing::info!(
-                    agent = %agent_name,
-                    session_key = %session_key,
-                    step = "recovery_outcome",
-                    outcome = "failed",
-                    "session recovery exhausted all attempts"
-                );
-                return Err(e);
-            }
-        };
-        tracing::info!(
-            agent = %agent_name,
-            session_key = %session_key,
-            acp_session_id = %acp_session_id,
-            step = "create_attempted",
-            success = true,
-            "session created for recovery"
-        );
-        tracing::info!(
-            agent = %agent_name,
-            session_key = %session_key,
-            step = "recovery_outcome",
-            outcome = "created",
-            "session recovery complete"
-        );
-        Ok(())
-    }
-
     async fn fork_session(
         &mut self,
         agent_name: &str,
@@ -1127,419 +870,6 @@ impl AgentsManager {
         Ok(())
     }
 
-    async fn handle_incoming(&mut self, slot_idx: usize, msg: IncomingMessage) {
-        let request = match msg {
-            IncomingMessage::AgentNotification(r) | IncomingMessage::AgentRequest(r) => r,
-        };
-
-        match request.method.as_str() {
-            "session/update" => {
-                // D-03: session/update params are forwarded as raw content to channels
-                // (with timestamp injection, tool normalization, command merging).
-                // Must stay as Value for content mutation pipeline.
-                let params = request.params.unwrap_or(serde_json::Value::Null);
-                self.handle_session_update(slot_idx, params).await;
-            }
-            "session/request_permission" => {
-                self.handle_permission_request(slot_idx, &request).await;
-            }
-            "fs/read_text_file" => {
-                Self::handle_fs_read(&self.slots[slot_idx], &request).await;
-            }
-            "fs/write_text_file" => {
-                Self::handle_fs_write(&self.slots[slot_idx], &request).await;
-            }
-            _ => {
-                Self::send_error_response(
-                    &self.slots[slot_idx],
-                    &request,
-                    -32601,
-                    "Method not found",
-                )
-                .await;
-            }
-        }
-    }
-
-    fn session_update_type_name(update: &SessionUpdateType) -> &'static str {
-        match update {
-            SessionUpdateType::AgentThoughtChunk { .. } => "agent_thought_chunk",
-            SessionUpdateType::AgentMessageChunk { .. } => "agent_message_chunk",
-            SessionUpdateType::Result { .. } => "result",
-            SessionUpdateType::ToolCall { .. } => "tool_call",
-            SessionUpdateType::ToolCallUpdate { .. } => "tool_call_update",
-            SessionUpdateType::Plan { .. } => "plan",
-            SessionUpdateType::UsageUpdate { .. } => "usage_update",
-            SessionUpdateType::UserMessageChunk { .. } => "user_message_chunk",
-            SessionUpdateType::AvailableCommandsUpdate { .. } => "available_commands_update",
-            SessionUpdateType::CurrentModeUpdate { .. } => "extension:current_mode",
-            SessionUpdateType::ConfigOptionUpdate { .. } => "extension:config_option",
-            SessionUpdateType::SessionInfoUpdate { .. } => "extension:session_info",
-            _ => "unknown",
-        }
-    }
-
-    // D-03: agent content is arbitrary JSON that requires raw mutation (timestamps, normalization, command injection).
-    // DeliverMessage.content stays as Value because agents manager injects _received_at_ms, normalizes
-    // tool event fields, and merges platform commands — all operations on raw JSON structure.
-    fn add_received_timestamp(content: &mut serde_json::Value) {
-        if let Some(obj) = content.as_object_mut() {
-            let now_ms = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_else(|e| {
-                    tracing::warn!(error = %e, "system time before UNIX_EPOCH, using zero duration");
-                    std::time::Duration::default()
-                })
-                .as_millis() as u64;
-            obj.insert("_received_at_ms".to_string(), serde_json::json!(now_ms));
-        }
-    }
-
-    // D-03: content is raw agent JSON — inject_platform_commands merges platform command
-    // descriptors into the agent's availableCommands array, requiring Value array manipulation.
-    async fn forward_session_update(
-        &mut self,
-        slot_idx: usize,
-        event: SessionUpdateEvent,
-        mut content: serde_json::Value,
-        seq: u64,
-    ) {
-        let update_type = Self::session_update_type_name(&event.update);
-        tracing::debug!(agent = %self.slots[slot_idx].name(), session_id = %event.session_id, update_type, seq, "session update routed");
-
-        let is_result = matches!(event.update, SessionUpdateType::Result { .. });
-        Self::add_received_timestamp(&mut content);
-        normalize_tool_event_fields(&mut content, update_type);
-
-        if update_type == "available_commands_update" {
-            if let Some(cmds) = content
-                .pointer_mut("/update/availableCommands")
-                .and_then(|v| v.as_array_mut())
-                && let serde_json::Value::Array(platform_arr) =
-                    crate::platform_commands::platform_commands_json()
-            {
-                cmds.extend(platform_arr);
-            }
-            self.slots[slot_idx].last_available_commands = Some(content.clone());
-        }
-
-        if self.slots[slot_idx]
-            .awaiting_first_prompt
-            .contains(&event.session_id)
-        {
-            tracing::debug!(
-                agent = %self.slots[slot_idx].name(),
-                session_id = %event.session_id,
-                update_type,
-                seq,
-                "suppressed replay event during session/load"
-            );
-            return;
-        }
-
-        if let Some(session_key) = self.slots[slot_idx]
-            .reverse_map
-            .get(&event.session_id)
-            .cloned()
-            && let Some(sender) = &self.channels_sender
-        {
-            let _ = sender
-                .send(ChannelEvent::DeliverMessage {
-                    session_key: session_key.clone(),
-                    content,
-                })
-                .await;
-
-            if is_result {
-                self.streaming_completed.insert(session_key);
-            }
-        }
-    }
-
-    async fn forward_malformed_update_error(
-        &self,
-        slot_idx: usize,
-        params: &serde_json::Value,
-        error: &serde_json::Error,
-        seq: u64,
-    ) {
-        tracing::warn!(error = %error, raw_params = %params, seq, "session/update deserialization FAILED — update dropped");
-
-        let Some(session_id) = params.get("sessionId").and_then(|v| v.as_str()) else {
-            return;
-        };
-        let Some(session_key) = self.slots[slot_idx].reverse_map.get(session_id).cloned() else {
-            return;
-        };
-        let Some(sender) = &self.channels_sender else {
-            return;
-        };
-
-        let error_content = serde_json::json!({
-            "error": format!("Agent sent malformed update: {error}"),
-            "update": { "sessionUpdate": "result" }
-        });
-        let _ = sender
-            .send(ChannelEvent::DeliverMessage {
-                session_key,
-                content: error_content,
-            })
-            .await;
-    }
-
-    // D-03: session/update params are the raw agent content payload that gets forwarded
-    // to channels after mutation (timestamps, tool normalization, command merging).
-    // Deserialized into SessionUpdateEvent for typed dispatch, but the raw Value is
-    // forwarded as DeliverMessage.content for channel consumption.
-    async fn handle_session_update(&mut self, slot_idx: usize, params: serde_json::Value) {
-        let seq = self.update_seq.fetch_add(1, Ordering::Relaxed);
-        tracing::debug!(raw_params = %params, seq, "session/update received — attempting deser");
-
-        // Clone needed: typed event for dispatch + raw Value for content forwarding (D-03)
-        match serde_json::from_value::<SessionUpdateEvent>(params.clone()) {
-            Ok(event) => {
-                self.forward_session_update(slot_idx, event, params, seq)
-                    .await;
-            }
-            Err(error) => {
-                self.forward_malformed_update_error(slot_idx, &params, &error, seq)
-                    .await;
-            }
-        }
-    }
-
-    async fn handle_permission_request(&mut self, slot_idx: usize, request: &JsonRpcRequest) {
-        // D-03: permission request params have agent-defined schemas (requestId location varies by agent)
-        let params = request.params.as_ref();
-        let request_id = params
-            .and_then(|p| p["requestId"].as_str())
-            .filter(|s| !s.is_empty())
-            .map(std::string::ToString::to_string)
-            .unwrap_or_else(|| {
-                // OpenCode uses JSON-RPC id field instead of params.requestId
-                match &request.id {
-                    Some(RequestId::Number(n)) => n.to_string(),
-                    Some(RequestId::String(s)) => s.clone(),
-                    None => String::new(),
-                }
-            });
-        let description = params
-            .and_then(|p| {
-                p["description"]
-                    .as_str()
-                    .filter(|s| !s.is_empty())
-                    .or_else(|| p["toolCall"]["title"].as_str())
-            })
-            .unwrap_or("Permission requested")
-            .to_string();
-
-        let options: Vec<PermissionOption> = params
-            .and_then(|p| p.get("options"))
-            .and_then(|v| serde_json::from_value(v.clone()).ok())
-            .unwrap_or_else(|| {
-                tracing::warn!(%request_id, "malformed permission options, using empty list");
-                Vec::new()
-            });
-
-        tracing::info!(agent = %self.slots[slot_idx].name(), %request_id, %description, "permission requested");
-
-        let session_id = params.and_then(|p| p["sessionId"].as_str()).unwrap_or("");
-        let routed = if let Some(session_key) =
-            self.slots[slot_idx].reverse_map.get(session_id).cloned()
-            && let Some(sender) = &self.channels_sender
-        {
-            sender
-                .send(ChannelEvent::RoutePermission {
-                    session_key,
-                    request_id: request_id.clone(),
-                    description: description.clone(),
-                    options: options.clone(),
-                })
-                .await
-                .is_ok()
-        } else {
-            false
-        };
-
-        if routed {
-            self.slots[slot_idx].pending_permissions.insert(
-                request_id,
-                PendingPermission {
-                    request: request.clone(),
-                    description,
-                    options,
-                    received_at: std::time::Instant::now(),
-                },
-            );
-        } else {
-            tracing::warn!(
-                agent = %self.slots[slot_idx].name(),
-                %request_id,
-                "permission not routable to channel, auto-approving"
-            );
-            let auto_option = options
-                .first()
-                .map(|o| o.option_id.clone())
-                .unwrap_or_else(|| "once".to_string());
-            if let Some(conn) = self.slots[slot_idx].connection.as_ref() {
-                let resp = JsonRpcResponse::success(
-                    request.id.clone(),
-                    serde_json::json!({
-                        "requestId": request_id,
-                        "optionId": auto_option,
-                    }),
-                );
-                let _ = conn.send_raw(resp).await;
-            }
-        }
-    }
-
-    async fn handle_fs_read(slot: &AgentSlot, request: &JsonRpcRequest) {
-        // D-03: fs request params have agent-defined path/content fields
-        let params = request.params.as_ref();
-        let path = params.and_then(|p| p["path"].as_str()).unwrap_or("");
-        let sandbox_root = resolve_agent_cwd(&slot.config.workspace);
-        let resolved = match validate_fs_path(&sandbox_root, path) {
-            Ok(p) => p,
-            Err(msg) => {
-                Self::send_error_response(slot, request, -32000, &msg).await;
-                return;
-            }
-        };
-        match tokio::fs::read_to_string(&resolved).await {
-            Ok(content) => {
-                Self::send_success_response(
-                    slot,
-                    request,
-                    serde_json::json!({ "content": content }),
-                )
-                .await;
-            }
-            Err(e) => {
-                Self::send_error_response(slot, request, -32000, &e.to_string()).await;
-            }
-        }
-    }
-
-    async fn handle_fs_write(slot: &AgentSlot, request: &JsonRpcRequest) {
-        // D-03: fs request params have agent-defined path/content fields
-        let params = request.params.as_ref();
-        let path = params.and_then(|p| p["path"].as_str()).unwrap_or("");
-        let content = params.and_then(|p| p["content"].as_str()).unwrap_or("");
-        let sandbox_root = resolve_agent_cwd(&slot.config.workspace);
-        let resolved = match validate_fs_write_path(&sandbox_root, path) {
-            Ok(p) => p,
-            Err(msg) => {
-                Self::send_error_response(slot, request, -32000, &msg).await;
-                return;
-            }
-        };
-        match tokio::fs::write(&resolved, content).await {
-            Ok(()) => {
-                Self::send_success_response(slot, request, serde_json::json!({})).await;
-            }
-            Err(e) => {
-                Self::send_error_response(slot, request, -32000, &e.to_string()).await;
-            }
-        }
-    }
-
-    async fn send_success_response(
-        slot: &AgentSlot,
-        request: &JsonRpcRequest,
-        result: serde_json::Value,
-    ) {
-        if let Some(conn) = slot.connection.as_ref() {
-            let resp = JsonRpcResponse::success(request.id.clone(), result);
-            let _ = conn.send_raw(resp).await;
-        }
-    }
-
-    async fn send_error_response(
-        slot: &AgentSlot,
-        request: &JsonRpcRequest,
-        code: i64,
-        message: &str,
-    ) {
-        if let Some(conn) = slot.connection.as_ref() {
-            let resp = JsonRpcResponse::error(
-                request.id.clone(),
-                anyclaw_jsonrpc::types::JsonRpcError {
-                    code,
-                    message: message.to_string(),
-                    data: None,
-                },
-            );
-            let _ = conn.send_raw(resp).await;
-        }
-    }
-
-    async fn handle_prompt_completion(
-        &mut self,
-        completion: PromptCompletion,
-        incoming_rx: &mut mpsc::Receiver<SlotIncoming>,
-    ) {
-        // Drain any pending streaming events before sending SessionComplete.
-        // The RPC response arrives after all streaming events on the agent's stdout,
-        // but select! can pick completion_rx before incoming_rx is fully drained.
-        while let Ok(slot_msg) = incoming_rx.try_recv() {
-            match slot_msg.msg {
-                Some(incoming_msg) => self.handle_incoming(slot_msg.slot_idx, incoming_msg).await,
-                None => {
-                    self.handle_crash(slot_msg.slot_idx).await;
-                }
-            }
-        }
-
-        let already_got_result = self.streaming_completed.remove(&completion.session_key);
-
-        // When the agent reports "session not found", invalidate the stale mapping
-        // so the next inbound prompt triggers heal_session() instead of reusing
-        // the dead ACP session ID.
-        if completion.session_expired {
-            tracing::info!(
-                session_key = %completion.session_key,
-                "invalidating expired session mapping — next prompt will trigger recovery"
-            );
-            for slot in &mut self.slots {
-                if let Some(acp_id) = slot.session_map.remove(&completion.session_key) {
-                    slot.reverse_map.remove(&acp_id);
-                    slot.tool_context_sent.remove(&acp_id);
-                }
-            }
-        }
-
-        if let Some(sender) = &self.channels_sender {
-            if !already_got_result {
-                let acp_session_id = self.slots.iter()
-                    .find_map(|slot| slot.session_map.get(&completion.session_key).cloned())
-                    .unwrap_or_else(|| {
-                        tracing::warn!(session_key = %completion.session_key, "no acp_session_id in reverse_map for synthetic result");
-                        String::new()
-                    });
-
-                let synthetic_result = serde_json::json!({
-                    "sessionId": acp_session_id,
-                    "update": {
-                        "sessionUpdate": "result",
-                    }
-                });
-                let _ = sender
-                    .send(ChannelEvent::DeliverMessage {
-                        session_key: completion.session_key.clone(),
-                        content: synthetic_result,
-                    })
-                    .await;
-            }
-
-            let _ = sender
-                .send(ChannelEvent::SessionComplete {
-                    session_key: completion.session_key,
-                })
-                .await;
-        }
-    }
-
     async fn shutdown_all(&mut self) {
         for slot in &mut self.slots {
             if slot.connection.is_some() {
@@ -1548,311 +878,6 @@ impl AgentsManager {
             }
             if let Some(mut conn) = slot.connection.take() {
                 let _ = conn.kill().await;
-            }
-        }
-    }
-
-    async fn handle_crash(&mut self, slot_idx: usize) {
-        let agent_name = self.slots[slot_idx].name().to_string();
-        if !self.prepare_restart(slot_idx, &agent_name).await {
-            return;
-        }
-
-        if !self.respawn_and_initialize(slot_idx, &agent_name).await {
-            return;
-        }
-
-        self.restore_or_start_session(slot_idx, &agent_name).await;
-    }
-
-    async fn prepare_restart(&mut self, slot_idx: usize, agent_name: &str) -> bool {
-        let slot = &mut self.slots[slot_idx];
-        match slot.lifecycle.record_crash_and_check() {
-            CrashAction::Disabled => {
-                tracing::error!(agent = %agent_name, crash_loop = true, "agent crash loop detected — disabling slot");
-                if let Some(mut old_conn) = slot.connection.take() {
-                    let _ = old_conn.kill().await;
-                }
-                false
-            }
-            CrashAction::RestartAfter(delay) => {
-                tracing::warn!(agent = %agent_name, "agent process exited, attempting recovery");
-                if let Some(mut old_conn) = slot.connection.take()
-                    && let Err(e) = old_conn.kill().await
-                {
-                    tracing::debug!(agent = %agent_name, error = %e, "failed to clean up old connection (may already be dead)");
-                }
-                tracing::info!(agent = %agent_name, delay_ms = delay.as_millis(), "waiting before restart");
-                tokio::time::sleep(delay).await;
-                true
-            }
-        }
-    }
-
-    async fn respawn_and_initialize(&mut self, slot_idx: usize, agent_name: &str) -> bool {
-        let incoming_tx = self.incoming_tx.clone();
-        let log_level = self.log_level.clone();
-        let config = self.slots[slot_idx].config.clone();
-
-        let conn = match AgentConnection::spawn_with_bridge(
-            &config,
-            agent_name,
-            slot_idx,
-            incoming_tx,
-            log_level.as_deref(),
-        )
-        .await
-        {
-            Ok(conn) => conn,
-            Err(e) => {
-                tracing::error!(agent = %agent_name, error = %e, "failed to respawn agent");
-                return false;
-            }
-        };
-
-        let acp_timeout = Self::acp_timeout_for(&config, &self.manager_config);
-        let slot = &mut self.slots[slot_idx];
-        slot.connection = Some(conn);
-        if let Err(e) = Self::initialize_agent(slot, acp_timeout).await {
-            tracing::error!(agent = %agent_name, error = %e, "failed to re-initialize agent");
-            slot.connection = None;
-            return false;
-        }
-
-        true
-    }
-
-    async fn try_restore_session(
-        &mut self,
-        slot_idx: usize,
-        agent_name: &str,
-        acp_timeout: Duration,
-    ) -> bool {
-        let (supports_resume, supports_load, first_acp_id) = {
-            let slot = &self.slots[slot_idx];
-            let supports_resume = slot.has_session_capability(|c| c.resume.is_some());
-            let supports_load = slot
-                .agent_capabilities
-                .as_ref()
-                .and_then(|r| r.agent_capabilities.as_ref())
-                .is_some_and(|c| c.load_session);
-            let first_acp_id = slot.stale_sessions.values().next().cloned();
-            (supports_resume, supports_load, first_acp_id)
-        };
-
-        let Some(first_acp_id) = first_acp_id else {
-            return false;
-        };
-
-        if supports_resume {
-            let cwd = resolve_agent_cwd(&self.slots[slot_idx].config.workspace)
-                .to_string_lossy()
-                .into_owned();
-            let mcp_servers = self.fetch_mcp_servers(slot_idx).await;
-            let params = serde_json::json!({
-                "sessionId": first_acp_id,
-                "cwd": cwd,
-                "mcpServers": serde_json::to_value(&mcp_servers).unwrap_or_default(),
-            });
-
-            let conn = self.slots[slot_idx]
-                .connection
-                .as_ref()
-                .expect("connection just spawned");
-            let Ok(rx) = conn.send_request("session/resume", params).await else {
-                tracing::warn!(agent = %agent_name, "session/resume failed, starting fresh session");
-                return false;
-            };
-
-            match tokio::time::timeout(acp_timeout, rx).await {
-                Ok(Ok(resp))
-                    if resp
-                        .result
-                        .as_ref()
-                        .and_then(|r| r.get("sessionId"))
-                        .is_some() =>
-                {
-                    tracing::info!(
-                        agent = %agent_name,
-                        step = "resume_attempted",
-                        success = true,
-                        "session restored via session/resume"
-                    );
-                    let slot = &mut self.slots[slot_idx];
-                    slot.session_map.extend(slot.stale_sessions.drain());
-                    // No awaiting_first_prompt for resume — no replay needed.
-                    slot.lifecycle.backoff.reset();
-                    return true;
-                }
-                _ => {
-                    tracing::warn!(agent = %agent_name, "session/resume failed, starting fresh session");
-                    return false;
-                }
-            }
-        }
-
-        if !supports_load {
-            return false;
-        }
-
-        let cwd = resolve_agent_cwd(&self.slots[slot_idx].config.workspace)
-            .to_string_lossy()
-            .into_owned();
-        let mcp_servers = self.fetch_mcp_servers(slot_idx).await;
-        let params = serde_json::to_value(SessionLoadParams {
-             session_id: first_acp_id,
-             cwd: Some(cwd),
-             mcp_servers: Some(mcp_servers),
-         })
-         .unwrap_or_else(|e| {
-             tracing::warn!(error = %e, agent = %agent_name, "failed to serialize session/load params, using empty object");
-             serde_json::json!({})
-         });
-
-        let conn = self.slots[slot_idx]
-            .connection
-            .as_ref()
-            .expect("connection just spawned");
-        let Ok(rx) = conn.send_request("session/load", params).await else {
-            tracing::warn!(agent = %agent_name, "session/load failed, starting fresh session");
-            return false;
-        };
-
-        match tokio::time::timeout(acp_timeout, rx).await {
-            Ok(Ok(resp))
-                if resp
-                    .result
-                    .as_ref()
-                    .and_then(|r| r.get("sessionId"))
-                    .is_some() =>
-            {
-                tracing::info!(agent = %agent_name, "session restored via session/load");
-                let slot = &mut self.slots[slot_idx];
-                slot.session_map.extend(slot.stale_sessions.drain());
-                for acp_id in slot.session_map.values() {
-                    slot.awaiting_first_prompt.insert(acp_id.clone());
-                }
-                slot.lifecycle.backoff.reset();
-                true
-            }
-            _ => {
-                tracing::warn!(agent = %agent_name, "session/load failed, starting fresh session");
-                false
-            }
-        }
-    }
-
-    async fn restore_or_start_session(&mut self, slot_idx: usize, agent_name: &str) {
-        // Drain session_map into stale_sessions so they survive the crash boundary.
-        // try_restore_session reads from stale_sessions; prompt_session uses them for
-        // self-healing on the next prompt if session/load isn't attempted here.
-        let slot = &mut self.slots[slot_idx];
-        slot.stale_sessions.extend(slot.session_map.drain());
-        slot.awaiting_first_prompt.clear();
-        slot.tool_context_sent.clear();
-
-        let acp_timeout = Self::acp_timeout_for(&self.slots[slot_idx].config, &self.manager_config);
-        if self
-            .try_restore_session(slot_idx, agent_name, acp_timeout)
-            .await
-        {
-            return;
-        }
-
-        let slot = &mut self.slots[slot_idx];
-        match Self::start_session(slot, &self.tools_handle, acp_timeout).await {
-            Ok(session_id) => {
-                slot.reverse_map.clear();
-                Self::register_default_session(slot, agent_name, session_id);
-                slot.lifecycle.backoff.reset();
-                tracing::info!(agent = %agent_name, "agent recovered successfully");
-            }
-            Err(e) => {
-                tracing::error!(agent = %agent_name, error = %e, "failed to start new session after crash");
-                slot.connection = None;
-            }
-        }
-    }
-
-    /// Remove any Docker containers left over from a previous (crashed) run.
-    ///
-    /// Scans all configured agents for Docker workspaces, connects to the matching
-    /// Docker daemon, and forcibly removes every container that carries the
-    /// `anyclaw.managed=true` label.  Errors are logged as warnings; this
-    /// method never propagates failures so that `start()` is not blocked by
-    /// stale-container cleanup.
-    async fn cleanup_stale_containers(&self) {
-        use bollard::query_parameters::{
-            ListContainersOptions, RemoveContainerOptions, StopContainerOptions,
-        };
-
-        for (name, config) in &self.agent_configs {
-            let docker_config = match &config.workspace {
-                WorkspaceConfig::Docker(d) => d,
-                WorkspaceConfig::Local(_) => continue,
-            };
-
-            let docker = match &docker_config.docker_host {
-                Some(host) => {
-                    bollard::Docker::connect_with_http(host, 120, bollard::API_DEFAULT_VERSION)
-                }
-                None => bollard::Docker::connect_with_local_defaults(),
-            };
-            let docker = match docker {
-                Ok(d) => d,
-                Err(e) => {
-                    tracing::warn!(agent = %name, error = %e, "cleanup: cannot connect to Docker daemon");
-                    continue;
-                }
-            };
-
-            let mut filters = HashMap::new();
-            filters.insert(
-                "label".to_string(),
-                vec!["anyclaw.managed=true".to_string()],
-            );
-            let opts = ListContainersOptions {
-                all: true,
-                filters: Some(filters),
-                ..Default::default()
-            };
-            let containers = match docker.list_containers(Some(opts)).await {
-                Ok(c) => c,
-                Err(e) => {
-                    tracing::warn!(agent = %name, error = %e, "cleanup: failed to list containers");
-                    continue;
-                }
-            };
-
-            for container in containers {
-                let Some(id) = container.id else {
-                    continue;
-                };
-                tracing::info!(container_id = %id, agent = %name, "cleanup: removing stale container");
-                if let Err(e) = docker
-                    .stop_container(
-                        &id,
-                        Some(StopContainerOptions {
-                            t: Some(5),
-                            ..Default::default()
-                        }),
-                    )
-                    .await
-                {
-                    tracing::warn!(container_id = %id, error = %e, "cleanup: stop failed, proceeding to remove");
-                }
-                if let Err(e) = docker
-                    .remove_container(
-                        &id,
-                        Some(RemoveContainerOptions {
-                            force: true,
-                            ..Default::default()
-                        }),
-                    )
-                    .await
-                {
-                    tracing::warn!(container_id = %id, error = %e, "cleanup: remove failed");
-                }
             }
         }
     }
@@ -1888,7 +913,7 @@ impl AgentsManager {
         Ok(slot)
     }
 
-    fn register_default_session(slot: &mut AgentSlot, name: &str, session_id: String) {
+    pub(crate) fn register_default_session(slot: &mut AgentSlot, name: &str, session_id: String) {
         let default_key = SessionKey::new(name, "default", "default");
         slot.session_map
             .insert(default_key.clone(), session_id.clone());
@@ -2021,36 +1046,11 @@ impl Manager for AgentsManager {
     }
 }
 
-// D-03: agent content mutation — normalizes agent-specific wire quirks (title→name, rawOutput→output)
-// into the canonical format that ContentKind expects. Operates on raw JSON structure.
-fn normalize_tool_event_fields(content: &mut serde_json::Value, update_type: &str) {
-    if update_type != "tool_call" && update_type != "tool_call_update" {
-        return;
-    }
-    let Some(update) = content.get_mut("update").and_then(|u| u.as_object_mut()) else {
-        return;
-    };
-
-    if !update.contains_key("name")
-        && let Some(title) = update.remove("title")
-    {
-        update.insert("name".to_string(), title);
-    }
-
-    if update_type == "tool_call_update"
-        && !update.contains_key("output")
-        && let Some(raw) = update
-            .get("rawOutput")
-            .and_then(|r| r.get("output"))
-            .cloned()
-    {
-        update.insert("output".to_string(), raw);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fs_sandbox::{validate_fs_path, validate_fs_write_path};
+    use crate::incoming::normalize_tool_event_fields;
     use rstest::rstest;
     use std::collections::HashMap;
 

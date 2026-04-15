@@ -18,6 +18,12 @@ pub mod connection;
 pub mod docker_backend;
 /// [`AgentsError`] — manager-level errors (spawn, timeout, connection).
 pub mod error;
+/// Filesystem sandboxing: path validation and agent FS request handlers.
+pub(crate) mod fs_sandbox;
+// D-03: incoming.rs handles session/update content mutation (timestamps, tool normalization, command injection)
+#[allow(clippy::disallowed_types)]
+/// Incoming message dispatch, session update forwarding, and tool event normalization.
+pub(crate) mod incoming;
 /// [`LocalBackend`] — native subprocess lifecycle via `tokio::process::Child`.
 pub mod local_backend;
 // D-03: manager.rs manipulates arbitrary agent content (timestamps, tool normalization, command injection)
@@ -28,6 +34,8 @@ pub mod manager;
 #[allow(clippy::disallowed_types)]
 /// Typed platform commands with serialization boundary for agent content merging.
 pub mod platform_commands;
+/// Crash recovery, session restore, and stale container cleanup.
+pub(crate) mod session_recovery;
 // D-03: last_available_commands stores arbitrary agent-reported availableCommands payload
 #[allow(clippy::disallowed_types)]
 /// [`AgentSlot`] — per-agent state: session maps, capabilities, pending permissions.
