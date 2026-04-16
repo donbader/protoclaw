@@ -198,6 +198,10 @@ async fn handle_initialize(stdout: &mut tokio::io::Stdout, id: Option<Value>, ms
         json!({})
     };
 
+    const DEFAULTS_YAML: &str = include_str!("../defaults.yaml");
+    let defaults: serde_json::Value =
+        serde_yaml::from_str(DEFAULTS_YAML).expect("embedded defaults.yaml must be valid YAML");
+
     let resp = json!({
         "jsonrpc": "2.0",
         "id": id,
@@ -209,15 +213,7 @@ async fn handle_initialize(stdout: &mut tokio::io::Stdout, id: Option<Value>, ms
                 "promptCapabilities": { "embeddedContext": true },
                 "sessionCapabilities": session_caps
             },
-            "defaults": {
-                "thinking": true,
-                "echo_prefix": "Echo",
-                "echo_mcp_count": false,
-                "request_permission": false,
-                "reject_load": false,
-                "reject_resume": false,
-                "support_resume": false
-            }
+            "defaults": defaults
         }
     });
     write_message(stdout, &resp).await;
