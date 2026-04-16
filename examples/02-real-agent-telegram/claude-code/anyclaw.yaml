@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../anyclaw.schema.json
 # Anyclaw Claude Code Example — Docker Workspace
 # Claude Code runs in an isolated container managed by anyclaw via bollard.
 # The agent uses claude-agent-acp (ACP adapter wrapping Claude Agent SDK).

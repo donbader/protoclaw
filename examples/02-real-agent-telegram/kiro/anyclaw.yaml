@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../anyclaw.schema.json
 # Anyclaw Kiro Example — Docker Workspace
 # Kiro CLI runs in an isolated container managed by anyclaw via bollard.
 # Auth: set KIRO_API_KEY env var (Pro+), or pre-authenticate and mount ~/.local/share/kiro-cli volume.

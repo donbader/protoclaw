@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../anyclaw.schema.json
 # Anyclaw Real Agent Example — Docker Workspace
 # OpenCode runs in an isolated container managed by anyclaw via bollard.
 # The agent uses direct ACP mode (opencode acp) — no wrapper binary needed.
