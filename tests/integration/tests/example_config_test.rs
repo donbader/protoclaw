@@ -59,7 +59,8 @@ fn given_fake_agent_example_yaml_when_loaded_then_has_debug_http_and_telegram_ch
 
 #[test]
 fn given_real_agent_example_yaml_when_loaded_then_has_opencode_agent() {
-    let yaml_path = workspace_root().join("examples/02-real-agent-telegram/opencode/anyclaw.yaml");
+    let yaml_path =
+        workspace_root().join("examples/02-real-agent-telegram/agent-opencode/anyclaw.yaml");
     let config = anyclaw_config::AnyclawConfig::load(Some(yaml_path.to_str().unwrap()))
         .unwrap_or_else(|e| panic!("failed to load anyclaw.yaml: {e}"));
 
@@ -87,7 +88,8 @@ fn given_real_agent_example_yaml_when_loaded_then_has_opencode_agent() {
 
 #[test]
 fn given_real_agent_example_yaml_when_loaded_then_has_two_channels_with_correct_routing() {
-    let yaml_path = workspace_root().join("examples/02-real-agent-telegram/opencode/anyclaw.yaml");
+    let yaml_path =
+        workspace_root().join("examples/02-real-agent-telegram/agent-opencode/anyclaw.yaml");
     let config = anyclaw_config::AnyclawConfig::load(Some(yaml_path.to_str().unwrap())).unwrap();
 
     assert_eq!(

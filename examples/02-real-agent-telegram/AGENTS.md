@@ -5,9 +5,9 @@ This directory contains agent variants for the real-agent Telegram bot example. 
 ```
 examples/02-real-agent-telegram/
 ├── dev/          # Shared Makefile and test runner
-├── opencode/     # OpenCode (npm, opencode acp)
-├── kiro/         # Kiro CLI (native binary, kiro-cli acp)
-├── claude-code/  # Claude Code (npm, claude-agent-acp)
+├── agent-opencode/     # OpenCode (npm, opencode acp)
+├── agent-kiro/         # Kiro CLI (native binary, kiro-cli acp)
+├── agent-claude-code/  # Claude Code (npm, claude-agent-acp)
 └── AGENTS.md     # This file
 ```
 
@@ -30,10 +30,10 @@ Before starting, check:
 
 ## Step-by-Step: Add a New Variant
 
-Use an existing variant as your starting point. Copy `opencode/` for npm-based agents with native ACP, `kiro/` for native binary agents, or `claude-code/` for agents that need an ACP adapter package.
+Use an existing variant as your starting point. Copy `agent-opencode/` for npm-based agents with native ACP, `agent-kiro/` for native binary agents, or `agent-claude-code/` for agents that need an ACP adapter package.
 
 ```sh
-cp -r opencode/ <your-agent>/
+cp -r agent-opencode/ agent-<your-agent>/
 cd <your-agent>/
 ```
 
@@ -226,4 +226,4 @@ docker run --rm --entrypoint <binary> <image> --help 2>&1 | grep -i acp
 npm search acp <agent-name>
 ```
 
-See the `claude-code/` variant for a working example of the adapter pattern.
+See the `agent-claude-code/` variant for a working example of the adapter pattern.

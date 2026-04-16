@@ -44,7 +44,7 @@ fn given_example_02_yaml_when_loaded_via_figment_jail_then_config_parses() {
 
         jail.create_file(
             "anyclaw.yaml",
-            include_str!("../../../examples/02-real-agent-telegram/opencode/anyclaw.yaml"),
+            include_str!("../../../examples/02-real-agent-telegram/agent-opencode/anyclaw.yaml"),
         )?;
 
         let config =
