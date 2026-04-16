@@ -204,6 +204,7 @@ mod tests {
         let result = InitializeResult {
             protocol_version: 1,
             agent_capabilities: None,
+            defaults: None,
         };
         let output = AgentAdapter::on_initialize_result(&adapter, result.clone())
             .await

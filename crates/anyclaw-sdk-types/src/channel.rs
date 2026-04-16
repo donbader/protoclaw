@@ -35,6 +35,11 @@ pub struct ChannelInitializeResult {
     pub protocol_version: u32,
     /// Capabilities the channel advertises.
     pub capabilities: ChannelCapabilities,
+    /// Default option values reported by the extension.
+    /// The manager merges these into the channel's options at startup (user-provided values win).
+    /// D-03: extension defaults are arbitrary key-value maps defined by each channel.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub defaults: Option<std::collections::HashMap<String, serde_json::Value>>,
 }
 
 /// Anyclaw → Channel: deliver agent message/streaming update.
@@ -514,6 +519,7 @@ mod tests {
                 streaming: true,
                 rich_text: false,
             },
+            defaults: None,
         };
         let json = serde_json::to_value(&result).unwrap();
         assert_eq!(json["protocolVersion"], 1);
@@ -929,6 +935,7 @@ mod tests {
                 streaming: true,
                 rich_text: true,
             },
+            defaults: None,
         };
         let json = serde_json::to_value(&original).unwrap();
         let restored: ChannelInitializeResult = serde_json::from_value(json).unwrap();
@@ -1059,5 +1066,39 @@ mod tests {
         let json = serde_json::to_value(&original).unwrap();
         let restored: SessionCreated = serde_json::from_value(json).unwrap();
         assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_channel_initialize_result_has_defaults_then_round_trips() {
+        let mut defaults = std::collections::HashMap::new();
+        defaults.insert("timeout".into(), serde_json::json!(30));
+        defaults.insert("retry".into(), serde_json::json!(true));
+        let original = ChannelInitializeResult {
+            protocol_version: 1,
+            capabilities: ChannelCapabilities {
+                streaming: false,
+                rich_text: false,
+            },
+            defaults: Some(defaults),
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        assert_eq!(json["defaults"]["timeout"], 30);
+        assert_eq!(json["defaults"]["retry"], true);
+        let restored: ChannelInitializeResult = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_channel_initialize_result_has_no_defaults_then_field_absent_in_json() {
+        let original = ChannelInitializeResult {
+            protocol_version: 1,
+            capabilities: ChannelCapabilities {
+                streaming: true,
+                rich_text: false,
+            },
+            defaults: None,
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        assert!(json.get("defaults").is_none());
     }
 }

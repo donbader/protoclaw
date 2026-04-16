@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 use std::time::Duration;
@@ -154,7 +154,18 @@ impl AgentsManager {
             .unwrap_or(manager_config.acp_timeout_secs);
         Duration::from_secs(secs)
     }
+}
 
+pub(crate) fn apply_agent_defaults(
+    options: &mut HashMap<String, serde_json::Value>,
+    defaults: &HashMap<String, serde_json::Value>,
+) {
+    for (key, value) in defaults {
+        options.entry(key.clone()).or_insert_with(|| value.clone());
+    }
+}
+
+impl AgentsManager {
     #[tracing::instrument(skip(slot), fields(agent = %slot.name()))]
     pub(crate) async fn initialize_agent(
         slot: &mut AgentSlot,
@@ -189,6 +200,10 @@ impl AgentsManager {
                 got: result.protocol_version,
             }
             .into());
+        }
+
+        if let Some(defaults) = result.defaults.as_ref() {
+            apply_agent_defaults(&mut slot.config.options, defaults);
         }
 
         slot.protocol_version = result.protocol_version;
@@ -2465,5 +2480,50 @@ mod tests {
 
         m.shutdown_all().await;
         tools_task.abort();
+    }
+
+    #[rstest]
+    fn when_apply_agent_defaults_called_then_missing_keys_are_populated() {
+        let mut options: HashMap<String, serde_json::Value> = HashMap::new();
+        options.insert("user_key".to_string(), serde_json::json!("user_value"));
+
+        let mut defaults: HashMap<String, serde_json::Value> = HashMap::new();
+        defaults.insert(
+            "default_key".to_string(),
+            serde_json::json!("default_value"),
+        );
+        defaults.insert(
+            "user_key".to_string(),
+            serde_json::json!("should_not_override"),
+        );
+
+        apply_agent_defaults(&mut options, &defaults);
+
+        assert_eq!(options["default_key"], serde_json::json!("default_value"));
+        assert_eq!(options["user_key"], serde_json::json!("user_value"));
+    }
+
+    #[rstest]
+    fn when_apply_agent_defaults_called_then_user_options_win_over_defaults() {
+        let mut options: HashMap<String, serde_json::Value> = HashMap::new();
+        options.insert("model".to_string(), serde_json::json!("gpt-4"));
+
+        let mut defaults: HashMap<String, serde_json::Value> = HashMap::new();
+        defaults.insert("model".to_string(), serde_json::json!("claude-3"));
+        defaults.insert("temperature".to_string(), serde_json::json!(0.7));
+
+        apply_agent_defaults(&mut options, &defaults);
+
+        assert_eq!(
+            options["model"],
+            serde_json::json!("gpt-4"),
+            "user option must win"
+        );
+        assert_eq!(
+            options["temperature"],
+            serde_json::json!(0.7),
+            "default must be applied for missing key"
+        );
+        assert_eq!(options.len(), 2);
     }
 }

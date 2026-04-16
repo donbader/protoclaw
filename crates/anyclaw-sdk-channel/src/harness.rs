@@ -149,6 +149,7 @@ impl<C: Channel> ChannelHarness<C> {
                 let result = ChannelInitializeResult {
                     protocol_version: 1,
                     capabilities: caps,
+                    defaults: self.channel.defaults(),
                 };
                 if let Ok(init_params) = serde_json::from_value::<ChannelInitializeParams>(params) {
                     if init_params.protocol_version != 1 {
@@ -463,5 +464,76 @@ mod tests {
         let msgs = delivered.lock().unwrap();
         assert_eq!(msgs.len(), 1);
         assert_eq!(msgs[0].session_id, "s1");
+    }
+
+    #[tokio::test]
+    async fn when_channel_returns_defaults_then_init_response_includes_defaults() {
+        struct ChannelWithDefaults;
+
+        impl Channel for ChannelWithDefaults {
+            fn capabilities(&self) -> ChannelCapabilities {
+                ChannelCapabilities {
+                    streaming: false,
+                    rich_text: false,
+                }
+            }
+
+            fn defaults(&self) -> Option<std::collections::HashMap<String, serde_json::Value>> {
+                let mut map = std::collections::HashMap::new();
+                map.insert("timeout".into(), serde_json::json!(60));
+                Some(map)
+            }
+
+            async fn on_ready(
+                &mut self,
+                _outbound: mpsc::Sender<ChannelSendMessage>,
+                _permission_tx: mpsc::Sender<PermissionResponse>,
+            ) -> Result<(), ChannelSdkError> {
+                Ok(())
+            }
+
+            async fn deliver_message(
+                &mut self,
+                _msg: DeliverMessage,
+            ) -> Result<(), ChannelSdkError> {
+                Ok(())
+            }
+
+            async fn show_permission_prompt(
+                &mut self,
+                _req: anyclaw_sdk_types::ChannelRequestPermission,
+            ) -> Result<(), ChannelSdkError> {
+                Ok(())
+            }
+        }
+
+        let input =
+            make_jsonrpc_request(1, "initialize", serde_json::json!({"protocolVersion": 1}));
+        let reader = std::io::Cursor::new(input.into_bytes());
+        let mut output = Vec::new();
+
+        let harness = ChannelHarness::new(ChannelWithDefaults);
+        harness.run(reader, &mut output).await.unwrap();
+
+        let responses = parse_responses(&output);
+        assert_eq!(responses.len(), 1);
+        assert_eq!(responses[0]["result"]["defaults"]["timeout"], 60);
+    }
+
+    #[tokio::test]
+    async fn when_channel_returns_no_defaults_then_init_response_omits_defaults() {
+        let ch = TestChannel::new();
+
+        let input =
+            make_jsonrpc_request(1, "initialize", serde_json::json!({"protocolVersion": 1}));
+        let reader = std::io::Cursor::new(input.into_bytes());
+        let mut output = Vec::new();
+
+        let harness = ChannelHarness::new(ch);
+        harness.run(reader, &mut output).await.unwrap();
+
+        let responses = parse_responses(&output);
+        assert_eq!(responses.len(), 1);
+        assert!(responses[0]["result"].get("defaults").is_none());
     }
 }

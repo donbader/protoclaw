@@ -14,6 +14,13 @@ pub trait Channel: Send + 'static {
     /// Return the capabilities this channel supports (streaming, rich text).
     fn capabilities(&self) -> ChannelCapabilities;
 
+    /// Return default option values for this channel.
+    /// These are merged into the channel's configured options at startup (user values win).
+    /// Override to provide channel-specific defaults.
+    fn defaults(&self) -> Option<std::collections::HashMap<String, serde_json::Value>> {
+        None
+    }
+
     /// Called with supervisor-provided params during the initialize handshake.
     /// Override to extract config from `params.options`. Default: no-op.
     async fn on_initialize(
@@ -105,6 +112,12 @@ mod tests {
     #[test]
     fn when_channel_impl_created_then_compiles_and_instantiates() {
         let _ch = MockChannel;
+    }
+
+    #[test]
+    fn when_defaults_not_overridden_then_returns_none() {
+        let ch = MockChannel;
+        assert!(ch.defaults().is_none());
     }
 
     #[test]

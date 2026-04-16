@@ -55,6 +55,12 @@ pub struct InitializeResult {
         skip_serializing_if = "Option::is_none"
     )]
     pub agent_capabilities: Option<AgentCapabilities>,
+    /// Default option values reported by the agent during `initialize`.
+    ///
+    /// The manager merges these into the agent's options map; user-provided
+    /// options always take precedence over defaults.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub defaults: Option<HashMap<String, serde_json::Value>>,
 }
 
 /// Describes a single MCP server to be passed to the agent on `session/new`.
@@ -687,6 +693,7 @@ mod tests {
         let original = InitializeResult {
             protocol_version: 1,
             agent_capabilities: None,
+            defaults: None,
         };
         let json = serde_json::to_value(&original).unwrap();
         let restored: InitializeResult = serde_json::from_value(json).unwrap();

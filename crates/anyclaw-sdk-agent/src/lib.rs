@@ -36,6 +36,7 @@ mod tests {
         let input = InitializeResult {
             protocol_version: 1,
             agent_capabilities: None,
+            defaults: None,
         };
         let output = AgentAdapter::on_initialize_result(&adapter, input.clone())
             .await

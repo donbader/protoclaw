@@ -54,7 +54,7 @@ prop_compose! {
 
 prop_compose! {
     fn arb_initialize_result()(protocol_version in any::<u32>()) -> InitializeResult {
-        InitializeResult { protocol_version, agent_capabilities: None }
+        InitializeResult { protocol_version, agent_capabilities: None, defaults: None }
     }
 }
 
@@ -201,7 +201,7 @@ prop_compose! {
         protocol_version in any::<u32>(),
         capabilities in arb_channel_capabilities(),
     ) -> ChannelInitializeResult {
-        ChannelInitializeResult { protocol_version, capabilities }
+        ChannelInitializeResult { protocol_version, capabilities, defaults: None }
     }
 }
 

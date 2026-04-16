@@ -18,6 +18,12 @@ use anyclaw_sdk_types::{
     ChannelCapabilities, ChannelInitializeResult, ChannelRespondPermission, ChannelSendMessage,
 };
 
+type SpawnInitResult = (
+    ChannelConnection,
+    ChannelCapabilities,
+    Option<HashMap<String, serde_json::Value>>,
+);
+
 /// Commands sent to the ChannelsManager from other managers.
 pub enum ChannelsCommand {
     /// Deliver agent message to a specific channel (by session key).
@@ -161,7 +167,7 @@ impl ChannelsManager {
         channel_id: &ChannelId,
         init_timeout: Duration,
         log_level: Option<&str>,
-    ) -> Result<(ChannelConnection, ChannelCapabilities), ChannelsError> {
+    ) -> Result<SpawnInitResult, ChannelsError> {
         let mut conn = ChannelConnection::spawn(config, channel_id.clone(), log_level)?;
 
         let ack_config: AckConfig = config
@@ -192,9 +198,10 @@ impl ChannelsManager {
             .ok_or_else(|| ChannelsError::InitializeFailed("no result in response".into()))?;
         let result: ChannelInitializeResult = serde_json::from_value(result_value)?;
         let caps = result.capabilities;
+        let defaults = result.defaults;
         conn.set_capabilities(caps.clone());
 
-        Ok((conn, caps))
+        Ok((conn, caps, defaults))
     }
 
     /// Handle a crashed channel: backoff, respawn, re-initialize.
@@ -229,7 +236,7 @@ impl ChannelsManager {
         )
         .await
         {
-            Ok((conn, caps)) => {
+            Ok((conn, caps, defaults)) => {
                 tracing::info!(
                     channel = %channel_name,
                     streaming = caps.streaming,
@@ -238,6 +245,11 @@ impl ChannelsManager {
                 );
                 slot.connection = Some(conn);
                 slot.lifecycle.backoff.reset();
+                if let Some(extension_defaults) = defaults {
+                    for (k, v) in extension_defaults {
+                        slot.config.options.entry(k).or_insert(v);
+                    }
+                }
             }
             Err(e) => {
                 tracing::error!(
@@ -1069,16 +1081,22 @@ impl ChannelsManager {
         )
         .await
         {
-            Ok((conn, caps)) => {
+            Ok((conn, caps, defaults)) => {
                 tracing::info!(
                     channel = %name,
                     streaming = caps.streaming,
                     rich_text = caps.rich_text,
                     "channel initialized"
                 );
+                let mut merged_config = config.clone();
+                if let Some(extension_defaults) = defaults {
+                    for (k, v) in extension_defaults {
+                        merged_config.options.entry(k).or_insert(v);
+                    }
+                }
                 ChannelSlot {
                     name: name.to_string(),
-                    config: config.clone(),
+                    config: merged_config,
                     connection: Some(conn),
                     channel_id,
                     lifecycle,
