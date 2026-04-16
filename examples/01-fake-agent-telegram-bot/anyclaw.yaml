@@ -40,8 +40,8 @@ channels_manager:
       binary: "@built-in/channels/debug-http"
       agent: "mock"
       options:
-        HOST: "0.0.0.0"
-        PORT: "8080"
+        host: "0.0.0.0"
+        port: "8080"
         ack:
           reaction: false
           typing: false
@@ -50,7 +50,7 @@ channels_manager:
       enabled: "${TELEGRAM_ENABLED:false}"
       agent: "mock"
       options:
-        TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:}"
+        bot_token: "${TELEGRAM_BOT_TOKEN:}"
         ack:
           reaction: true
           reaction_emoji: "👀"

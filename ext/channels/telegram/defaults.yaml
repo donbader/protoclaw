@@ -1,4 +1,4 @@
-TELEGRAM_THOUGHT_EMOJI: "🧠"
-TELEGRAM_RESPONSE_EDIT_COOLDOWN_MS: 1000
-TELEGRAM_THOUGHT_DEBOUNCE_MS: 400
-TELEGRAM_FINALIZATION_DELAY_MS: 200
+thought_emoji: "🧠"
+response_edit_cooldown_ms: 1000
+thought_debounce_ms: 400
+finalization_delay_ms: 200

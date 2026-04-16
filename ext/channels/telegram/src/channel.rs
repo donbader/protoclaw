@@ -173,42 +173,36 @@ impl Channel for TelegramChannel {
         if let Some(ack) = params.ack {
             *self.state.ack_config.write().await = Some(ack);
         }
-        if let Some(emoji) = params
-            .options
-            .get("TELEGRAM_THOUGHT_EMOJI")
-            .and_then(|v| v.as_str())
-        {
+        if let Some(emoji) = params.options.get("thought_emoji").and_then(|v| v.as_str()) {
             *self.state.thought_emoji.write().await = emoji.to_string();
         }
         if let Some(v) = params
             .options
-            .get("TELEGRAM_RESPONSE_EDIT_COOLDOWN_MS")
+            .get("response_edit_cooldown_ms")
             .and_then(serde_json::Value::as_u64)
         {
             *self.state.response_edit_cooldown_ms.write().await = v;
         }
         if let Some(v) = params
             .options
-            .get("TELEGRAM_THOUGHT_DEBOUNCE_MS")
+            .get("thought_debounce_ms")
             .and_then(serde_json::Value::as_u64)
         {
             *self.state.thought_debounce_ms.write().await = v;
         }
         if let Some(v) = params
             .options
-            .get("TELEGRAM_FINALIZATION_DELAY_MS")
+            .get("finalization_delay_ms")
             .and_then(serde_json::Value::as_u64)
         {
             *self.state.finalization_delay_ms.write().await = v;
         }
         let token = params
             .options
-            .get("TELEGRAM_BOT_TOKEN")
+            .get("bot_token")
             .and_then(|v| v.as_str())
             .ok_or_else(|| {
-                ChannelSdkError::Protocol(
-                    "TELEGRAM_BOT_TOKEN must be set in channel options".into(),
-                )
+                ChannelSdkError::Protocol("bot_token must be set in channel options".into())
             })?;
         self.bot = Some(Bot::new(token));
         Ok(())
@@ -338,7 +332,7 @@ mod tests {
 
     fn make_options_with_token() -> std::collections::HashMap<String, serde_json::Value> {
         let mut options = std::collections::HashMap::new();
-        options.insert("TELEGRAM_BOT_TOKEN".into(), serde_json::json!("test-token"));
+        options.insert("bot_token".into(), serde_json::json!("test-token"));
         options
     }
 
@@ -372,7 +366,7 @@ mod tests {
         let state = Arc::new(SharedState::new());
         let mut ch = TelegramChannel::new(state.clone());
         let mut options = make_options_with_token();
-        options.insert("TELEGRAM_THOUGHT_EMOJI".into(), serde_json::json!("💭"));
+        options.insert("thought_emoji".into(), serde_json::json!("💭"));
         let params = ChannelInitializeParams {
             protocol_version: 1,
             channel_id: "telegram".into(),

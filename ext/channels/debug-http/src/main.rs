@@ -80,16 +80,16 @@ impl Channel for DebugHttpChannel {
         &mut self,
         params: anyclaw_sdk_types::ChannelInitializeParams,
     ) -> Result<(), ChannelSdkError> {
-        if let Some(host) = params.options.get("HOST").and_then(|v| v.as_str()) {
+        if let Some(host) = params.options.get("host").and_then(|v| v.as_str()) {
             self.host = host.to_string();
         }
-        if let Some(port) = params.options.get("PORT").and_then(|v| {
+        if let Some(port) = params.options.get("port").and_then(|v| {
             v.as_u64()
                 .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
         }) {
             self.port = port as u16;
         }
-        if let Some(key) = params.options.get("API_KEY").and_then(|v| v.as_str()) {
+        if let Some(key) = params.options.get("api_key").and_then(|v| v.as_str()) {
             self.api_key = Some(key.to_string());
         }
         Ok(())
