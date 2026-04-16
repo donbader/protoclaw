@@ -42,6 +42,20 @@ jobs:
       - name: Clippy
         run: cargo clippy --locked --workspace -- -D warnings
 
+  doc:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-stable
+          save-if: false
+      - name: Check docs build
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --no-deps --workspace
+
   test:
     runs-on: ubuntu-latest
     steps:
