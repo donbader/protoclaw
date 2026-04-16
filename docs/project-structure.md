@@ -14,25 +14,36 @@ anyclaw/
 │   ├── anyclaw-tools/            # MCP host, WASM sandbox, tools manager
 │   ├── anyclaw-config/           # Figment-based config loading (anyclaw.yaml)
 │   ├── anyclaw-jsonrpc/          # JSON-RPC 2.0 codec + types (LinesCodec-based)
-│   ├── anyclaw-sdk-types/        # Shared SDK types (capabilities, permissions)
+│   ├── anyclaw-sdk-types/        # Shared SDK types (capabilities, permissions, ACP wire types)
 │   ├── anyclaw-sdk-agent/        # SDK: AgentAdapter trait + GenericAcpAdapter
 │   ├── anyclaw-sdk-channel/      # SDK: Channel trait + ChannelHarness
 │   ├── anyclaw-sdk-tool/         # SDK: Tool trait + ToolServer
 │   └── anyclaw-test-helpers/     # Shared test utilities (dev-dependency)
 ├── ext/                            # External binaries (spawned as subprocesses)
 │   ├── agents/
-│   │   └── mock-agent/             # Mock ACP agent binary (echo + thinking simulation)
-│   └── channels/
-│       ├── telegram/               # Telegram channel implementation
-│       └── debug-http/             # Debug HTTP channel (minimal)
+│   │   ├── mock-agent/             # Mock ACP agent binary (echo + thinking simulation + commands)
+│   │   └── acp-bridge/             # Generic ACP↔HTTP bridge (translates stdio JSON-RPC to REST+SSE)
+│   ├── channels/
+│   │   ├── telegram/               # Telegram channel implementation
+│   │   └── debug-http/             # Debug HTTP channel (minimal)
+│   └── tools/
+│       └── system-info/            # Demo MCP tool binary (uses anyclaw-sdk-tool)
 ├── tests/
 │   └── integration/                # E2E tests (spawn real supervisor + mock-agent)
 ├── docs/                           # Developer documentation
 │   ├── architecture.md             # System overview, crate deps, manager communication
 │   ├── design-principles.md        # Core invariants, anti-patterns, failure modes
-│   └── project-structure.md        # This file
-├── examples/telegram-bot/          # Example config + docker-compose (no Rust source)
-└── examples/01-fake-agent-telegram-bot/  # Runnable example (Docker, mock-agent, debug-http)
+│   ├── project-structure.md        # This file
+│   ├── releasing.md                # Release process for SDK crates and binary
+│   ├── branch-protection.md        # Branch protection ruleset documentation
+│   ├── container-images.md         # Docker image publishing and usage
+│   ├── getting-started.md          # User guide: copy an example, customize, deploy
+│   └── building-extensions.md      # Extension builder guide: SDK crates and patterns
+├── examples/01-fake-agent-telegram-bot/  # Fake agent example (Docker, mock-agent, debug-http)
+└── examples/02-real-agent-telegram/      # Real agent examples (Docker, debug-http + telegram)
+    ├── opencode/                           # OpenCode agent variant
+    ├── kiro/                               # Kiro CLI agent variant
+    └── claude-code/                        # Claude Code agent variant
 ```
 
 ## Where to Look
@@ -42,7 +53,7 @@ anyclaw/
 | Add CLI command | `crates/anyclaw/src/cli.rs` | Clap derive, dispatched from `main.rs` |
 | Change boot/shutdown order | `crates/anyclaw/src/supervisor.rs` | `MANAGER_ORDER` constant — read anti-patterns first |
 | Add new manager | `crates/anyclaw-core/src/manager.rs` | Implement `Manager` trait, wire in supervisor |
-| Modify ACP protocol | `crates/anyclaw-agents/src/acp_types.rs` | JSON-RPC method types for agent communication |
+| Modify ACP protocol | `crates/anyclaw-sdk-types/src/acp.rs` | Canonical location; `anyclaw-agents/acp_types.rs` re-exports for backward compat |
 | Add channel type | `crates/anyclaw-channels/` + `ext/channels/` | Manager routes, binary in ext/ |
 | Add MCP tool | `crates/anyclaw-tools/src/mcp_host.rs` | McpHost manages external MCP server connections |
 | Add WASM tool | `crates/anyclaw-tools/src/wasm_runner.rs` | WasmToolRunner + WasmTool for sandboxed execution |
@@ -52,8 +63,9 @@ anyclaw/
 | Build a channel (SDK) | `crates/anyclaw-sdk-channel/` | Channel trait + ChannelHarness |
 | Build a tool (SDK) | `crates/anyclaw-sdk-tool/` | Tool trait + ToolServer |
 | Mock agent binary | `ext/agents/mock-agent/` | Mock ACP agent for testing |
+| ACP↔HTTP bridge | `ext/agents/acp-bridge/` | Translates ACP stdio to HTTP REST+SSE |
 | Add test helper | `crates/anyclaw-test-helpers/` | Shared across all crate tests |
-| Integration tests | `tests/integration/tests/e2e.rs` | Requires `cargo build` first |
+| Integration tests | `tests/integration/tests/e2e.rs` | Requires `cargo build` first (needs mock-agent binary) |
 
 ## Internal vs SDK Crates
 
