@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.9](https://github.com/donbader/anyclaw/compare/anyclaw-sdk-agent-v0.2.8...anyclaw-sdk-agent-v0.2.9) - 2026-04-16
+
+### Added
+
+- *(sdk)* extensions report defaults via initialize response
+
+### Fixed
+
+- *(telegram)* show ❌ reaction when agent result is an error
+
 ## [0.2.8](https://github.com/donbader/anyclaw/compare/anyclaw-sdk-agent-v0.2.7...anyclaw-sdk-agent-v0.2.8) - 2026-04-15
 
 ### Other
