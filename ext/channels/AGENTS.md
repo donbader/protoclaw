@@ -276,22 +276,23 @@ channels:
     agent: my-agent                     # which agent to route messages to
     init_timeout_secs: 10
     exit_timeout_secs: 5
-    permission_timeout_secs: 120        # auto-deny after timeout (optional)
-    ack:
-      on_dispatch: true                 # send ack when message dispatched to agent
-      on_response_started: true         # send ack when agent starts responding
-      on_response_completed: true       # send ack when agent finishes
     backoff:
       base_delay_ms: 100
       max_delay_secs: 30
     crash_tracker:
       max_crashes: 5
       window_secs: 60
-    options:                            # arbitrary key-value, passed in initialize + as env vars
+    options:                            # everything here is passed to the binary
       BOT_TOKEN: "${TELEGRAM_BOT_TOKEN}"
       HOST: "0.0.0.0"
       PORT: "8080"
+      ack:
+        on_dispatch: true               # send ack when message dispatched to agent
+        on_response_started: true       # send ack when agent starts responding
+        on_response_completed: true     # send ack when agent finishes
 ```
+
+Top-level fields (`binary`, `args`, `enabled`, `agent`, timeouts, `backoff`, `crash_tracker`) are manager concerns. Everything in `options` is passed to the channel binary via `ChannelInitializeParams.options` and as env vars on the subprocess.
 
 - `@built-in/channels/<name>` resolves to `{extensions_dir}/channels/<name>`
 - `options` are both set as env vars on the subprocess AND passed in `ChannelInitializeParams.options`

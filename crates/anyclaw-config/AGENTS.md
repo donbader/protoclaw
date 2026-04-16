@@ -105,6 +105,19 @@ Docker workspace agents are skipped (sidecar lookup requires a host filesystem p
 
 Returns `ValidationResult { errors, warnings }` — caller decides whether to abort.
 
+## Entity Config Design Principle
+
+Top-level fields on entity configs (`AgentConfig`, `ChannelConfig`, `ToolConfig`) are **manager concerns** — spawn, routing, restarts, timeouts. Everything passed to the extension binary lives in `options: HashMap<String, serde_json::Value>`.
+
+| Consumer | Where it lives | Examples |
+|----------|---------------|----------|
+| Manager only | Top-level field | `binary`, `args`, `enabled`, `agent`, `backoff`, `crash_tracker`, `init_timeout_secs` |
+| Extension binary | Inside `options` | `HOST`, `PORT`, `TELEGRAM_BOT_TOKEN`, `ack` |
+
+The manager extracts structured data from `options` when constructing init params. For example, `ack` config for channels is deserialized from `options["ack"]` into `AckConfig`, then converted to `ChannelAckConfig` for the wire format.
+
+Do NOT add new top-level fields for binary-facing config — put them in `options`.
+
 ## Anti-Patterns (this crate)
 
 - **Don't use `anyhow`** — use `ConfigError` for all error paths
