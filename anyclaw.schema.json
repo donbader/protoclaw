@@ -40,7 +40,14 @@
         "enabled": {
           "default": true,
           "description": "Whether this agent is active. Disabled agents are not spawned.",
-          "type": "boolean"
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "string"
+            }
+          ]
         },
         "options": {
           "additionalProperties": true,
@@ -161,7 +168,14 @@
         "enabled": {
           "default": true,
           "description": "Whether this channel is active. Disabled channels are not spawned.",
-          "type": "boolean"
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "string"
+            }
+          ]
         },
         "exit_timeout_secs": {
           "default": null,

@@ -424,6 +424,19 @@ pub enum WorkspaceConfig {
 // require adding redundant fields that drift out of sync with the workspace variant.
 // See also: AGENTS.md §Anti-Patterns
 
+/// JSON Schema helper: allows `enabled` to be a boolean or a string (for `!env` tag compatibility).
+///
+/// yaml-language-server sees `!env "VAR:false"` as a string; the Rust type stays `bool`
+/// because the `!env` tag is resolved before serde sees the value.
+fn bool_or_string_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    schemars::json_schema!({
+        "oneOf": [
+            { "type": "boolean" },
+            { "type": "string" }
+        ]
+    })
+}
+
 /// Per-agent configuration. Names come from the HashMap key in [`AgentsManagerConfig`].
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct AgentConfig {
@@ -431,6 +444,7 @@ pub struct AgentConfig {
     pub workspace: WorkspaceConfig,
     /// Whether this agent is active. Disabled agents are not spawned.
     #[serde(default = "default_true")]
+    #[schemars(schema_with = "bool_or_string_schema")]
     pub enabled: bool,
     /// Tool names this agent is allowed to use (matched against tool config keys).
     #[serde(default)]
@@ -459,6 +473,7 @@ pub struct ChannelConfig {
     pub args: Vec<String>,
     /// Whether this channel is active. Disabled channels are not spawned.
     #[serde(default = "default_true")]
+    #[schemars(schema_with = "bool_or_string_schema")]
     pub enabled: bool,
     /// Which agent to route messages to (matches an agent config key).
     #[serde(default = "default_agent")]
