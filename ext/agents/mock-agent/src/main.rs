@@ -208,6 +208,15 @@ async fn handle_initialize(stdout: &mut tokio::io::Stdout, id: Option<Value>, ms
                 "mcpCapabilities": { "http": true, "sse": true },
                 "promptCapabilities": { "embeddedContext": true },
                 "sessionCapabilities": session_caps
+            },
+            "defaults": {
+                "thinking": true,
+                "echo_prefix": "Echo",
+                "echo_mcp_count": false,
+                "request_permission": false,
+                "reject_load": false,
+                "reject_resume": false,
+                "support_resume": false
             }
         }
     });

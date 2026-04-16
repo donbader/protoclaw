@@ -76,6 +76,28 @@ impl Channel for DebugHttpChannel {
         }
     }
 
+    // D-03: defaults() returns HashMap<String, Value> — option values have channel-defined schemas
+    #[allow(clippy::disallowed_types)]
+    fn defaults(&self) -> Option<std::collections::HashMap<String, serde_json::Value>> {
+        let map = serde_json::json!({
+            "host": "127.0.0.1",
+            "port": 0,
+            "ack": {
+                "reaction": false,
+                "typing": false,
+                "reaction_emoji": "👀",
+                "reaction_lifecycle": "remove"
+            }
+        });
+        Some(
+            map.as_object()
+                .expect("defaults json is always an object")
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
+        )
+    }
+
     async fn on_initialize(
         &mut self,
         params: anyclaw_sdk_types::ChannelInitializeParams,

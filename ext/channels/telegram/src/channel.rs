@@ -163,6 +163,30 @@ impl Channel for TelegramChannel {
         }
     }
 
+    // D-03: defaults() returns HashMap<String, Value> — option values have channel-defined schemas
+    #[allow(clippy::disallowed_types)]
+    fn defaults(&self) -> Option<std::collections::HashMap<String, serde_json::Value>> {
+        let map = serde_json::json!({
+            "thought_emoji": "🧠",
+            "response_edit_cooldown_ms": 1000,
+            "thought_debounce_ms": 400,
+            "finalization_delay_ms": 200,
+            "ack": {
+                "reaction": false,
+                "typing": false,
+                "reaction_emoji": "👀",
+                "reaction_lifecycle": "remove"
+            }
+        });
+        Some(
+            map.as_object()
+                .expect("defaults json is always an object")
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
+        )
+    }
+
     // D-03: ChannelInitializeParams.options is HashMap<String, Value> — channel-specific
     // config keys have channel-defined schemas, no fixed Rust type at compile time.
     #[allow(clippy::disallowed_types)]
