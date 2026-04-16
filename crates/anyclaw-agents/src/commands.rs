@@ -447,10 +447,15 @@ impl AgentsManager {
                         session_key = %session_key,
                         "platform command /cancel: session cancelled"
                     );
-                    // Only send the chunk — the agent's in-flight prompt response
-                    // will send result + SessionComplete(Cancelled) naturally.
-                    self.send_synthetic_chunk(session_key, "Operation cancelled.")
-                        .await;
+                    self.send_synthetic_response(
+                        session_key,
+                        "Operation cancelled.",
+                        StopReason::Cancelled,
+                    )
+                    .await;
+                    // Mark queue idle so subsequent messages aren't stuck.
+                    // If the agent also responds, mark_idle on an idle session is a no-op.
+                    self.queue.mark_idle(session_key);
                 } else {
                     self.send_synthetic_response(
                         session_key,
