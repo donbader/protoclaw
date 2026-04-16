@@ -116,7 +116,7 @@ All changes go through pull requests — no direct commits to `main`.
 5. A maintainer will review and provide feedback
 6. Once approved and CI passes, the PR will be merged
 
-External contributors require 1 approval from a maintainer. The maintainer can merge their own PRs after CI passes (see [branch protection rules](docs/branch-protection.md)).
+External contributors require 1 approval from a maintainer. The maintainer can merge their own PRs after CI passes.
 
 If your change affects module structure, public APIs, or conventions, update the relevant [`AGENTS.md`](AGENTS.md#agentsmd-hierarchy) file(s) in the same commit.
 

@@ -35,7 +35,6 @@ anyclaw/
 │   ├── design-principles.md        # Core invariants, anti-patterns, failure modes
 │   ├── project-structure.md        # This file
 │   ├── releasing.md                # Release process for SDK crates and binary
-│   ├── branch-protection.md        # Branch protection ruleset documentation
 │   ├── container-images.md         # Docker image publishing and usage
 │   ├── getting-started.md          # User guide: copy an example, customize, deploy
 │   └── building-extensions.md      # Extension builder guide: SDK crates and patterns
