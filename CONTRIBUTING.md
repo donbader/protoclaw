@@ -118,6 +118,8 @@ All changes go through pull requests — no direct commits to `main`.
 
 External contributors require 1 approval from a maintainer. The maintainer can merge their own PRs after CI passes (see [branch protection rules](docs/branch-protection.md)).
 
+If your change affects module structure, public APIs, or conventions, update the relevant [`AGENTS.md`](AGENTS.md#agentsmd-hierarchy) file(s) in the same commit.
+
 ## License
 
 By contributing, you agree that your contributions will be licensed under the same **MIT OR Apache-2.0** license as the rest of the project.
