@@ -270,7 +270,7 @@ dependencies = [
 
 [[package]]
 name = "anyclaw-sdk-channel"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "anyclaw-sdk-types",
  "rstest",
