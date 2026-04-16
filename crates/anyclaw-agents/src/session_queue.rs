@@ -71,12 +71,12 @@ impl SessionQueue {
         None
     }
 
-    /// Check if any session has pending queued messages.
+    #[cfg(test)]
     pub fn has_pending(&self) -> bool {
         !self.queues.is_empty()
     }
 
-    /// Number of messages queued for a specific session (not counting the active one).
+    #[cfg(test)]
     pub fn queued_count(&self, session_key: &SessionKey) -> usize {
         self.queues.get(session_key).map_or(0, VecDeque::len)
     }
