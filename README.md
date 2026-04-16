@@ -74,15 +74,47 @@ See [Building Extensions](docs/building-extensions.md) for the full guide, inclu
 
 ## Roadmap
 
-<!-- TODO: Fill in after brainstorming session -->
+We're working toward a stable v1.0. Here's where things stand:
 
-We're working toward a stable v1.0. Here's what's on the horizon:
+### Core Infrastructure
+- [x] Three-manager supervisor (tools → agents → channels)
+- [x] Per-subprocess crash recovery with exponential backoff
+- [x] Crash loop detection and escalation
+- [x] Graceful shutdown with per-manager timeouts
+- [x] Health check loop + admin HTTP server
+- [x] YAML config with `!env` tag resolution and validation
+- [x] JSON Schema for `anyclaw.yaml` (IDE autocomplete)
+- [x] Extension defaults via initialize handshake
 
-- 🔌 More built-in channels (Slack, Discord, and more)
-- 🧰 More built-in tools and WASM sandbox improvements
-- 🔄 Session persistence and conversation history
-- 📡 Multi-agent routing (multiple agents per channel)
-- 📦 Stable SDK with semver guarantees
+### Channels
+- [x] Telegram
+- [x] Debug HTTP (development + testing)
+- [ ] Slack
+
+### Agents
+- [x] ACP protocol (JSON-RPC 2.0 over stdio)
+- [x] ACP↔HTTP bridge (connect any REST/SSE agent)
+- [x] Docker workspace (run agents in containers)
+- [x] Session persistence (SQLite-backed)
+- [x] Session recovery after crash
+- [x] Filesystem sandboxing
+- [x] Permission system (agent → user approval flow)
+- [ ] Agent-to-agent communication (handoff, delegation, or direct IPC between agents)
+
+### Tools
+- [x] MCP server hosting (external tool binaries)
+- [x] WASM sandboxed tools (implemented, not yet battle-tested)
+
+### SDK
+- [x] Channel, Tool, Types, Agent SDK crates on crates.io
+- [x] Automated releases via release-plz
+- [ ] Stable API with semver guarantees
+
+### CI/CD & Release
+- [x] Cross-platform binary releases (Linux + macOS)
+- [x] Multi-arch Docker images (amd64 + arm64)
+- [x] PR-only workflow with conventional commit enforcement
+- [x] Security audit + Trivy scanning
 
 Have an idea? [Open a feature request](https://github.com/donbader/anyclaw/issues/new?template=feature_request.yml).
 
