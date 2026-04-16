@@ -55,15 +55,13 @@ Two forms:
 - `!env VAR_NAME` — hard error if env var is missing
 - `!env "VAR_NAME:default"` — falls back to default if unset (colon separator)
 
-Typed fields (booleans, numbers) should be YAML literals, not `!env` tags.
+Resolved values are type-coerced: `"true"`/`"false"` → bool, numeric strings → numbers, empty string stays as string. This allows `!env` on typed fields:
 
 ```yaml
-# Secrets use !env tags
 bot_token: !env TELEGRAM_BOT_TOKEN           # required, hard error if missing
 api_key: !env "ANTHROPIC_API_KEY:"           # optional, empty default
-
-# Typed fields are literals
-enabled: false
+enabled: !env "TELEGRAM_ENABLED:false"       # coerced to bool
+port: !env "PORT:8080"                       # coerced to number
 ```
 
 ## Loading Order
