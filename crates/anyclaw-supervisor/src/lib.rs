@@ -6,7 +6,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyclaw_config::{AnyclawConfig, resolve_all_binary_paths};
+use anyclaw_config::{AnyclawConfig, load_extension_defaults, resolve_all_binary_paths};
 use anyclaw_core::{CrashTracker, ExponentialBackoff, HealthSnapshot, SlotLifecycle};
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
@@ -75,6 +75,7 @@ impl Supervisor {
     /// Create a new supervisor from the given config. Resolves all binary paths at construction.
     pub fn new(mut config: AnyclawConfig) -> Self {
         resolve_all_binary_paths(&mut config);
+        load_extension_defaults(&mut config);
 
         let (channel_events_tx, channel_events_rx) =
             tokio::sync::mpsc::channel(anyclaw_core::constants::EVENT_CHANNEL_CAPACITY);
