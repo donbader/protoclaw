@@ -25,7 +25,6 @@ agents_manager:
           - "kiro-agent-packages:/usr/local"
         env:
           KIRO_API_KEY: !env "KIRO_API_KEY:"
-      enabled: true
       tools:
         - "system-info"
 

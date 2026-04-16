@@ -28,7 +28,6 @@ agents_manager:
           ANTHROPIC_API_KEY: !env "ANTHROPIC_API_KEY:"
           ANTHROPIC_BASE_URL: !env "ANTHROPIC_BASE_URL:"
           ACP_PERMISSION_MODE: "bypassPermissions"
-      enabled: true
       tools:
         - "system-info"
 

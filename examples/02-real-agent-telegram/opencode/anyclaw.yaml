@@ -26,7 +26,6 @@ agents_manager:
         env:
           XDG_CONFIG_HOME: "/home/node/.config"
           XDG_DATA_HOME: "/home/node/.local/share"
-      enabled: true
       tools:
         - "system-info"
 

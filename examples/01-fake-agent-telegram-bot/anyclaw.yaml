@@ -12,7 +12,6 @@ agents_manager:
         type: local
         binary: "@built-in/agents/mock-agent"
       options:
-        thinking: true
         thinking_time_ms: 3000
       tools:
         - "system-info"
@@ -29,7 +28,6 @@ agents_manager:
         docker_host: "tcp://socket-proxy:2375"
         network: "anyclaw-internal"
       options:
-        thinking: true
         thinking_time_ms: 3000
       tools:
         - "system-info"
