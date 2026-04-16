@@ -322,16 +322,18 @@ impl AgentsManager {
                     content,
                 })
                 .await;
+
+            if let Some(conn) = self.slots[slot_idx].connection.as_ref() {
+                let resp = JsonRpcResponse::success(request.id.clone(), serde_json::json!({}));
+                let _ = conn.send_raw(resp).await;
+            }
         } else {
             tracing::warn!(
                 session_id = %push_params.session_id,
                 "session/push: no session mapping found"
             );
-        }
-
-        if let Some(conn) = self.slots[slot_idx].connection.as_ref() {
-            let resp = JsonRpcResponse::success(request.id.clone(), serde_json::json!({}));
-            let _ = conn.send_raw(resp).await;
+            Self::send_error_response(&self.slots[slot_idx], request, -32001, "Unknown session")
+                .await;
         }
     }
 

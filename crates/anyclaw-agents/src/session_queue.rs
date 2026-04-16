@@ -104,7 +104,9 @@ impl SessionQueue {
             let mut last_metadata = None;
             for (content, metadata) in queue {
                 merged_content.extend(content);
-                last_metadata = metadata;
+                if metadata.is_some() {
+                    last_metadata = metadata;
+                }
             }
             Some((merged_content, last_metadata))
         } else {

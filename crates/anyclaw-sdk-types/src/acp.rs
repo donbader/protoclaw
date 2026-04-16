@@ -176,10 +176,10 @@ pub struct SessionCancelParams {
     pub session_id: String,
 }
 
-/// Parameters for the `session/push` request (supervisor → agent).
+/// Parameters for the `session/push` request (agent → supervisor).
 ///
-/// Pushes additional content into an active session (e.g., injected context,
-/// tool results, or follow-up messages) without creating a new prompt turn.
+/// Allows the agent to proactively send content to the session's channel
+/// without a prior user prompt.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionPushParams {
