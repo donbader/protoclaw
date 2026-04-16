@@ -84,9 +84,31 @@ Rust stable toolchain required. Check `rust-toolchain.toml` for the pinned versi
 
 ## Documentation
 
-- [Architecture overview](docs/architecture.md) — system design, crate deps, manager communication
-- [Design principles](docs/design-principles.md) — core invariants, anti-patterns, failure modes
+### For Users
+
+Deploy anyclaw with your own AI agent:
+
+- [Getting started](docs/getting-started.md) — copy an example, customize, deploy
+- [Configuration reference](examples/02-real-agent-telegram/CONFIGURATION.md) — full `anyclaw.yaml` schema
+- [Container images](docs/container-images.md) — Docker image tags, platforms, usage
+- [Examples](examples/) — ready-to-run setups (fake agent, OpenCode, Kiro, Claude Code)
+- [Changelog](CHANGELOG.md) — binary release history
+
+### For Extension Builders
+
+Build custom agents, channels, or tools:
+
+- [Building extensions](docs/building-extensions.md) — overview and getting started
+- [SDK crate docs](#sdk-crates) — API reference on docs.rs
+- [Architecture overview](docs/architecture.md) — system design, protocol details
+
+### For Contributors
+
+- [Contributing guide](CONTRIBUTING.md) — workflow, tests, PR process
 - [Project structure](docs/project-structure.md) — workspace layout, where to find things
+- [Design principles](docs/design-principles.md) — core invariants, anti-patterns
+- [Releasing](docs/releasing.md) — how releases work
+- [Support](SUPPORT.md) — how to get help
 
 ## Contributing
 
