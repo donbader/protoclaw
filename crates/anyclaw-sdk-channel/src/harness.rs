@@ -8,7 +8,7 @@ use crate::error::ChannelSdkError;
 use crate::trait_def::Channel;
 use anyclaw_sdk_types::{
     ChannelInitializeParams, ChannelInitializeResult, ChannelRequestPermission, ChannelSendMessage,
-    DeliverMessage, PermissionResponse, SessionCreated,
+    DeliverMessage, PermissionResponse, PushMessage, SessionCreated,
 };
 
 /// JSON-RPC stdio harness that drives a [`Channel`] implementation.
@@ -175,6 +175,11 @@ impl<C: Channel> ChannelHarness<C> {
                     self.channel.deliver_message(deliver).await?;
                 }
             }
+            "channel/pushMessage" => {
+                if let Ok(push) = serde_json::from_value::<PushMessage>(params) {
+                    self.channel.push_message(push).await?;
+                }
+            }
             "channel/sessionCreated" => {
                 if let Ok(msg) = serde_json::from_value::<SessionCreated>(params) {
                     self.channel.on_session_created(msg).await?;
@@ -242,6 +247,7 @@ mod tests {
             ChannelCapabilities {
                 streaming: true,
                 rich_text: false,
+                media: false,
             }
         }
 
@@ -475,6 +481,7 @@ mod tests {
                 ChannelCapabilities {
                     streaming: false,
                     rich_text: false,
+                    media: false,
                 }
             }
 

@@ -4,7 +4,7 @@ use anyclaw_jsonrpc::types::{JsonRpcRequest, JsonRpcResponse, RequestId};
 use anyclaw_sdk_types::{ChannelEvent, PermissionOption};
 use tokio::sync::mpsc;
 
-use crate::acp_types::{SessionUpdateEvent, SessionUpdateType};
+use crate::acp_types::{SessionPushParams, SessionUpdateEvent, SessionUpdateType};
 use crate::connection::IncomingMessage;
 use crate::manager::{AgentsManager, PendingPermission, SlotIncoming};
 
@@ -24,6 +24,9 @@ impl AgentsManager {
             }
             "session/request_permission" => {
                 self.handle_permission_request(slot_idx, &request).await;
+            }
+            "session/push" => {
+                self.handle_session_push(slot_idx, &request).await;
             }
             "fs/read_text_file" => {
                 Self::handle_fs_read(&self.slots[slot_idx], &request).await;
@@ -281,6 +284,54 @@ impl AgentsManager {
                 );
                 let _ = conn.send_raw(resp).await;
             }
+        }
+    }
+
+    pub(crate) async fn handle_session_push(&mut self, slot_idx: usize, request: &JsonRpcRequest) {
+        let Some(params_val) = request.params.as_ref() else {
+            Self::send_error_response(&self.slots[slot_idx], request, -32602, "Missing params")
+                .await;
+            return;
+        };
+        let push_params = match serde_json::from_value::<SessionPushParams>(params_val.clone()) {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::warn!(error = %e, "session/push params deserialization failed");
+                Self::send_error_response(&self.slots[slot_idx], request, -32602, "Invalid params")
+                    .await;
+                return;
+            }
+        };
+
+        let content = serde_json::json!({
+            "update": {
+                "sessionUpdate": "push_message",
+                "content": push_params.content,
+            }
+        });
+
+        if let Some(session_key) = self.slots[slot_idx]
+            .reverse_map
+            .get(&push_params.session_id)
+            .cloned()
+            && let Some(sender) = &self.channels_sender
+        {
+            let _ = sender
+                .send(ChannelEvent::DeliverMessage {
+                    session_key,
+                    content,
+                })
+                .await;
+        } else {
+            tracing::warn!(
+                session_id = %push_params.session_id,
+                "session/push: no session mapping found"
+            );
+        }
+
+        if let Some(conn) = self.slots[slot_idx].connection.as_ref() {
+            let resp = JsonRpcResponse::success(request.id.clone(), serde_json::json!({}));
+            let _ = conn.send_raw(resp).await;
         }
     }
 

@@ -125,7 +125,10 @@ mod tests {
         };
         ch.deliver_message(msg).await.unwrap();
         let received = rx.recv().await.expect("should receive echoed message");
-        assert_eq!(received.content, "hello from agent");
+        assert_eq!(
+            received.content,
+            vec![ContentPart::text("\"hello from agent\"")]
+        );
         assert_eq!(received.peer_info.channel_name, "sdk-test-channel");
     }
 }

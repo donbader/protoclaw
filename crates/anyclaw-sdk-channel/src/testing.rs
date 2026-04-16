@@ -115,6 +115,7 @@ mod tests {
             ChannelCapabilities {
                 streaming: true,
                 rich_text: false,
+                media: false,
             }
         }
 
@@ -147,7 +148,10 @@ mod tests {
                             peer_id: "p1".into(),
                             kind: "dm".into(),
                         },
-                        content: msg.content.to_string(),
+                        content: vec![anyclaw_sdk_types::ContentPart::text(
+                            msg.content.to_string(),
+                        )],
+                        metadata: None,
                     })
                     .await;
             }
@@ -216,7 +220,10 @@ mod tests {
 
         assert_eq!(delivered.lock().unwrap().len(), 1);
         let msg = tester.outbound_rx.try_recv().unwrap();
-        assert_eq!(msg.content, "\"hello\"");
+        assert_eq!(
+            msg.content,
+            vec![anyclaw_sdk_types::ContentPart::text("\"hello\"")]
+        );
     }
 
     #[rstest]

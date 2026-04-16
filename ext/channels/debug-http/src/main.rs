@@ -228,6 +228,18 @@ impl Channel for DebugHttpChannel {
         Ok(())
     }
 
+    async fn push_message(
+        &mut self,
+        msg: anyclaw_sdk_types::PushMessage,
+    ) -> Result<(), ChannelSdkError> {
+        let payload = SsePayload {
+            event_type: Some("push_message".into()),
+            data: content_to_string(&msg.content),
+        };
+        let _ = self.state.event_tx.send(payload);
+        Ok(())
+    }
+
     async fn show_permission_prompt(
         &mut self,
         req: ChannelRequestPermission,
@@ -655,7 +667,10 @@ mod tests {
         let msg = rx
             .try_recv()
             .expect("should have received outbound message");
-        assert_eq!(msg.content, "hello");
+        assert_eq!(
+            msg.content,
+            vec![anyclaw_sdk_types::acp::ContentPart::text("hello")]
+        );
         assert_eq!(msg.peer_info.channel_name, "debug-http");
 
         let body = axum::body::to_bytes(resp.into_body(), 1024).await.unwrap();
