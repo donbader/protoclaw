@@ -743,14 +743,9 @@ pub async fn deliver_to_chat(
                     turn.message_id = mid;
                 }
                 turn.last_result_was_error = is_error;
-                // Cancel pending response debounce — the finalization timer
-                // will handle sending. Without this, both timers fire and
-                // the user sees a duplicate message.
-                if let Some(track) = turn.response.as_mut()
-                    && let Some(h) = track.debounce_handle.take()
-                {
-                    h.abort();
-                }
+                // Do NOT abort the debounce — it may be mid-flight (send_message
+                // succeeded, msg_id not yet stored). Aborting loses the msg_id,
+                // causing finalization to send a duplicate. Let it complete naturally.
                 if let Some(track) = turn.thought.as_mut() {
                     track.suppressed = true;
                 } else {
