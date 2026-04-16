@@ -92,7 +92,6 @@ We're working toward a stable v1.0. Here's where things stand:
 | Rate limiting | planned | Per-session and per-channel depth caps with backpressure |
 | Rich media delivery | planned | Route images, files, audio between agents and channels |
 | Supervisor API with authentication | planned | Authenticated HTTP API for session introspection, agent control, and runtime status |
-| Cost tracking and token budget enforcement | planned | Usage data already flows via ACP — needs accumulation and limits |
 | `anyclaw doctor` | planned | Config validation, binary probes, channel connectivity checks |
 
 ### Agents
