@@ -422,4 +422,43 @@ mod tests {
         assert_eq!(action, QueueAction::Enqueued);
         assert_eq!(q.queued_count(&key("alice")), 1);
     }
+
+    // Platform command scenarios: /cancel and /new call mark_idle while
+    // the session may still be active from an in-flight prompt.
+
+    #[rstest]
+    fn given_active_session_when_mark_idle_forced_then_next_message_dispatches() {
+        let mut q = SessionQueue::new();
+        q.push(&key("alice"), "prompt".into());
+        assert!(q.is_active(&key("alice")));
+
+        q.mark_idle(&key("alice"));
+        assert!(!q.is_active(&key("alice")));
+
+        let action = q.push(&key("alice"), "after-cancel".into());
+        assert_eq!(action, QueueAction::Dispatch("after-cancel".into()));
+    }
+
+    #[rstest]
+    fn given_active_session_with_queued_when_mark_idle_forced_then_queued_returned() {
+        let mut q = SessionQueue::new();
+        q.push(&key("alice"), "prompt".into());
+        q.push(&key("alice"), "queued-while-busy".into());
+        assert_eq!(q.queued_count(&key("alice")), 1);
+
+        let next = q.mark_idle(&key("alice"));
+        assert_eq!(next, Some("queued-while-busy".into()));
+    }
+
+    #[rstest]
+    fn given_idle_session_when_mark_idle_called_again_then_noop() {
+        let mut q = SessionQueue::new();
+        q.push(&key("alice"), "msg".into());
+        q.mark_idle(&key("alice"));
+        assert!(!q.is_active(&key("alice")));
+
+        let next = q.mark_idle(&key("alice"));
+        assert_eq!(next, None);
+        assert!(!q.is_active(&key("alice")));
+    }
 }
