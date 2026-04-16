@@ -128,7 +128,6 @@ fn build_two_agent_config(channel_routes_to: &str) -> anyclaw_config::AnyclawCon
             args: vec![],
             enabled: true,
             agent: channel_routes_to.into(),
-            ack: Default::default(),
             init_timeout_secs: None,
             exit_timeout_secs: None,
             backoff: None,
