@@ -35,11 +35,13 @@ ENTRYPOINT ["anyclaw"]
 # Claude Code agent image (for Docker workspace mode)
 # Rebased on claude-deps to avoid redundant apt-get update on every build.
 FROM claude-deps AS claude-code-agent
-RUN echo "node ALL=(ALL) NOPASSWD: /usr/bin/apt-get" >> /etc/sudoers.d/node
-RUN mkdir -p /home/node/.claude /home/node/.local/share /home/node/.local/state /home/node/workspace && \
-    chown -R node:node /home/node/.claude /home/node/.local /home/node/workspace
-COPY --chown=node:node .claude/settings.json /home/node/.claude/settings.json
-COPY --chown=node:node .claude.json /home/node/.claude.json
-USER node
-WORKDIR /home/node
+RUN usermod -l agent-claude-code -d /home/agent-claude-code -m node && \
+    groupmod -n agent-claude-code node && \
+    echo "agent-claude-code ALL=(ALL) NOPASSWD: /usr/bin/apt-get" >> /etc/sudoers.d/agent-claude-code
+RUN mkdir -p /home/agent-claude-code/.claude /home/agent-claude-code/.local/share /home/agent-claude-code/.local/state /home/agent-claude-code/workspace && \
+    chown -R agent-claude-code:agent-claude-code /home/agent-claude-code
+COPY --chown=agent-claude-code:agent-claude-code .claude/settings.json /home/agent-claude-code/.claude/settings.json
+COPY --chown=agent-claude-code:agent-claude-code .claude.json /home/agent-claude-code/.claude.json
+USER agent-claude-code
+WORKDIR /home/agent-claude-code
 ENTRYPOINT ["claude-agent-acp"]

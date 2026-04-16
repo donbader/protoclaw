@@ -18,11 +18,11 @@ agents_manager:
         entrypoint: ["claude-agent-acp"]
         docker_host: "tcp://socket-proxy:2375"
         network: "anyclaw-external"
-        working_dir: "/home/node/workspace"
+        working_dir: "/home/agent-claude-code/workspace"
         pull_policy: "never"
         volumes:
-          - "claude-code-agent-data:/home/node/.claude"
-          - "claude-code-agent-workspace:/home/node/workspace"
+          - "claude-code-agent-data:/home/agent-claude-code/.claude"
+          - "claude-code-agent-workspace:/home/agent-claude-code/workspace"
           - "claude-code-agent-packages:/usr/local"
         env:
           ANTHROPIC_API_KEY: !env "ANTHROPIC_API_KEY:"

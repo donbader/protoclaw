@@ -87,14 +87,14 @@ agents_manager:
     claude-code:
       entrypoint: ["claude-agent-acp"]
       volumes:
-        - "claude-code-agent-data:/home/node/.claude"
-        - "claude-code-agent-workspace:/home/node/workspace"
+        - "claude-code-agent-data:/home/agent-claude-code/.claude"
+        - "claude-code-agent-workspace:/home/agent-claude-code/workspace"
         - "claude-code-agent-packages:/usr/local"
       env:
         ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:}"
 ```
 
-The agent container runs as the `node` user with scoped sudo for `apt-get` only — the agent can install packages at runtime via `sudo apt-get install` without full root access. The `/usr/local` volume persists packages installed via `pip`, `npm install -g`, or `cargo install` across container restarts. Note that `apt-get` installs to system dirs (`/usr/bin`, `/usr/lib`) which are not on this volume — pre-install apt packages in the Dockerfile for persistence.
+The agent container runs as the `agent-claude-code` user with scoped sudo for `apt-get` only — the agent can install packages at runtime via `sudo apt-get install` without full root access. The `/usr/local` volume persists packages installed via `pip`, `npm install -g`, or `cargo install` across container restarts. Note that `apt-get` installs to system dirs (`/usr/bin`, `/usr/lib`) which are not on this volume — pre-install apt packages in the Dockerfile for persistence.
 
 The `ANTHROPIC_API_KEY` env var is passed through from `.env` via `${ANTHROPIC_API_KEY:}` substitution.
 

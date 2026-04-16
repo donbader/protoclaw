@@ -899,6 +899,7 @@ pub async fn deliver_to_chat(
             status,
             output,
             input,
+            exit_code,
             ..
         } => {
             let (tools_text, tools_msg_id) = {
@@ -927,6 +928,9 @@ pub async fn deliver_to_chat(
                 }
 
                 track.status = match status.as_str() {
+                    "completed" if exit_code.is_some_and(|c| c != 0) => {
+                        ToolCallStatus::Failed(output)
+                    }
                     "in_progress" => ToolCallStatus::InProgress,
                     "completed" => ToolCallStatus::Completed,
                     "failed" => ToolCallStatus::Failed(output),

@@ -175,15 +175,16 @@ pub enum ContentKind {
     ToolCallUpdate {
         /// Tool name.
         name: String,
-        /// Identifier matching the originating `ToolCall`.
+        /// Unique identifier for this tool invocation.
         tool_call_id: String,
-        /// Execution status (e.g., `"completed"`, `"running"`).
+        /// Status string: `"in_progress"`, `"completed"`, or `"failed"`.
         status: String,
-        /// Tool output text, if available.
+        /// Tool output text, if any.
         output: Option<String>,
-        /// Tool input arguments (backfilled from rawInput if initial ToolCall had none).
-        // Extensible: tool input schema is tool-defined (D-03)
+        /// Tool input arguments, if any.
         input: Option<serde_json::Value>,
+        /// Process exit code from `rawOutput.metadata.exit`, if present.
+        exit_code: Option<i64>,
     },
     /// Agent-provided list of available commands (e.g., for Telegram / menu).
     AvailableCommandsUpdate {
@@ -269,12 +270,18 @@ impl ContentKind {
                     .and_then(|v| v.as_str())
                     .map(std::string::ToString::to_string);
                 let input = update.get("input").cloned();
+                let exit_code = update
+                    .get("rawOutput")
+                    .and_then(|r| r.get("metadata"))
+                    .and_then(|m| m.get("exit"))
+                    .and_then(serde_json::Value::as_i64);
                 ContentKind::ToolCallUpdate {
                     name,
                     tool_call_id,
                     status,
                     output,
                     input,
+                    exit_code,
                 }
             }
             "available_commands_update" => ContentKind::AvailableCommandsUpdate {
@@ -811,12 +818,56 @@ mod tests {
                 tool_call_id,
                 status,
                 output,
+                exit_code,
                 ..
             } => {
                 assert_eq!(tool_call_id, "tc-2");
                 assert_eq!(name, "");
                 assert_eq!(status, "");
                 assert!(output.is_none());
+                assert!(exit_code.is_none());
+            }
+            other => panic!("expected ToolCallUpdate, got {:?}", other),
+        }
+    }
+
+    #[rstest]
+    fn when_tool_call_update_has_nonzero_exit_then_exit_code_extracted() {
+        let content = serde_json::json!({
+            "update": {
+                "sessionUpdate": "tool_call_update",
+                "toolCallId": "tc-3",
+                "name": "bash",
+                "status": "completed",
+                "rawOutput": { "metadata": { "exit": 1 } }
+            }
+        });
+        let kind = ContentKind::from_content(&content);
+        match kind {
+            ContentKind::ToolCallUpdate {
+                exit_code, status, ..
+            } => {
+                assert_eq!(status, "completed");
+                assert_eq!(exit_code, Some(1));
+            }
+            other => panic!("expected ToolCallUpdate, got {:?}", other),
+        }
+    }
+
+    #[rstest]
+    fn when_tool_call_update_has_zero_exit_then_exit_code_is_zero() {
+        let content = serde_json::json!({
+            "update": {
+                "sessionUpdate": "tool_call_update",
+                "toolCallId": "tc-4",
+                "status": "completed",
+                "rawOutput": { "metadata": { "exit": 0 } }
+            }
+        });
+        let kind = ContentKind::from_content(&content);
+        match kind {
+            ContentKind::ToolCallUpdate { exit_code, .. } => {
+                assert_eq!(exit_code, Some(0));
             }
             other => panic!("expected ToolCallUpdate, got {:?}", other),
         }

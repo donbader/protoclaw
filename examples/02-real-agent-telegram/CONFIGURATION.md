@@ -131,8 +131,8 @@ Each variant may include an optional config directory that gets baked into the a
 
 | Variant | Directory | Baked into | Purpose |
 |---------|-----------|------------|---------|
-| OpenCode | `.opencode/` | `/home/node/.config/opencode/` | `opencode.json` config + optional `package.json` for MCP server deps |
-| Kiro | `.kiro/` | `/home/kiro/.kiro/` | Kiro CLI settings (not auth — auth lives in a Docker volume) |
+| OpenCode | `.opencode/` | `/home/agent-opencode/.config/opencode/` | `opencode.json` config + optional `package.json` for MCP server deps |
+| Kiro | `.kiro/` | `/home/agent-kiro/.kiro/` | Kiro CLI settings (not auth — auth lives in a Docker volume) |
 
 These directories are separate from runtime state. Auth tokens and session data are persisted via Docker volumes configured in `anyclaw.yaml`, not baked into images.
 

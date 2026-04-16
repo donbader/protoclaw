@@ -40,10 +40,10 @@ ENTRYPOINT ["anyclaw"]
 # See README.md for both auth flows.
 # Rebased on kiro-deps to avoid redundant apt-get update on every build.
 FROM kiro-deps AS kiro-agent
-RUN useradd -m -s /bin/bash kiro && \
-    mkdir -p /home/kiro/.kiro /home/kiro/.local/share /home/kiro/.local/state /home/kiro/workspace && \
-    chown -R kiro:kiro /home/kiro && \
-    echo "kiro ALL=(ALL) NOPASSWD: /usr/bin/apt-get" >> /etc/sudoers.d/kiro
-USER kiro
-WORKDIR /home/kiro
+RUN useradd -m -s /bin/bash agent-kiro && \
+    mkdir -p /home/agent-kiro/.kiro /home/agent-kiro/.local/share /home/agent-kiro/.local/state /home/agent-kiro/workspace && \
+    chown -R agent-kiro:agent-kiro /home/agent-kiro && \
+    echo "agent-kiro ALL=(ALL) NOPASSWD: /usr/bin/apt-get" >> /etc/sudoers.d/agent-kiro
+USER agent-kiro
+WORKDIR /home/agent-kiro
 ENTRYPOINT ["kiro-cli", "acp"]

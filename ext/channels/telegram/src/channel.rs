@@ -289,15 +289,51 @@ impl Channel for TelegramChannel {
 
         let keyboard = crate::permissions::build_permission_keyboard(&req.request_id, &req.options);
 
-        let display_description = if req.description.is_empty() {
-            "Permission requested"
-        } else {
-            &req.description
+        let display_description = {
+            let label = if req.description.is_empty() {
+                "Permission requested".to_string()
+            } else {
+                req.description.clone()
+            };
+
+            let turns = self.state.turns.read().await;
+            let tool_context = turns.get(&chat_id).and_then(|turn| {
+                turn.tool_call_order.last().and_then(|id| {
+                    turn.tool_calls.get(id).map(|track| {
+                        let mut ctx = track.name.clone();
+                        if let Some(serde_json::Value::Object(map)) = &track.input {
+                            let summary: Vec<String> = map
+                                .iter()
+                                .filter(|(k, _)| *k != "timeout")
+                                .map(|(k, v)| {
+                                    let val = match v {
+                                        serde_json::Value::String(s) if s.len() > 80 => {
+                                            format!("({}b)", s.len())
+                                        }
+                                        serde_json::Value::String(s) => s.clone(),
+                                        other => other.to_string(),
+                                    };
+                                    format!("{k}: {val}")
+                                })
+                                .collect();
+                            if !summary.is_empty() {
+                                ctx.push_str(&format!("\n{}", summary.join(", ")));
+                            }
+                        }
+                        ctx
+                    })
+                })
+            });
+
+            match tool_context {
+                Some(ctx) => format!("{label}\n{ctx}"),
+                None => label,
+            }
         };
 
         let sent = self
             .bot()?
-            .send_message(teloxide::types::ChatId(chat_id), display_description)
+            .send_message(teloxide::types::ChatId(chat_id), &display_description)
             .reply_markup(keyboard)
             .await
             .map_err(|e| ChannelSdkError::Protocol(format!("telegram send error: {e}")))?;

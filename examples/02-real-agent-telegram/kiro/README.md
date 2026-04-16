@@ -24,7 +24,7 @@ For free tier or when you don't want to use an API key. Authenticate once intera
 ```sh
 docker compose build kiro-agent-image
 docker run -it \
-  -v kiro-auth-data:/home/kiro/.local/share/kiro-cli \
+  -v kiro-auth-data:/home/agent-kiro/.local/share/kiro-cli \
   --entrypoint kiro-cli \
   anyclaw-kiro-agent:latest \
   login --use-device-flow
@@ -100,7 +100,7 @@ If using browser login (Option B) and Kiro's auth tokens expire, the agent will 
 
 ```sh
 docker run -it \
-  -v kiro-auth-data:/home/kiro/.local/share/kiro-cli \
+  -v kiro-auth-data:/home/agent-kiro/.local/share/kiro-cli \
   --entrypoint kiro-cli \
   anyclaw-kiro-agent:latest \
   login --use-device-flow
@@ -122,18 +122,18 @@ agents_manager:
     kiro:
       entrypoint: ["kiro-cli", "acp"]
       volumes:
-        - "kiro-auth-data:/home/kiro/.local/share/kiro-cli"
-        - "kiro-agent-workspace:/home/kiro/workspace"
+        - "kiro-auth-data:/home/agent-kiro/.local/share/kiro-cli"
+        - "kiro-agent-workspace:/home/agent-kiro/workspace"
         - "kiro-agent-packages:/usr/local"
       env:
         KIRO_API_KEY: "${KIRO_API_KEY:}"
 ```
 
-The agent container runs as the `kiro` user with scoped sudo for `apt-get` only — the agent can install packages at runtime via `sudo apt-get install` without full root access. The `/usr/local` volume persists packages installed via `pip`, `npm install -g`, or `cargo install` across container restarts. Note that `apt-get` installs to system dirs (`/usr/bin`, `/usr/lib`) which are not on this volume — pre-install apt packages in the Dockerfile for persistence.
+The agent container runs as the `agent-kiro` user with scoped sudo for `apt-get` only — the agent can install packages at runtime via `sudo apt-get install` without full root access. The `/usr/local` volume persists packages installed via `pip`, `npm install -g`, or `cargo install` across container restarts. Note that `apt-get` installs to system dirs (`/usr/bin`, `/usr/lib`) which are not on this volume — pre-install apt packages in the Dockerfile for persistence.
 
 The `KIRO_API_KEY` env var is passed through from `.env` via `${KIRO_API_KEY:}` substitution. If using browser login instead, the `kiro-auth-data` volume provides credentials.
 
-Kiro CLI settings (`.kiro/`) can optionally be placed in this directory before building. The Dockerfile creates `/home/kiro/.kiro` inside the agent image. However, runtime state (auth tokens, session data) lives in `/home/kiro/.local/share/kiro-cli/` and is persisted via the `kiro-auth-data` Docker volume — not baked into the image.
+Kiro CLI settings (`.kiro/`) can optionally be placed in this directory before building. The Dockerfile creates `/home/agent-kiro/.kiro` inside the agent image. However, runtime state (auth tokens, session data) lives in `/home/agent-kiro/.local/share/kiro-cli/` and is persisted via the `kiro-auth-data` Docker volume — not baked into the image.
 
 For the full config schema and all available options, see the [Configuration Reference](../CONFIGURATION.md).
 

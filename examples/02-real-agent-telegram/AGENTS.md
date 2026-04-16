@@ -53,12 +53,12 @@ Key decisions:
 
 - **Base image**: `node:20-slim` for npm agents, `debian:bookworm-slim` for native binaries
 - **Deps stage**: Install either the agent CLI (if it has native ACP) or the ACP adapter package (if it doesn't). The adapter pulls in the agent SDK as a dependency — you don't need to install both.
-- **User**: Both the sidecar (`example-<name>`) and agent (`<agent>-agent`) stages must run as a non-root user. For `node:20-slim` bases, use the built-in `node` user. For `debian:bookworm-slim` bases, create a dedicated user (e.g., `useradd -m -s /bin/bash anyclaw`). In the sidecar stage, `chown /workspace` to the user and add `USER <user>` before the entrypoint. In the agent stage, `chown` the home directory and add `USER <user>`.
-- **Scoped sudo**: Agent containers get passwordless `sudo apt-get` so the AI agent can install packages at runtime without full root. Add `sudo` to the apt install list and grant access via sudoers: `echo "<user> ALL=(ALL) NOPASSWD: /usr/bin/apt-get" >> /etc/sudoers.d/<user>`. Do not grant unrestricted sudo.
+- **User**: Both the sidecar (`example-<name>`) and agent (`<agent>-agent`) stages must run as a non-root user. For the sidecar stage on `node:20-slim` bases, use the built-in `node` user. For `debian:bookworm-slim` bases, create a dedicated user (e.g., `useradd -m -s /bin/bash anyclaw`). In the agent stage, always create a dedicated user named `agent-<name>` (e.g., `useradd -m -s /bin/bash agent-opencode`). In the sidecar stage, `chown /workspace` to the user and add `USER <user>` before the entrypoint. In the agent stage, `chown` the home directory and add `USER agent-<name>`.
+- **Scoped sudo**: Agent containers get passwordless `sudo apt-get` so the AI agent can install packages at runtime without full root. Add `sudo` to the apt install list and grant access via sudoers: `echo "agent-<name> ALL=(ALL) NOPASSWD: /usr/bin/apt-get" >> /etc/sudoers.d/agent-<name>`. Do not grant unrestricted sudo.
 - **Entrypoint**: The ACP command. This varies by agent:
   - Native ACP: `["opencode", "acp"]`, `["kiro-cli", "acp"]`
   - ACP adapter: `["claude-agent-acp"]` (npm package that wraps the agent's SDK)
-- **Home dirs**: Create `~/.local/share`, `~/.local/state`, and any agent-specific config dirs. `chown` them to the agent user.
+- **Home dirs**: Create `~/.local/share`, `~/.local/state`, and any agent-specific config dirs under `/home/agent-<name>/`. `chown` them to the agent user.
 - **Package persistence**: Mount a named volume at `/usr/local` in the agent container so that packages installed via `pip`, `npm install -g`, `cargo install`, etc. survive container restarts. Note: `apt-get` installs to `/usr/bin` and `/usr/lib` which are not on this volume — use the Dockerfile for apt packages that must persist.
 
 ### 2. anyclaw.yaml
@@ -75,11 +75,11 @@ agents_manager:
         entrypoint: ["<acp-binary-or-adapter>"]
         docker_host: "tcp://socket-proxy:2375"
         network: "anyclaw-external"
-        working_dir: "/home/<user>/workspace"
+        working_dir: "/home/agent-<name>/workspace"
         pull_policy: "never"
         volumes:
-          - "<agent-name>-agent-data:/home/<user>/.local/share"
-          - "<agent-name>-agent-workspace:/home/<user>/workspace"
+          - "<agent-name>-agent-data:/home/agent-<name>/.local/share"
+          - "<agent-name>-agent-workspace:/home/agent-<name>/workspace"
           - "<agent-name>-agent-packages:/usr/local"
         env:
           # Agent-specific env vars (API keys, XDG paths, etc.)
@@ -175,8 +175,8 @@ Agents handle authentication differently. Document the auth flow in your README.
 For volume-based auth, the key is finding where the agent stores credentials. Run the agent interactively with the full home mounted, complete login, then `find` to locate the credential files:
 
 ```sh
-docker run -it -v test-home:/home/<user> --entrypoint <binary> <image> login
-docker run --rm -v test-home:/home/<user> --entrypoint find <image> /home/<user> -type f
+docker run -it -v test-home:/home/agent-<name> --entrypoint <binary> <image> login
+docker run --rm -v test-home:/home/agent-<name> --entrypoint find <image> /home/agent-<name> -type f
 ```
 
 Then mount only the credential directory (not the entire home) as a named volume in `anyclaw.yaml`.

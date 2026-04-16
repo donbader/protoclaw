@@ -82,15 +82,15 @@ agents_manager:
     opencode:
       entrypoint: ["opencode", "acp"]
       volumes:
-        - "opencode-agent-data:/home/node/.local/share"
-        - "opencode-agent-workspace:/home/node/workspace"
+        - "opencode-agent-data:/home/agent-opencode/.local/share"
+        - "opencode-agent-workspace:/home/agent-opencode/workspace"
         - "opencode-agent-packages:/usr/local"
       env:
-        XDG_CONFIG_HOME: "/home/node/.config"
-        XDG_DATA_HOME: "/home/node/.local/share"
+        XDG_CONFIG_HOME: "/home/agent-opencode/.config"
+        XDG_DATA_HOME: "/home/agent-opencode/.local/share"
 ```
 
-The agent container runs as the `node` user with scoped sudo for `apt-get` only — the agent can install packages at runtime via `sudo apt-get install` without full root access. The `/usr/local` volume persists packages installed via `pip`, `npm install -g`, or `cargo install` across container restarts. Note that `apt-get` installs to system dirs (`/usr/bin`, `/usr/lib`) which are not on this volume — pre-install apt packages in the Dockerfile for persistence.
+The agent container runs as the `agent-opencode` user with scoped sudo for `apt-get` only — the agent can install packages at runtime via `sudo apt-get install` without full root access. The `/usr/local` volume persists packages installed via `pip`, `npm install -g`, or `cargo install` across container restarts. Note that `apt-get` installs to system dirs (`/usr/bin`, `/usr/lib`) which are not on this volume — pre-install apt packages in the Dockerfile for persistence.
 
 OpenCode config (`.opencode/`) can optionally be baked into the agent image. To use it:
 
@@ -98,7 +98,7 @@ OpenCode config (`.opencode/`) can optionally be baked into the agent image. To 
 2. Optionally add `.opencode/package.json` for MCP server dependencies
 3. Rebuild: `docker compose up --build -d`
 
-The Dockerfile detects these files and copies them to `/home/node/.config/opencode/` inside the agent image. If a `package.json` is present, `npm install` runs automatically. This directory is gitignored — each user provides their own.
+The Dockerfile detects these files and copies them to `/home/agent-opencode/.config/opencode/` inside the agent image. If a `package.json` is present, `npm install` runs automatically. This directory is gitignored — each user provides their own.
 
 For the full config schema and all available options, see the [Configuration Reference](../CONFIGURATION.md).
 
