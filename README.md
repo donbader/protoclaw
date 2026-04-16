@@ -76,49 +76,83 @@ See [Building Extensions](docs/building-extensions.md) for the full guide, inclu
 
 We're working toward a stable v1.0. Here's where things stand:
 
-### Core Infrastructure
-- [x] Three-manager supervisor (tools → agents → channels)
-- [x] Per-subprocess crash recovery with exponential backoff
-- [x] Crash loop detection and escalation
-- [x] Graceful shutdown with per-manager timeouts
-- [x] Health check loop + admin HTTP server
-- [x] YAML config with `!env` tag resolution and validation
-- [x] JSON Schema for `anyclaw.yaml` (IDE autocomplete)
-- [x] Extension defaults via initialize handshake
-- [ ] Supervisor API with authentication (build dashboards and UIs on top)
+### Core
 
-### Channels
-- [x] Telegram
-- [x] Debug HTTP (development + testing)
-- [ ] Slack
-- [ ] Rich media delivery (images, files, audio from agent to channel)
-- [ ] Reply/thread context (agent knows which message the user is replying to)
-- [ ] Agent-initiated messages (bidirectional — agents can push to channels without user input)
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Three-manager supervisor (tools → agents → channels) | ✅ | |
+| Per-subprocess crash recovery with exponential backoff | ✅ | |
+| Crash loop detection and escalation | ✅ | |
+| Graceful shutdown with per-manager timeouts | ✅ | |
+| Health check loop + admin HTTP server | ✅ | |
+| YAML config with `!env` tag resolution and validation | ✅ | |
+| JSON Schema for `anyclaw.yaml` (IDE autocomplete) | ✅ | |
+| Extension defaults via initialize handshake | ✅ | |
+| Agent-initiated messages | planned | Agents can push to channels without user input — unblocks scheduling, webhooks, agent-to-agent |
+| Rate limiting | planned | Per-session and per-channel depth caps with backpressure |
+| Rich media delivery | planned | Route images, files, audio between agents and channels |
+| Supervisor API with authentication | planned | Build dashboards, monitoring, and remote management on top |
+| Cost tracking and token budget enforcement | planned | Usage data already flows via ACP — needs accumulation and limits |
+| Credential isolation | planned | `!secret` tag or env-only secrets that never hit disk |
+| `anyclaw doctor` | planned | Config validation, binary probes, channel connectivity checks |
 
 ### Agents
-- [x] ACP protocol (JSON-RPC 2.0 over stdio)
-- [x] ACP↔HTTP bridge (connect any REST/SSE agent)
-- [x] Docker workspace (run agents in containers)
-- [x] Session persistence (SQLite-backed)
-- [x] Session recovery after crash
-- [x] Filesystem sandboxing
-- [x] Permission system (agent → user approval flow)
-- [ ] Agent-to-agent communication (handoff, delegation, or direct IPC between agents)
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| ACP protocol (JSON-RPC 2.0 over stdio) | ✅ | |
+| ACP↔HTTP bridge (connect any REST/SSE agent) | ✅ | |
+| Docker workspace (run agents in containers) | ✅ | |
+| Session persistence (SQLite-backed) | ✅ | |
+| Session recovery after crash | ✅ | |
+| Filesystem sandboxing | ✅ | |
+| Permission system (agent → user approval flow) | ✅ | |
+| Agent-to-agent communication | planned | Handoff, delegation, or direct IPC between agents |
+
+### Channels
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Telegram | ✅ | |
+| Debug HTTP (development + testing) | ✅ | |
+| Telegram: reply/thread context | planned | Agent knows which message the user is replying to |
+| Telegram: group/user allowlists | planned | Control who can interact with the agent |
 
 ### Tools
-- [x] MCP server hosting (external tool binaries)
-- [x] WASM sandboxed tools (implemented, not yet battle-tested)
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| MCP server hosting (external tool binaries) | ✅ | |
+| WASM sandboxed tools | ✅ | Implemented, not yet battle-tested |
 
 ### SDK
-- [x] Channel, Tool, Types, Agent SDK crates on crates.io
-- [x] Automated releases via release-plz
-- [ ] Stable API with semver guarantees
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Channel, Tool, Types, Agent SDK crates on crates.io | ✅ | |
+| Automated releases via release-plz | ✅ | |
+| Stable API with semver guarantees | planned | |
 
 ### CI/CD & Release
-- [x] Cross-platform binary releases (Linux + macOS)
-- [x] Multi-arch Docker images (amd64 + arm64)
-- [x] PR-only workflow with conventional commit enforcement
-- [x] Security audit + Trivy scanning
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Cross-platform binary releases (Linux + macOS) | ✅ | |
+| Multi-arch Docker images (amd64 + arm64) | ✅ | |
+| PR-only workflow with conventional commit enforcement | ✅ | |
+| Security audit + Trivy scanning | ✅ | |
+
+### Extension Ideas
+
+Anyclaw is infrastructure — many features are best built as extensions rather than core. Here's what we'd love to see contributed:
+
+| Extension | Type | Notes |
+|-----------|------|-------|
+| Slack | channel | Same pattern as Telegram — use the [Channel SDK](https://docs.rs/anyclaw-sdk-channel) |
+| Discord | channel | |
+| Task scheduler | tool | Cron/interval/one-shot task CRUD via MCP (execution trigger depends on agent-initiated messages) |
+
+Some features live entirely in the agent, not in anyclaw — skills, prompt extensions, vector memory, and knowledge graphs are configured in your agent (e.g., `CLAUDE.md`, `AGENTS.md`, MCP servers). Anyclaw doesn't need to know about them.
 
 Have an idea? [Open a feature request](https://github.com/donbader/anyclaw/issues/new?template=feature_request.yml).
 
