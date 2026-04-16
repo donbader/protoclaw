@@ -31,7 +31,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 8: Defaults Consolidation** - Migrate all default_* fns into defaults.yaml, single source of truth (completed 2026-04-15)
 - [x] **Phase 9: JSON Schema Generation** - schemars derives, manual impls, committed schema, CLI subcommand, validate subcommand (completed 2026-04-15)
 - [x] **Phase 10: CI, IDE & Validation** - Schema drift test, example validation, YAML modeline, unknown-key warnings (completed 2026-04-15)
-- [ ] **Phase 11: Per-Extension Defaults** - Extension defaults.yaml layered into Figment chain
+- [x] **Phase 11: Per-Extension Defaults** - Extension defaults.yaml layered into Figment chain (completed 2026-04-16)
 
 ## Phase Details
 
@@ -101,7 +101,9 @@ Plans:
   1. An extension binary can include a `defaults.yaml` that provides default values for its config section
   2. Extension defaults layer correctly: base defaults → extension defaults → user config (extension fills gaps, user overrides all)
   3. Conflicting values between extension defaults and user config resolve in favor of user config
-**Plans**: TBD
+**Plans:** 1/1 plans complete
+Plans:
+- [x] 11-01-PLAN.md — Implement load_extension_defaults() with sidecar YAML merge + wire into Supervisor
 
 ## Progress
 
@@ -121,4 +123,4 @@ Phases execute in numeric order: 7 → 8 → 9 → 10 → 11
 | 8. Defaults Consolidation | v1.0.0 | 2/2 | Complete    | 2026-04-15 |
 | 9. JSON Schema Generation | v1.0.0 | 2/2 | Complete    | 2026-04-15 |
 | 10. CI, IDE & Validation | v1.0.0 | 2/2 | Complete    | 2026-04-15 |
-| 11. Per-Extension Defaults | v1.0.0 | 0/0 | Not started | - |
+| 11. Per-Extension Defaults | v1.0.0 | 1/1 | Complete    | 2026-04-16 |
