@@ -38,6 +38,8 @@ pub mod manager;
 #[allow(clippy::disallowed_types)]
 /// Typed platform commands with serialization boundary for agent content merging.
 pub mod platform_commands;
+/// Per-session FIFO message queue (migrated from channels — agent concurrency concern).
+pub(crate) mod session_queue;
 /// Crash recovery, session restore, and stale container cleanup.
 pub(crate) mod session_recovery;
 // D-03: last_available_commands stores arbitrary agent-reported availableCommands payload

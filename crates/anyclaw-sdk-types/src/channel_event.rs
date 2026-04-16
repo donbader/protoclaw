@@ -47,6 +47,12 @@ pub enum ChannelEvent {
         /// Optional platform-specific message identifier for targeted ack.
         message_id: Option<String>,
     },
+    /// Signal that the agents manager is dispatching a prompt for this session.
+    /// Channels uses this to send ack + typing indicator to the channel subprocess.
+    DispatchStarted {
+        /// Routing key identifying the session being dispatched.
+        session_key: SessionKey,
+    },
 }
 
 #[cfg(test)]
@@ -163,6 +169,9 @@ mod tests {
         channel_name: "debug-http".into(),
         peer_id: "dev".into(),
         message_id: None,
+    })]
+    #[case::dispatch_started(ChannelEvent::DispatchStarted {
+        session_key: SessionKey::new("telegram", "direct", "alice"),
     })]
     fn when_channel_event_variant_round_trips_then_deserializes_to_same_variant(
         #[case] original: ChannelEvent,
