@@ -5,6 +5,7 @@ use anyclaw_core::{
 };
 use anyclaw_jsonrpc::types::JsonRpcResponse;
 use anyclaw_sdk_types::ChannelEvent;
+use anyclaw_sdk_types::acp::StopReason;
 
 use crate::acp_types::{
     ContentPart, PromptResponse, SessionCancelParams, SessionForkParams, SessionForkResult,
@@ -430,80 +431,33 @@ impl AgentsManager {
                     acp_session_id = %acp_id,
                     "platform command /new: fresh session created"
                 );
-                // Signal channels manager that this "prompt" is done so the queue unblocks.
-                if let Some(sender) = &self.channels_sender {
-                    let _ = sender
-                        .send(ChannelEvent::DeliverMessage {
-                            session_key: session_key.clone(),
-                            content: serde_json::json!({
-                                "update": {
-                                    "sessionUpdate": "agent_message_chunk",
-                                    "content": "New conversation started."
-                                }
-                            }),
-                        })
-                        .await;
-                    let _ = sender
-                        .send(ChannelEvent::DeliverMessage {
-                            session_key: session_key.clone(),
-                            content: serde_json::json!({
-                                "update": {
-                                    "sessionUpdate": "result",
-                                    "content": ""
-                                }
-                            }),
-                        })
-                        .await;
-                    let _ = sender
-                        .send(ChannelEvent::SessionComplete {
-                            session_key: session_key.clone(),
-                            stop_reason: anyclaw_sdk_types::acp::StopReason::EndTurn,
-                        })
-                        .await;
-                }
+                self.send_synthetic_response(
+                    session_key,
+                    "New conversation started.",
+                    StopReason::EndTurn,
+                )
+                .await;
                 Ok(())
             }
             "cancel" => {
                 let cancelled = self.cancel_session(agent_name, session_key).await.is_ok();
-                let message = if cancelled {
+                if cancelled {
                     tracing::info!(
                         agent = %agent_name,
                         session_key = %session_key,
                         "platform command /cancel: session cancelled"
                     );
-                    "Operation cancelled."
+                    // Only send the chunk — the agent's in-flight prompt response
+                    // will send result + SessionComplete(Cancelled) naturally.
+                    self.send_synthetic_chunk(session_key, "Operation cancelled.")
+                        .await;
                 } else {
-                    "No active operation to cancel."
-                };
-                if let Some(sender) = &self.channels_sender {
-                    let _ = sender
-                        .send(ChannelEvent::DeliverMessage {
-                            session_key: session_key.clone(),
-                            content: serde_json::json!({
-                                "update": {
-                                    "sessionUpdate": "agent_message_chunk",
-                                    "content": message
-                                }
-                            }),
-                        })
-                        .await;
-                    let _ = sender
-                        .send(ChannelEvent::DeliverMessage {
-                            session_key: session_key.clone(),
-                            content: serde_json::json!({
-                                "update": {
-                                    "sessionUpdate": "result",
-                                    "content": ""
-                                }
-                            }),
-                        })
-                        .await;
-                    let _ = sender
-                        .send(ChannelEvent::SessionComplete {
-                            session_key: session_key.clone(),
-                            stop_reason: anyclaw_sdk_types::acp::StopReason::Cancelled,
-                        })
-                        .await;
+                    self.send_synthetic_response(
+                        session_key,
+                        "No active operation to cancel.",
+                        StopReason::Cancelled,
+                    )
+                    .await;
                 }
                 Ok(())
             }
@@ -512,6 +466,57 @@ impl AgentsManager {
                 Ok(())
             }
         }
+    }
+
+    async fn send_synthetic_chunk(&self, session_key: &SessionKey, message: &str) {
+        let Some(sender) = &self.channels_sender else {
+            return;
+        };
+        let _ = sender
+            .send(ChannelEvent::DispatchStarted {
+                session_key: session_key.clone(),
+            })
+            .await;
+        let _ = sender
+            .send(ChannelEvent::DeliverMessage {
+                session_key: session_key.clone(),
+                content: serde_json::json!({
+                    "update": {
+                        "sessionUpdate": "agent_message_chunk",
+                        "content": message
+                    }
+                }),
+            })
+            .await;
+    }
+
+    async fn send_synthetic_response(
+        &self,
+        session_key: &SessionKey,
+        message: &str,
+        stop_reason: StopReason,
+    ) {
+        self.send_synthetic_chunk(session_key, message).await;
+        let Some(sender) = &self.channels_sender else {
+            return;
+        };
+        let _ = sender
+            .send(ChannelEvent::DeliverMessage {
+                session_key: session_key.clone(),
+                content: serde_json::json!({
+                    "update": {
+                        "sessionUpdate": "result",
+                        "content": ""
+                    }
+                }),
+            })
+            .await;
+        let _ = sender
+            .send(ChannelEvent::SessionComplete {
+                session_key: session_key.clone(),
+                stop_reason,
+            })
+            .await;
     }
 
     pub(crate) async fn fork_session(
