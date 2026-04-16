@@ -1,0 +1,8 @@
+{
+  "yaml.customTags": [
+    "!env scalar"
+  ],
+  "yaml.schemas": {
+    "./anyclaw.schema.json": "anyclaw.yaml"
+  }
+}
