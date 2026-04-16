@@ -210,6 +210,27 @@ pub enum ContentKind {
         // Extensible: command descriptors have agent-defined schemas (D-03)
         commands: serde_json::Value,
     },
+    /// Image content from agent.
+    Image {
+        /// URL pointing to the image.
+        url: String,
+    },
+    /// File content from agent.
+    File {
+        /// URL pointing to the file.
+        url: String,
+        /// Original filename, if known.
+        filename: Option<String>,
+        /// MIME type of the file.
+        mime_type: Option<String>,
+    },
+    /// Audio content from agent.
+    Audio {
+        /// URL pointing to the audio.
+        url: String,
+        /// MIME type of the audio.
+        mime_type: Option<String>,
+    },
     /// Unrecognized content type.
     Unknown,
 }
@@ -235,9 +256,50 @@ impl ContentKind {
                     content: text,
                 })
             }
-            "agent_message_chunk" => ContentKind::MessageChunk {
-                text: extract_content_text(update),
-            },
+            "agent_message_chunk" => {
+                let content_obj = update.get("content");
+                match content_obj
+                    .and_then(|c| c.get("type"))
+                    .and_then(|t| t.as_str())
+                {
+                    Some("image") => ContentKind::Image {
+                        url: content_obj
+                            .and_then(|c| c.get("url"))
+                            .and_then(|u| u.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                    },
+                    Some("file") => ContentKind::File {
+                        url: content_obj
+                            .and_then(|c| c.get("url"))
+                            .and_then(|u| u.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        filename: content_obj
+                            .and_then(|c| c.get("filename"))
+                            .and_then(|f| f.as_str())
+                            .map(String::from),
+                        mime_type: content_obj
+                            .and_then(|c| c.get("mimeType"))
+                            .and_then(|m| m.as_str())
+                            .map(String::from),
+                    },
+                    Some("audio") => ContentKind::Audio {
+                        url: content_obj
+                            .and_then(|c| c.get("url"))
+                            .and_then(|u| u.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        mime_type: content_obj
+                            .and_then(|c| c.get("mimeType"))
+                            .and_then(|m| m.as_str())
+                            .map(String::from),
+                    },
+                    _ => ContentKind::MessageChunk {
+                        text: extract_content_text(update),
+                    },
+                }
+            }
             "result" => ContentKind::Result {
                 text: extract_content_text(update),
                 is_error: update
@@ -399,6 +461,17 @@ pub struct SessionCreated {
     pub session_id: String,
     /// Peer whose message triggered session creation.
     pub peer_info: PeerInfo,
+}
+
+/// Anyclaw → Channel: agent-initiated push message (no prior user prompt).
+/// Delivered via `channel/pushMessage` JSON-RPC notification.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PushMessage {
+    /// ACP session that initiated the push.
+    pub session_id: String,
+    /// Agent content payload to deliver.
+    pub content: serde_json::Value,
 }
 
 #[cfg(test)]
@@ -1280,6 +1353,85 @@ mod tests {
         assert_eq!(json["metadata"]["replyToMessageId"], "msg-99");
         assert_eq!(json["metadata"]["threadId"], "thread-1");
         let restored: ChannelSendMessage = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_content_is_image_then_returns_image() {
+        let content = serde_json::json!({
+            "update": {
+                "sessionUpdate": "agent_message_chunk",
+                "content": {"type": "image", "url": "https://example.com/photo.jpg"}
+            }
+        });
+        match ContentKind::from_content(&content) {
+            ContentKind::Image { url } => assert_eq!(url, "https://example.com/photo.jpg"),
+            other => panic!("expected Image, got {:?}", other),
+        }
+    }
+
+    #[rstest]
+    fn when_content_is_file_then_returns_file() {
+        let content = serde_json::json!({
+            "update": {
+                "sessionUpdate": "agent_message_chunk",
+                "content": {"type": "file", "url": "https://example.com/doc.pdf", "filename": "doc.pdf", "mimeType": "application/pdf"}
+            }
+        });
+        match ContentKind::from_content(&content) {
+            ContentKind::File {
+                url,
+                filename,
+                mime_type,
+            } => {
+                assert_eq!(url, "https://example.com/doc.pdf");
+                assert_eq!(filename.as_deref(), Some("doc.pdf"));
+                assert_eq!(mime_type.as_deref(), Some("application/pdf"));
+            }
+            other => panic!("expected File, got {:?}", other),
+        }
+    }
+
+    #[rstest]
+    fn when_content_is_audio_then_returns_audio() {
+        let content = serde_json::json!({
+            "update": {
+                "sessionUpdate": "agent_message_chunk",
+                "content": {"type": "audio", "url": "https://example.com/voice.ogg", "mimeType": "audio/ogg"}
+            }
+        });
+        match ContentKind::from_content(&content) {
+            ContentKind::Audio { url, mime_type } => {
+                assert_eq!(url, "https://example.com/voice.ogg");
+                assert_eq!(mime_type.as_deref(), Some("audio/ogg"));
+            }
+            other => panic!("expected Audio, got {:?}", other),
+        }
+    }
+
+    #[rstest]
+    fn when_content_is_text_message_chunk_then_still_returns_message_chunk() {
+        let content = serde_json::json!({
+            "update": {
+                "sessionUpdate": "agent_message_chunk",
+                "content": "plain text"
+            }
+        });
+        match ContentKind::from_content(&content) {
+            ContentKind::MessageChunk { text } => assert_eq!(text, "plain text"),
+            other => panic!("expected MessageChunk, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn when_push_message_round_trips_then_identical() {
+        let original = PushMessage {
+            session_id: "ses-1".into(),
+            content: serde_json::json!({"update": {"sessionUpdate": "agent_message_chunk", "content": "hello"}}),
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        assert_eq!(json["sessionId"], "ses-1");
+        let restored: PushMessage = serde_json::from_value(json).unwrap();
         assert_eq!(original, restored);
     }
 }
