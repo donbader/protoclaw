@@ -144,11 +144,11 @@ We're working toward a stable v1.0. Here's where things stand:
 
 Anyclaw is infrastructure — many features are best built as extensions rather than core. Here's what we'd love to see contributed:
 
-| Extension | Type | Notes |
-|-----------|------|-------|
-| Slack | channel | Same pattern as Telegram — use the [Channel SDK](https://docs.rs/anyclaw-sdk-channel) |
-| Discord | channel | |
-| Task scheduler | tool | Cron/interval/one-shot task CRUD via MCP (execution trigger depends on agent-initiated messages) |
+| Extension | Type | Status | Notes |
+|-----------|------|--------|-------|
+| Slack | channel | community | Same pattern as Telegram — use the [Channel SDK](https://docs.rs/anyclaw-sdk-channel) |
+| Discord | channel | community | |
+| Task scheduler | tool | community | Cron/interval/one-shot task CRUD via MCP (execution trigger depends on agent-initiated messages) |
 
 Some features live entirely in the agent, not in anyclaw — skills, prompt extensions, vector memory, and knowledge graphs are configured in your agent (e.g., `CLAUDE.md`, `AGENTS.md`, MCP servers). Anyclaw doesn't need to know about them.
 
