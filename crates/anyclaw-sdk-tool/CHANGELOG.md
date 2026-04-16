@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.10](https://github.com/donbader/anyclaw/compare/anyclaw-sdk-tool-v0.2.9...anyclaw-sdk-tool-v0.2.10) - 2026-04-16
+
+### Other
+
+- expand SDK crate READMEs with examples and quick start
+
 ## [0.2.9](https://github.com/donbader/anyclaw/compare/anyclaw-sdk-tool-v0.2.8...anyclaw-sdk-tool-v0.2.9) - 2026-04-16
 
 ### Other
