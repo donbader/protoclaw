@@ -109,6 +109,7 @@ Example/ext binaries:
 - **Do not access `binary`/`env`/`working_dir` on `AgentConfig` directly**: Match on `agent.workspace` (`WorkspaceConfig::Local` or `WorkspaceConfig::Docker`).
 - **No `std::env::var` in channel/tool binaries**: Config flows through the initialize handshake (`ChannelInitializeParams.options`).
 - **Entity config field placement**: Top-level fields on `AgentConfig`/`ChannelConfig`/`ToolConfig` are manager concerns (spawn, routing, restarts). Everything passed to the extension binary lives in `options: HashMap<String, Value>`. The manager extracts structured data from `options` when constructing init params (e.g., `ack` config for channels).
+- **Extension defaults via init**: Extensions report their default option values in the `initialize` response (`defaults` field). The manager merges these into the entity's options (user options win). No sidecar files — extensions are self-describing.
 - **No cross-manager crate imports**: Use trait abstractions (e.g., `AgentDispatch`) instead.
 - **`ChannelEvent` lives in `anyclaw-sdk-types`**: `anyclaw-core` re-exports for backward compat.
 - **ACP wire types live in `anyclaw-sdk-types`**: `anyclaw-agents/acp_types.rs` re-exports for backward compat.

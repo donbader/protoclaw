@@ -110,9 +110,11 @@ Top-level fields on entity configs (`AgentConfig`, `ChannelConfig`, `ToolConfig`
 | Consumer | Where it lives | Examples |
 |----------|---------------|----------|
 | Manager only | Top-level field | `binary`, `args`, `enabled`, `agent`, `backoff`, `crash_tracker`, `init_timeout_secs` |
-| Extension binary | Inside `options` | `HOST`, `PORT`, `TELEGRAM_BOT_TOKEN`, `ack` |
+| Extension binary | Inside `options` | `host`, `port`, `bot_token`, `ack` |
 
 The manager extracts structured data from `options` when constructing init params. For example, `ack` config for channels is deserialized from `options["ack"]` into `AckConfig`, then converted to `ChannelAckConfig` for the wire format.
+
+Extensions report their default option values in the `initialize` response (`defaults` field). The manager merges these into the entity's options (user options win). No sidecar files — extensions are self-describing.
 
 Do NOT add new top-level fields for binary-facing config — put them in `options`.
 
