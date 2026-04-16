@@ -47,7 +47,7 @@ RUN if [ -f /tmp/build-staging/opencode.json ]; then \
 RUN if [ -f /home/node/.config/opencode/package.json ]; then \
       cd /home/node/.config/opencode && npm install --omit=dev; \
     fi
-RUN mkdir -p /home/node/.local/share /home/node/.local/state && chown -R node:node /home/node/.local
+RUN mkdir -p /home/node/.local/share /home/node/.local/state /home/node/workspace && chown -R node:node /home/node/.local /home/node/workspace
 USER node
 WORKDIR /home/node
 ENTRYPOINT ["opencode", "acp"]

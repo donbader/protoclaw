@@ -36,8 +36,8 @@ ENTRYPOINT ["anyclaw"]
 # Rebased on claude-deps to avoid redundant apt-get update on every build.
 FROM claude-deps AS claude-code-agent
 RUN echo "node ALL=(ALL) NOPASSWD: /usr/bin/apt-get" >> /etc/sudoers.d/node
-RUN mkdir -p /home/node/.claude /home/node/.local/share /home/node/.local/state && \
-    chown -R node:node /home/node/.claude /home/node/.local
+RUN mkdir -p /home/node/.claude /home/node/.local/share /home/node/.local/state /home/node/workspace && \
+    chown -R node:node /home/node/.claude /home/node/.local /home/node/workspace
 COPY --chown=node:node .claude/settings.json /home/node/.claude/settings.json
 COPY --chown=node:node .claude.json /home/node/.claude.json
 USER node
