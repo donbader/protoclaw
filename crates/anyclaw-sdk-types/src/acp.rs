@@ -176,6 +176,25 @@ pub struct SessionCancelParams {
     pub session_id: String,
 }
 
+/// Parameters for the `session/push` request (supervisor → agent).
+///
+/// Pushes additional content into an active session (e.g., injected context,
+/// tool results, or follow-up messages) without creating a new prompt turn.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionPushParams {
+    /// ID of the session to push content into.
+    pub session_id: String,
+    /// Content parts to inject into the session.
+    pub content: Vec<ContentPart>,
+}
+
+/// Result returned by the agent in response to `session/push`.
+///
+/// Currently empty — placeholder for future acknowledgement fields.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SessionPushResult {}
+
 /// Parameters for the `session/fork` request (supervisor → agent).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SessionForkParams {
@@ -1069,5 +1088,43 @@ mod tests {
             caps.session_capabilities.list.is_some(),
             "session list capability should be present"
         );
+    }
+
+    #[rstest]
+    fn when_session_push_params_serialized_then_matches_wire_format() {
+        let params = SessionPushParams {
+            session_id: "ses-push-1".into(),
+            content: vec![ContentPart::text("hello push")],
+        };
+        let json = serde_json::to_value(&params).unwrap();
+        assert_eq!(json["sessionId"], "ses-push-1");
+        let content = &json["content"];
+        assert!(content.is_array());
+        assert_eq!(content[0]["type"], "text");
+        assert_eq!(content[0]["text"], "hello push");
+    }
+
+    #[rstest]
+    fn when_session_push_params_round_trips_then_identical() {
+        let params = SessionPushParams {
+            session_id: "ses-push-2".into(),
+            content: vec![
+                ContentPart::text("text part"),
+                ContentPart::Image {
+                    url: "http://example.com/img.png".into(),
+                },
+            ],
+        };
+        let json = serde_json::to_string(&params).expect("serialize");
+        let deserialized: SessionPushParams = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(params, deserialized);
+    }
+
+    #[rstest]
+    fn when_session_push_result_round_trips_then_identical() {
+        let result = SessionPushResult {};
+        let json = serde_json::to_string(&result).expect("serialize");
+        let deserialized: SessionPushResult = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(result, deserialized);
     }
 }

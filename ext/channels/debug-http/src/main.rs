@@ -7,7 +7,7 @@ use anyclaw_sdk_channel::{
 };
 use anyclaw_sdk_types::{
     ChannelRequestPermission, ContentKind, DeliverMessage, PeerInfo, PermissionOption,
-    PermissionResponse,
+    PermissionResponse, acp::ContentPart,
 };
 use axum::Router;
 use axum::extract::{Path, State};
@@ -73,6 +73,7 @@ impl Channel for DebugHttpChannel {
         ChannelCapabilities {
             streaming: true,
             rich_text: false,
+            media: false,
         }
     }
 
@@ -295,7 +296,8 @@ async fn handle_message(
                 peer_id: "local".into(),
                 kind: "local".into(),
             },
-            content: body.message,
+            content: vec![ContentPart::text(body.message)],
+            metadata: None,
         };
         let _ = tx.send(msg).await;
     }
@@ -339,7 +341,8 @@ async fn handle_cancel(State(state): State<Arc<SharedState>>) -> Json<serde_json
                 peer_id: "local".into(),
                 kind: "local".into(),
             },
-            content: "__cancel__".into(),
+            content: vec![ContentPart::text("__cancel__")],
+            metadata: None,
         };
         let _ = tx.send(msg).await;
     }

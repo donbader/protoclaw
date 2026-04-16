@@ -7,7 +7,7 @@ use anyclaw_core::{
     AgentsCommand, CrashAction, CrashTracker, ExponentialBackoff, Manager, ManagerError,
     ManagerHandle, SessionKey, SlotLifecycle, constants,
 };
-use anyclaw_sdk_types::acp::StopReason;
+use anyclaw_sdk_types::acp::{ContentPart, StopReason};
 use anyclaw_sdk_types::{ChannelAckConfig, ChannelEvent, PermissionOption};
 use futures::StreamExt;
 use tokio::sync::{mpsc, oneshot};
@@ -668,7 +668,14 @@ impl ChannelsManager {
             return None;
         }
 
-        let content = send_msg.content;
+        let content = send_msg
+            .content
+            .iter()
+            .find_map(|p| match p {
+                ContentPart::Text { text } => Some(text.clone()),
+                _ => None,
+            })
+            .unwrap_or_default();
         self.enqueue_to_agent(&session_key, &content, &agent_name)
             .await;
         None

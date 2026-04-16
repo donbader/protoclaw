@@ -225,11 +225,21 @@ prop_compose! {
 }
 
 prop_compose! {
+    fn arb_message_metadata()(
+        reply_to_message_id in proptest::option::of(arb_string()),
+        thread_id in proptest::option::of(arb_string()),
+    ) -> MessageMetadata {
+        MessageMetadata { reply_to_message_id, thread_id }
+    }
+}
+
+prop_compose! {
     fn arb_channel_send_message()(
         peer_info in arb_peer_info(),
-        content in arb_string(),
+        content in proptest::collection::vec(arb_content_part(), 0..4),
+        metadata in proptest::option::of(arb_message_metadata()),
     ) -> ChannelSendMessage {
-        ChannelSendMessage { peer_info, content }
+        ChannelSendMessage { peer_info, content, metadata }
     }
 }
 

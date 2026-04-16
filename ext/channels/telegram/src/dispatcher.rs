@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use anyclaw_sdk_channel::ChannelSdkError;
 use anyclaw_sdk_types::ChannelSendMessage;
+use anyclaw_sdk_types::acp::ContentPart;
 use teloxide::prelude::*;
 use teloxide::types::{Chat, ChatId, ChatKind, InlineKeyboardMarkup, MessageId, PublicChatKind};
 
@@ -33,7 +34,8 @@ pub async fn process_text_message(
     let peer_info = peer_info_from_chat(chat_id, chat_type);
     let msg = ChannelSendMessage {
         peer_info,
-        content: text.to_string(),
+        content: vec![ContentPart::text(text)],
+        metadata: None,
     };
     outbound
         .send(msg)
@@ -145,7 +147,7 @@ mod tests {
             .unwrap();
 
         let msg = rx.try_recv().unwrap();
-        assert_eq!(msg.content, "hello");
+        assert_eq!(msg.content, vec![ContentPart::text("hello")]);
         assert_eq!(msg.peer_info.channel_name, "telegram");
         assert_eq!(msg.peer_info.peer_id, "telegram:12345");
     }
@@ -196,6 +198,6 @@ mod tests {
             .unwrap();
 
         let msg = rx.try_recv().unwrap();
-        assert_eq!(msg.content, "");
+        assert_eq!(msg.content, vec![ContentPart::text("")]);
     }
 }

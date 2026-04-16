@@ -174,6 +174,7 @@ impl Channel for TelegramChannel {
         ChannelCapabilities {
             streaming: true,
             rich_text: true,
+            media: false,
         }
     }
 

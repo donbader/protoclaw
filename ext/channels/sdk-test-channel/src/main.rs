@@ -2,7 +2,7 @@ use anyclaw_sdk_channel::{
     Channel, ChannelCapabilities, ChannelHarness, ChannelSdkError, ChannelSendMessage,
     DeliverMessage, PeerInfo,
 };
-use anyclaw_sdk_types::{ChannelRequestPermission, PermissionResponse};
+use anyclaw_sdk_types::{ChannelRequestPermission, ContentPart, PermissionResponse};
 use tokio::sync::mpsc;
 
 struct SdkTestChannel {
@@ -15,6 +15,7 @@ impl Channel for SdkTestChannel {
         ChannelCapabilities {
             streaming: false,
             rich_text: false,
+            media: false,
         }
     }
 
@@ -42,7 +43,8 @@ impl Channel for SdkTestChannel {
                     peer_id: "test".into(),
                     kind: "test".into(),
                 },
-                content: content_str,
+                content: vec![ContentPart::text(content_str)],
+                metadata: None,
             };
             outbound.send(send_msg).await.ok();
         }

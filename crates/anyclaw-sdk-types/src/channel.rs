@@ -86,8 +86,11 @@ pub struct MessageMetadata {
 pub struct ChannelSendMessage {
     /// Identity of the user who sent the message.
     pub peer_info: PeerInfo,
-    /// User message text content.
-    pub content: String,
+    /// Structured content parts of the user message (text, images, files, audio).
+    pub content: Vec<crate::acp::ContentPart>,
+    /// Optional metadata providing threading and reply context.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<MessageMetadata>,
 }
 
 /// Helper for channel implementations to extract thought content from DeliverMessage.
@@ -454,11 +457,12 @@ mod tests {
                 peer_id: "local:dev".into(),
                 kind: "local".into(),
             },
-            content: "hello agent".into(),
+            content: vec![crate::acp::ContentPart::text("hello agent")],
+            metadata: None,
         };
         let json = serde_json::to_value(&msg).unwrap();
         assert_eq!(json["peerInfo"]["channelName"], "debug-http");
-        assert_eq!(json["content"], "hello agent");
+        assert_eq!(json["content"][0]["text"], "hello agent");
         let deser: ChannelSendMessage = serde_json::from_value(json).unwrap();
         assert_eq!(deser, msg);
     }
@@ -1053,7 +1057,8 @@ mod tests {
                 peer_id: "dev".into(),
                 kind: "local".into(),
             },
-            content: "hello agent".into(),
+            content: vec![crate::acp::ContentPart::text("hello agent")],
+            metadata: None,
         };
         let json = serde_json::to_value(&original).unwrap();
         let restored: ChannelSendMessage = serde_json::from_value(json).unwrap();
@@ -1234,5 +1239,47 @@ mod tests {
         });
         let caps: ChannelCapabilities = serde_json::from_value(json).unwrap();
         assert!(!caps.media);
+    }
+
+    #[rstest]
+    fn when_channel_send_message_with_rich_content_round_trips_then_identical() {
+        let original = ChannelSendMessage {
+            peer_info: PeerInfo {
+                channel_name: "telegram".into(),
+                peer_id: "tg:42".into(),
+                kind: "direct".into(),
+            },
+            content: vec![
+                crate::acp::ContentPart::text("hello"),
+                crate::acp::ContentPart::Image {
+                    url: "https://example.com/img.png".into(),
+                },
+            ],
+            metadata: None,
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        let restored: ChannelSendMessage = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_channel_send_message_with_metadata_round_trips_then_identical() {
+        let original = ChannelSendMessage {
+            peer_info: PeerInfo {
+                channel_name: "telegram".into(),
+                peer_id: "tg:42".into(),
+                kind: "direct".into(),
+            },
+            content: vec![crate::acp::ContentPart::text("reply here")],
+            metadata: Some(MessageMetadata {
+                reply_to_message_id: Some("msg-99".into()),
+                thread_id: Some("thread-1".into()),
+            }),
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        assert_eq!(json["metadata"]["replyToMessageId"], "msg-99");
+        assert_eq!(json["metadata"]["threadId"], "thread-1");
+        let restored: ChannelSendMessage = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
     }
 }
