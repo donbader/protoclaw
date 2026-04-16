@@ -441,6 +441,50 @@ impl AgentsManager {
                 }
                 Ok(())
             }
+            "cancel" => {
+                let cancelled = self.cancel_session(agent_name, session_key).await.is_ok();
+                let message = if cancelled {
+                    tracing::info!(
+                        agent = %agent_name,
+                        session_key = %session_key,
+                        "platform command /cancel: session cancelled"
+                    );
+                    "Operation cancelled."
+                } else {
+                    "No active operation to cancel."
+                };
+                if let Some(sender) = &self.channels_sender {
+                    let _ = sender
+                        .send(ChannelEvent::DeliverMessage {
+                            session_key: session_key.clone(),
+                            content: serde_json::json!({
+                                "update": {
+                                    "sessionUpdate": "agent_message_chunk",
+                                    "content": message
+                                }
+                            }),
+                        })
+                        .await;
+                    let _ = sender
+                        .send(ChannelEvent::DeliverMessage {
+                            session_key: session_key.clone(),
+                            content: serde_json::json!({
+                                "update": {
+                                    "sessionUpdate": "result",
+                                    "content": ""
+                                }
+                            }),
+                        })
+                        .await;
+                    let _ = sender
+                        .send(ChannelEvent::SessionComplete {
+                            session_key: session_key.clone(),
+                            stop_reason: anyclaw_sdk_types::acp::StopReason::Cancelled,
+                        })
+                        .await;
+                }
+                Ok(())
+            }
             _ => {
                 tracing::warn!(command = %command, "unknown platform command — ignoring");
                 Ok(())

@@ -10,10 +10,16 @@ pub struct PlatformCommand {
 }
 
 /// All built-in platform commands.
-pub const PLATFORM_COMMANDS: &[PlatformCommand] = &[PlatformCommand {
-    name: "new",
-    description: "Start a new conversation",
-}];
+pub const PLATFORM_COMMANDS: &[PlatformCommand] = &[
+    PlatformCommand {
+        name: "new",
+        description: "Start a new conversation",
+    },
+    PlatformCommand {
+        name: "cancel",
+        description: "Cancel the current operation",
+    },
+];
 
 /// Returns a typed slice of all platform commands.
 pub fn platform_commands() -> &'static [PlatformCommand] {
@@ -48,6 +54,8 @@ mod tests {
     #[rstest]
     #[case::new_bare("/new", Some("new"))]
     #[case::new_with_mention("/new@MyBot", Some("new"))]
+    #[case::cancel_bare("/cancel", Some("cancel"))]
+    #[case::cancel_with_mention("/cancel@MyBot", Some("cancel"))]
     #[case::unknown_command("/unknown", None)]
     #[case::plain_text("hello world", None)]
     #[case::empty("", None)]
