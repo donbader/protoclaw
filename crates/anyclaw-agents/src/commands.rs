@@ -633,10 +633,10 @@ impl AgentsManager {
 }
 
 pub(crate) fn extract_command_text(content: &[ContentPart]) -> Option<&str> {
-    if content.len() == 1 {
-        if let ContentPart::Text { text } = &content[0] {
-            return Some(text.as_str());
-        }
+    if content.len() == 1
+        && let ContentPart::Text { text } = &content[0]
+    {
+        return Some(text.as_str());
     }
     None
 }
