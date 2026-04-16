@@ -6,7 +6,6 @@
 # See ../CONFIGURATION.md for the full config reference.
 
 log_level: "debug,hyper=warn,reqwest=warn,h2=warn,hyper_util=warn,tower=warn"
-extensions_dir: "/usr/local/bin"
 
 agents_manager:
   acp_timeout_secs: 120
@@ -39,9 +38,6 @@ channels_manager:
       options:
         host: "0.0.0.0"
         port: "8080"
-        ack:
-          reaction: false
-          typing: false
     telegram:
       binary: "@built-in/channels/telegram"
       enabled: false
@@ -64,9 +60,3 @@ session_store:
   type: sqlite
   path: "/workspace/data/sessions.db"
   ttl_days: 7
-
-supervisor:
-  shutdown_timeout_secs: 30
-  health_check_interval_secs: 5
-  max_restarts: 5
-  restart_window_secs: 60

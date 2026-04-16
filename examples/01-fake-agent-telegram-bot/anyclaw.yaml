@@ -4,7 +4,6 @@
 # See README.md for setup instructions.
 
 log_level: "debug"
-extensions_dir: "/usr/local/bin"
 
 agents_manager:
   agents:
@@ -43,9 +42,6 @@ channels_manager:
       options:
         host: "0.0.0.0"
         port: "8080"
-        ack:
-          reaction: false
-          typing: false
     telegram:
       binary: "@built-in/channels/telegram"
       enabled: false
@@ -62,9 +58,3 @@ tools_manager:
   tools:
     system-info:
       binary: "@built-in/tools/system-info"
-
-supervisor:
-  shutdown_timeout_secs: 30
-  health_check_interval_secs: 5
-  max_restarts: 5
-  restart_window_secs: 60

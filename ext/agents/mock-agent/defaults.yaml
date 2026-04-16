@@ -1,7 +1,0 @@
-thinking: true
-echo_prefix: "Echo"
-echo_mcp_count: false
-request_permission: false
-reject_load: false
-reject_resume: false
-support_resume: false

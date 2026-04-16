@@ -1,7 +1,0 @@
-host: "127.0.0.1"
-port: 0
-ack:
-  reaction: false
-  typing: false
-  reaction_emoji: "👀"
-  reaction_lifecycle: "remove"

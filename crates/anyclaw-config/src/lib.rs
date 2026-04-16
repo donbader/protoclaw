@@ -9,8 +9,6 @@
 pub mod env_yaml;
 /// Configuration error types.
 pub mod error;
-/// Per-extension sidecar defaults loading and merging.
-pub mod extension_defaults;
 /// K8s-style resource limit parsers (memory, CPU).
 pub mod parse;
 /// Binary path resolution (`@built-in/` prefix expansion).
@@ -23,7 +21,6 @@ pub mod types;
 pub mod validate;
 
 pub use error::*;
-pub use extension_defaults::*;
 pub use parse::*;
 pub use resolve::*;
 pub use types::*;
