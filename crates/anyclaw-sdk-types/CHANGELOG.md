@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1](https://github.com/donbader/anyclaw/compare/anyclaw-sdk-types-v0.6.0...anyclaw-sdk-types-v0.6.1) - 2026-04-16
+
+### Other
+
+- expand SDK crate READMEs with examples and quick start
+- update AGENTS.md files for queue migration and /cancel
+- copy SessionQueue to agents, add ChannelEvent::DispatchStarted
+
 ## [0.6.0](https://github.com/donbader/anyclaw/compare/anyclaw-sdk-types-v0.5.2...anyclaw-sdk-types-v0.6.0) - 2026-04-16
 
 ### Added
