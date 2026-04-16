@@ -1,0 +1,49 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "rkgw/claude-opus-4.6",
+  "provider": {
+    "rkgw": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Kiro Proxy",
+      "options": {
+        "baseURL": "http://host.docker.internal:8765/v1",
+        "apiKey": "my-super-secret-password-123"
+      },
+      "models": {
+        "claude-haiku-4.5": {
+          "name": "Claude Haiku 4.5",
+          "limit": {
+            "context": 195000,
+            "output": 8192
+          },
+          "modalities": {
+            "input": ["text", "image"],
+            "output": ["text"]
+          }
+        },
+        "claude-sonnet-4.6": {
+          "name": "Claude Sonnet 4.6",
+          "limit": {
+            "context": 1000000,
+            "output": 32768
+          },
+          "modalities": {
+            "input": ["text", "image"],
+            "output": ["text"]
+          }
+        },
+        "claude-opus-4.6": {
+          "name": "Claude Opus 4.6",
+          "limit": {
+            "context": 1000000,
+            "output": 32768
+          },
+          "modalities": {
+            "input": ["text", "image"],
+            "output": ["text"]
+          }
+        }
+      }
+    }
+  }
+}
