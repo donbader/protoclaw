@@ -86,28 +86,37 @@ This project uses [Conventional Commits](https://www.conventionalcommits.org/):
 - Subject line: imperative mood, lowercase after type, no trailing period, ≤72 characters
 - Body: wrap at 72 characters, explain *why* not *what*
 
+## Branch Naming
+
+Use descriptive prefixes:
+
+| Prefix | Use for |
+|--------|---------|
+| `feat/` | New features |
+| `fix/` | Bug fixes |
+| `docs/` | Documentation changes |
+| `chore/` | Dependency updates, tooling, housekeeping |
+| `refactor/` | Code restructuring |
+| `ci/` | CI/CD changes |
+
+Examples: `feat/wasm-tool-permissions`, `fix/agent-crash-on-reconnect`, `docs/sdk-readme`
+
 ## Pull Request Process
 
-1. Fork the repository and create a branch from `main`
-2. Make your changes, ensuring tests pass and `cargo clippy` is clean
-3. Open a PR with the following sections in the description:
+All changes go through pull requests — no direct commits to `main`.
 
-```markdown
-## Motivation
+1. Fork the repository and create a branch from `main` using the naming convention above
+2. Make your changes, ensuring:
+   - Tests pass (`cargo test`)
+   - No clippy warnings (`cargo clippy --workspace -- -D warnings`)
+   - Code is formatted (`cargo fmt --all -- --check`)
+   - Docs build cleanly (`cargo doc --no-deps --workspace`)
+3. Open a PR with a title following [Conventional Commits](https://www.conventionalcommits.org/) format (e.g., `feat: add wasm tool permissions`). CI enforces this.
+4. Fill in the PR template sections: Motivation, Solution, Testing
+5. A maintainer will review and provide feedback
+6. Once approved and CI passes, the PR will be merged
 
-[Why is this change needed? What problem does it solve?]
-
-## Solution
-
-[What did you change and why? Key design decisions.]
-
-## Testing
-
-[How was this tested? Relevant test commands or output.]
-```
-
-4. A maintainer will review and provide feedback
-5. Once approved and CI passes, the PR will be merged
+External contributors require 1 approval from a maintainer. The maintainer can merge their own PRs after CI passes (see [branch protection rules](docs/branch-protection.md)).
 
 ## License
 
