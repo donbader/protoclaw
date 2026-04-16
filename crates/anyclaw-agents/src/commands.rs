@@ -288,18 +288,6 @@ impl AgentsManager {
 
         let response_rx = conn.send_request("session/prompt", params).await?;
 
-        if let Some(commands_content) = self.slots[slot_idx].last_available_commands.as_ref()
-            && let Some(sender) = &self.channels_sender
-            && let Err(e) = sender
-                .send(ChannelEvent::DeliverMessage {
-                    session_key: session_key.clone(),
-                    content: commands_content.clone(),
-                })
-                .await
-        {
-            tracing::debug!(error = %e, "failed to replay buffered available_commands_update");
-        }
-
         {
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
