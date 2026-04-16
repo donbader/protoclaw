@@ -11,8 +11,6 @@ agents_manager:
       workspace:
         type: local
         binary: "@built-in/agents/mock-agent"
-      options:
-        thinking_time_ms: 3000
       tools:
         - "system-info"
     # Docker workspace agent (opt-in — disabled by default)

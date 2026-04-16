@@ -1,4 +1,5 @@
 thinking: true
+thinking_time_ms: 3000
 echo_prefix: "Echo"
 echo_mcp_count: false
 request_permission: false
