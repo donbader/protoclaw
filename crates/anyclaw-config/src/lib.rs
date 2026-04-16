@@ -2,9 +2,11 @@
 
 //! Figment-based layered configuration for anyclaw.
 //!
-//! Loading order: embedded defaults → user YAML file (with `${VAR}` substitution)
+//! Loading order: embedded defaults → user YAML file (with `!env` tag resolution)
 //! → environment variables (`ANYCLAW_` prefix, `__` separator).
 
+/// YAML provider with `!env` environment variable tag resolution.
+pub mod env_yaml;
 /// Configuration error types.
 pub mod error;
 /// Per-extension sidecar defaults loading and merging.
@@ -13,8 +15,6 @@ pub mod extension_defaults;
 pub mod parse;
 /// Binary path resolution (`@built-in/` prefix expansion).
 pub mod resolve;
-/// YAML provider with `${VAR}` environment variable substitution.
-pub mod subst_yaml;
 // Grandfathered: typed replacement in Phase 2-4
 #[allow(clippy::disallowed_types)]
 /// All configuration structs and their serde defaults.
@@ -57,7 +57,7 @@ impl AnyclawConfig {
         }
 
         let config: Self = Figment::from(figment::providers::Yaml::string(DEFAULTS_YAML))
-            .merge(subst_yaml::SubstYaml::file(path))
+            .merge(env_yaml::EnvYaml::file(path))
             .extract()
             .map_err(|e| ConfigError::LoadFailed {
                 path: path.to_string(),
@@ -73,35 +73,6 @@ mod tests {
     use super::*;
     use crate::WorkspaceConfig;
     use figment::Jail;
-
-    fn coerce_yaml_strings(value: &mut serde_yaml::Value) {
-        match value {
-            serde_yaml::Value::String(s) => {
-                if s == "true" {
-                    *value = serde_yaml::Value::Bool(true);
-                } else if s == "false" {
-                    *value = serde_yaml::Value::Bool(false);
-                } else if let Ok(n) = s.parse::<i64>() {
-                    *value = serde_yaml::Value::Number(n.into());
-                } else if s.contains('.')
-                    && let Ok(f) = s.parse::<f64>()
-                {
-                    *value = serde_yaml::Value::Number(f.into());
-                }
-            }
-            serde_yaml::Value::Sequence(arr) => {
-                for v in arr {
-                    coerce_yaml_strings(v);
-                }
-            }
-            serde_yaml::Value::Mapping(map) => {
-                for (_, v) in map.iter_mut() {
-                    coerce_yaml_strings(v);
-                }
-            }
-            _ => {}
-        }
-    }
 
     #[test]
     fn when_valid_config_file_exists_then_loads_all_sections() {
@@ -339,8 +310,6 @@ supervisor:
             .expect("repo root");
 
         let patterns = ["examples/*/anyclaw.yaml", "examples/*/*/anyclaw.yaml"];
-        let empty_vars: std::collections::HashMap<String, String> =
-            std::collections::HashMap::new();
 
         let mut validated_count = 0;
         for pattern in patterns {
@@ -349,11 +318,11 @@ supervisor:
             for entry in glob::glob(glob_str).expect("valid glob").flatten() {
                 let content = std::fs::read_to_string(&entry)
                     .unwrap_or_else(|e| panic!("failed to read {}: {e}", entry.display()));
-                let substituted = subst::substitute(&content, &empty_vars)
-                    .unwrap_or_else(|e| panic!("substitution failed for {}: {e}", entry.display()));
-                let mut yaml_value: serde_yaml::Value = serde_yaml::from_str(&substituted)
+                let mut yaml_value: serde_yaml::Value = serde_yaml::from_str(&content)
                     .unwrap_or_else(|e| panic!("failed to parse {}: {e}", entry.display()));
-                coerce_yaml_strings(&mut yaml_value);
+                env_yaml::resolve_env_tags(&mut yaml_value).unwrap_or_else(|e| {
+                    panic!("env tag resolution failed for {}: {e}", entry.display())
+                });
                 let json_value: serde_json::Value = serde_json::to_value(&yaml_value)
                     .unwrap_or_else(|e| {
                         panic!("YAML→JSON conversion failed for {}: {e}", entry.display())

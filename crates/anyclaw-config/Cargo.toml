@@ -12,7 +12,6 @@ figment.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 serde_yaml.workspace = true
-subst.workspace = true
 schemars = "1"
 jsonschema = "0.28"
 anyclaw-sdk-types = { path = "../anyclaw-sdk-types" }

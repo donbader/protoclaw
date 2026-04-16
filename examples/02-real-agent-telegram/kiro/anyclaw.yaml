@@ -25,7 +25,7 @@ agents_manager:
           - "kiro-agent-workspace:/home/kiro/workspace"
           - "kiro-agent-packages:/usr/local"
         env:
-          KIRO_API_KEY: "${KIRO_API_KEY:}"
+          KIRO_API_KEY: !env "KIRO_API_KEY:"
       enabled: true
       tools:
         - "system-info"
@@ -43,10 +43,10 @@ channels_manager:
           typing: false
     telegram:
       binary: "@built-in/channels/telegram"
-      enabled: "${TELEGRAM_ENABLED:false}"
+      enabled: false
       agent: "kiro"
       options:
-        bot_token: "${TELEGRAM_BOT_TOKEN:}"
+        bot_token: !env "TELEGRAM_BOT_TOKEN:"
         ack:
           reaction: true
           reaction_emoji: "👀"

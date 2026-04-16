@@ -26,8 +26,8 @@ agents_manager:
           - "claude-code-agent-workspace:/home/node/workspace"
           - "claude-code-agent-packages:/usr/local"
         env:
-          ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:}"
-          ANTHROPIC_BASE_URL: "${ANTHROPIC_BASE_URL:}"
+          ANTHROPIC_API_KEY: !env "ANTHROPIC_API_KEY:"
+          ANTHROPIC_BASE_URL: !env "ANTHROPIC_BASE_URL:"
           ACP_PERMISSION_MODE: "bypassPermissions"
       enabled: true
       tools:
@@ -46,10 +46,10 @@ channels_manager:
           typing: false
     telegram:
       binary: "@built-in/channels/telegram"
-      enabled: "${TELEGRAM_ENABLED:false}"
+      enabled: false
       agent: "claude-code"
       options:
-        bot_token: "${TELEGRAM_BOT_TOKEN:}"
+        bot_token: !env "TELEGRAM_BOT_TOKEN:"
         ack:
           reaction: true
           reaction_emoji: "👀"

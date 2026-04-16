@@ -44,10 +44,10 @@ channels_manager:
           typing: false
     telegram:
       binary: "@built-in/channels/telegram"
-      enabled: "${TELEGRAM_ENABLED:false}"
+      enabled: false
       agent: "opencode"
       options:
-        bot_token: "${TELEGRAM_BOT_TOKEN:}"
+        bot_token: !env "TELEGRAM_BOT_TOKEN:"
         ack:
           reaction: true
           reaction_emoji: "👀"
