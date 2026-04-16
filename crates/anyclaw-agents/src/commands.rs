@@ -7,6 +7,8 @@ use anyclaw_jsonrpc::types::JsonRpcResponse;
 use anyclaw_sdk_types::ChannelEvent;
 use anyclaw_sdk_types::acp::StopReason;
 
+use anyclaw_sdk_types::MessageMetadata;
+
 use crate::acp_types::{
     ContentPart, PromptResponse, SessionCancelParams, SessionForkParams, SessionForkResult,
     SessionListParams, SessionPromptParams,
@@ -122,11 +124,14 @@ impl AgentsManager {
             AgentsCommand::EnqueueMessage {
                 agent_name,
                 session_key,
-                message,
+                content,
+                metadata,
                 reply,
             } => {
                 // Platform commands bypass the queue entirely
-                if let Some(cmd) = crate::platform_commands::match_platform_command(&message) {
+                if let Some(cmd) = extract_command_text(&content)
+                    .and_then(crate::platform_commands::match_platform_command)
+                {
                     let slot_idx = find_slot_by_name(&self.slots, &agent_name);
                     let result = if let Some(idx) = slot_idx {
                         self.handle_platform_command(cmd.name, idx, &agent_name, &session_key)
@@ -136,10 +141,10 @@ impl AgentsManager {
                     };
                     let _ = reply.send(result.map_err(|e| e.to_string()));
                 } else if self.queue.is_active(&session_key) {
-                    self.queue.push(&session_key, message);
+                    self.queue.push(&session_key, content, metadata);
                     let _ = reply.send(Ok(()));
                 } else {
-                    self.queue.push_only(&session_key, message);
+                    self.queue.push_only(&session_key, content, metadata);
                     let flush_result = self.flush_and_dispatch(&agent_name, &session_key).await;
                     let _ = reply.send(flush_result.map_err(|e| e.to_string()));
                 }
@@ -250,7 +255,7 @@ impl AgentsManager {
         agent_name: &str,
         session_key: &SessionKey,
     ) -> Result<(), AgentsError> {
-        let Some(merged) = self.queue.flush_pending(session_key) else {
+        let Some((content, metadata)) = self.queue.flush_pending(session_key) else {
             return Ok(());
         };
 
@@ -262,20 +267,24 @@ impl AgentsManager {
                 .await;
         }
 
-        self.prompt_session(agent_name, session_key, &merged).await
+        self.prompt_session(agent_name, session_key, &content, metadata.as_ref())
+            .await
     }
 
     pub(crate) async fn prompt_session(
         &mut self,
         agent_name: &str,
         session_key: &SessionKey,
-        message: &str,
+        content: &[ContentPart],
+        metadata: Option<&MessageMetadata>,
     ) -> Result<(), AgentsError> {
         let slot_idx = find_slot_by_name(&self.slots, agent_name)
             .ok_or_else(|| AgentsError::AgentNotFound(agent_name.to_string()))?;
 
         // Platform commands are handled in the agents layer — not forwarded to the agent process.
-        if let Some(cmd) = crate::platform_commands::match_platform_command(message) {
+        if let Some(cmd) =
+            extract_command_text(content).and_then(crate::platform_commands::match_platform_command)
+        {
             return self
                 .handle_platform_command(cmd.name, slot_idx, agent_name, session_key)
                 .await;
@@ -308,7 +317,10 @@ impl AgentsManager {
                 .tool_context_sent
                 .insert(acp_session_id.clone());
         }
-        prompt_parts.push(ContentPart::text(message));
+        if let Some(reply_id) = metadata.and_then(|m| m.reply_to_message_id.as_deref()) {
+            prompt_parts.push(ContentPart::text(format!("[Reply to message {reply_id}]")));
+        }
+        prompt_parts.extend_from_slice(content);
 
         let slot = &self.slots[slot_idx];
         let conn = slot
@@ -618,4 +630,13 @@ impl AgentsManager {
         conn.send_notification("session/cancel", params).await?;
         Ok(())
     }
+}
+
+pub(crate) fn extract_command_text(content: &[ContentPart]) -> Option<&str> {
+    if content.len() == 1 {
+        if let ContentPart::Text { text } = &content[0] {
+            return Some(text.as_str());
+        }
+    }
+    None
 }

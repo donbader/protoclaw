@@ -73,7 +73,7 @@ impl Channel for DebugHttpChannel {
         ChannelCapabilities {
             streaming: true,
             rich_text: false,
-            media: false,
+            media: true,
         }
     }
 
@@ -197,6 +197,24 @@ impl Channel for DebugHttpChannel {
             ContentKind::UsageUpdate => SsePayload {
                 event_type: Some("usage".into()),
                 data: String::new(),
+            },
+            ContentKind::Image { url } => SsePayload {
+                event_type: Some("image".into()),
+                data: serde_json::json!({ "url": url }).to_string(),
+            },
+            ContentKind::File {
+                url,
+                filename,
+                mime_type,
+            } => SsePayload {
+                event_type: Some("file".into()),
+                data:
+                    serde_json::json!({ "url": url, "filename": filename, "mimeType": mime_type })
+                        .to_string(),
+            },
+            ContentKind::Audio { url, mime_type } => SsePayload {
+                event_type: Some("audio".into()),
+                data: serde_json::json!({ "url": url, "mimeType": mime_type }).to_string(),
             },
             _ => {
                 let content_str = content_to_string(&msg.content);

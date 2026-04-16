@@ -2336,7 +2336,14 @@ mod tests {
 
         m.slots[0].awaiting_first_prompt.insert(acp_id.clone());
 
-        let result = m.prompt_session("default", &default_key, "hello").await;
+        let result = m
+            .prompt_session(
+                "default",
+                &default_key,
+                &[anyclaw_sdk_types::acp::ContentPart::text("hello")],
+                None,
+            )
+            .await;
         assert!(result.is_ok(), "prompt_session should succeed: {result:?}");
 
         assert!(

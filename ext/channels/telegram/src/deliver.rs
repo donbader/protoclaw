@@ -5,7 +5,7 @@ use anyclaw_sdk_channel::ChannelSdkError;
 use anyclaw_sdk_types::ContentKind;
 use teloxide::payloads::{EditMessageTextSetters, SendMessageSetters};
 use teloxide::prelude::*;
-use teloxide::types::{ChatId, MessageId, ParseMode};
+use teloxide::types::{ChatId, InputFile, MessageId, ParseMode};
 use tokio::time::Instant;
 
 use crate::formatting::{close_open_tags, escape_html, format_telegram_html};
@@ -958,6 +958,48 @@ pub async fn deliver_to_chat(
                 {
                     tracing::warn!(error = %e, "failed to set bot commands");
                 }
+            }
+            Ok(())
+        }
+
+        ContentKind::Image { url } => {
+            if let Ok(parsed) = url.parse() {
+                let _ = bot
+                    .send_photo(ChatId(chat_id), InputFile::url(parsed))
+                    .await
+                    .map_err(|e| tracing::warn!(error = %e, "failed to send photo"));
+            } else {
+                tracing::warn!(url = %url, "image url failed to parse");
+            }
+            Ok(())
+        }
+
+        ContentKind::File { url, filename, .. } => {
+            if let Ok(parsed) = url.parse() {
+                let input = InputFile::url(parsed);
+                let input = if let Some(name) = filename {
+                    input.file_name(name)
+                } else {
+                    input
+                };
+                let _ = bot
+                    .send_document(ChatId(chat_id), input)
+                    .await
+                    .map_err(|e| tracing::warn!(error = %e, "failed to send document"));
+            } else {
+                tracing::warn!(url = %url, "file url failed to parse");
+            }
+            Ok(())
+        }
+
+        ContentKind::Audio { url, .. } => {
+            if let Ok(parsed) = url.parse() {
+                let _ = bot
+                    .send_voice(ChatId(chat_id), InputFile::url(parsed))
+                    .await
+                    .map_err(|e| tracing::warn!(error = %e, "failed to send voice"));
+            } else {
+                tracing::warn!(url = %url, "audio url failed to parse");
             }
             Ok(())
         }

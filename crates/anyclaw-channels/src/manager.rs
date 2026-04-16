@@ -8,7 +8,7 @@ use anyclaw_core::{
     ManagerHandle, SessionKey, SlotLifecycle, constants,
 };
 use anyclaw_sdk_types::acp::{ContentPart, StopReason};
-use anyclaw_sdk_types::{ChannelAckConfig, ChannelEvent, PermissionOption};
+use anyclaw_sdk_types::{ChannelAckConfig, ChannelEvent, MessageMetadata, PermissionOption};
 use futures::StreamExt;
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::StreamMap;
@@ -668,16 +668,13 @@ impl ChannelsManager {
             return None;
         }
 
-        let content = send_msg
-            .content
-            .iter()
-            .find_map(|p| match p {
-                ContentPart::Text { text } => Some(text.clone()),
-                _ => None,
-            })
-            .unwrap_or_default();
-        self.enqueue_to_agent(&session_key, &content, &agent_name)
-            .await;
+        self.enqueue_to_agent(
+            &session_key,
+            send_msg.content,
+            send_msg.metadata,
+            &agent_name,
+        )
+        .await;
         None
     }
 
@@ -713,7 +710,8 @@ impl ChannelsManager {
     async fn enqueue_to_agent(
         &mut self,
         session_key: &SessionKey,
-        message: &str,
+        content: Vec<ContentPart>,
+        metadata: Option<MessageMetadata>,
         agent_name: &str,
     ) {
         let agents_handle = match &self.agents_handle {
@@ -729,7 +727,8 @@ impl ChannelsManager {
             .send(AgentsCommand::EnqueueMessage {
                 agent_name: agent_name.to_string(),
                 session_key: session_key.clone(),
-                message: message.to_string(),
+                content,
+                metadata,
                 reply: reply_tx,
             })
             .await

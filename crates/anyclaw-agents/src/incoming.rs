@@ -359,15 +359,16 @@ impl AgentsManager {
         }
 
         // Drain queued messages and dispatch next batch
-        if let Some(next_msg) = self.queue.mark_idle(&completion.session_key) {
+        if let Some((mut merged_content, mut merged_meta)) =
+            self.queue.mark_idle(&completion.session_key)
+        {
             let remaining = self.queue.drain_queued(&completion.session_key);
-            let merged = if remaining.is_empty() {
-                next_msg
-            } else {
-                let mut parts = vec![next_msg];
-                parts.extend(remaining);
-                parts.join("\n")
-            };
+            for (extra_content, extra_meta) in remaining {
+                merged_content.extend(extra_content);
+                if extra_meta.is_some() {
+                    merged_meta = extra_meta;
+                }
+            }
 
             let agent_name = self
                 .slots
@@ -385,7 +386,12 @@ impl AgentsManager {
                         .await;
                 }
                 if let Err(e) = self
-                    .prompt_session(&agent_name, &completion.session_key, &merged)
+                    .prompt_session(
+                        &agent_name,
+                        &completion.session_key,
+                        &merged_content,
+                        merged_meta.as_ref(),
+                    )
                     .await
                 {
                     tracing::warn!(
