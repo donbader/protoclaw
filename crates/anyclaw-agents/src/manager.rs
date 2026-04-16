@@ -1997,11 +1997,8 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn when_stale_sessions_populated_from_store_then_slot_stale_map_contains_them() {
-        use anyclaw_core::{
-            DynSessionStore, NoopSessionStore, PersistedSession, SessionStoreError,
-        };
+        use anyclaw_core::{PersistedSession, SessionStoreError};
         use std::future::Future;
-        use std::pin::Pin;
 
         struct StubStore {
             sessions: Vec<PersistedSession>,

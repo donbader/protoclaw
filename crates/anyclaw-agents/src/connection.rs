@@ -248,7 +248,7 @@ impl AgentConnection {
     }
 
     #[cfg(test)]
-    pub fn from_parts(
+    pub(crate) fn from_parts(
         backend: Box<dyn ProcessBackend>,
         stdin: Box<dyn tokio::io::AsyncWrite + Unpin + Send>,
         stdout: Box<dyn tokio::io::AsyncRead + Unpin + Send>,

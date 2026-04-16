@@ -978,7 +978,6 @@ pub async fn deliver_to_chat(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rstest::rstest;
     use std::sync::Arc;
 
     #[test]

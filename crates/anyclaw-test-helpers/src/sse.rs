@@ -23,6 +23,7 @@ pub struct SseCollector {
 
 impl SseCollector {
     #[cfg(test)]
+    /// Create a collector from a byte stream (test-only).
     pub fn from_stream(
         stream: impl futures_core::Stream<Item = reqwest::Result<bytes::Bytes>> + Unpin + Send + 'static,
     ) -> Self {
