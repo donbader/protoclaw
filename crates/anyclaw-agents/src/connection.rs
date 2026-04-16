@@ -96,6 +96,11 @@ fn spawn_writer_task(
         use futures::SinkExt;
         let mut framed = FramedWrite::new(stdin, NdJsonCodec);
         while let Some(msg) = stdin_rx.recv().await {
+            let method = match &msg {
+                JsonRpcMessage::Request(r) => r.method.as_str(),
+                JsonRpcMessage::Response(_) => "_response",
+            };
+            tracing::debug!(%method, "writing to agent stdin");
             if framed.send(msg).await.is_err() {
                 break;
             }
