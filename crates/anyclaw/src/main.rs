@@ -88,8 +88,9 @@ async fn main() -> Result<()> {
                         );
                         std::process::exit(1);
                     }
-                    let config = anyclaw_config::AnyclawConfig::load(Some(&cli.config))
+                    let mut config = anyclaw_config::AnyclawConfig::load(Some(&cli.config))
                         .map_err(|e| anyhow::anyhow!("failed to load config: {e}"))?;
+                    anyclaw_config::resolve_all_binary_paths(&mut config);
                     let result = anyclaw_config::validate_config(&config);
                     for error in &result.errors {
                         eprintln!("  \u{2717} {error}");
