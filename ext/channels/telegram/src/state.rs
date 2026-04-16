@@ -33,8 +33,8 @@ impl SharedState {
             ack_config: RwLock::new(None),
             turns: RwLock::new(HashMap::new()),
             thought_emoji: RwLock::new("🧠".into()),
-            response_edit_cooldown_ms: RwLock::new(1000),
-            thought_debounce_ms: RwLock::new(400),
+            response_edit_cooldown_ms: RwLock::new(500),
+            thought_debounce_ms: RwLock::new(200),
             finalization_delay_ms: RwLock::new(200),
         }
     }

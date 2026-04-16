@@ -9,7 +9,10 @@ use anyclaw_core::{
 };
 use anyclaw_sdk_types::acp::StopReason;
 use anyclaw_sdk_types::{ChannelAckConfig, ChannelEvent, PermissionOption};
+use futures::StreamExt;
 use tokio::sync::{mpsc, oneshot};
+use tokio_stream::StreamMap;
+use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
 
 use crate::connection::{ChannelConnection, IncomingChannelMessage};
@@ -1021,34 +1024,6 @@ impl ChannelsManager {
         }
     }
 
-    // LIMITATION: poll_channels() workaround
-    // Uses 1ms timeout polling per connection because tokio::select! cannot dynamically
-    // branch over a variable number of futures. This adds up to 50ms latency (poll interval)
-    // and CPU overhead from polling. Scales poorly with many channels. Consider replacing
-    // with FuturesUnordered or tokio::select! with StreamMap for better scalability.
-    // See also: CONCERNS.md §Architecture Concerns
-    /// Poll all active channel connections for incoming messages.
-    /// Drains all ready messages across all connections in one pass.
-    async fn poll_channels(&mut self) -> Vec<(usize, Option<IncomingChannelMessage>)> {
-        let mut results = Vec::new();
-        for (i, slot) in self.slots.iter_mut().enumerate() {
-            if slot.lifecycle.disabled {
-                continue;
-            }
-            if let Some(conn) = &mut slot.connection {
-                while let Ok(msg) = tokio::time::timeout(
-                    Duration::from_millis(constants::POLL_TIMEOUT_MS),
-                    conn.recv_incoming(),
-                )
-                .await
-                {
-                    results.push((i, msg));
-                }
-            }
-        }
-        results
-    }
-
     fn build_slot_lifecycle(
         &self,
         config: &ChannelConfig,
@@ -1125,6 +1100,15 @@ impl ChannelsManager {
     }
 }
 
+type ChannelStream = futures::stream::BoxStream<'static, Option<IncomingChannelMessage>>;
+
+fn channel_rx_to_stream(rx: mpsc::Receiver<IncomingChannelMessage>) -> ChannelStream {
+    ReceiverStream::new(rx)
+        .map(Some)
+        .chain(futures::stream::once(async { None }))
+        .boxed()
+}
+
 impl Manager for ChannelsManager {
     type Command = ChannelsCommand;
 
@@ -1155,7 +1139,6 @@ impl Manager for ChannelsManager {
     }
 
     async fn run(mut self, cancel: CancellationToken) -> Result<(), ManagerError> {
-        // LIMITATION: Do not call run() twice
         // cmd_rx is consumed via .take() on first run(). A second call would panic.
         // The Manager trait consumes self, enforcing this at the type level, but the
         // Option<Receiver> field adds a runtime guard as defense in depth.
@@ -1165,8 +1148,13 @@ impl Manager for ChannelsManager {
 
         tracing::info!(manager = self.name(), "manager running");
 
-        let mut poll_interval =
-            tokio::time::interval(Duration::from_millis(constants::POLL_INTERVAL_MS));
+        let mut channel_streams: StreamMap<usize, ChannelStream> = StreamMap::new();
+        for (idx, slot) in self.slots.iter_mut().enumerate() {
+            if let Some(conn) = &mut slot.connection {
+                let rx = conn.take_incoming_rx();
+                channel_streams.insert(idx, channel_rx_to_stream(rx));
+            }
+        }
 
         loop {
             let channel_event_fut = async {
@@ -1190,31 +1178,22 @@ impl Manager for ChannelsManager {
                 Some(event) = channel_event_fut => {
                     self.handle_channel_event(event).await;
                 }
-                _ = poll_interval.tick() => {
-                    let messages = self.poll_channels().await;
-                    if messages.is_empty() {
-                        continue;
-                    }
-
-                    let mut sessions_to_flush: HashSet<SessionKey> = HashSet::new();
-
-                    for (idx, msg) in messages {
-                        match msg {
-                            Some(incoming) => {
-                                if let Some(session_key) = self.collect_channel_message(idx, incoming).await {
-                                    sessions_to_flush.insert(session_key);
-                                }
-                            }
-                            None => {
-                                let channel_name = self.slots[idx].name.clone();
-                                tracing::warn!(channel = %channel_name, "channel subprocess exited");
-                                self.handle_channel_crash(idx).await;
+                Some((idx, msg)) = channel_streams.next() => {
+                    match msg {
+                        Some(incoming) => {
+                            if let Some(session_key) = self.collect_channel_message(idx, incoming).await {
+                                self.flush_and_dispatch(&session_key).await;
                             }
                         }
-                    }
-
-                    for session_key in sessions_to_flush {
-                        self.flush_and_dispatch(&session_key).await;
+                        None => {
+                            let channel_name = self.slots[idx].name.clone();
+                            tracing::warn!(channel = %channel_name, "channel subprocess exited");
+                            self.handle_channel_crash(idx).await;
+                            if let Some(conn) = &mut self.slots[idx].connection {
+                                let rx = conn.take_incoming_rx();
+                                channel_streams.insert(idx, channel_rx_to_stream(rx));
+                            }
+                        }
                     }
                 }
             }

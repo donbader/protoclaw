@@ -1,6 +1,6 @@
 thought_emoji: "🧠"
-response_edit_cooldown_ms: 1000
-thought_debounce_ms: 400
+response_edit_cooldown_ms: 500
+thought_debounce_ms: 200
 finalization_delay_ms: 200
 ack:
   reaction: false

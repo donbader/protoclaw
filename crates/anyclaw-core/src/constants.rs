@@ -5,10 +5,6 @@
 
 // === Internal Guards (NOT user-configurable) ===
 
-/// Poll timeout per connection in the agents/channels poll loop (milliseconds).
-pub const POLL_TIMEOUT_MS: u64 = 1;
-/// Sleep interval between poll sweeps to prevent busy-looping (milliseconds).
-pub const POLL_INTERVAL_MS: u64 = 50;
 /// Capacity of manager command channels (mpsc).
 pub const CMD_CHANNEL_CAPACITY: usize = 16;
 /// Capacity of the channel events pipe (supervisor → channels manager).
@@ -32,16 +28,6 @@ pub const DEFAULT_CRASH_WINDOW_SECS: u64 = 60;
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn when_checking_poll_interval_then_matches_expected_value() {
-        assert_eq!(POLL_INTERVAL_MS, 50);
-    }
-
-    #[test]
-    fn when_checking_poll_timeout_then_matches_expected_value() {
-        assert_eq!(POLL_TIMEOUT_MS, 1);
-    }
 
     #[test]
     fn when_checking_cmd_channel_capacity_then_matches_expected_value() {

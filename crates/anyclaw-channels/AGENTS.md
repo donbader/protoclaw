@@ -6,7 +6,7 @@ Manages channel subprocesses with per-channel crash isolation and session-keyed 
 
 | File | Purpose |
 |------|---------|
-| `manager.rs` | `ChannelsManager` — routing table, crash isolation, poll loop |
+| `manager.rs` | `ChannelsManager` — routing table, crash isolation, event-driven StreamMap loop |
 | `connection.rs` | `ChannelConnection` — subprocess spawn, JSON-RPC framing, port discovery |
 | `session_queue.rs` | `SessionQueue` — per-session FIFO message queue |
 | `debug_http.rs` | `DebugHttpChannel` — in-process debug channel (not subprocess) |
@@ -53,9 +53,9 @@ The per-channel `exit_timeout_secs` in `ChannelConfig` overrides the manager-lev
 
 Channel subprocesses emit `PORT:{n}` to stderr when they bind a port. `ChannelConnection` watches stderr and exposes a `watch::Receiver<u16>` via `port_rx()`. Supervisor forwards this for debug-http.
 
-## poll_channels() Pattern
+## Inbound Message Routing (StreamMap)
 
-The `poll_channels()` method drains ALL ready messages across all connections in one pass using 1ms timeout polling per connection — it's a workaround because `tokio::select!` can't dynamically branch over a variable number of futures. Returns `Vec<(usize, Option<IncomingChannelMessage>)>`. The run loop collects sessions needing flush into a `HashSet<SessionKey>`, then flushes all after processing all polled messages.
+Channel incoming messages are event-driven via `StreamMap<usize, ChannelStream>` — no polling. Each active channel connection contributes a stream built from its `mpsc::Receiver<IncomingChannelMessage>` wrapped to yield `Some(msg)` for each message and `None` on stream end (sender dropped = subprocess exited). When a channel subprocess exits, its stream ends and `handle_channel_crash()` is called inline in the `run()` select loop. On successful respawn, the new connection's stream is re-inserted into the map under the same slot index.
 
 ## Ack Flow
 
@@ -75,9 +75,7 @@ Per-session FIFO queue (`SessionQueue`). Two-phase design ensures ALL buffered m
 
 **Idle session (two-phase collect+flush):**
 1. Messages arrive, session idle → `push_only()` queues without dispatching, returns session key for flush
-2. After all polled messages processed → `flush_pending()` drains queue, joins with `\n`, marks active → dispatched as single merged prompt, ack sent
-
-**Busy session (queue+drain on completion):**
+2. After all polled messages processed → `flush_pending()` drains queue, joins with `\n`, marks active → dispatched as single merged prompt, ack sent**Busy session (queue+drain on completion):**
 1. Message arrives, session busy → `push()` returns `Enqueued` — queued (no ack)
 2. Agent finishes (Result event) → `mark_idle()` pops first queued + `drain_queued()` grabs rest → joined with `\n` → dispatched as single merged prompt, ack sent
 3. No queued messages on result → session returns to idle
@@ -87,7 +85,6 @@ Key type: `SessionKey` (`"{channel}:{kind}:{peer_id}"`) is the queue key.
 
 ## Anti-Patterns (this crate)
 
-- Do not remove the 50ms sleep in `poll_channels()` else branch
 - Bad channel binaries don't block startup — they log errors and continue with `connection: None`
 - `cmd_rx.take().expect("cmd_rx must exist")` — same consumed-once pattern as agents
 - `start()` skips channels with `enabled = false` — no slot is created for disabled channels

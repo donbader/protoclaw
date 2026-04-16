@@ -36,7 +36,7 @@ pub struct ChannelConnection {
     channel_id: ChannelId,
     child: Child,
     stdin_tx: mpsc::Sender<JsonRpcRequest>,
-    incoming_rx: mpsc::Receiver<IncomingChannelMessage>,
+    incoming_rx: Option<mpsc::Receiver<IncomingChannelMessage>>,
     pending_requests: Arc<DashMap<u64, oneshot::Sender<JsonRpcResponse>>>,
     next_id: Arc<AtomicU64>,
     reader_handle: JoinHandle<()>,
@@ -179,7 +179,7 @@ impl ChannelConnection {
             channel_id,
             child,
             stdin_tx,
-            incoming_rx,
+            incoming_rx: Some(incoming_rx),
             pending_requests,
             next_id,
             reader_handle,
@@ -234,7 +234,16 @@ impl ChannelConnection {
     /// Receive the next incoming message from the channel subprocess.
     /// Returns None on EOF (crash signal).
     pub async fn recv_incoming(&mut self) -> Option<IncomingChannelMessage> {
-        self.incoming_rx.recv().await
+        match &mut self.incoming_rx {
+            Some(rx) => rx.recv().await,
+            None => std::future::pending().await,
+        }
+    }
+
+    /// Take ownership of the incoming message receiver for use in a StreamMap.
+    /// After calling this, `recv_incoming()` will pend forever.
+    pub fn take_incoming_rx(&mut self) -> mpsc::Receiver<IncomingChannelMessage> {
+        self.incoming_rx.take().expect("incoming_rx already taken")
     }
 
     /// Check if the channel subprocess is still alive.
