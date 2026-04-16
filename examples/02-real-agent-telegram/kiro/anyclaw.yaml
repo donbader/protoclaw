@@ -39,7 +39,7 @@ channels_manager:
         port: "8080"
     telegram:
       binary: "@built-in/channels/telegram"
-      enabled: false
+      enabled: !env "TELEGRAM_ENABLED:false"
       agent: "kiro"
       options:
         bot_token: !env "TELEGRAM_BOT_TOKEN:"

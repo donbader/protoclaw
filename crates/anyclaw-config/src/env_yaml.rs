@@ -50,7 +50,7 @@ pub(crate) fn resolve_env_tags(value: &mut serde_yaml::Value) -> Result<(), Stri
                 }
             };
             let resolved = resolve_env_spec(&spec)?;
-            *value = serde_yaml::Value::String(resolved);
+            *value = coerce_value(resolved);
         }
         serde_yaml::Value::Mapping(map) => {
             for (_, v) in map.iter_mut() {
@@ -74,6 +74,23 @@ fn resolve_env_spec(spec: &str) -> Result<String, String> {
         std::env::var(spec).map_err(|_| {
             format!("env var substitution failed: variable '{spec}' is not set and has no default")
         })
+    }
+}
+
+fn coerce_value(s: String) -> serde_yaml::Value {
+    match s.as_str() {
+        "true" => serde_yaml::Value::Bool(true),
+        "false" => serde_yaml::Value::Bool(false),
+        "" => serde_yaml::Value::String(s),
+        _ => {
+            if let Ok(n) = s.parse::<i64>() {
+                serde_yaml::Value::Number(n.into())
+            } else if let Ok(f) = s.parse::<f64>() {
+                serde_yaml::Value::Number(serde_yaml::Number::from(f))
+            } else {
+                serde_yaml::Value::String(s)
+            }
+        }
     }
 }
 
@@ -174,6 +191,56 @@ mod tests {
             let value: serde_json::Value =
                 Figment::new().merge(EnvYaml::file("test.yaml")).extract()?;
             assert_eq!(value["channel"]["token"], "");
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn when_env_resolves_to_false_then_coerced_to_bool() {
+        figment::Jail::expect_with(|jail| {
+            jail.set_env("MY_ENABLED", "false");
+            jail.create_file("test.yaml", "channel:\n  enabled: !env MY_ENABLED\n")?;
+            let value: serde_json::Value =
+                Figment::new().merge(EnvYaml::file("test.yaml")).extract()?;
+            assert_eq!(value["channel"]["enabled"], false);
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn when_env_resolves_to_true_then_coerced_to_bool() {
+        figment::Jail::expect_with(|jail| {
+            jail.set_env("MY_FLAG", "true");
+            jail.create_file("test.yaml", "channel:\n  enabled: !env MY_FLAG\n")?;
+            let value: serde_json::Value =
+                Figment::new().merge(EnvYaml::file("test.yaml")).extract()?;
+            assert_eq!(value["channel"]["enabled"], true);
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn when_env_resolves_to_number_then_coerced_to_number() {
+        figment::Jail::expect_with(|jail| {
+            jail.set_env("MY_PORT", "8080");
+            jail.create_file("test.yaml", "channel:\n  port: !env MY_PORT\n")?;
+            let value: serde_json::Value =
+                Figment::new().merge(EnvYaml::file("test.yaml")).extract()?;
+            assert_eq!(value["channel"]["port"], 8080);
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn when_default_is_false_then_coerced_to_bool() {
+        figment::Jail::expect_with(|jail| {
+            jail.create_file(
+                "test.yaml",
+                "channel:\n  enabled: !env \"UNSET_ENABLED:false\"\n",
+            )?;
+            let value: serde_json::Value =
+                Figment::new().merge(EnvYaml::file("test.yaml")).extract()?;
+            assert_eq!(value["channel"]["enabled"], false);
             Ok(())
         });
     }
