@@ -252,6 +252,7 @@ fn validate_tool_binaries(config: &AnyclawConfig, errors: &mut Vec<ValidationErr
 /// Validate a YAML config string against the JSON Schema generated from the Rust types.
 ///
 /// Returns a list of schema violation messages. An empty list means the YAML is schema-valid.
+#[allow(clippy::disallowed_types)] // Schema validation operates on untyped YAML→JSON
 pub fn validate_schema(yaml_content: &str) -> Vec<String> {
     let yaml_value: serde_json::Value = match serde_yaml::from_str(yaml_content) {
         Ok(v) => v,
@@ -279,20 +280,20 @@ pub fn validate_schema(yaml_content: &str) -> Vec<String> {
 ///
 /// Only checks the top level — nested unknown keys are ignored.
 /// Returns an empty vec if the YAML is not a mapping or the schema has no properties.
+#[allow(clippy::disallowed_types)] // Compares raw YAML keys against schema properties
 pub fn check_unknown_keys(yaml_content: &str) -> Vec<String> {
     let yaml_value: serde_json::Value = match serde_yaml::from_str(yaml_content) {
         Ok(v) => v,
         Err(_) => return vec![],
     };
-    let yaml_obj = match yaml_value.as_object() {
-        Some(obj) => obj,
-        None => return vec![],
+    let Some(yaml_obj) = yaml_value.as_object() else {
+        return vec![];
     };
     let schema = crate::generate_schema();
     let known_keys: std::collections::HashSet<&str> = schema
         .get("properties")
         .and_then(|p| p.as_object())
-        .map(|obj| obj.keys().map(|k| k.as_str()).collect())
+        .map(|obj| obj.keys().map(String::as_str).collect())
         .unwrap_or_default();
 
     yaml_obj

@@ -35,6 +35,7 @@ use figment::{Figment, providers::Format};
 ///
 /// Uses schemars to derive the schema from Rust types. The output follows
 /// JSON Schema Draft 2020-12.
+#[allow(clippy::disallowed_types)] // Schema is inherently untyped JSON
 pub fn generate_schema() -> serde_json::Value {
     let schema = schemars::schema_for!(AnyclawConfig);
     serde_json::to_value(schema).expect("schema serialization cannot fail")
