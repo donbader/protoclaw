@@ -55,15 +55,15 @@ Two forms:
 - `!env VAR_NAME` — hard error if env var is missing
 - `!env "VAR_NAME:default"` — falls back to default if unset (colon separator)
 
-Typed fields (booleans, numbers) should be YAML literals, not `!env` tags. Override typed fields via the Figment Env layer: `ANYCLAW_SUPERVISOR__SHUTDOWN_TIMEOUT_SECS=60`.
+Typed fields (booleans, numbers) should be YAML literals, not `!env` tags.
 
 ```yaml
 # Secrets use !env tags
 bot_token: !env TELEGRAM_BOT_TOKEN           # required, hard error if missing
 api_key: !env "ANTHROPIC_API_KEY:"           # optional, empty default
 
-# Typed fields are literals, overridden via env vars
-enabled: false                                # override: ANYCLAW_CHANNELS_MANAGER__CHANNELS__TELEGRAM__ENABLED=true
+# Typed fields are literals
+enabled: false
 ```
 
 ## Loading Order
@@ -71,11 +71,10 @@ enabled: false                                # override: ANYCLAW_CHANNELS_MANAG
 ```rust
 Figment::from(Yaml::string(DEFAULTS_YAML))    // 1. Embedded defaults
     .merge(EnvYaml::file(path))                // 2. User YAML file (with !env tag resolution)
-    .merge(Env::prefixed("ANYCLAW_").split("__"))  // 3. Environment variables
     .extract()
 ```
 
-Env var override format: `ANYCLAW_SUPERVISOR__SHUTDOWN_TIMEOUT_SECS=60` (double underscore = nesting).
+The YAML file is the single source of truth. No env var override layer — all environment values flow through `!env` tags in the YAML.
 
 ## Binary Resolution
 

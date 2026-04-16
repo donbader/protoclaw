@@ -90,7 +90,7 @@ Example/ext binaries:
 - **unwrap() rule**: `.expect("reason")` for true invariants. Bare `.unwrap()` only in tests. Use `?` for fallible paths.
 - **Module structure**: Flat `lib.rs` with `pub mod` + `pub use` re-exports. No `mod.rs` files.
 - **Manager communication**: `tokio::sync::mpsc` channels via `ManagerHandle<C>`. No shared mutable state between managers.
-- **Config layering**: Defaults → YAML file → env vars (`ANYCLAW_` prefix, `__` separator). `@built-in/{agents,channels,tools}/<name>` binary prefix resolved against `extensions_dir`.
+- **Config layering**: Defaults → YAML file (with `!env` tag resolution). `@built-in/{agents,channels,tools}/<name>` binary prefix resolved against `extensions_dir`. No env var override layer — YAML is the single source of truth.
 - **Tracing**: Use `tracing` spans/events, not `println!` or `log` crate. Exception: CLI entry points may use `println!`/`eprintln!` before tracing is initialized.
 - **Test-driven development**: Write a failing test before implementation. Red → green → refactor. No code lands without a test that exercises it.
 - **Test framework**: `rstest = "0.23"` with `#[rstest]` for all tests. BDD naming: `when_action_then_result` or `given_precondition_when_action_then_result`. Fixtures: `fn given_*()`. Parameterised: `#[case::label_name]`. Async: `#[rstest] #[tokio::test]`.

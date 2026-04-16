@@ -77,6 +77,14 @@ impl Channel for MyChannel {
         }
     }
 
+    fn defaults(&self) -> Option<std::collections::HashMap<String, serde_json::Value>> {
+        const DEFAULTS_YAML: &str = include_str!("../defaults.yaml");
+        let value: serde_json::Value = serde_yaml::from_str(DEFAULTS_YAML)
+            .expect("embedded defaults.yaml must be valid YAML");
+        value.as_object()
+            .map(|obj| obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
+    }
+
     async fn on_initialize(&mut self, params: ChannelInitializeParams) -> Result<(), ChannelSdkError> {
         // Extract config from params.options (e.g., API keys, host, port)
         Ok(())
@@ -119,6 +127,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 | Method | Required | Purpose |
 |--------|----------|---------|
 | `capabilities()` | yes | Declare streaming + rich_text support |
+| `defaults()` | default None | Return default option values (embedded from `defaults.yaml` via `include_str!`) |
 | `on_initialize(params)` | default no-op | Extract config from `params.options` |
 | `on_ready(outbound, permission_tx)` | yes | Store senders, start platform listener |
 | `deliver_message(msg)` | yes | Render agent updates to your platform |

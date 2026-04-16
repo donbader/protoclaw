@@ -48,6 +48,10 @@ The agent must respond with:
       "fork": false,
       "list": false
     }
+  },
+  "defaults": {
+    "thinking": true,
+    "echo_prefix": "Echo"
   }
 }}
 ```
@@ -55,6 +59,7 @@ The agent must respond with:
 - `protocolVersion` must be `1` or `2`
 - `options` contains arbitrary key-value pairs from the agent's config in `anyclaw.yaml`
 - `capabilities.sessionCapabilities` declares what recovery methods the agent supports
+- `defaults` (optional) — default option values the agent ships with. The manager merges these into the agent's `options` (user options win). Embed via `include_str!("../defaults.yaml")` and parse at init time.
 
 ### Session Lifecycle
 

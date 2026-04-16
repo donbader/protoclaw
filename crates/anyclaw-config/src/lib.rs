@@ -2,8 +2,7 @@
 
 //! Figment-based layered configuration for anyclaw.
 //!
-//! Loading order: embedded defaults → user YAML file (with `!env` tag resolution)
-//! → environment variables (`ANYCLAW_` prefix, `__` separator).
+//! Loading order: embedded defaults → user YAML file (with `!env` tag resolution).
 
 /// YAML provider with `!env` environment variable tag resolution.
 pub mod env_yaml;
@@ -39,7 +38,7 @@ pub fn generate_schema() -> serde_json::Value {
 }
 
 impl AnyclawConfig {
-    /// Load configuration from layered providers: defaults → YAML file → env vars.
+    /// Load configuration from layered providers: defaults → YAML file.
     ///
     /// Returns [`ConfigError::LoadFailed`] if the config file does not exist or
     /// cannot be parsed.
