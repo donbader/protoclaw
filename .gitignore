@@ -6,8 +6,9 @@ libnull.rlib
 coverage/
 *.profraw
 
-# GSD planning (local-only)
-# .planning/
+# Internal planning artifacts (local-only)
+.planning/
+.sisyphus/
 docs/superpowers/
 
 # IDE / OS
