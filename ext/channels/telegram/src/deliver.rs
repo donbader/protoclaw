@@ -14,6 +14,7 @@ use crate::turn::{ChatTurn, ToolCallStatus, ToolCallTrack, TurnPhase};
 
 const MAX_RETRY_ATTEMPTS: u32 = 3;
 const RETRY_BASE_DELAY_MS: u64 = 500;
+const TELEGRAM_MAX_MESSAGE_LEN: usize = 4096;
 
 pub(crate) async fn retry_telegram_op<F, Fut, T>(
     op_name: &str,
@@ -63,6 +64,48 @@ where
     Err(last_err.expect("loop ran at least once"))
 }
 
+async fn send_or_edit_final(bot: &Bot, chat_id: i64, text: &str, msg_id: i32, label: &str) {
+    let formatted = format_telegram_html(text);
+    let chunks = split_message(&formatted, TELEGRAM_MAX_MESSAGE_LEN);
+    let chunk0 = chunks[0].clone();
+    if msg_id != 0 {
+        let _ = retry_telegram_op(label, chat_id, || {
+            let chunk0 = chunk0.clone();
+            async move {
+                bot.edit_message_text(ChatId(chat_id), MessageId(msg_id), &chunk0)
+                    .parse_mode(ParseMode::Html)
+                    .await
+            }
+        })
+        .await;
+    } else {
+        let _ = retry_telegram_op(label, chat_id, || {
+            let chunk0 = chunk0.clone();
+            async move {
+                bot.send_message(ChatId(chat_id), &chunk0)
+                    .parse_mode(ParseMode::Html)
+                    .await
+            }
+        })
+        .await;
+    }
+    for chunk in chunks.iter().skip(1) {
+        let chunk = chunk.clone();
+        if let Err(e) = retry_telegram_op(label, chat_id, || {
+            let chunk = chunk.clone();
+            async move {
+                bot.send_message(ChatId(chat_id), &chunk)
+                    .parse_mode(ParseMode::Html)
+                    .await
+            }
+        })
+        .await
+        {
+            tracing::warn!(%e, chat_id, label, "failed to send overflow chunk");
+        }
+    }
+}
+
 struct PendingFlush {
     response: Option<(String, i32)>,
     thought_collapse: Option<(i32, f32)>,
@@ -88,7 +131,7 @@ async fn send_flush(bot: &Bot, state: &Arc<SharedState>, chat_id: i64, flush: &P
                 "flush: sending final edit before cleanup"
             );
             let formatted = format_telegram_html(text);
-            let chunks = split_message(&formatted, 4096);
+            let chunks = split_message(&formatted, TELEGRAM_MAX_MESSAGE_LEN);
             let chunk0 = chunks[0].clone();
             let _ = retry_telegram_op("flush_final_edit", chat_id, || {
                 let chunk0 = chunk0.clone();
@@ -119,7 +162,7 @@ async fn send_flush(bot: &Bot, state: &Arc<SharedState>, chat_id: i64, flush: &P
                 "flush: sending debounced response as new message"
             );
             let formatted = format_telegram_html(text);
-            let chunks = split_message(&formatted, 4096);
+            let chunks = split_message(&formatted, TELEGRAM_MAX_MESSAGE_LEN);
             for chunk in &chunks {
                 let chunk = chunk.clone();
                 let _ = retry_telegram_op("flush_debounced_response", chat_id, || {
@@ -472,7 +515,7 @@ pub async fn deliver_to_chat(
             if is_finalizing {
                 if existing_response_msg_id != 0 {
                     let formatted = format_telegram_html(&accumulated);
-                    let chunks = split_message(&formatted, 4096);
+                    let chunks = split_message(&formatted, TELEGRAM_MAX_MESSAGE_LEN);
                     let chunk0 = chunks[0].clone();
                     let _ = retry_telegram_op("is_finalizing_edit_response", chat_id, || {
                         let chunk0 = chunk0.clone();
@@ -515,49 +558,8 @@ pub async fn deliver_to_chat(
                     if let Some((text, msg_id)) = final_data
                         && !text.is_empty()
                     {
-                        let formatted = format_telegram_html(&text);
-                        let final_chunks = split_message(&formatted, 4096);
-                        let chunk0 = final_chunks[0].clone();
-                        if msg_id != 0 {
-                            if let Err(e) = bot_clone
-                                .edit_message_text(ChatId(chat_id), MessageId(msg_id), &chunk0)
-                                .parse_mode(ParseMode::Html)
-                                .await
-                            {
-                                tracing::warn!(%e, chat_id, "failed to finalize message edit (late)");
-                            }
-                        } else {
-                            let _ = retry_telegram_op("finalize_send_new_late", chat_id, || {
-                                let chunk0 = chunk0.clone();
-                                let bot_clone = bot_clone.clone();
-                                async move {
-                                    bot_clone
-                                        .send_message(ChatId(chat_id), &chunk0)
-                                        .parse_mode(ParseMode::Html)
-                                        .await
-                                }
-                            })
+                        send_or_edit_final(&bot_clone, chat_id, &text, msg_id, "finalize_late")
                             .await;
-                        }
-                        for chunk in final_chunks.iter().skip(1) {
-                            let chunk = chunk.clone();
-                            let bot_clone2 = bot_clone.clone();
-                            if let Err(e) =
-                                retry_telegram_op("finalizing_late_overflow", chat_id, || {
-                                    let chunk = chunk.clone();
-                                    let bot_clone2 = bot_clone2.clone();
-                                    async move {
-                                        bot_clone2
-                                            .send_message(ChatId(chat_id), &chunk)
-                                            .parse_mode(ParseMode::Html)
-                                            .await
-                                    }
-                                })
-                                .await
-                            {
-                                tracing::warn!(%e, chat_id, "failed to send overflow chunk (late)");
-                            }
-                        }
                     }
                     state_clone.turns.write().await.remove(&chat_id);
                 });
@@ -581,7 +583,7 @@ pub async fn deliver_to_chat(
                 };
                 if can_edit {
                     let formatted = close_open_tags(&format_telegram_html(&accumulated));
-                    let chunks = split_message(&formatted, 4096);
+                    let chunks = split_message(&formatted, TELEGRAM_MAX_MESSAGE_LEN);
                     let chunk0 = chunks[0].clone();
                     let _ = retry_telegram_op("edit_response_chunk", chat_id, || {
                         let chunk0 = chunk0.clone();
@@ -636,7 +638,7 @@ pub async fn deliver_to_chat(
                         return;
                     }
                     let formatted = close_open_tags(&format_telegram_html(&accumulated));
-                    let chunks = split_message(&formatted, 4096);
+                    let chunks = split_message(&formatted, TELEGRAM_MAX_MESSAGE_LEN);
                     let chunk0 = chunks[0].clone();
                     if let Ok(sent) = retry_telegram_op("debounce_send_response", chat_id, || {
                         let chunk0 = chunk0.clone();
@@ -741,6 +743,14 @@ pub async fn deliver_to_chat(
                     turn.message_id = mid;
                 }
                 turn.last_result_was_error = is_error;
+                // Cancel pending response debounce — the finalization timer
+                // will handle sending. Without this, both timers fire and
+                // the user sees a duplicate message.
+                if let Some(track) = turn.response.as_mut()
+                    && let Some(h) = track.debounce_handle.take()
+                {
+                    h.abort();
+                }
                 if let Some(track) = turn.thought.as_mut() {
                     track.suppressed = true;
                 } else {
@@ -775,57 +785,8 @@ pub async fn deliver_to_chat(
                         "result finalization timer: sending final edit"
                     );
                     if !text.is_empty() {
-                        let formatted = format_telegram_html(&text);
-                        let final_chunks = split_message(&formatted, 4096);
-                        let chunk0 = final_chunks[0].clone();
-                        if msg_id != 0 {
-                            let _ = retry_telegram_op("finalize_message_edit", chat_id, || {
-                                let chunk0 = chunk0.clone();
-                                let bot_clone = bot_clone.clone();
-                                async move {
-                                    bot_clone
-                                        .edit_message_text(
-                                            ChatId(chat_id),
-                                            MessageId(msg_id),
-                                            &chunk0,
-                                        )
-                                        .parse_mode(ParseMode::Html)
-                                        .await
-                                }
-                            })
+                        send_or_edit_final(&bot_clone, chat_id, &text, msg_id, "finalize_result")
                             .await;
-                        } else {
-                            let _ = retry_telegram_op("finalize_send_new", chat_id, || {
-                                let chunk0 = chunk0.clone();
-                                let bot_clone = bot_clone.clone();
-                                async move {
-                                    bot_clone
-                                        .send_message(ChatId(chat_id), &chunk0)
-                                        .parse_mode(ParseMode::Html)
-                                        .await
-                                }
-                            })
-                            .await;
-                        }
-                        for chunk in final_chunks.iter().skip(1) {
-                            let chunk = chunk.clone();
-                            let bot_clone2 = bot_clone.clone();
-                            if let Err(e) =
-                                retry_telegram_op("result_overflow_chunk", chat_id, || {
-                                    let chunk = chunk.clone();
-                                    let bot_clone2 = bot_clone2.clone();
-                                    async move {
-                                        bot_clone2
-                                            .send_message(ChatId(chat_id), &chunk)
-                                            .parse_mode(ParseMode::Html)
-                                            .await
-                                    }
-                                })
-                                .await
-                            {
-                                tracing::warn!(%e, chat_id, "failed to send overflow chunk");
-                            }
-                        }
                     }
                 } else {
                     tracing::debug!(
