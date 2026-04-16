@@ -1,31 +1,5 @@
 {
   "$defs": {
-    "AckConfig": {
-      "description": "Message acknowledgement configuration for a channel.",
-      "properties": {
-        "reaction": {
-          "default": false,
-          "description": "Whether to add a reaction emoji when a message is received.",
-          "type": "boolean"
-        },
-        "reaction_emoji": {
-          "default": "👀",
-          "description": "Emoji used for the \"in progress\" reaction.",
-          "type": "string"
-        },
-        "reaction_lifecycle": {
-          "$ref": "#/$defs/ReactionLifecycle",
-          "default": "remove",
-          "description": "What to do with the reaction after the agent finishes responding."
-        },
-        "typing": {
-          "default": false,
-          "description": "Whether to send a typing indicator while the agent is processing.",
-          "type": "boolean"
-        }
-      },
-      "type": "object"
-    },
     "AgentConfig": {
       "description": "Per-agent configuration. Names come from the HashMap key in [`AgentsManagerConfig`].",
       "properties": {
@@ -143,16 +117,6 @@
     "ChannelConfig": {
       "description": "Per-channel configuration. Names come from the HashMap key in [`ChannelsManagerConfig`].",
       "properties": {
-        "ack": {
-          "$ref": "#/$defs/AckConfig",
-          "default": {
-            "reaction": false,
-            "reaction_emoji": "👀",
-            "reaction_lifecycle": "remove",
-            "typing": false
-          },
-          "description": "Message acknowledgement configuration (reactions, typing indicators)."
-        },
         "agent": {
           "default": "default",
           "description": "Which agent to route messages to (matches an agent config key).",
@@ -440,21 +404,6 @@
         "if_not_present"
       ],
       "type": "string"
-    },
-    "ReactionLifecycle": {
-      "description": "What happens to the reaction emoji after the agent finishes responding.\n\n- `remove`: the reaction is deleted once the response is sent\n- `replace_done`: the in-progress reaction is swapped for a \"done\" checkmark emoji",
-      "oneOf": [
-        {
-          "const": "remove",
-          "description": "Remove the reaction emoji after the agent finishes (default).",
-          "type": "string"
-        },
-        {
-          "const": "replace_done",
-          "description": "Replace the in-progress emoji with a \"done\" checkmark.",
-          "type": "string"
-        }
-      ]
     },
     "SessionStoreConfig": {
       "description": "Selects the session persistence backend.\n\nConfigured under `session_store.type` in `anyclaw.yaml`.",

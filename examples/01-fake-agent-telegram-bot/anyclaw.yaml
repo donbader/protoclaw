@@ -42,20 +42,20 @@ channels_manager:
       options:
         HOST: "0.0.0.0"
         PORT: "8080"
-      ack:
-        reaction: false
-        typing: false
+        ack:
+          reaction: false
+          typing: false
     telegram:
       binary: "@built-in/channels/telegram"
       enabled: "${TELEGRAM_ENABLED:false}"
       agent: "mock"
       options:
         TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:}"
-      ack:
-        reaction: true
-        reaction_emoji: "👀"
-        typing: true
-        reaction_lifecycle: "remove"
+        ack:
+          reaction: true
+          reaction_emoji: "👀"
+          typing: true
+          reaction_lifecycle: "remove"
 
 tools_manager:
   tools:

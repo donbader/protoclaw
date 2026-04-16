@@ -463,9 +463,6 @@ pub struct ChannelConfig {
     /// Which agent to route messages to (matches an agent config key).
     #[serde(default = "default_agent")]
     pub agent: String,
-    /// Message acknowledgement configuration (reactions, typing indicators).
-    #[serde(default)]
-    pub ack: AckConfig,
     /// Per-channel init timeout override (seconds). `None` = use manager default.
     #[serde(default)]
     pub init_timeout_secs: Option<u64>,
@@ -906,24 +903,27 @@ channels_manager:
     }
 
     #[test]
-    fn when_channel_has_nested_ack_config_then_parses_correctly() {
+    fn when_channel_has_ack_config_in_options_then_parses_correctly() {
         let yaml = r#"
 channels_manager:
   channels:
     telegram:
       binary: "telegram-channel"
       agent: "opencode"
-      ack:
-        reaction: true
-        typing: true
-        reaction_emoji: "👀"
-        reaction_lifecycle: "remove"
+      options:
+        ack:
+          reaction: true
+          typing: true
+          reaction_emoji: "👀"
+          reaction_lifecycle: "remove"
 "#;
         let config: AnyclawConfig = serde_yaml::from_str(yaml).unwrap();
         let tg = &config.channels_manager.channels["telegram"];
-        assert!(tg.ack.reaction);
-        assert!(tg.ack.typing);
-        assert_eq!(tg.ack.reaction_emoji, "👀");
+        let ack: AckConfig =
+            serde_json::from_value(tg.options["ack"].clone()).expect("ack in options");
+        assert!(ack.reaction);
+        assert!(ack.typing);
+        assert_eq!(ack.reaction_emoji, "👀");
     }
 
     #[test]
@@ -1316,9 +1316,10 @@ channels_manager:
     telegram:
       binary: "@built-in/channels/telegram"
       agent: "opencode"
-      ack:
-        reaction: true
-        typing: true
+      options:
+        ack:
+          reaction: true
+          typing: true
     debug-http:
       binary: "@built-in/channels/debug-http"
 
@@ -1336,7 +1337,9 @@ supervisor:
         assert_eq!(config.tools_manager.tools.len(), 1);
         assert_eq!(config.supervisor.shutdown_timeout_secs, 15);
         let tg = &config.channels_manager.channels["telegram"];
-        assert!(tg.ack.reaction);
+        let ack: AckConfig =
+            serde_json::from_value(tg.options["ack"].clone()).expect("ack in options");
+        assert!(ack.reaction);
         assert_eq!(tg.agent, "opencode");
     }
 

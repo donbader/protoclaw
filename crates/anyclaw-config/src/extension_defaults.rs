@@ -225,7 +225,6 @@ mod tests {
                         args: vec![],
                         enabled: true,
                         agent: "default".into(),
-                        ack: Default::default(),
                         init_timeout_secs: None,
                         exit_timeout_secs: None,
                         backoff: None,

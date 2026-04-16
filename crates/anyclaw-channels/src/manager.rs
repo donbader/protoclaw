@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
-use anyclaw_config::ChannelConfig;
+use anyclaw_config::{AckConfig, ChannelConfig};
 use anyclaw_core::types::ChannelId;
 use anyclaw_core::{
     AgentsCommand, CrashAction, CrashTracker, ExponentialBackoff, Manager, ManagerError,
@@ -164,10 +164,19 @@ impl ChannelsManager {
     ) -> Result<(ChannelConnection, ChannelCapabilities), ChannelsError> {
         let mut conn = ChannelConnection::spawn(config, channel_id.clone(), log_level)?;
 
+        let ack_config: AckConfig = config
+            .options
+            .get("ack")
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_else(|| {
+                tracing::warn!("ack config missing or invalid in options, using defaults");
+                AckConfig::default()
+            });
+
         let params = serde_json::json!({
             "protocolVersion": 1,
             "channelId": channel_id.as_ref(),
-            "ack": ChannelAckConfig::from(config.ack.clone()),
+            "ack": ChannelAckConfig::from(ack_config),
             "options": config.options,
         });
 
@@ -1217,7 +1226,6 @@ mod tests {
             args: vec![],
             enabled,
             agent: agent.into(),
-            ack: Default::default(),
             init_timeout_secs: None,
             exit_timeout_secs: None,
             backoff: None,
