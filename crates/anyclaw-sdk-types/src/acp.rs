@@ -304,6 +304,10 @@ pub enum SessionUpdateType {
         /// The agent's concluding response content, if any.
         #[serde(skip_serializing_if = "Option::is_none")]
         content: Option<String>,
+        /// Whether the result represents an error condition.
+        /// Defaults to `false` so agents that don't send this field are treated as success.
+        #[serde(default)]
+        is_error: bool,
     },
     /// A chunk of the user's message being echoed back.
     UserMessageChunk {
@@ -409,6 +413,7 @@ mod tests {
         session_id: "ses-xyz".into(),
         update: SessionUpdateType::Result {
             content: Some("final answer".into()),
+            is_error: false,
         },
     })]
     #[case::usage_update(SessionUpdateEvent {

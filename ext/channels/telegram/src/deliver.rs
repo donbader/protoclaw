@@ -657,7 +657,7 @@ pub async fn deliver_to_chat(
             Ok(())
         }
 
-        ContentKind::Result { .. } => {
+        ContentKind::Result { is_error, .. } => {
             {
                 let turns = state.turns.read().await;
                 if let Some(turn) = turns.get(&chat_id) {
@@ -727,6 +727,7 @@ pub async fn deliver_to_chat(
                 if !mid.is_empty() {
                     turn.message_id = mid;
                 }
+                turn.last_result_was_error = is_error;
                 if let Some(track) = turn.thought.as_mut() {
                     track.suppressed = true;
                 } else {

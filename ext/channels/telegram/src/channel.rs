@@ -130,8 +130,22 @@ impl TelegramChannel {
                 .await;
             }
             "replace_done" => {
-                let done_reaction = ReactionType::Emoji {
-                    emoji: "✅".into()
+                let last_result_was_error = self
+                    .state
+                    .turns
+                    .read()
+                    .await
+                    .get(&chat_id)
+                    .map(|t| t.last_result_was_error)
+                    .unwrap_or(false);
+                let done_reaction = if last_result_was_error {
+                    ReactionType::Emoji {
+                        emoji: "❌".into()
+                    }
+                } else {
+                    ReactionType::Emoji {
+                        emoji: "✅".into()
+                    }
                 };
                 let bot_clone = bot.clone();
                 let _ = crate::deliver::retry_telegram_op(

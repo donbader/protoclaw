@@ -156,7 +156,7 @@ impl Channel for DebugHttpChannel {
                 event_type: None,
                 data: text,
             },
-            ContentKind::Result { text } => SsePayload {
+            ContentKind::Result { text, .. } => SsePayload {
                 event_type: None,
                 data: text,
             },

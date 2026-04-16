@@ -121,6 +121,7 @@ pub struct ChatTurn {
     pub tool_call_order: Vec<String>,
     /// Incremented on each render — drives dot animation for in-progress tools.
     pub render_tick: u32,
+    pub last_result_was_error: bool,
 }
 
 impl ChatTurn {
@@ -134,6 +135,7 @@ impl ChatTurn {
             tools_msg_id: 0,
             tool_call_order: Vec::new(),
             render_tick: 0,
+            last_result_was_error: false,
         }
     }
 
@@ -289,6 +291,7 @@ impl ChatTurn {
         self.tools_msg_id = 0;
         self.tool_call_order.clear();
         self.render_tick = 0;
+        self.last_result_was_error = false;
         self.phase = TurnPhase::Active;
     }
 }

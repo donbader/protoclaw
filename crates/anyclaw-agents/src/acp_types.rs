@@ -24,6 +24,7 @@ mod tests {
             session_id: "ses-1".into(),
             update: SessionUpdateType::Result {
                 content: Some("done".into()),
+                is_error: false,
             },
         };
         assert_eq!(event.session_id, "ses-1");

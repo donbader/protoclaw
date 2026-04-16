@@ -262,6 +262,7 @@ mod tests {
             session_id: "sess-1".into(),
             update: SessionUpdateType::Result {
                 content: Some("done".into()),
+                is_error: false,
             },
         };
         let output = AgentAdapter::on_session_update(&adapter, event.clone())

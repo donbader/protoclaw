@@ -151,6 +151,8 @@ pub enum ContentKind {
     Result {
         /// The result text.
         text: String,
+        /// Whether the result represents an error.
+        is_error: bool,
     },
     /// Echo of user message chunk (for display).
     UserMessageChunk {
@@ -219,6 +221,10 @@ impl ContentKind {
             },
             "result" => ContentKind::Result {
                 text: extract_content_text(update),
+                is_error: update
+                    .get("isError")
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(false),
             },
             "user_message_chunk" => ContentKind::UserMessageChunk {
                 text: extract_content_text(update),
@@ -661,7 +667,7 @@ mod tests {
         });
         let kind = ContentKind::from_content(&content);
         match kind {
-            ContentKind::Result { text } => assert_eq!(text, "done"),
+            ContentKind::Result { text, .. } => assert_eq!(text, "done"),
             other => panic!("expected Result, got {:?}", other),
         }
     }
