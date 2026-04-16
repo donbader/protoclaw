@@ -7,16 +7,17 @@ Manages the agent subprocess lifecycle and implements the ACP (Agent Client Prot
 | File | Purpose |
 |------|---------|
 | `manager.rs` | `AgentsManager` — struct, constructor, ACP handshake (`initialize_agent`, `start_session`), tool context, Manager trait impl, run loop |
-| `commands.rs` | Command dispatch (`handle_command`), session CRUD (`create_session`, `prompt_session`, `fork_session`, `list_sessions`, `cancel_session`), platform commands |
+| `commands.rs` | Command dispatch (`handle_command`), session CRUD (`create_session`, `prompt_session`, `fork_session`, `list_sessions`, `cancel_session`), platform commands, session queue dispatch (`flush_and_dispatch`) |
 | `fs_sandbox.rs` | Filesystem sandboxing: path validation (`validate_fs_path`, `validate_fs_write_path`), `handle_fs_read`, `handle_fs_write` |
 | `session_recovery.rs` | Crash recovery: `handle_crash`, session restore (`try_restore_session`, `heal_session`), stale container cleanup |
-| `incoming.rs` | Incoming message dispatch: `handle_incoming`, session update forwarding, tool event normalization, permission requests, `handle_prompt_completion` |
+| `incoming.rs` | Incoming message dispatch: `handle_incoming`, session update forwarding, tool event normalization, permission requests, `handle_prompt_completion`, completion-triggered queue drain and re-dispatch |
 | `connection.rs` | `AgentConnection` — subprocess spawn, typed JSON-RPC framing over piped stdio, direct bridge to manager |
 | `platform_commands.rs` | `PlatformCommand` — typed platform commands with `Serialize`, `platform_commands_json()` for D-03 merging |
 | `slot.rs` | `AgentSlot` — per-agent state: session maps, capabilities, pending permissions |
 | `acp_types.rs` | ACP wire types: re-exports from `anyclaw-sdk-types` (`InitializeParams`, `SessionNewParams`, etc.) |
 | `acp_error.rs` | `AcpError` — protocol-level errors (version mismatch, etc.) |
 | `error.rs` | `AgentsError` — manager-level errors (spawn, timeout, connection) |
+| `session_queue.rs` | `SessionQueue` — per-session FIFO message queue (agent concurrency concern) |
 
 ## Typed Pipeline (Phase 3)
 
@@ -93,7 +94,7 @@ When an agent finishes processing a prompt, two signals arrive:
 
 1. **Streaming Result** (`session/update` with `sessionUpdate: "result"`) — arrives via `incoming_rx` → `handle_incoming()`. Sends `DeliverMessage` (content) to channels and sets `streaming_completed` flag. Does NOT send `SessionComplete`.
 
-2. **RPC Response** (JSON-RPC response to `session/prompt`) — arrives via `completion_rx` → `handle_prompt_completion()`. This is the **sole sender** of `SessionComplete`. Before sending, it drains `incoming_rx` to ensure all streaming events are forwarded first (the `select!` loop can pick `completion_rx` before `incoming_rx` is fully drained). If `streaming_completed` is set, skips the synthetic result `DeliverMessage`. If not set (agent didn't emit streaming Result), sends a synthetic result `DeliverMessage` before `SessionComplete`.
+2. **RPC Response** (JSON-RPC response to `session/prompt`) — arrives via `completion_rx` → `handle_prompt_completion()`. This is the **sole sender** of `SessionComplete`. Before sending, it drains `incoming_rx` to ensure all streaming events are forwarded first (the `select!` loop can pick `completion_rx` before `incoming_rx` is fully drained). If `streaming_completed` is set, skips the synthetic result `DeliverMessage`. If not set (agent didn't emit streaming Result), sends a synthetic result `DeliverMessage` before `SessionComplete`. After sending `SessionComplete`, drains the session queue and re-dispatches any queued messages.
 
 `handle_prompt_completion()` parses `PromptResponse { stop_reason }` from the RPC response body. The extracted `stop_reason: StopReason` is forwarded inside `ChannelEvent::SessionComplete`, carrying the canonical completion reason (per ACP spec) to channels. `PromptCompletion` carries `stop_reason: StopReason` as its primary completion field.
 
@@ -122,7 +123,9 @@ This keeps `ContentKind` in `anyclaw-sdk-types` agent-agnostic — it only reads
 - Do not skip the `incoming_rx` drain in `handle_prompt_completion` (`incoming.rs`) — without it, `select!` can process the RPC response before all streaming events are forwarded, causing lost updates.
 - `handle_crash` lives in `session_recovery.rs` — crash recovery, respawn, and session restore logic is co-located there.
 - `handle_incoming` and `handle_prompt_completion` live in `incoming.rs` — all agent→manager message dispatch is co-located there.
-- `handle_command`, `create_session`, `prompt_session`, `fork_session`, `list_sessions`, `cancel_session` live in `commands.rs` — all command dispatch and session CRUD is co-located there.
+- `handle_command`, `create_session`, `prompt_session`, `fork_session`, `list_sessions`, `cancel_session`, `flush_and_dispatch` live in `commands.rs` — all command dispatch, session CRUD, and queue dispatch is co-located there.
+- Platform commands (`/new`, `/cancel`) bypass the session queue entirely — they are intercepted in the `EnqueueMessage` handler before any queue interaction. Do not route them through the queue.
+- Do not move the session queue back to channels — it enforces an agent constraint (one-prompt-at-a-time) and must stay in agents for `/cancel` to bypass it.
 - `_raw_response` sentinel removed in v0.3.1 — replaced by `AgentConnection::send_raw()` which writes pre-built JSON-RPC directly to stdin without wrapping in a method envelope. Do not reintroduce `_raw_response`.
 - Permission responses go through `send_raw()` because they're responses to agent-initiated requests, not client-initiated ones.
 - `__jsonrpc_error` is a read-side sentinel — the connection reader task uses it to forward errors without losing the error context. Do not repurpose it.

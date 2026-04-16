@@ -15,7 +15,7 @@ Shared serde types used by all three SDK crates (agent, channel, tool) and by in
 ## Key Types
 
 **Cross-manager types (relocated from anyclaw-core in v5.0):**
-- `ChannelEvent` — agents→channels message enum: `DeliverMessage`, `SessionComplete`, `RoutePermission`, `AckMessage`
+- `ChannelEvent` — agents→channels message enum: `DeliverMessage`, `SessionComplete`, `RoutePermission`, `AckMessage`, `DispatchStarted`
 - `SessionKey` — routing key newtype: `"{channel_name}:{kind}:{peer_id}"`, with `new()`, `channel_name()`, `Display`, `FromStr`
 
 **Channel protocol:**
