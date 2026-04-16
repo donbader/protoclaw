@@ -36,7 +36,7 @@ async fn when_message_sent_then_streaming_chunks_arrive_before_result() {
 
     let result_position = events
         .iter()
-        .position(|e| e.data == "Echo: stream-order-test")
+        .rposition(|e| e.data == "Echo: stream-order-test")
         .expect("should have received result event via SSE");
 
     // Chunk events are unnamed (no event_type) events that arrive before the result

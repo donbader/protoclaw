@@ -303,25 +303,26 @@ impl AgentsManager {
             }
         };
 
-        let content = serde_json::json!({
-            "update": {
-                "sessionUpdate": "push_message",
-                "content": push_params.content,
-            }
-        });
-
         if let Some(session_key) = self.slots[slot_idx]
             .reverse_map
             .get(&push_params.session_id)
             .cloned()
             && let Some(sender) = &self.channels_sender
         {
-            let _ = sender
-                .send(ChannelEvent::DeliverMessage {
-                    session_key,
-                    content,
-                })
-                .await;
+            for part in &push_params.content {
+                let content = serde_json::json!({
+                    "update": {
+                        "sessionUpdate": "agent_message_chunk",
+                        "content": part,
+                    }
+                });
+                let _ = sender
+                    .send(ChannelEvent::DeliverMessage {
+                        session_key: session_key.clone(),
+                        content,
+                    })
+                    .await;
+            }
 
             if let Some(conn) = self.slots[slot_idx].connection.as_ref() {
                 let resp = JsonRpcResponse::success(request.id.clone(), serde_json::json!({}));

@@ -394,7 +394,8 @@ async fn handle_session_prompt<W: AsyncWrite + Unpin>(
             format!("{prefix}: {text}")
         }
     } else {
-        format!("Echoed {} content parts", parts.len())
+        let noun = if parts.len() == 1 { "part" } else { "parts" };
+        format!("Echoed {} content {noun}", parts.len())
     };
 
     let result_notif = json!({
@@ -662,7 +663,7 @@ mod tests {
 
         let result = &msgs[1]["params"]["update"];
         assert_eq!(result["sessionUpdate"], "result");
-        assert_eq!(result["content"], "Echoed 1 content parts");
+        assert_eq!(result["content"], "Echoed 1 content part");
     }
 
     #[tokio::test]

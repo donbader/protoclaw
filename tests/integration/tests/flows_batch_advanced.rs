@@ -51,14 +51,20 @@ async fn given_slow_agent_when_messages_sent_rapidly_then_queued_messages_merge_
     }
 
     let has_merged_echo = events.iter().any(|e| {
-        // With rich content parts, merged messages produce separate echo chunks
-        // per part, then a summary "Echoed N content parts" result.
-        // Check for the summary indicating 2+ parts were merged.
-        e.data.contains("Echoed") && e.data.contains("content parts")
+        if let Some(rest) = e.data.strip_prefix("Echoed ") {
+            let count: usize = rest
+                .split_whitespace()
+                .next()
+                .and_then(|n| n.parse().ok())
+                .unwrap_or(0);
+            count >= 2
+        } else {
+            false
+        }
     });
     assert!(
         has_merged_echo,
-        "at least one SSE event should indicate merged content parts; events: {events:?}",
+        "at least one SSE event should indicate 2+ merged content parts; events: {events:?}",
     );
 
     cancel.cancel();

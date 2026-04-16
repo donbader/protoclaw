@@ -317,8 +317,20 @@ impl AgentsManager {
                 .tool_context_sent
                 .insert(acp_session_id.clone());
         }
-        if let Some(reply_id) = metadata.and_then(|m| m.reply_to_message_id.as_deref()) {
-            prompt_parts.push(ContentPart::text(format!("[Reply to message {reply_id}]")));
+        if let Some(meta) = metadata {
+            let mut context_parts = Vec::new();
+            if let Some(ref thread_id) = meta.thread_id {
+                context_parts.push(format!("thread {thread_id}"));
+            }
+            if let Some(ref reply_id) = meta.reply_to_message_id {
+                context_parts.push(format!("reply to message {reply_id}"));
+            }
+            if !context_parts.is_empty() {
+                prompt_parts.push(ContentPart::text(format!(
+                    "[Context: {}]",
+                    context_parts.join(", ")
+                )));
+            }
         }
         prompt_parts.extend_from_slice(content);
 
