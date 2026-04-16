@@ -93,7 +93,6 @@ We're working toward a stable v1.0. Here's where things stand:
 | Rich media delivery | planned | Route images, files, audio between agents and channels |
 | Supervisor API with authentication | planned | Build dashboards, monitoring, and remote management on top |
 | Cost tracking and token budget enforcement | planned | Usage data already flows via ACP — needs accumulation and limits |
-| Credential isolation | planned | `!secret` tag or env-only secrets that never hit disk |
 | `anyclaw doctor` | planned | Config validation, binary probes, channel connectivity checks |
 
 ### Agents
