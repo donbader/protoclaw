@@ -169,8 +169,8 @@ fn arb_tool_call_status() -> impl Strategy<Value = ToolCallStatus> {
 // ── Channel type strategies ─────────────────────────────────────────────
 
 prop_compose! {
-    fn arb_channel_capabilities()(streaming in any::<bool>(), rich_text in any::<bool>()) -> ChannelCapabilities {
-        ChannelCapabilities { streaming, rich_text }
+    fn arb_channel_capabilities()(streaming in any::<bool>(), rich_text in any::<bool>(), media in any::<bool>()) -> ChannelCapabilities {
+        ChannelCapabilities { streaming, rich_text, media }
     }
 }
 

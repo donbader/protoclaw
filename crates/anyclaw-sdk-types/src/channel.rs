@@ -8,6 +8,9 @@ pub struct ChannelCapabilities {
     pub streaming: bool,
     /// Whether the channel supports rich text (Markdown, HTML).
     pub rich_text: bool,
+    /// Whether the channel supports media delivery (images, files, audio).
+    #[serde(default)]
+    pub media: bool,
 }
 
 /// Initialize handshake — anyclaw sends to channel subprocess.
@@ -63,6 +66,18 @@ pub struct PeerInfo {
     pub peer_id: String,
     /// Conversation kind (e.g., `"direct"`, `"group"`, `"local"`).
     pub kind: String,
+}
+
+/// Metadata attached to an inbound user message, providing threading and reply context.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageMetadata {
+    /// Platform message ID being replied to, if the user replied to a specific message.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reply_to_message_id: Option<String>,
+    /// Platform thread or topic ID, if the message belongs to a thread.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thread_id: Option<String>,
 }
 
 /// Channel → Anyclaw: user sent a message.
@@ -393,6 +408,7 @@ mod tests {
         let caps = ChannelCapabilities {
             streaming: true,
             rich_text: false,
+            media: false,
         };
         let json = serde_json::to_value(&caps).unwrap();
         assert_eq!(json["streaming"], true);
@@ -534,6 +550,7 @@ mod tests {
             capabilities: ChannelCapabilities {
                 streaming: true,
                 rich_text: false,
+                media: false,
             },
             defaults: None,
         };
@@ -949,6 +966,7 @@ mod tests {
         let original = ChannelCapabilities {
             streaming: true,
             rich_text: false,
+            media: false,
         };
         let json = serde_json::to_value(&original).unwrap();
         let restored: ChannelCapabilities = serde_json::from_value(json).unwrap();
@@ -995,6 +1013,7 @@ mod tests {
             capabilities: ChannelCapabilities {
                 streaming: true,
                 rich_text: true,
+                media: false,
             },
             defaults: None,
         };
@@ -1140,6 +1159,7 @@ mod tests {
             capabilities: ChannelCapabilities {
                 streaming: false,
                 rich_text: false,
+                media: false,
             },
             defaults: Some(defaults),
         };
@@ -1157,10 +1177,62 @@ mod tests {
             capabilities: ChannelCapabilities {
                 streaming: true,
                 rich_text: false,
+                media: false,
             },
             defaults: None,
         };
         let json = serde_json::to_value(&original).unwrap();
         assert!(json.get("defaults").is_none());
+    }
+
+    // ── MessageMetadata + ChannelCapabilities.media tests ─────────────
+
+    #[rstest]
+    fn when_message_metadata_round_trips_then_identical() {
+        let original = MessageMetadata {
+            reply_to_message_id: Some("msg-100".into()),
+            thread_id: Some("thread-42".into()),
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        assert_eq!(json["replyToMessageId"], "msg-100");
+        assert_eq!(json["threadId"], "thread-42");
+        let restored: MessageMetadata = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_message_metadata_empty_then_fields_absent() {
+        let original = MessageMetadata {
+            reply_to_message_id: None,
+            thread_id: None,
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        assert!(json.get("replyToMessageId").is_none());
+        assert!(json.get("threadId").is_none());
+        let restored: MessageMetadata = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_channel_capabilities_has_media_then_serializes() {
+        let caps = ChannelCapabilities {
+            streaming: false,
+            rich_text: false,
+            media: true,
+        };
+        let json = serde_json::to_value(&caps).unwrap();
+        assert_eq!(json["media"], true);
+        let restored: ChannelCapabilities = serde_json::from_value(json).unwrap();
+        assert_eq!(caps, restored);
+    }
+
+    #[rstest]
+    fn when_channel_capabilities_missing_media_then_defaults_false() {
+        let json = serde_json::json!({
+            "streaming": true,
+            "richText": false
+        });
+        let caps: ChannelCapabilities = serde_json::from_value(json).unwrap();
+        assert!(!caps.media);
     }
 }

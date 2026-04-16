@@ -122,6 +122,25 @@ pub enum ContentPart {
         /// URL pointing to the image resource.
         url: String,
     },
+    /// File content referenced by URL.
+    File {
+        /// URL pointing to the file resource.
+        url: String,
+        /// Optional filename hint for display or download.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        filename: Option<String>,
+        /// Optional MIME type of the file.
+        #[serde(rename = "mimeType", skip_serializing_if = "Option::is_none")]
+        mime_type: Option<String>,
+    },
+    /// Audio content referenced by URL.
+    Audio {
+        /// URL pointing to the audio resource.
+        url: String,
+        /// Optional MIME type of the audio.
+        #[serde(rename = "mimeType", skip_serializing_if = "Option::is_none")]
+        mime_type: Option<String>,
+    },
 }
 
 impl ContentPart {
@@ -789,10 +808,68 @@ mod tests {
         assert_eq!(original, restored);
     }
 
+    #[test]
+    fn when_file_content_part_serialized_then_includes_type_tag() {
+        let part = ContentPart::File {
+            url: "https://example.com/doc.pdf".into(),
+            filename: Some("doc.pdf".into()),
+            mime_type: Some("application/pdf".into()),
+        };
+        let json = serde_json::to_value(&part).unwrap();
+        assert_eq!(json["type"], "file");
+        assert_eq!(json["url"], "https://example.com/doc.pdf");
+        assert_eq!(json["filename"], "doc.pdf");
+        assert_eq!(json["mimeType"], "application/pdf");
+    }
+
+    #[test]
+    fn when_audio_content_part_serialized_then_includes_type_tag() {
+        let part = ContentPart::Audio {
+            url: "https://example.com/clip.mp3".into(),
+            mime_type: Some("audio/mpeg".into()),
+        };
+        let json = serde_json::to_value(&part).unwrap();
+        assert_eq!(json["type"], "audio");
+        assert_eq!(json["url"], "https://example.com/clip.mp3");
+        assert_eq!(json["mimeType"], "audio/mpeg");
+    }
+
+    #[test]
+    fn when_file_content_part_with_no_optionals_then_fields_absent() {
+        let part = ContentPart::File {
+            url: "https://example.com/doc.pdf".into(),
+            filename: None,
+            mime_type: None,
+        };
+        let json = serde_json::to_value(&part).unwrap();
+        assert_eq!(json["type"], "file");
+        assert_eq!(json["url"], "https://example.com/doc.pdf");
+        assert!(json.get("filename").is_none());
+        assert!(json.get("mimeType").is_none());
+    }
+
     #[rstest]
     #[case::text(ContentPart::Text { text: "hello".into() })]
     #[case::image(ContentPart::Image { url: "http://example.com/img.png".into() })]
     #[case::empty_text(ContentPart::default())]
+    #[case::file_full(ContentPart::File {
+        url: "https://example.com/doc.pdf".into(),
+        filename: Some("doc.pdf".into()),
+        mime_type: Some("application/pdf".into()),
+    })]
+    #[case::file_url_only(ContentPart::File {
+        url: "https://example.com/doc.pdf".into(),
+        filename: None,
+        mime_type: None,
+    })]
+    #[case::audio_full(ContentPart::Audio {
+        url: "https://example.com/clip.mp3".into(),
+        mime_type: Some("audio/mpeg".into()),
+    })]
+    #[case::audio_url_only(ContentPart::Audio {
+        url: "https://example.com/clip.mp3".into(),
+        mime_type: None,
+    })]
     fn when_content_part_round_trips_then_identical(#[case] original: ContentPart) {
         let json = serde_json::to_value(&original).unwrap();
         let restored: ContentPart = serde_json::from_value(json).unwrap();
