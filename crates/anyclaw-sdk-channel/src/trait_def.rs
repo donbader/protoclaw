@@ -44,7 +44,7 @@ pub trait Channel: Send + 'static {
 
     /// Show a permission prompt to the user. Return immediately after displaying
     /// the UI (e.g. inline keyboard). When the user responds, send the
-    /// [`PermissionResponse`] through the `permission_tx` provided in [`on_ready`].
+    /// [`PermissionResponse`] through the `permission_tx` provided in [`Channel::on_ready`].
     ///
     /// This method must NOT block waiting for the user's response — doing so
     /// would stall delivery of subsequent messages from the agent.

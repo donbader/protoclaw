@@ -85,11 +85,15 @@ We're working toward a stable v1.0. Here's where things stand:
 - [x] YAML config with `!env` tag resolution and validation
 - [x] JSON Schema for `anyclaw.yaml` (IDE autocomplete)
 - [x] Extension defaults via initialize handshake
+- [ ] Supervisor API with authentication (build dashboards and UIs on top)
 
 ### Channels
 - [x] Telegram
 - [x] Debug HTTP (development + testing)
 - [ ] Slack
+- [ ] Rich media delivery (images, files, audio from agent to channel)
+- [ ] Reply/thread context (agent knows which message the user is replying to)
+- [ ] Agent-initiated messages (bidirectional — agents can push to channels without user input)
 
 ### Agents
 - [x] ACP protocol (JSON-RPC 2.0 over stdio)
