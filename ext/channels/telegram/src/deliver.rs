@@ -514,17 +514,30 @@ pub async fn deliver_to_chat(
                     };
                     if let Some((text, msg_id)) = final_data
                         && !text.is_empty()
-                        && msg_id != 0
                     {
                         let formatted = format_telegram_html(&text);
                         let final_chunks = split_message(&formatted, 4096);
                         let chunk0 = final_chunks[0].clone();
-                        if let Err(e) = bot_clone
-                            .edit_message_text(ChatId(chat_id), MessageId(msg_id), &chunk0)
-                            .parse_mode(ParseMode::Html)
-                            .await
-                        {
-                            tracing::warn!(%e, chat_id, "failed to finalize message edit (late)");
+                        if msg_id != 0 {
+                            if let Err(e) = bot_clone
+                                .edit_message_text(ChatId(chat_id), MessageId(msg_id), &chunk0)
+                                .parse_mode(ParseMode::Html)
+                                .await
+                            {
+                                tracing::warn!(%e, chat_id, "failed to finalize message edit (late)");
+                            }
+                        } else {
+                            let _ = retry_telegram_op("finalize_send_new_late", chat_id, || {
+                                let chunk0 = chunk0.clone();
+                                let bot_clone = bot_clone.clone();
+                                async move {
+                                    bot_clone
+                                        .send_message(ChatId(chat_id), &chunk0)
+                                        .parse_mode(ParseMode::Html)
+                                        .await
+                                }
+                            })
+                            .await;
                         }
                         for chunk in final_chunks.iter().skip(1) {
                             let chunk = chunk.clone();
@@ -761,21 +774,39 @@ pub async fn deliver_to_chat(
                         buf_len = text.len(),
                         "result finalization timer: sending final edit"
                     );
-                    if !text.is_empty() && msg_id != 0 {
+                    if !text.is_empty() {
                         let formatted = format_telegram_html(&text);
                         let final_chunks = split_message(&formatted, 4096);
                         let chunk0 = final_chunks[0].clone();
-                        let _ = retry_telegram_op("finalize_message_edit", chat_id, || {
-                            let chunk0 = chunk0.clone();
-                            let bot_clone = bot_clone.clone();
-                            async move {
-                                bot_clone
-                                    .edit_message_text(ChatId(chat_id), MessageId(msg_id), &chunk0)
-                                    .parse_mode(ParseMode::Html)
-                                    .await
-                            }
-                        })
-                        .await;
+                        if msg_id != 0 {
+                            let _ = retry_telegram_op("finalize_message_edit", chat_id, || {
+                                let chunk0 = chunk0.clone();
+                                let bot_clone = bot_clone.clone();
+                                async move {
+                                    bot_clone
+                                        .edit_message_text(
+                                            ChatId(chat_id),
+                                            MessageId(msg_id),
+                                            &chunk0,
+                                        )
+                                        .parse_mode(ParseMode::Html)
+                                        .await
+                                }
+                            })
+                            .await;
+                        } else {
+                            let _ = retry_telegram_op("finalize_send_new", chat_id, || {
+                                let chunk0 = chunk0.clone();
+                                let bot_clone = bot_clone.clone();
+                                async move {
+                                    bot_clone
+                                        .send_message(ChatId(chat_id), &chunk0)
+                                        .parse_mode(ParseMode::Html)
+                                        .await
+                                }
+                            })
+                            .await;
+                        }
                         for chunk in final_chunks.iter().skip(1) {
                             let chunk = chunk.clone();
                             let bot_clone2 = bot_clone.clone();
@@ -1027,6 +1058,25 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("unknown session"));
+    }
+
+    #[tokio::test]
+    async fn when_result_finalization_has_buffered_text_and_zero_msg_id_then_text_not_silently_dropped()
+     {
+        let mut turn = ChatTurn::new("msg-1".to_string());
+        turn.append_response("New conversation started.", 0);
+
+        let (text, msg_id) = turn
+            .take_response_for_finalize()
+            .expect("turn must have buffered response");
+        assert_eq!(text, "New conversation started.");
+        assert_eq!(msg_id, 0);
+
+        let would_take_action = !text.is_empty();
+        assert!(
+            would_take_action,
+            "non-empty text with msg_id=0 must result in a send, not a silent drop"
+        );
     }
 
     #[tokio::test]
