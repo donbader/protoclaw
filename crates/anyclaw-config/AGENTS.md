@@ -13,7 +13,7 @@ Figment-based layered configuration for anyclaw. Loads from embedded defaults �
 | `validate.rs` | `validate_config()` — binary existence, working dir checks |
 | `error.rs` | `ConfigError` enum (thiserror) |
 | `parse.rs` | `parse_memory_limit()`, `parse_cpu_limit()` — K8s-style string to Docker-native units |
-| `subst_yaml.rs` | YAML provider with environment variable substitution |
+| `env_yaml.rs` | YAML provider with `!env` tag resolution for environment variables |
 | `defaults.yaml` | Embedded defaults loaded as Figment base layer |
 
 ## Key Types
@@ -48,15 +48,30 @@ Per-entity override types:
 
 `PullPolicy` — enum: `Always`, `IfNotPresent` (default), `Never`. Config-only; pull logic deferred to Docker runtime phase.
 
-## SubstYaml Env Substitution
+## EnvYaml — `!env` Tag Resolution
 
-`SubstYaml` is a custom Figment provider that loads the YAML file and expands `${VAR}` or `${VAR:-default}` placeholders using environment variables. **Missing variables without a default value cause a hard error** — `SubstYaml` fails loudly rather than silently falling back to an empty string. This ensures misconfigured deployments are caught at startup.
+`EnvYaml` is a custom Figment provider that loads the YAML file and resolves `!env` tagged values from environment variables.
+
+Two forms:
+- `!env VAR_NAME` — hard error if env var is missing
+- `!env "VAR_NAME:default"` — falls back to default if unset (colon separator)
+
+Typed fields (booleans, numbers) should be YAML literals, not `!env` tags. Override typed fields via the Figment Env layer: `ANYCLAW_SUPERVISOR__SHUTDOWN_TIMEOUT_SECS=60`.
+
+```yaml
+# Secrets use !env tags
+bot_token: !env TELEGRAM_BOT_TOKEN           # required, hard error if missing
+api_key: !env "ANTHROPIC_API_KEY:"           # optional, empty default
+
+# Typed fields are literals, overridden via env vars
+enabled: false                                # override: ANYCLAW_CHANNELS_MANAGER__CHANNELS__TELEGRAM__ENABLED=true
+```
 
 ## Loading Order
 
 ```rust
 Figment::from(Yaml::string(DEFAULTS_YAML))    // 1. Embedded defaults
-    .merge(SubstYaml::file(path))               // 2. User YAML file (with env substitution)
+    .merge(EnvYaml::file(path))                // 2. User YAML file (with !env tag resolution)
     .merge(Env::prefixed("ANYCLAW_").split("__"))  // 3. Environment variables
     .extract()
 ```
@@ -124,4 +139,4 @@ Do NOT add new top-level fields for binary-facing config — put them in `option
 - **Don't skip validation** — `validate_config()` catches runtime failures at boot time
 - **Don't hardcode defaults outside serde** — all defaults live in `defaults.yaml` or `#[serde(default = "...")]` functions in `types.rs`
 - **Don't add `name` fields to entity structs** — names come from HashMap keys (manager-hierarchy pattern)
-- **Don't use `${VAR}` without a default for optional config** — missing env vars fail loudly at load time; use `${VAR:-default}` if the value is optional
+- **Don't use `!env` without a default for optional config** — missing env vars cause a hard error at load time; use `!env "VAR:default"` if the value is optional

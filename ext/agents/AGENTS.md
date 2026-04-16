@@ -200,7 +200,7 @@ agents:
       binary: /path/to/my-agent        # or @built-in/agents/my-agent
       working_dir: /workspace
       env:
-        MY_API_KEY: "${MY_API_KEY}"     # ${VAR} substitution supported
+        MY_API_KEY: !env "MY_API_KEY:"  # !env tag resolves from environment
     enabled: true
     tools: ["*"]                        # tool name filter, "*" = all
     acp_timeout_secs: 300

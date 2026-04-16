@@ -36,7 +36,7 @@ Files:
 - `validate.rs`: Config validation rules
 - `error.rs`: `ConfigError`
 
-Loading in `lib.rs`: `Figment::from(defaults).merge(SubstYaml::file(path)).merge(Env::prefixed("ANYCLAW_").split("__"))`.
+Loading in `lib.rs`: `Figment::from(defaults).merge(EnvYaml::file(path)).merge(Env::prefixed("ANYCLAW_").split("__"))`.
 
 Env var override format: `ANYCLAW_AGENT__BINARY=claude-code` (double underscore = nesting).
 
