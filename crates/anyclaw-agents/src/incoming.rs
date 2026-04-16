@@ -352,10 +352,49 @@ impl AgentsManager {
 
             let _ = sender
                 .send(ChannelEvent::SessionComplete {
-                    session_key: completion.session_key,
+                    session_key: completion.session_key.clone(),
                     stop_reason: completion.stop_reason,
                 })
                 .await;
+        }
+
+        // Drain queued messages and dispatch next batch
+        if let Some(next_msg) = self.queue.mark_idle(&completion.session_key) {
+            let remaining = self.queue.drain_queued(&completion.session_key);
+            let merged = if remaining.is_empty() {
+                next_msg
+            } else {
+                let mut parts = vec![next_msg];
+                parts.extend(remaining);
+                parts.join("\n")
+            };
+
+            let agent_name = self
+                .slots
+                .iter()
+                .find(|s| s.session_map.contains_key(&completion.session_key))
+                .map(|s| s.name.clone())
+                .unwrap_or_default();
+
+            if !agent_name.is_empty() {
+                if let Some(sender) = &self.channels_sender {
+                    let _ = sender
+                        .send(ChannelEvent::DispatchStarted {
+                            session_key: completion.session_key.clone(),
+                        })
+                        .await;
+                }
+                if let Err(e) = self
+                    .prompt_session(&agent_name, &completion.session_key, &merged)
+                    .await
+                {
+                    tracing::warn!(
+                        session_key = %completion.session_key,
+                        error = %e,
+                        "failed to dispatch queued message after completion"
+                    );
+                }
+            }
         }
     }
 }

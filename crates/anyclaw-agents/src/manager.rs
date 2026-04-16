@@ -74,6 +74,7 @@ pub struct AgentsManager {
     pub(crate) session_store: Arc<dyn DynSessionStore>,
     /// TTL for expired session cleanup at boot (seconds). Default: 7 days.
     session_ttl_secs: i64,
+    pub(crate) queue: crate::session_queue::SessionQueue,
 }
 
 impl AgentsManager {
@@ -107,6 +108,7 @@ impl AgentsManager {
             log_level: None,
             session_store: Arc::new(NoopSessionStore),
             session_ttl_secs: 7 * 24 * 3600,
+            queue: crate::session_queue::SessionQueue::new(),
         }
     }
 

@@ -17,7 +17,6 @@ use tokio_util::sync::CancellationToken;
 
 use crate::connection::{ChannelConnection, IncomingChannelMessage};
 use crate::error::ChannelsError;
-use crate::session_queue::SessionQueue;
 use anyclaw_sdk_types::{
     ChannelCapabilities, ChannelInitializeResult, ChannelRespondPermission, ChannelSendMessage,
 };
@@ -55,7 +54,7 @@ struct RoutingEntry {
     _channel_id: ChannelId,
     acp_session_id: String,
     slot_index: usize,
-    agent_name: String,
+    _agent_name: String,
 }
 
 struct ChannelSlot {
@@ -84,7 +83,6 @@ pub struct ChannelsManager {
     routing_table: HashMap<SessionKey, RoutingEntry>,
     agents_handle: Option<ManagerHandle<AgentsCommand>>,
     channel_events_rx: Option<mpsc::Receiver<ChannelEvent>>,
-    queue: SessionQueue,
     acked_sessions: HashSet<SessionKey>,
 }
 
@@ -109,7 +107,6 @@ impl ChannelsManager {
             routing_table: HashMap::new(),
             agents_handle: None,
             channel_events_rx: None,
-            queue: SessionQueue::new(),
             acked_sessions: HashSet::new(),
         }
     }
@@ -437,8 +434,6 @@ impl ChannelsManager {
     }
 
     async fn handle_session_complete(&mut self, session_key: SessionKey, stop_reason: StopReason) {
-        // Notify channel that the agent finished responding so it can
-        // remove/replace the ack reaction emoji.
         if let Some(entry) = self.routing_table.get(&session_key) {
             let slot = &self.slots[entry.slot_index];
             if let Some(conn) = &slot.connection {
@@ -452,37 +447,22 @@ impl ChannelsManager {
                     .await;
             }
         }
+    }
 
-        if let Some(next_msg) = self.queue.mark_idle(&session_key) {
-            let agent_name = self.routing_table
-                .get(&session_key)
-                .map(|e| e.agent_name.clone())
-                .unwrap_or_else(|| {
-                    tracing::warn!(session_key = %session_key, "no agent_name in routing table for SessionComplete");
-                    String::new()
+    async fn handle_dispatch_started(&mut self, session_key: &SessionKey) {
+        self.acked_sessions.remove(session_key);
+        self.send_ack_to_channel(session_key).await;
+        if let Some(entry) = self.routing_table.get(session_key) {
+            let slot = &self.slots[entry.slot_index];
+            if let Some(conn) = &slot.connection {
+                let params = serde_json::json!({
+                    "sessionId": entry.acp_session_id,
+                    "channelName": slot.name,
                 });
-
-            // Drain remaining queued messages and merge with the first
-            // so the agent receives one combined prompt instead of N separate turns.
-            let remaining = self.queue.drain_queued(&session_key);
-            let merged = if remaining.is_empty() {
-                next_msg
-            } else {
-                let mut parts = vec![next_msg];
-                parts.extend(remaining);
-                let count = parts.len();
-                let merged = parts.join("\n");
-                tracing::info!(
-                    session_key = %session_key,
-                    merged_count = count,
-                    "merged queued messages into single prompt"
-                );
-                merged
-            };
-
-            self.send_ack_to_channel(&session_key).await;
-            self.dispatch_to_agent(&session_key, &merged, &agent_name)
-                .await;
+                let _ = conn
+                    .send_notification("channel/typingIndicator", params)
+                    .await;
+            }
         }
     }
 
@@ -616,6 +596,9 @@ impl ChannelsManager {
             } => {
                 self.log_ack_message_event(&session_key, &channel_name, &peer_id, &message_id);
             }
+            ChannelEvent::DispatchStarted { session_key } => {
+                self.handle_dispatch_started(&session_key).await;
+            }
             _ => {}
         }
     }
@@ -686,18 +669,9 @@ impl ChannelsManager {
         }
 
         let content = send_msg.content;
-        if self.queue.is_active(&session_key) {
-            self.queue.push(&session_key, content);
-            tracing::debug!(
-                channel = %channel_name,
-                session_key = %session_key,
-                "message queued (session busy)"
-            );
-            None
-        } else {
-            self.queue.push_only(&session_key, content);
-            Some(session_key)
-        }
+        self.enqueue_to_agent(&session_key, &content, &agent_name)
+            .await;
+        None
     }
 
     /// Send ack notification to the channel for a session (at dispatch time, not inbound time).
@@ -729,39 +703,23 @@ impl ChannelsManager {
         }
     }
 
-    /// Dispatch a merged/immediate message to the agent as a PromptSession.
-    async fn dispatch_to_agent(
+    async fn enqueue_to_agent(
         &mut self,
         session_key: &SessionKey,
         message: &str,
         agent_name: &str,
     ) {
-        self.acked_sessions.remove(session_key);
-
-        if let Some(entry) = self.routing_table.get(session_key) {
-            let slot = &self.slots[entry.slot_index];
-            if let Some(conn) = &slot.connection {
-                let params = serde_json::json!({
-                    "sessionId": entry.acp_session_id,
-                    "channelName": slot.name,
-                });
-                let _ = conn
-                    .send_notification("channel/typingIndicator", params)
-                    .await;
-            }
-        }
-
         let agents_handle = match &self.agents_handle {
             Some(h) => h.clone(),
             None => {
-                tracing::warn!(session_key = %session_key, "no agents handle, cannot dispatch");
+                tracing::warn!(session_key = %session_key, "no agents handle, cannot enqueue");
                 return;
             }
         };
 
         let (reply_tx, reply_rx) = oneshot::channel();
         if let Err(e) = agents_handle
-            .send(AgentsCommand::PromptSession {
+            .send(AgentsCommand::EnqueueMessage {
                 agent_name: agent_name.to_string(),
                 session_key: session_key.clone(),
                 message: message.to_string(),
@@ -769,16 +727,16 @@ impl ChannelsManager {
             })
             .await
         {
-            tracing::error!(session_key = %session_key, error = %e, "failed to send PromptSession");
+            tracing::error!(session_key = %session_key, error = %e, "failed to send EnqueueMessage");
             return;
         }
 
         match reply_rx.await {
             Ok(Ok(())) => {
-                tracing::debug!(session_key = %session_key, "prompt sent to agent");
+                tracing::debug!(session_key = %session_key, "message enqueued to agent");
             }
             Ok(Err(e)) => {
-                tracing::warn!(session_key = %session_key, error = %e, "PromptSession failed");
+                tracing::warn!(session_key = %session_key, error = %e, "EnqueueMessage rejected");
                 if let Some(entry) = self.routing_table.get(session_key)
                     && let Some(conn) = &self.slots[entry.slot_index].connection
                 {
@@ -799,25 +757,7 @@ impl ChannelsManager {
                 }
             }
             Err(_) => {
-                tracing::warn!(session_key = %session_key, "PromptSession reply dropped");
-                if let Some(entry) = self.routing_table.get(session_key)
-                    && let Some(conn) = &self.slots[entry.slot_index].connection
-                {
-                    let error_params = serde_json::json!({
-                        "sessionId": entry.acp_session_id,
-                        "content": "⚠️ Session recovery failed: internal error (reply dropped)",
-                    });
-                    if let Err(notify_err) = conn
-                        .send_notification("channel/deliverMessage", error_params)
-                        .await
-                    {
-                        tracing::warn!(
-                            session_key = %session_key,
-                            error = %notify_err,
-                            "failed to deliver recovery error to channel"
-                        );
-                    }
-                }
+                tracing::warn!(session_key = %session_key, "EnqueueMessage reply dropped");
             }
         }
     }
@@ -865,7 +805,7 @@ impl ChannelsManager {
                         _channel_id: channel_id,
                         acp_session_id: acp_session_id.clone(),
                         slot_index,
-                        agent_name: agent_name.to_string(),
+                        _agent_name: agent_name.to_string(),
                     },
                 );
 
@@ -982,32 +922,6 @@ impl ChannelsManager {
                 );
                 None
             }
-        }
-    }
-
-    /// Flush pending messages for a session and dispatch as a single merged prompt.
-    async fn flush_and_dispatch(&mut self, session_key: &SessionKey) {
-        if let Some(merged) = self.queue.flush_pending(session_key) {
-            let agent_name = self.routing_table
-                .get(session_key)
-                .map(|e| e.agent_name.clone())
-                .unwrap_or_else(|| {
-                    tracing::warn!(session_key = %session_key, "no agent_name in routing table for flush_and_dispatch");
-                    String::new()
-                });
-
-            let count = merged.matches('\n').count() + 1;
-            if count > 1 {
-                tracing::info!(
-                    session_key = %session_key,
-                    merged_count = count,
-                    "merged buffered messages into single prompt"
-                );
-            }
-
-            self.send_ack_to_channel(session_key).await;
-            self.dispatch_to_agent(session_key, &merged, &agent_name)
-                .await;
         }
     }
 
@@ -1181,9 +1095,7 @@ impl Manager for ChannelsManager {
                 Some((idx, msg)) = channel_streams.next() => {
                     match msg {
                         Some(incoming) => {
-                            if let Some(session_key) = self.collect_channel_message(idx, incoming).await {
-                                self.flush_and_dispatch(&session_key).await;
-                            }
+                            self.collect_channel_message(idx, incoming).await;
                         }
                         None => {
                             let channel_name = self.slots[idx].name.clone();
@@ -1363,7 +1275,7 @@ mod tests {
                 _channel_id: ChannelId::from("debug-http"),
                 acp_session_id: "acp-sess-1".into(),
                 slot_index: 0,
-                agent_name: "default".into(),
+                _agent_name: "default".into(),
             },
         );
 
@@ -1385,7 +1297,7 @@ mod tests {
                 _channel_id: ChannelId::from("telegram"),
                 acp_session_id: "sess-alice".into(),
                 slot_index: 0,
-                agent_name: "default".into(),
+                _agent_name: "default".into(),
             },
         );
         table.insert(
@@ -1394,7 +1306,7 @@ mod tests {
                 _channel_id: ChannelId::from("telegram"),
                 acp_session_id: "sess-bob".into(),
                 slot_index: 0,
-                agent_name: "default".into(),
+                _agent_name: "default".into(),
             },
         );
 
@@ -1418,7 +1330,7 @@ mod tests {
                 _channel_id: ChannelId::from("test"),
                 acp_session_id: "acp-1".into(),
                 slot_index: 0,
-                agent_name: "default".into(),
+                _agent_name: "default".into(),
             },
         );
 
@@ -1572,7 +1484,7 @@ mod tests {
                 _channel_id: ChannelId::from("telegram"),
                 acp_session_id: "sess-1".into(),
                 slot_index: 0,
-                agent_name: "default".into(),
+                _agent_name: "default".into(),
             },
         );
         m.send_ack_to_channel(&key).await;

@@ -64,15 +64,15 @@ pub enum AgentsCommand {
         /// Oneshot channel returning the ACP session ID on success.
         reply: oneshot::Sender<Result<String, String>>,
     },
-    /// Send a user message to an existing session.
-    PromptSession {
+    /// Enqueue a user message for a session. Agents manager handles queuing internally.
+    EnqueueMessage {
         /// Which agent owns the session.
         agent_name: String,
-        /// Session identity to route the prompt to.
+        /// Session identity to route the message to.
         session_key: SessionKey,
         /// The user message text.
         message: String,
-        /// Oneshot channel for the result.
+        /// Oneshot channel for acceptance (Ok = accepted/queued, Err = rejected).
         reply: oneshot::Sender<Result<(), String>>,
     },
     /// Fork an existing session (creates a new session branching from the current state).

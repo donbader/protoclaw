@@ -118,16 +118,30 @@ impl AgentsManager {
                 };
                 let _ = reply.send(result.map_err(|e| e.to_string()));
             }
-            AgentsCommand::PromptSession {
+            AgentsCommand::EnqueueMessage {
                 agent_name,
                 session_key,
                 message,
                 reply,
             } => {
-                let result = self
-                    .prompt_session(&agent_name, &session_key, &message)
-                    .await;
-                let _ = reply.send(result.map_err(|e| e.to_string()));
+                // Platform commands bypass the queue entirely
+                if let Some(cmd) = crate::platform_commands::match_platform_command(&message) {
+                    let slot_idx = find_slot_by_name(&self.slots, &agent_name);
+                    let result = if let Some(idx) = slot_idx {
+                        self.handle_platform_command(cmd.name, idx, &agent_name, &session_key)
+                            .await
+                    } else {
+                        Err(AgentsError::AgentNotFound(agent_name.clone()))
+                    };
+                    let _ = reply.send(result.map_err(|e| e.to_string()));
+                } else if self.queue.is_active(&session_key) {
+                    self.queue.push(&session_key, message);
+                    let _ = reply.send(Ok(()));
+                } else {
+                    self.queue.push_only(&session_key, message);
+                    let flush_result = self.flush_and_dispatch(&agent_name, &session_key).await;
+                    let _ = reply.send(flush_result.map_err(|e| e.to_string()));
+                }
             }
             AgentsCommand::ForkSession {
                 agent_name,
@@ -228,6 +242,26 @@ impl AgentsManager {
 
         tracing::info!(agent = %agent_name, session_key = %acp_session_id, "multi-session created");
         Ok(acp_session_id)
+    }
+
+    pub(crate) async fn flush_and_dispatch(
+        &mut self,
+        agent_name: &str,
+        session_key: &SessionKey,
+    ) -> Result<(), AgentsError> {
+        let Some(merged) = self.queue.flush_pending(session_key) else {
+            return Ok(());
+        };
+
+        if let Some(sender) = &self.channels_sender {
+            let _ = sender
+                .send(ChannelEvent::DispatchStarted {
+                    session_key: session_key.clone(),
+                })
+                .await;
+        }
+
+        self.prompt_session(agent_name, session_key, &merged).await
     }
 
     pub(crate) async fn prompt_session(
