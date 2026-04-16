@@ -32,9 +32,8 @@ anyclaw/
 │   └── integration/                # E2E tests (spawn real supervisor + mock-agent)
 ├── examples/01-fake-agent-telegram-bot/  # Fake agent example (Docker, mock-agent, debug-http)
 └── examples/02-real-agent-telegram/      # Real agent examples (Docker, debug-http + telegram)
-    ├── agent-opencode/                     # OpenCode agent variant
-    ├── agent-kiro/                         # Kiro CLI agent variant
-    └── agent-claude-code/                  # Claude Code agent variant
+    ├── opencode/                           # OpenCode agent variant
+    └── kiro/                               # Kiro CLI agent variant
 ```
 
 ## Where to Look
