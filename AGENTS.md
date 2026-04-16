@@ -169,3 +169,25 @@ This project uses hierarchical AGENTS.md files. Subdirectory files contain domai
 | `./examples/02-real-agent-telegram/AGENTS.md` | Real agent example variants |
 
 When code changes affect module structure, public APIs, conventions, or anti-patterns, update the relevant AGENTS.md file(s) in the same commit.
+
+## Workflow Standards
+
+All changes go through pull requests — no direct commits to `main`.
+
+### Branch Naming
+- `feat/`, `fix/`, `docs/`, `chore/`, `refactor/`, `ci/` prefixes required
+- Example: `feat/wasm-tool-permissions`
+
+### PR Titles
+- Must follow [Conventional Commits](https://www.conventionalcommits.org/): `<type>: <description>`
+- CI enforces this via `amannn/action-semantic-pull-request`
+- The PR title becomes the merge commit message, which feeds into changelogs
+
+### Issue References
+- Reference related issues in PR body: `Closes #123` or `Relates to #456`
+- For AI-generated PRs, include `[ai-assisted]` in the PR body (not the title)
+
+### Release Process
+- SDK crate releases are automated via release-plz on push to `main`
+- Binary releases are triggered by pushing a `v*.*.*` tag
+- See `docs/releasing.md` for the full process
