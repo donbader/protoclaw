@@ -53,6 +53,7 @@ Remaining `serde_json::Value` usages are documented D-03 extensible boundaries:
 | `session/resume` | client→agent | Restore session without replay (preferred over load) |
 | `session/update` | agent→client | Streaming agent response updates |
 | `session/request_permission` | agent→client | Agent requests user permission |
+| `session/push` | agent→client | Agent-initiated push message to session's channel |
 | `fs/read_text_file` | agent→client | Agent requests file read |
 | `fs/write_text_file` | agent→client | Agent requests file write |
 | `_raw_response` | internal | Removed in v0.3.1 — replaced by `AgentConnection::send_raw()` which writes pre-built JSON-RPC directly to stdin without method envelope |

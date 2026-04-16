@@ -19,18 +19,22 @@ Shared serde types used by all three SDK crates (agent, channel, tool) and by in
 - `SessionKey` — routing key newtype: `"{channel_name}:{kind}:{peer_id}"`, with `new()`, `channel_name()`, `Display`, `FromStr`
 
 **Channel protocol:**
-- `ChannelCapabilities { streaming, rich_text }` — advertised during initialize
+- `ChannelCapabilities { streaming, rich_text, media }` — advertised during initialize
 - `ChannelInitializeParams { agent_name, ack_config, options }` / `ChannelInitializeResult` — handshake types. `options: HashMap<String, Value>` forwards channel-specific config from `anyclaw.yaml`
 - `DeliverMessage { session_id, content }` — anyclaw → channel
-- `ChannelSendMessage { peer_info, content }` — channel → anyclaw
+- `ChannelSendMessage { peer_info, content, metadata }` — channel → anyclaw. `content` is `Vec<ContentPart>`, `metadata` is `Option<MessageMetadata>` for reply/thread context
 - `PeerInfo { channel_name, peer_id, kind }` — inbound message identity
+- `MessageMetadata { reply_to_message_id, thread_id }` — optional reply/thread context on inbound messages
+- `PushMessage { session_id, content }` — anyclaw → channel: agent-initiated push via `channel/pushMessage`
 - `ThoughtContent` — helper to extract `agent_thought_chunk` from `DeliverMessage.content`
-- `ContentKind` — typed dispatch enum over `DeliverMessage.content`: `Thought`, `MessageChunk`, `Result`, `UserMessageChunk`, `UsageUpdate`, `ToolCall`, `ToolCallUpdate`, `AvailableCommandsUpdate`, `Unknown`
+- `ContentKind` — typed dispatch enum over `DeliverMessage.content`: `Thought`, `MessageChunk`, `Result`, `UserMessageChunk`, `UsageUpdate`, `ToolCall`, `ToolCallUpdate`, `AvailableCommandsUpdate`, `Image`, `File`, `Audio`, `Unknown`
 - `AckNotification` / `AckLifecycleNotification` — ack reaction lifecycle
 - `ChannelAckConfig` — ack settings passed via initialize
 - `SessionCreated` — session-to-peer mapping notification
 
 **ACP protocol:**
+- `ContentPart` — tagged enum: `Text { text }`, `Image { url }`, `File { url, filename, mime_type }`, `Audio { url, mime_type }`
+- `SessionPushParams { session_id, content }` / `SessionPushResult` — agent-initiated push via `session/push` ACP method
 - `StopReason` — why the agent stopped: `EndTurn`, `MaxTokens`, `MaxTurnRequests`, `Refusal`, `Cancelled`
 - `PromptResponse { stop_reason }` — parsed from `session/prompt` RPC response body; canonical completion signal per the ACP spec
 - `SessionUpdateType::Result` — extension type not in the official ACP spec; anyclaw-specific early completion hint for UX purposes (e.g., triggers Telegram finalization ~200ms early)

@@ -23,6 +23,7 @@ pub trait Channel: Send + 'static {
     async fn on_initialize(&mut self, params: ChannelInitializeParams) -> Result<(), ChannelSdkError>;
     async fn on_ready(&mut self, outbound: mpsc::Sender<ChannelSendMessage>, permission_tx: mpsc::Sender<PermissionResponse>) -> Result<(), ChannelSdkError>;
     async fn deliver_message(&mut self, msg: DeliverMessage) -> Result<(), ChannelSdkError>;
+    async fn push_message(&mut self, msg: PushMessage) -> Result<(), ChannelSdkError>; // default: delegates to deliver_message
     async fn show_permission_prompt(&mut self, req: ChannelRequestPermission) -> Result<(), ChannelSdkError>;
     async fn handle_unknown(&mut self, method: &str, params: Value) -> Result<Value, ChannelSdkError>;
     async fn on_session_created(&mut self, msg: SessionCreated) -> Result<(), ChannelSdkError>;
@@ -34,7 +35,7 @@ pub struct ChannelHarness<C: Channel> { channel: C }
 ## How to Implement
 
 1. Create a struct implementing `Channel`
-2. Return capabilities in `capabilities()` (streaming, rich_text)
+2. Return capabilities in `capabilities()` (streaming, rich_text, media)
 3. In `on_ready()`, store the `outbound` sender and `permission_tx` sender
 4. Implement `deliver_message()` to render agent responses to your platform
 5. Implement `show_permission_prompt()` to display permission UI — return immediately, send `PermissionResponse` through `permission_tx` when the user responds
