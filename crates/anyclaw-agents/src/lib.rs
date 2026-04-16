@@ -12,7 +12,7 @@ pub mod acp_error;
 pub mod acp_types;
 /// [`ProcessBackend`] trait abstracting over local and Docker subprocess management.
 pub mod backend;
-/// [`AgentConnection`] — subprocess spawn, typed JSON-RPC framing, direct bridge to manager.
+/// [`connection::AgentConnection`] — subprocess spawn, typed JSON-RPC framing, direct bridge to manager.
 pub mod connection;
 // D-03: commands.rs handles session content via prompt_session (completion_tx, channels_sender forwarding)
 #[allow(clippy::disallowed_types)]
