@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0](https://github.com/donbader/anyclaw/compare/anyclaw-sdk-types-v0.5.2...anyclaw-sdk-types-v0.6.0) - 2026-04-16
+
+### Added
+
+- *(acp)* align with official ACP spec — add StopReason and PromptResponse
+- *(sdk)* extensions report defaults via initialize response
+
+### Fixed
+
+- *(telegram)* show ❌ for non-zero exit tools, add context to permission prompts
+- *(telegram)* show ❌ reaction when agent result is an error
+
 ## [0.5.2](https://github.com/donbader/anyclaw/compare/anyclaw-sdk-types-v0.5.1...anyclaw-sdk-types-v0.5.2) - 2026-04-15
 
 ### Other
