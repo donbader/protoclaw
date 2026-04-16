@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use anyclaw_sdk_channel::{Channel, ChannelCapabilities, ChannelSdkError, ChannelSendMessage};
+use anyclaw_sdk_types::acp::StopReason;
 use anyclaw_sdk_types::{
     AckLifecycleNotification, AckNotification, ChannelInitializeParams, ChannelRequestPermission,
     DeliverMessage, PermissionResponse, SessionCreated,
@@ -130,22 +131,21 @@ impl TelegramChannel {
                 .await;
             }
             "replace_done" => {
-                let last_result_was_error = self
-                    .state
-                    .turns
-                    .read()
-                    .await
-                    .get(&chat_id)
-                    .map(|t| t.last_result_was_error)
-                    .unwrap_or(false);
-                let done_reaction = if last_result_was_error {
-                    ReactionType::Emoji {
-                        emoji: "❌".into()
-                    }
-                } else {
-                    ReactionType::Emoji {
+                let done_reaction = match lifecycle.stop_reason {
+                    Some(StopReason::EndTurn) | None => ReactionType::Emoji {
                         emoji: "✅".into()
+                    },
+                    Some(StopReason::MaxTokens) | Some(StopReason::MaxTurnRequests) => {
+                        ReactionType::Emoji {
+                            emoji: "⚠️".into()
+                        }
                     }
+                    Some(StopReason::Refusal) => ReactionType::Emoji {
+                        emoji: "❌".into()
+                    },
+                    Some(StopReason::Cancelled) => ReactionType::Emoji {
+                        emoji: "🚫".into()
+                    },
                 };
                 let bot_clone = bot.clone();
                 let _ = crate::deliver::retry_telegram_op(

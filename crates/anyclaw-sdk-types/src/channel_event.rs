@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+use crate::acp::StopReason;
 use crate::session_key::SessionKey;
 
 /// Events sent from AgentsManager to ChannelsManager via mpsc channel.
@@ -21,6 +22,8 @@ pub enum ChannelEvent {
     SessionComplete {
         /// Routing key identifying the completed session.
         session_key: SessionKey,
+        /// Why the agent stopped generating output.
+        stop_reason: StopReason,
     },
     /// Route a permission request to the originating channel.
     RoutePermission {
@@ -147,6 +150,7 @@ mod tests {
     })]
     #[case::session_complete(ChannelEvent::SessionComplete {
         session_key: SessionKey::new("telegram", "direct", "alice"),
+        stop_reason: StopReason::EndTurn,
     })]
     #[case::ack_message_with_id(ChannelEvent::AckMessage {
         session_key: SessionKey::new("telegram", "direct", "bob"),

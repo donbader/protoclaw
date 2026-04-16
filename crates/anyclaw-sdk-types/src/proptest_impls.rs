@@ -258,8 +258,15 @@ prop_compose! {
     fn arb_ack_lifecycle_notification()(
         session_id in arb_string(),
         action in arb_string(),
+        stop_reason in proptest::option::of(prop_oneof![
+            Just(StopReason::EndTurn),
+            Just(StopReason::MaxTokens),
+            Just(StopReason::MaxTurnRequests),
+            Just(StopReason::Refusal),
+            Just(StopReason::Cancelled),
+        ]),
     ) -> AckLifecycleNotification {
-        AckLifecycleNotification { session_id, action }
+        AckLifecycleNotification { session_id, action, stop_reason }
     }
 }
 

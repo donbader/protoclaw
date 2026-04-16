@@ -377,7 +377,7 @@ async fn handle_session_prompt<W: AsyncWrite + Unpin>(
     });
     write_message(stdout, &result_notif).await;
 
-    let resp = json!({ "jsonrpc": "2.0", "id": id, "result": {} });
+    let resp = json!({ "jsonrpc": "2.0", "id": id, "result": { "stopReason": "end_turn" } });
     write_message(stdout, &resp).await;
 }
 

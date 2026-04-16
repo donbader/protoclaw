@@ -299,7 +299,7 @@ pub enum SessionUpdateType {
         #[serde(rename = "cacheWriteTokens", skip_serializing_if = "Option::is_none")]
         cache_write_tokens: Option<u64>,
     },
-    /// Final result produced by the agent for this prompt turn.
+    /// Extension type — not part of core ACP. Agents MAY emit this as an early completion hint before the RPC response.
     Result {
         /// The agent's concluding response content, if any.
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -352,6 +352,32 @@ pub struct SessionUpdateEvent {
     pub session_id: String,
     /// The update payload, discriminated by `sessionUpdate` tag.
     pub update: SessionUpdateType,
+}
+
+/// Why the agent stopped generating output for this prompt turn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum StopReason {
+    /// Agent completed its response naturally.
+    #[default]
+    EndTurn,
+    /// Agent reached the maximum token limit.
+    MaxTokens,
+    /// Agent reached the maximum number of turn requests.
+    MaxTurnRequests,
+    /// Agent refused to respond to the prompt.
+    Refusal,
+    /// The prompt was cancelled before completion.
+    Cancelled,
+}
+
+/// Parsed body of a successful `session/prompt` JSON-RPC response.
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PromptResponse {
+    /// Why the agent stopped. Defaults to `EndTurn` when absent.
+    #[serde(default)]
+    pub stop_reason: StopReason,
 }
 
 #[cfg(test)]

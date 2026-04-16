@@ -328,10 +328,18 @@ impl AgentsManager {
                         String::new()
                     });
 
+                let stop_reason_str = match completion.stop_reason {
+                    anyclaw_sdk_types::acp::StopReason::EndTurn => "end_turn",
+                    anyclaw_sdk_types::acp::StopReason::MaxTokens => "max_tokens",
+                    anyclaw_sdk_types::acp::StopReason::MaxTurnRequests => "max_turn_requests",
+                    anyclaw_sdk_types::acp::StopReason::Refusal => "refusal",
+                    anyclaw_sdk_types::acp::StopReason::Cancelled => "cancelled",
+                };
                 let synthetic_result = serde_json::json!({
                     "sessionId": acp_session_id,
                     "update": {
                         "sessionUpdate": "result",
+                        "stopReason": stop_reason_str,
                     }
                 });
                 let _ = sender
@@ -345,6 +353,7 @@ impl AgentsManager {
             let _ = sender
                 .send(ChannelEvent::SessionComplete {
                     session_key: completion.session_key,
+                    stop_reason: completion.stop_reason,
                 })
                 .await;
         }

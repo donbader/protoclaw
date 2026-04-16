@@ -334,6 +334,9 @@ pub struct AckLifecycleNotification {
     pub session_id: String,
     /// Lifecycle action: `"response_started"` or `"response_completed"`.
     pub action: String,
+    /// Why the agent stopped, if this is a completion event.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stop_reason: Option<crate::acp::StopReason>,
 }
 
 /// Ack configuration passed to channels via initialize handshake.
@@ -571,6 +574,7 @@ mod tests {
         let lifecycle = AckLifecycleNotification {
             session_id: "sess-1".into(),
             action: "response_started".into(),
+            stop_reason: None,
         };
         let json = serde_json::to_value(&lifecycle).unwrap();
         assert_eq!(json["sessionId"], "sess-1");
@@ -1029,6 +1033,7 @@ mod tests {
         let original = AckLifecycleNotification {
             session_id: "ses-1".into(),
             action: "response_started".into(),
+            stop_reason: None,
         };
         let json = serde_json::to_value(&original).unwrap();
         let restored: AckLifecycleNotification = serde_json::from_value(json).unwrap();

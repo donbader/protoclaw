@@ -30,6 +30,11 @@ Shared serde types used by all three SDK crates (agent, channel, tool) and by in
 - `ChannelAckConfig` — ack settings passed via initialize
 - `SessionCreated` — session-to-peer mapping notification
 
+**ACP protocol:**
+- `StopReason` — why the agent stopped: `EndTurn`, `MaxTokens`, `MaxTurnRequests`, `Refusal`, `Cancelled`
+- `PromptResponse { stop_reason }` — parsed from `session/prompt` RPC response body; canonical completion signal per the ACP spec
+- `SessionUpdateType::Result` — extension type not in the official ACP spec; anyclaw-specific early completion hint for UX purposes (e.g., triggers Telegram finalization ~200ms early)
+
 **Permission protocol:**
 - `PermissionOption { option_id, label }` — single choice in a permission prompt
 - `PermissionRequest { request_id, description, options }` — agent asks permission

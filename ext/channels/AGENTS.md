@@ -262,7 +262,7 @@ You don't need to handle this directly — the `ChannelHarness` manages all fram
 | `channel/requestPermission` | request | `show_permission_prompt()` |
 | `channel/sessionCreated` | notification | `on_session_created()` |
 | `channel/ackMessage` | notification | (handled by harness) |
-| `channel/ackLifecycle` | notification | (handled by harness) |
+| `channel/ackLifecycle` | notification | (handled by harness) — includes optional `stopReason` field when the agent completes a turn. Values: `end_turn`, `max_tokens`, `max_turn_requests`, `refusal`, `cancelled`. Use this to adapt rendering (e.g., show error UI on `refusal`, display truncation warning on `max_tokens`). |
 | `channel/typingIndicator` | notification | (handled by harness) |
 
 **Channel → Supervisor (via outbound sender):**

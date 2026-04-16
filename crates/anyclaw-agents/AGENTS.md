@@ -95,6 +95,8 @@ When an agent finishes processing a prompt, two signals arrive:
 
 2. **RPC Response** (JSON-RPC response to `session/prompt`) — arrives via `completion_rx` → `handle_prompt_completion()`. This is the **sole sender** of `SessionComplete`. Before sending, it drains `incoming_rx` to ensure all streaming events are forwarded first (the `select!` loop can pick `completion_rx` before `incoming_rx` is fully drained). If `streaming_completed` is set, skips the synthetic result `DeliverMessage`. If not set (agent didn't emit streaming Result), sends a synthetic result `DeliverMessage` before `SessionComplete`.
 
+`handle_prompt_completion()` parses `PromptResponse { stop_reason }` from the RPC response body. The extracted `stop_reason: StopReason` is forwarded inside `ChannelEvent::SessionComplete`, carrying the canonical completion reason (per ACP spec) to channels. `PromptCompletion` carries `stop_reason: StopReason` as its primary completion field.
+
 ## Connection Architecture (Bridge Collapse)
 
 `AgentConnection` supports two spawn modes:

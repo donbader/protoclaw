@@ -125,7 +125,7 @@ Update types (the `type` field):
 |------|---------|---------|
 | `agent_thought_chunk` | Streaming thought/reasoning | `{ type: "text", text: "..." }` |
 | `agent_message_chunk` | Streaming response text | `{ type: "text", text: "..." }` |
-| `result` | Final result — signals prompt is complete | `{ type: "text", text: "..." }` |
+| `result` | Final result — signals prompt is complete. **Extension type — not part of core ACP. Agents MAY emit this as an early completion hint.** | `{ type: "text", text: "..." }` |
 | `tool_call` | Agent started a tool call | `{ name, toolCallId, input }` |
 | `tool_call_update` | Tool call status changed | `{ name, toolCallId, status, output }` |
 | `plan` | Agent's execution plan | `{ content }` |
@@ -135,6 +135,24 @@ Update types (the `type` field):
 | `session_info_update` | Session metadata changed | `{ sessionInfo }` |
 
 The `result` update is critical — it signals the supervisor that the prompt is complete. The supervisor uses it to trigger finalization in channels (e.g., collapsing thought bubbles in Telegram).
+
+### Prompt Response (StopReason)
+
+The `session/prompt` JSON-RPC response carries a `stopReason` field indicating why the agent stopped:
+
+```json
+{"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn"}}
+```
+
+| StopReason | Meaning |
+|---|---|
+| `end_turn` | Agent finished normally |
+| `max_tokens` | Output truncated by token limit |
+| `max_turn_requests` | Turn limit reached |
+| `refusal` | Agent refused the request |
+| `cancelled` | Prompt was cancelled |
+
+This is the canonical completion signal per the ACP spec. The streaming `result` update is an extension type that agents MAY emit as an early hint.
 
 ### Permission Flow
 
@@ -244,3 +262,4 @@ Write unit tests for your protocol handling logic separately from the stdio laye
 - **Don't forget the `result` update** — channels depend on it to finalize rendering (collapse thoughts, send final edit). Without it, the turn never completes.
 - **Don't send `session/update` after `result`** — the supervisor may have already forwarded the completion signal to channels. Late updates may be dropped or cause rendering glitches.
 - **Don't read env vars for config** — use `options` from the `initialize` handshake. The supervisor controls what config reaches the agent.
+- **Don't rely solely on the streaming `result` update for completion** — `stopReason` in the RPC response is the canonical signal per the ACP spec.

@@ -7,8 +7,8 @@ use anyclaw_jsonrpc::types::JsonRpcResponse;
 use anyclaw_sdk_types::ChannelEvent;
 
 use crate::acp_types::{
-    ContentPart, SessionCancelParams, SessionForkParams, SessionForkResult, SessionListParams,
-    SessionPromptParams,
+    ContentPart, PromptResponse, SessionCancelParams, SessionForkParams, SessionForkResult,
+    SessionListParams, SessionPromptParams,
 };
 use crate::error::AgentsError;
 use crate::manager::{AgentsManager, PromptCompletion};
@@ -327,6 +327,7 @@ impl AgentsManager {
                     Ok(response) => {
                         // Check if the agent returned a JSON-RPC error
                         let mut session_expired = false;
+                        let stop_reason;
                         if let Some(error) = &response.error {
                             let msg = &error.message;
                             tracing::warn!(session_key = %sk, error = %msg, "agent returned error for prompt");
@@ -346,6 +347,7 @@ impl AgentsManager {
                             if combined.to_lowercase().contains("session not found") {
                                 session_expired = true;
                             }
+                            stop_reason = anyclaw_sdk_types::acp::StopReason::Refusal;
 
                             if let Some(sender) = &channels_tx {
                                 let error_content = serde_json::json!({
@@ -359,11 +361,20 @@ impl AgentsManager {
                                     })
                                     .await;
                             }
+                        } else {
+                            let prompt_resp: PromptResponse =
+                                serde_json::from_value(response.result.unwrap_or_default())
+                                    .unwrap_or_else(|e| {
+                                        tracing::warn!(session_key = %sk, error = %e, "failed to parse PromptResponse, defaulting");
+                                        PromptResponse::default()
+                                    });
+                            stop_reason = prompt_resp.stop_reason;
                         }
                         let _ = completion_tx
                             .send(PromptCompletion {
                                 session_key: sk,
                                 session_expired,
+                                stop_reason,
                             })
                             .await;
                     }
@@ -424,6 +435,7 @@ impl AgentsManager {
                     let _ = sender
                         .send(ChannelEvent::SessionComplete {
                             session_key: session_key.clone(),
+                            stop_reason: anyclaw_sdk_types::acp::StopReason::EndTurn,
                         })
                         .await;
                 }

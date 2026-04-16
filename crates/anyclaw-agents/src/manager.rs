@@ -42,6 +42,7 @@ pub(crate) struct PromptCompletion {
     /// so `handle_prompt_completion` can invalidate the stale mapping.
     /// Read via `completion_rx` channel in `handle_prompt_completion`.
     pub(crate) session_expired: bool,
+    pub(crate) stop_reason: anyclaw_sdk_types::acp::StopReason,
 }
 
 use crate::fs_sandbox::resolve_agent_cwd;
@@ -975,6 +976,7 @@ mod tests {
         let completion = PromptCompletion {
             session_key: session_key.clone(),
             session_expired: false,
+            stop_reason: anyclaw_sdk_types::acp::StopReason::EndTurn,
         };
         m.handle_prompt_completion(completion, &mut incoming_rx)
             .await;
@@ -1010,7 +1012,7 @@ mod tests {
         }
 
         assert!(
-            matches!(&events[1], ChannelEvent::SessionComplete { session_key: sk } if sk == &session_key),
+            matches!(&events[1], ChannelEvent::SessionComplete { session_key: sk, .. } if sk == &session_key),
             "expected SessionComplete as second event"
         );
     }
@@ -1038,6 +1040,7 @@ mod tests {
         let completion = PromptCompletion {
             session_key: session_key.clone(),
             session_expired: false,
+            stop_reason: anyclaw_sdk_types::acp::StopReason::EndTurn,
         };
         m.handle_prompt_completion(completion, &mut incoming_rx)
             .await;
@@ -1054,7 +1057,7 @@ mod tests {
             events.len()
         );
         assert!(
-            matches!(&events[0], ChannelEvent::SessionComplete { session_key: sk } if sk == &session_key),
+            matches!(&events[0], ChannelEvent::SessionComplete { session_key: sk, .. } if sk == &session_key),
             "expected SessionComplete only"
         );
         assert!(
@@ -1136,6 +1139,7 @@ mod tests {
         let completion = PromptCompletion {
             session_key: session_key.clone(),
             session_expired: false,
+            stop_reason: anyclaw_sdk_types::acp::StopReason::EndTurn,
         };
         m.handle_prompt_completion(completion, &mut incoming_rx)
             .await;

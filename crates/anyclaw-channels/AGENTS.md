@@ -63,6 +63,8 @@ Ack notification (`channel/ackMessage`) fires only at dispatch time — when a m
 
 `messageId` is always `Null` — Telegram tracks the last message independently via `last_message_ids`.
 
+`handle_session_complete()` receives `stop_reason: StopReason` from `ChannelEvent::SessionComplete` and includes it in the `channel/ackLifecycle` notification sent to the channel binary. This carries the canonical ACP completion reason (e.g., `end_turn`, `max_tokens`, `refusal`) so channels can adapt rendering or messaging accordingly.
+
 ## Typing Indicator
 
 `channel/typingIndicator` fires at dispatch time inside `dispatch_to_agent()`. This signals the channel that the agent is actively processing a message. Queued messages do not trigger typing — only the message being dispatched.

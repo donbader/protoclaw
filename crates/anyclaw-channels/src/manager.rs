@@ -7,6 +7,7 @@ use anyclaw_core::{
     AgentsCommand, CrashAction, CrashTracker, ExponentialBackoff, Manager, ManagerError,
     ManagerHandle, SessionKey, SlotLifecycle, constants,
 };
+use anyclaw_sdk_types::acp::StopReason;
 use anyclaw_sdk_types::{ChannelAckConfig, ChannelEvent, PermissionOption};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
@@ -432,7 +433,7 @@ impl ChannelsManager {
         }
     }
 
-    async fn handle_session_complete(&mut self, session_key: SessionKey) {
+    async fn handle_session_complete(&mut self, session_key: SessionKey, stop_reason: StopReason) {
         // Notify channel that the agent finished responding so it can
         // remove/replace the ack reaction emoji.
         if let Some(entry) = self.routing_table.get(&session_key) {
@@ -441,6 +442,7 @@ impl ChannelsManager {
                 let lifecycle_params = serde_json::json!({
                     "sessionId": entry.acp_session_id,
                     "action": "response_completed",
+                    "stopReason": stop_reason,
                 });
                 let _ = conn
                     .send_notification("channel/ackLifecycle", lifecycle_params)
@@ -588,8 +590,11 @@ impl ChannelsManager {
             } => {
                 self.handle_deliver_message(session_key, content).await;
             }
-            ChannelEvent::SessionComplete { session_key } => {
-                self.handle_session_complete(session_key).await;
+            ChannelEvent::SessionComplete {
+                session_key,
+                stop_reason,
+            } => {
+                self.handle_session_complete(session_key, stop_reason).await;
             }
             ChannelEvent::RoutePermission {
                 session_key,
