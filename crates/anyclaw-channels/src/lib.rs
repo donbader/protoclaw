@@ -17,8 +17,6 @@ pub mod error;
 #[allow(clippy::disallowed_types)]
 /// [`ChannelsManager`] — routing table, crash isolation, poll loop.
 pub mod manager;
-/// Per-session FIFO message queue with two-phase collect+flush.
-pub mod session_queue;
 
 pub use connection::*;
 pub use debug_http::DebugHttpChannel;
