@@ -431,12 +431,9 @@ impl AgentsManager {
                     acp_session_id = %acp_id,
                     "platform command /new: fresh session created"
                 );
-                self.send_synthetic_response(
-                    session_key,
-                    "New conversation started.",
-                    StopReason::EndTurn,
-                )
-                .await;
+                self.send_synthetic_chunk(session_key, "New conversation started.")
+                    .await;
+                self.queue.mark_idle(session_key);
                 Ok(())
             }
             "cancel" => {
@@ -447,12 +444,8 @@ impl AgentsManager {
                         session_key = %session_key,
                         "platform command /cancel: session cancelled"
                     );
-                    self.send_synthetic_response(
-                        session_key,
-                        "Operation cancelled.",
-                        StopReason::Cancelled,
-                    )
-                    .await;
+                    self.send_synthetic_chunk(session_key, "Operation cancelled.")
+                        .await;
                     // Mark queue idle so subsequent messages aren't stuck.
                     // If the agent also responds, mark_idle on an idle session is a no-op.
                     self.queue.mark_idle(session_key);
