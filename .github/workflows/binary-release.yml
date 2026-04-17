@@ -24,7 +24,7 @@ jobs:
             os: ubuntu-24.04-arm
             artifact: anyclaw-aarch64-linux
           - target: x86_64-apple-darwin
-            os: macos-latest
+            os: macos-15-intel
             artifact: anyclaw-x86_64-macos
           - target: aarch64-apple-darwin
             os: macos-latest
