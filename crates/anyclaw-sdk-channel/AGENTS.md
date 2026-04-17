@@ -23,7 +23,6 @@ pub trait Channel: Send + 'static {
     async fn on_initialize(&mut self, params: ChannelInitializeParams) -> Result<(), ChannelSdkError>;
     async fn on_ready(&mut self, outbound: mpsc::Sender<ChannelSendMessage>, permission_tx: mpsc::Sender<PermissionResponse>) -> Result<(), ChannelSdkError>;
     async fn deliver_message(&mut self, msg: DeliverMessage) -> Result<(), ChannelSdkError>;
-    async fn push_message(&mut self, msg: PushMessage) -> Result<(), ChannelSdkError>; // default: delegates to deliver_message
     async fn show_permission_prompt(&mut self, req: ChannelRequestPermission) -> Result<(), ChannelSdkError>;
     async fn handle_unknown(&mut self, method: &str, params: Value) -> Result<Value, ChannelSdkError>;
     async fn on_session_created(&mut self, msg: SessionCreated) -> Result<(), ChannelSdkError>;

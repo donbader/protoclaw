@@ -21,11 +21,10 @@ Shared serde types used by all three SDK crates (agent, channel, tool) and by in
 **Channel protocol:**
 - `ChannelCapabilities { streaming, rich_text, media }` — advertised during initialize
 - `ChannelInitializeParams { agent_name, ack_config, options }` / `ChannelInitializeResult` — handshake types. `options: HashMap<String, Value>` forwards channel-specific config from `anyclaw.yaml`
-- `DeliverMessage { session_id, content }` — anyclaw → channel
+- `DeliverMessage { session_id, content }` — anyclaw → channel (also used for agent-initiated push via per-part delivery)
 - `ChannelSendMessage { peer_info, content, metadata }` — channel → anyclaw. `content` is `Vec<ContentPart>`, `metadata` is `Option<MessageMetadata>` for reply/thread context
 - `PeerInfo { channel_name, peer_id, kind }` — inbound message identity
 - `MessageMetadata { reply_to_message_id, thread_id }` — optional reply/thread context on inbound messages
-- `PushMessage { session_id, content }` — anyclaw → channel: agent-initiated push via `channel/pushMessage`
 - `ThoughtContent` — helper to extract `agent_thought_chunk` from `DeliverMessage.content`
 - `ContentKind` — typed dispatch enum over `DeliverMessage.content`: `Thought`, `MessageChunk`, `Result`, `UserMessageChunk`, `UsageUpdate`, `ToolCall`, `ToolCallUpdate`, `AvailableCommandsUpdate`, `Image`, `File`, `Audio`, `Unknown`
 - `AckNotification` / `AckLifecycleNotification` — ack reaction lifecycle
