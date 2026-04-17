@@ -12,6 +12,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.8.1] — 2026-04-17
+
+### Added
+
+- **Reply photo forwarding**: Photos attached to replied-to messages are now downloaded and forwarded to the agent as base64-encoded image data, giving vision-capable models full visual context of reply targets (#52)
+
 ## [0.7.1] — 2026-04-17
 
 ### Added
@@ -53,7 +59,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 Starting point for tracked binary releases. Prior versions were not formally documented.
 
-[Unreleased]: https://github.com/donbader/anyclaw/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/donbader/anyclaw/compare/v0.8.1...HEAD
+[0.8.1]: https://github.com/donbader/anyclaw/compare/v0.7.1...v0.8.1
 [0.7.1]: https://github.com/donbader/anyclaw/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/donbader/anyclaw/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/donbader/anyclaw/compare/v0.5.2...v0.6.1
