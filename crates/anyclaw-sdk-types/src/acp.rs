@@ -7,7 +7,9 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-pub use agent_client_protocol_schema::{AgentCapabilities, McpCapabilities, PromptCapabilities};
+pub use agent_client_protocol_schema::{
+    AgentCapabilities, McpCapabilities, PromptCapabilities, StopReason,
+};
 
 /// Session capabilities supported by the agent.
 ///
@@ -15,6 +17,16 @@ pub use agent_client_protocol_schema::{AgentCapabilities, McpCapabilities, Promp
 /// behind unstable feature flags in the official crate. The stable-only
 /// `official::SessionCapabilities` only exposes `list`, which is wire-compatible.
 pub use agent_client_protocol_schema::SessionCapabilities;
+
+/// ACP content block types — re-exported from `agent_client_protocol_schema`.
+///
+/// `ContentBlock` is the ACP wire type used in `session/prompt` (outbound to agent)
+/// and `session/push` (inbound from agent). Internally, anyclaw uses `ContentPart`
+/// (URL-based), converting at the agent wire boundary.
+pub use agent_client_protocol_schema::{
+    AudioContent, BlobResourceContents, ContentBlock, EmbeddedResource, EmbeddedResourceResource,
+    ImageContent, ResourceLink, TextContent, TextResourceContents,
+};
 
 /// Capabilities advertised by the supervisor to the agent during `initialize`.
 // Extensible: experimental capabilities have agent-defined schemas (D-03)
@@ -37,6 +49,9 @@ pub struct InitializeParams {
     /// Arbitrary runtime options forwarded from `anyclaw.yaml`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub options: Option<HashMap<String, serde_json::Value>>,
+    /// Optional protocol extension metadata.
+    #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
+    pub meta: Option<serde_json::Value>,
 }
 
 /// Result returned by the agent in response to `initialize`.
@@ -61,6 +76,9 @@ pub struct InitializeResult {
     /// options always take precedence over defaults.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub defaults: Option<HashMap<String, serde_json::Value>>,
+    /// Optional protocol extension metadata.
+    #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
+    pub meta: Option<serde_json::Value>,
 }
 
 /// Describes a single MCP server to be passed to the agent on `session/new`.
@@ -98,6 +116,9 @@ pub struct SessionNewParams {
     /// MCP servers available to the agent for this session.
     #[serde(rename = "mcpServers", default)]
     pub mcp_servers: Vec<McpServerInfo>,
+    /// Optional protocol extension metadata.
+    #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
+    pub meta: Option<serde_json::Value>,
 }
 
 /// Result returned by the agent in response to `session/new`.
@@ -106,6 +127,9 @@ pub struct SessionNewResult {
     /// Session ID assigned by the agent for the new session.
     #[serde(rename = "sessionId")]
     pub session_id: String,
+    /// Optional protocol extension metadata.
+    #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
+    pub meta: Option<serde_json::Value>,
 }
 
 /// A single content element in a prompt message.
@@ -158,14 +182,93 @@ impl Default for ContentPart {
     }
 }
 
+/// Convert an internal `ContentPart` (URL-based) to an ACP wire `ContentBlock`.
+///
+/// - `Text` → `ContentBlock::Text`
+/// - `Image` → `ContentBlock::Image` with empty `data`, `uri` set to the URL
+/// - `File` → `ContentBlock::Resource` with a `TextResourceContents` (uri-only)
+/// - `Audio` → `ContentBlock::Audio` with empty `data`, `uri` implied by URL
+pub fn content_part_to_block(part: ContentPart) -> ContentBlock {
+    match part {
+        ContentPart::Text { text } => ContentBlock::Text(TextContent::new(text)),
+        ContentPart::Image { url } => ContentBlock::Image(ImageContent::new("", "").uri(url)),
+        ContentPart::File { url, mime_type, .. } => {
+            let mut res = TextResourceContents::new("", url);
+            res.mime_type = mime_type;
+            ContentBlock::Resource(EmbeddedResource::new(
+                EmbeddedResourceResource::TextResourceContents(res),
+            ))
+        }
+        ContentPart::Audio { url: _, mime_type } => ContentBlock::Audio(AudioContent::new(
+            "",
+            mime_type.unwrap_or_else(|| "audio/mpeg".into()),
+        )),
+    }
+}
+
+/// Convert an ACP wire `ContentBlock` to an internal `ContentPart` (URL-based).
+///
+/// - `Text` → `ContentPart::Text`
+/// - `Image` → `ContentPart::Image` (uses `uri` if present, otherwise empty string)
+/// - `Audio` → `ContentPart::Audio`
+/// - `Resource` / `ResourceLink` → `ContentPart::File` using the URI
+pub fn content_block_to_part(block: ContentBlock) -> ContentPart {
+    match block {
+        ContentBlock::Text(t) => ContentPart::Text { text: t.text },
+        ContentBlock::Image(img) => ContentPart::Image {
+            url: img.uri.unwrap_or_default(),
+        },
+        ContentBlock::Audio(audio) => ContentPart::Audio {
+            url: String::new(),
+            mime_type: Some(audio.mime_type),
+        },
+        ContentBlock::Resource(embedded) => match embedded.resource {
+            EmbeddedResourceResource::TextResourceContents(r) => ContentPart::File {
+                url: r.uri,
+                filename: None,
+                mime_type: r.mime_type,
+            },
+            EmbeddedResourceResource::BlobResourceContents(r) => ContentPart::File {
+                url: r.uri,
+                filename: None,
+                mime_type: r.mime_type,
+            },
+            _ => ContentPart::Text {
+                text: String::new(),
+            },
+        },
+        ContentBlock::ResourceLink(link) => ContentPart::File {
+            url: link.uri,
+            filename: Some(link.name),
+            mime_type: link.mime_type,
+        },
+        _ => ContentPart::Text {
+            text: String::new(),
+        },
+    }
+}
+
+/// Converts a slice of `ContentPart` values into ACP wire `ContentBlock` values.
+pub fn content_parts_to_blocks(parts: Vec<ContentPart>) -> Vec<ContentBlock> {
+    parts.into_iter().map(content_part_to_block).collect()
+}
+
+/// Converts a slice of ACP wire `ContentBlock` values into internal `ContentPart` values.
+pub fn content_blocks_to_parts(blocks: Vec<ContentBlock>) -> Vec<ContentPart> {
+    blocks.into_iter().map(content_block_to_part).collect()
+}
+
 /// Parameters for the `session/prompt` request (supervisor → agent).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SessionPromptParams {
     /// ID of the session to send the prompt to.
     #[serde(rename = "sessionId")]
     pub session_id: String,
-    /// Content parts forming the prompt message.
-    pub prompt: Vec<ContentPart>,
+    /// ACP wire content blocks forming the prompt message.
+    pub prompt: Vec<ContentBlock>,
+    /// Optional protocol extension metadata.
+    #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
+    pub meta: Option<serde_json::Value>,
 }
 
 /// Parameters for the `session/cancel` request (supervisor → agent).
@@ -185,8 +288,11 @@ pub struct SessionCancelParams {
 pub struct SessionPushParams {
     /// ID of the session to push content into.
     pub session_id: String,
-    /// Content parts to inject into the session.
-    pub content: Vec<ContentPart>,
+    /// ACP wire content blocks to inject into the session.
+    pub content: Vec<ContentBlock>,
+    /// Optional protocol extension metadata.
+    #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
+    pub meta: Option<serde_json::Value>,
 }
 
 /// Result returned by the agent in response to `session/push`.
@@ -392,29 +498,16 @@ pub struct SessionUpdateEvent {
     pub update: SessionUpdateType,
 }
 
-/// Why the agent stopped generating output for this prompt turn.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum StopReason {
-    /// Agent completed its response naturally.
-    #[default]
-    EndTurn,
-    /// Agent reached the maximum token limit.
-    MaxTokens,
-    /// Agent reached the maximum number of turn requests.
-    MaxTurnRequests,
-    /// Agent refused to respond to the prompt.
-    Refusal,
-    /// The prompt was cancelled before completion.
-    Cancelled,
+fn default_stop_reason() -> StopReason {
+    StopReason::EndTurn
 }
 
 /// Parsed body of a successful `session/prompt` JSON-RPC response.
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PromptResponse {
     /// Why the agent stopped. Defaults to `EndTurn` when absent.
-    #[serde(default)]
+    #[serde(default = "default_stop_reason")]
     pub stop_reason: StopReason,
 }
 
@@ -434,7 +527,8 @@ mod tests {
     fn when_session_prompt_params_serialized_then_matches_wire_format() {
         let params = SessionPromptParams {
             session_id: "ses-1".into(),
-            prompt: vec![ContentPart::text("hi")],
+            prompt: vec![ContentBlock::from("hi")],
+            meta: None,
         };
         let json = serde_json::to_value(&params).unwrap();
         assert_eq!(json["sessionId"], "ses-1");
@@ -448,7 +542,8 @@ mod tests {
     fn when_session_prompt_params_serialized_then_no_role_wrapper_present() {
         let params = SessionPromptParams {
             session_id: "ses-1".into(),
-            prompt: vec![ContentPart::text("hi")],
+            prompt: vec![ContentBlock::from("hi")],
+            meta: None,
         };
         let json = serde_json::to_value(&params).unwrap();
         assert!(json["prompt"][0].get("role").is_none());
@@ -554,6 +649,7 @@ mod tests {
             protocol_version: 1,
             capabilities: ClientCapabilities { experimental: None },
             options: None,
+            meta: None,
         };
         let json = serde_json::to_string(&params).unwrap();
         let back: InitializeParams = serde_json::from_str(&json).unwrap();
@@ -568,6 +664,7 @@ mod tests {
             protocol_version: 1,
             capabilities: ClientCapabilities { experimental: None },
             options: Some(opts),
+            meta: None,
         };
         let json = serde_json::to_string(&params).unwrap();
         let back: InitializeParams = serde_json::from_str(&json).unwrap();
@@ -751,6 +848,7 @@ mod tests {
             protocol_version: 1,
             capabilities: ClientCapabilities { experimental: None },
             options: Some(opts),
+            meta: None,
         };
         let json = serde_json::to_value(&original).unwrap();
         let restored: InitializeParams = serde_json::from_value(json).unwrap();
@@ -763,6 +861,7 @@ mod tests {
             protocol_version: 1,
             agent_capabilities: None,
             defaults: None,
+            meta: None,
         };
         let json = serde_json::to_value(&original).unwrap();
         let restored: InitializeResult = serde_json::from_value(json).unwrap();
@@ -799,6 +898,7 @@ mod tests {
                 env: vec!["KEY=VAL".into()],
                 headers: vec![],
             }],
+            meta: None,
         };
         let json = serde_json::to_value(&original).unwrap();
         let restored: SessionNewParams = serde_json::from_value(json).unwrap();
@@ -811,6 +911,7 @@ mod tests {
             session_id: None,
             cwd: "/home/user".into(),
             mcp_servers: vec![],
+            meta: None,
         };
         let json = serde_json::to_value(&original).unwrap();
         let restored: SessionNewParams = serde_json::from_value(json).unwrap();
@@ -821,6 +922,7 @@ mod tests {
     fn when_session_new_result_round_trips_then_identical() {
         let original = SessionNewResult {
             session_id: "ses-abc123".into(),
+            meta: None,
         };
         let json = serde_json::to_value(&original).unwrap();
         let restored: SessionNewResult = serde_json::from_value(json).unwrap();
@@ -900,11 +1002,10 @@ mod tests {
         let original = SessionPromptParams {
             session_id: "ses-1".into(),
             prompt: vec![
-                ContentPart::text("hello"),
-                ContentPart::Image {
-                    url: "http://img".into(),
-                },
+                ContentBlock::from("hello"),
+                ContentBlock::Image(ImageContent::new("http://img", "image/png")),
             ],
+            meta: None,
         };
         let json = serde_json::to_value(&original).unwrap();
         let restored: SessionPromptParams = serde_json::from_value(json).unwrap();
@@ -1094,7 +1195,8 @@ mod tests {
     fn when_session_push_params_serialized_then_matches_wire_format() {
         let params = SessionPushParams {
             session_id: "ses-push-1".into(),
-            content: vec![ContentPart::text("hello push")],
+            content: vec![ContentBlock::from("hello push")],
+            meta: None,
         };
         let json = serde_json::to_value(&params).unwrap();
         assert_eq!(json["sessionId"], "ses-push-1");
@@ -1109,11 +1211,10 @@ mod tests {
         let params = SessionPushParams {
             session_id: "ses-push-2".into(),
             content: vec![
-                ContentPart::text("text part"),
-                ContentPart::Image {
-                    url: "http://example.com/img.png".into(),
-                },
+                ContentBlock::from("text part"),
+                ContentBlock::Image(ImageContent::new("http://example.com/img.png", "image/png")),
             ],
+            meta: None,
         };
         let json = serde_json::to_string(&params).expect("serialize");
         let deserialized: SessionPushParams = serde_json::from_str(&json).expect("deserialize");
@@ -1126,5 +1227,70 @@ mod tests {
         let json = serde_json::to_string(&result).expect("serialize");
         let deserialized: SessionPushResult = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(result, deserialized);
+    }
+
+    #[rstest]
+    fn when_text_part_converted_to_block_then_text_block() {
+        let part = ContentPart::Text {
+            text: "hello".into(),
+        };
+        let block = content_part_to_block(part);
+        assert!(matches!(block, ContentBlock::Text(t) if t.text == "hello"));
+    }
+
+    #[rstest]
+    fn when_image_part_converted_to_block_then_image_block_with_uri() {
+        let part = ContentPart::Image {
+            url: "https://example.com/img.png".into(),
+        };
+        let block = content_part_to_block(part);
+        match block {
+            ContentBlock::Image(img) => {
+                assert_eq!(img.uri.as_deref(), Some("https://example.com/img.png"))
+            }
+            _ => panic!("expected Image block"),
+        }
+    }
+
+    #[rstest]
+    fn when_text_block_converted_to_part_then_text_part() {
+        let block = ContentBlock::Text(TextContent::new("hello"));
+        let part = content_block_to_part(block);
+        assert_eq!(
+            part,
+            ContentPart::Text {
+                text: "hello".into()
+            }
+        );
+    }
+
+    #[rstest]
+    fn when_image_block_with_uri_converted_to_part_then_image_part() {
+        let block = ContentBlock::Image(ImageContent::new("", "image/png").uri("https://img"));
+        let part = content_block_to_part(block);
+        assert_eq!(
+            part,
+            ContentPart::Image {
+                url: "https://img".into()
+            }
+        );
+    }
+
+    #[rstest]
+    fn when_content_parts_batch_converted_then_all_blocks() {
+        let parts = vec![ContentPart::text("a"), ContentPart::text("b")];
+        let blocks = content_parts_to_blocks(parts);
+        assert_eq!(blocks.len(), 2);
+        assert!(matches!(&blocks[0], ContentBlock::Text(t) if t.text == "a"));
+        assert!(matches!(&blocks[1], ContentBlock::Text(t) if t.text == "b"));
+    }
+
+    #[rstest]
+    fn when_content_blocks_batch_converted_then_all_parts() {
+        let blocks = vec![ContentBlock::from("x"), ContentBlock::from("y")];
+        let parts = content_blocks_to_parts(blocks);
+        assert_eq!(parts.len(), 2);
+        assert_eq!(parts[0], ContentPart::Text { text: "x".into() });
+        assert_eq!(parts[1], ContentPart::Text { text: "y".into() });
     }
 }

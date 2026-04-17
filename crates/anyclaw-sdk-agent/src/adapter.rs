@@ -2,8 +2,8 @@ use std::future::Future;
 use std::pin::Pin;
 
 use anyclaw_sdk_types::{
-    InitializeParams, InitializeResult, PermissionRequest, SessionNewParams, SessionNewResult,
-    SessionPromptParams, SessionUpdateEvent,
+    ContentBlock, InitializeParams, InitializeResult, PermissionRequest, SessionNewParams,
+    SessionNewResult, SessionPromptParams, SessionUpdateEvent, TextContent,
 };
 
 use crate::error::AgentSdkError;
@@ -190,6 +190,7 @@ mod tests {
             protocol_version: 1,
             capabilities: ClientCapabilities { experimental: None },
             options: None,
+            meta: None,
         };
         let output = AgentAdapter::on_initialize_params(&adapter, params.clone())
             .await
@@ -205,6 +206,7 @@ mod tests {
             protocol_version: 1,
             agent_capabilities: None,
             defaults: None,
+            meta: None,
         };
         let output = AgentAdapter::on_initialize_result(&adapter, result.clone())
             .await
@@ -220,6 +222,7 @@ mod tests {
             session_id: None,
             cwd: "/tmp".into(),
             mcp_servers: vec![],
+            meta: None,
         };
         let output = AgentAdapter::on_session_new_params(&adapter, params.clone())
             .await
@@ -233,6 +236,7 @@ mod tests {
         let adapter = DefaultAdapter;
         let result = SessionNewResult {
             session_id: "sess-1".into(),
+            meta: None,
         };
         let output = AgentAdapter::on_session_new_result(&adapter, result.clone())
             .await
@@ -246,7 +250,8 @@ mod tests {
         let adapter = DefaultAdapter;
         let params = SessionPromptParams {
             session_id: "sess-1".into(),
-            prompt: vec![ContentPart::text("hello")],
+            prompt: vec![ContentBlock::Text(TextContent::new("hello"))],
+            meta: None,
         };
         let output = AgentAdapter::on_session_prompt_params(&adapter, params.clone())
             .await
@@ -323,6 +328,7 @@ mod tests {
         let adapter = PermissionRewritingAdapter;
         let result = SessionNewResult {
             session_id: "sess-2".into(),
+            meta: None,
         };
         let output = AgentAdapter::on_session_new_result(&adapter, result.clone())
             .await
@@ -338,6 +344,7 @@ mod tests {
             protocol_version: 1,
             capabilities: ClientCapabilities { experimental: None },
             options: None,
+            meta: None,
         };
         let output = adapter.on_initialize_params(params.clone()).await.unwrap();
         assert_eq!(output, params);

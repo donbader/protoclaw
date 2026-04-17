@@ -45,6 +45,7 @@ impl Channel for SdkTestChannel {
                 },
                 content: vec![ContentPart::text(content_str)],
                 metadata: None,
+                meta: None,
             };
             outbound.send(send_msg).await.ok();
         }
@@ -122,6 +123,7 @@ mod tests {
         let msg = DeliverMessage {
             session_id: "s1".into(),
             content: serde_json::json!("hello from agent"),
+            meta: None,
         };
         ch.deliver_message(msg).await.unwrap();
         let received = rx.recv().await.expect("should receive echoed message");

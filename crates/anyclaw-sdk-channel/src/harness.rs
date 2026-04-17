@@ -463,6 +463,7 @@ mod tests {
             .deliver(DeliverMessage {
                 session_id: "s1".into(),
                 content: serde_json::json!("test-msg"),
+                meta: None,
             })
             .await
             .unwrap();

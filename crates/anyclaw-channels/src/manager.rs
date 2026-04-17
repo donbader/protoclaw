@@ -412,20 +412,14 @@ impl ChannelsManager {
             }
 
             if let Some(conn) = &slot.connection {
-                let is_push = content
-                    .pointer("/update/sessionUpdate")
-                    .and_then(|v| v.as_str())
-                    == Some("push_message");
-                let method = if is_push {
-                    "channel/pushMessage"
-                } else {
-                    "channel/deliverMessage"
-                };
                 let params = serde_json::json!({
                     "sessionId": entry.acp_session_id,
                     "content": content,
                 });
-                if let Err(e) = conn.send_notification(method, params).await {
+                if let Err(e) = conn
+                    .send_notification("channel/deliverMessage", params)
+                    .await
+                {
                     tracing::warn!(
                         channel = %slot.name,
                         session_key = %session_key,

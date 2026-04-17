@@ -4,7 +4,9 @@ use anyclaw_jsonrpc::types::{JsonRpcRequest, JsonRpcResponse, RequestId};
 use anyclaw_sdk_types::{ChannelEvent, PermissionOption};
 use tokio::sync::mpsc;
 
-use crate::acp_types::{SessionPushParams, SessionUpdateEvent, SessionUpdateType};
+use crate::acp_types::{
+    SessionPushParams, SessionUpdateEvent, SessionUpdateType, content_block_to_part,
+};
 use crate::connection::IncomingMessage;
 use crate::manager::{AgentsManager, PendingPermission, SlotIncoming};
 
@@ -25,7 +27,7 @@ impl AgentsManager {
             "session/request_permission" => {
                 self.handle_permission_request(slot_idx, &request).await;
             }
-            "session/push" => {
+            "session/push" | "_session/push" => {
                 self.handle_session_push(slot_idx, &request).await;
             }
             "fs/read_text_file" => {
@@ -309,7 +311,8 @@ impl AgentsManager {
             .cloned()
             && let Some(sender) = &self.channels_sender
         {
-            for part in &push_params.content {
+            for block in push_params.content {
+                let part = content_block_to_part(block);
                 let content = serde_json::json!({
                     "update": {
                         "sessionUpdate": "agent_message_chunk",
@@ -388,6 +391,7 @@ impl AgentsManager {
                     anyclaw_sdk_types::acp::StopReason::MaxTurnRequests => "max_turn_requests",
                     anyclaw_sdk_types::acp::StopReason::Refusal => "refusal",
                     anyclaw_sdk_types::acp::StopReason::Cancelled => "cancelled",
+                    _ => "unknown",
                 };
                 let synthetic_result = serde_json::json!({
                     "sessionId": acp_session_id,

@@ -152,6 +152,7 @@ mod tests {
                             msg.content.to_string(),
                         )],
                         metadata: None,
+                        meta: None,
                     })
                     .await;
             }
@@ -214,6 +215,7 @@ mod tests {
             .deliver(DeliverMessage {
                 session_id: "s1".into(),
                 content: serde_json::json!("hello"),
+                meta: None,
             })
             .await
             .unwrap();

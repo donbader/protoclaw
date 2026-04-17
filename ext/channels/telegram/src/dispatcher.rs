@@ -52,6 +52,7 @@ pub async fn process_text_message(
         peer_info,
         content: vec![ContentPart::text(text)],
         metadata,
+        meta: None,
     };
     outbound
         .send(msg)

@@ -48,6 +48,7 @@ pub trait Channel: Send + 'static {
         let deliver = DeliverMessage {
             session_id: msg.session_id,
             content: msg.content,
+            meta: msg.meta,
         };
         self.deliver_message(deliver).await
     }
@@ -153,6 +154,7 @@ mod tests {
         let msg = DeliverMessage {
             session_id: "s1".into(),
             content: serde_json::json!("hello"),
+            meta: None,
         };
         assert!(ch.deliver_message(msg).await.is_ok());
     }

@@ -54,6 +54,9 @@ pub struct DeliverMessage {
     pub session_id: String,
     /// Agent content payload (streaming update, result, thought, etc.).
     pub content: serde_json::Value,
+    /// Optional protocol extension metadata.
+    #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
+    pub meta: Option<serde_json::Value>,
 }
 
 /// Peer identity information for inbound messages.
@@ -91,6 +94,9 @@ pub struct ChannelSendMessage {
     /// Optional metadata providing threading and reply context.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metadata: Option<MessageMetadata>,
+    /// Optional protocol extension metadata.
+    #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
+    pub meta: Option<serde_json::Value>,
 }
 
 /// Helper for channel implementations to extract thought content from DeliverMessage.
@@ -472,6 +478,9 @@ pub struct PushMessage {
     pub session_id: String,
     /// Agent content payload to deliver.
     pub content: serde_json::Value,
+    /// Optional protocol extension metadata.
+    #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
+    pub meta: Option<serde_json::Value>,
 }
 
 #[cfg(test)]
@@ -514,6 +523,7 @@ mod tests {
         let msg = DeliverMessage {
             session_id: "sess-1".into(),
             content: serde_json::json!({"text": "hello"}),
+            meta: None,
         };
         let json = serde_json::to_value(&msg).unwrap();
         assert_eq!(json["sessionId"], "sess-1");
@@ -532,6 +542,7 @@ mod tests {
             },
             content: vec![crate::acp::ContentPart::text("hello agent")],
             metadata: None,
+            meta: None,
         };
         let json = serde_json::to_value(&msg).unwrap();
         assert_eq!(json["peerInfo"]["channelName"], "debug-http");
@@ -615,6 +626,7 @@ mod tests {
                 "type": "agent_thought_chunk",
                 "content": "deep thought"
             }),
+            meta: None,
         };
         let thought = ThoughtContent::from_content(&msg.content).unwrap();
         assert_eq!(thought.content, "deep thought");
@@ -1104,6 +1116,7 @@ mod tests {
         let original = DeliverMessage {
             session_id: "ses-1".into(),
             content: serde_json::json!({"update": {"sessionUpdate": "result", "content": "done"}}),
+            meta: None,
         };
         let json = serde_json::to_value(&original).unwrap();
         let restored: DeliverMessage = serde_json::from_value(json).unwrap();
@@ -1132,6 +1145,7 @@ mod tests {
             },
             content: vec![crate::acp::ContentPart::text("hello agent")],
             metadata: None,
+            meta: None,
         };
         let json = serde_json::to_value(&original).unwrap();
         let restored: ChannelSendMessage = serde_json::from_value(json).unwrap();
@@ -1329,6 +1343,7 @@ mod tests {
                 },
             ],
             metadata: None,
+            meta: None,
         };
         let json = serde_json::to_value(&original).unwrap();
         let restored: ChannelSendMessage = serde_json::from_value(json).unwrap();
@@ -1348,6 +1363,7 @@ mod tests {
                 reply_to_message_id: Some("msg-99".into()),
                 thread_id: Some("thread-1".into()),
             }),
+            meta: None,
         };
         let json = serde_json::to_value(&original).unwrap();
         assert_eq!(json["metadata"]["replyToMessageId"], "msg-99");
@@ -1428,6 +1444,7 @@ mod tests {
         let original = PushMessage {
             session_id: "ses-1".into(),
             content: serde_json::json!({"update": {"sessionUpdate": "agent_message_chunk", "content": "hello"}}),
+            meta: None,
         };
         let json = serde_json::to_value(&original).unwrap();
         assert_eq!(json["sessionId"], "ses-1");

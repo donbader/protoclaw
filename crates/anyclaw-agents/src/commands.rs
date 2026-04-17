@@ -11,7 +11,7 @@ use anyclaw_sdk_types::MessageMetadata;
 
 use crate::acp_types::{
     ContentPart, PromptResponse, SessionCancelParams, SessionForkParams, SessionForkResult,
-    SessionListParams, SessionPromptParams,
+    SessionListParams, SessionPromptParams, content_parts_to_blocks,
 };
 use crate::error::AgentsError;
 use crate::manager::{AgentsManager, PromptCompletion};
@@ -189,7 +189,8 @@ impl AgentsManager {
 
         let params = serde_json::to_value(SessionPromptParams {
             session_id: acp_id.clone(),
-            prompt: vec![ContentPart::text(message)],
+            prompt: content_parts_to_blocks(vec![ContentPart::text(message)]),
+            meta: None,
         })?;
 
         let _response_rx = conn.send_request("session/prompt", params).await?;
@@ -342,7 +343,8 @@ impl AgentsManager {
 
         let params = serde_json::to_value(SessionPromptParams {
             session_id: acp_session_id.clone(),
-            prompt: prompt_parts,
+            prompt: content_parts_to_blocks(prompt_parts),
+            meta: None,
         })?;
 
         let response_rx = conn.send_request("session/prompt", params).await?;
@@ -413,7 +415,7 @@ impl AgentsManager {
                                 serde_json::from_value(response.result.unwrap_or_default())
                                     .unwrap_or_else(|e| {
                                         tracing::warn!(session_key = %sk, error = %e, "failed to parse PromptResponse, defaulting");
-                                        PromptResponse::default()
+                                        PromptResponse { stop_reason: anyclaw_sdk_types::acp::StopReason::EndTurn }
                                     });
                             stop_reason = prompt_resp.stop_reason;
                         }

@@ -146,6 +146,9 @@ impl TelegramChannel {
                     Some(StopReason::Cancelled) => ReactionType::Emoji {
                         emoji: "🚫".into()
                     },
+                    Some(_) => ReactionType::Emoji {
+                        emoji: "✅".into()
+                    },
                 };
                 let bot_clone = bot.clone();
                 let _ = crate::deliver::retry_telegram_op(

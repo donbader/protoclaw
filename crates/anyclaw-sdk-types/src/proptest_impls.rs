@@ -48,13 +48,13 @@ prop_compose! {
         capabilities in arb_client_capabilities(),
         options in proptest::option::of(arb_string_value_map()),
     ) -> InitializeParams {
-        InitializeParams { protocol_version, capabilities, options }
+        InitializeParams { protocol_version, capabilities, options, meta: None }
     }
 }
 
 prop_compose! {
     fn arb_initialize_result()(protocol_version in any::<u32>()) -> InitializeResult {
-        InitializeResult { protocol_version, agent_capabilities: None, defaults: None }
+        InitializeResult { protocol_version, agent_capabilities: None, defaults: None, meta: None }
     }
 }
 
@@ -80,13 +80,13 @@ prop_compose! {
         cwd in arb_string(),
         mcp_servers in proptest::collection::vec(arb_mcp_server_info(), 0..2),
     ) -> SessionNewParams {
-        SessionNewParams { session_id, cwd, mcp_servers }
+        SessionNewParams { session_id, cwd, mcp_servers, meta: None }
     }
 }
 
 prop_compose! {
     fn arb_session_new_result()(session_id in arb_string()) -> SessionNewResult {
-        SessionNewResult { session_id }
+        SessionNewResult { session_id, meta: None }
     }
 }
 
@@ -102,7 +102,7 @@ prop_compose! {
         session_id in arb_string(),
         prompt in proptest::collection::vec(arb_content_part(), 0..3),
     ) -> SessionPromptParams {
-        SessionPromptParams { session_id, prompt }
+        SessionPromptParams { session_id, prompt: crate::acp::content_parts_to_blocks(prompt), meta: None }
     }
 }
 
@@ -210,7 +210,7 @@ prop_compose! {
         session_id in arb_string(),
         content in arb_json_value(),
     ) -> DeliverMessage {
-        DeliverMessage { session_id, content }
+        DeliverMessage { session_id, content, meta: None }
     }
 }
 
@@ -239,7 +239,7 @@ prop_compose! {
         content in proptest::collection::vec(arb_content_part(), 0..4),
         metadata in proptest::option::of(arb_message_metadata()),
     ) -> ChannelSendMessage {
-        ChannelSendMessage { peer_info, content, metadata }
+        ChannelSendMessage { peer_info, content, metadata, meta: None }
     }
 }
 

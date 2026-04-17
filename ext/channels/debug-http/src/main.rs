@@ -328,6 +328,7 @@ async fn handle_message(
             },
             content: vec![ContentPart::text(body.message)],
             metadata: None,
+            meta: None,
         };
         let _ = tx.send(msg).await;
     }
@@ -373,6 +374,7 @@ async fn handle_cancel(State(state): State<Arc<SharedState>>) -> Json<serde_json
             },
             content: vec![ContentPart::text("__cancel__")],
             metadata: None,
+            meta: None,
         };
         let _ = tx.send(msg).await;
     }
@@ -533,6 +535,7 @@ mod tests {
         let msg = DeliverMessage {
             session_id: "s1".into(),
             content: serde_json::json!("hello from agent"),
+            meta: None,
         };
         ch.deliver_message(msg).await.unwrap();
         let received = rx.try_recv().expect("should have received broadcast");
@@ -556,6 +559,7 @@ mod tests {
         let msg = DeliverMessage {
             session_id: "s1".into(),
             content: serde_json::json!({"update": {"sessionUpdate": "agent_thought_chunk", "content": "thinking..."}}),
+            meta: None,
         };
         ch.deliver_message(msg).await.unwrap();
         let received = rx.try_recv().expect("should have received broadcast");
@@ -576,6 +580,7 @@ mod tests {
         let msg = DeliverMessage {
             session_id: "s1".into(),
             content: serde_json::json!({"update": {"sessionUpdate": "agent_message_chunk", "content": "hello"}}),
+            meta: None,
         };
         ch.deliver_message(msg).await.unwrap();
         let received = rx.try_recv().expect("should have received broadcast");
@@ -598,6 +603,7 @@ mod tests {
         let msg = DeliverMessage {
             session_id: "s1".into(),
             content: serde_json::json!({"update": {"sessionUpdate": "result", "content": "done"}}),
+            meta: None,
         };
         ch.deliver_message(msg).await.unwrap();
         let received = rx.try_recv().expect("should have received broadcast");
@@ -735,6 +741,7 @@ mod tests {
                     "input": {"path": "/tmp/foo.txt"}
                 }
             }),
+            meta: None,
         };
         ch.deliver_message(msg).await.unwrap();
         let received = rx.try_recv().expect("should have received broadcast");
@@ -766,6 +773,7 @@ mod tests {
                     "output": "file contents"
                 }
             }),
+            meta: None,
         };
         ch.deliver_message(msg).await.unwrap();
         let received = rx.try_recv().expect("should have received broadcast");
