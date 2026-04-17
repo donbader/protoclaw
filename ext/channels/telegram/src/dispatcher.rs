@@ -4,6 +4,7 @@ use anyclaw_sdk_channel::ChannelSdkError;
 use anyclaw_sdk_types::ChannelSendMessage;
 use anyclaw_sdk_types::MessageMetadata;
 use anyclaw_sdk_types::acp::ContentPart;
+use teloxide::net::Download;
 use teloxide::prelude::*;
 use teloxide::types::{
     Chat, ChatId, ChatKind, InlineKeyboardMarkup, MediaKind, MessageId, MessageKind, PublicChatKind,
@@ -113,6 +114,7 @@ pub async fn process_text_message(
 }
 
 async fn handle_text_message(
+    bot: Bot,
     msg: Message,
     state: Arc<SharedState>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -137,6 +139,8 @@ async fn handle_text_message(
             &state,
         )
         .await;
+    } else if media_type_from_message(&msg).is_some() {
+        handle_media_message(bot, msg, state).await?;
     }
     Ok(())
 }
@@ -204,6 +208,136 @@ pub async fn run_dispatcher(bot: Bot, state: Arc<SharedState>) {
         .build()
         .dispatch()
         .await;
+}
+
+fn media_label_from_type(media_type: &str) -> &'static str {
+    match media_type {
+        "image" => "📷 Photo",
+        "video" => "🎬 Video",
+        "audio" => "🎵 Audio",
+        "voice" => "🎤 Voice",
+        "video_note" => "📹 Video note",
+        "animation" => "🎞 GIF",
+        "document" => "📎 Document",
+        "sticker" => "🏷 Sticker",
+        "location" => "📍 Location",
+        "contact" => "👤 Contact",
+        other => {
+            tracing::warn!(
+                media_type = other,
+                "unknown media type, using fallback label"
+            );
+            "📎 Media"
+        }
+    }
+}
+
+pub async fn process_media_message(
+    chat_id: i64,
+    chat_type: &str,
+    media_type: &str,
+    caption: Option<&str>,
+    image_url: Option<&str>,
+    metadata: Option<MessageMetadata>,
+    state: &SharedState,
+) -> Result<(), ChannelSdkError> {
+    let guard = state.outbound.lock().await;
+    let Some(outbound) = guard.as_ref() else {
+        return Ok(());
+    };
+
+    let label = media_label_from_type(media_type);
+    let mut content = Vec::new();
+
+    if let Some(url) = image_url {
+        content.push(ContentPart::Image {
+            url: url.to_string(),
+        });
+        if let Some(cap) = caption {
+            content.push(ContentPart::text(cap));
+        }
+    } else {
+        let text = match caption {
+            Some(cap) => format!("[{label}] {cap}"),
+            None => format!("[{label}]"),
+        };
+        content.push(ContentPart::text(&text));
+    }
+
+    let peer_info = peer_info_from_chat(chat_id, chat_type);
+    let msg = ChannelSendMessage {
+        peer_info,
+        content,
+        metadata,
+        meta: None,
+    };
+    outbound
+        .send(msg)
+        .await
+        .map_err(|e| ChannelSdkError::Protocol(format!("outbound send failed: {e}")))?;
+    Ok(())
+}
+
+async fn handle_media_message(
+    bot: Bot,
+    msg: Message,
+    state: Arc<SharedState>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let Some(media_type) = media_type_from_message(&msg) else {
+        return Ok(());
+    };
+    let caption = msg.caption();
+    tracing::debug!(
+        chat_id = msg.chat.id.0,
+        msg_id = msg.id.0,
+        telegram_date = msg.date.timestamp(),
+        media_type,
+        "inbound media message"
+    );
+    state
+        .last_message_ids
+        .write()
+        .await
+        .insert(msg.chat.id.0, msg.id.0);
+
+    let image_url = if media_type == "image" {
+        resolve_photo_url(&bot, &msg).await
+    } else {
+        None
+    };
+
+    let chat_type = chat_type_str(&msg.chat);
+    let _ = process_media_message(
+        msg.chat.id.0,
+        chat_type,
+        media_type,
+        caption,
+        image_url.as_deref(),
+        reply_metadata_from_message(&msg),
+        &state,
+    )
+    .await;
+    Ok(())
+}
+
+async fn resolve_photo_url(bot: &Bot, msg: &Message) -> Option<String> {
+    let photos = msg.photo()?;
+    let largest = photos.iter().max_by_key(|p| p.width * p.height)?;
+    match bot.get_file(largest.file.id.clone()).await {
+        Ok(file) => {
+            let mut buf = Vec::new();
+            if let Err(e) = bot.download_file(&file.path, &mut buf).await {
+                tracing::warn!(error = %e, "failed to download photo from Telegram");
+                return None;
+            }
+            let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &buf);
+            Some(format!("data:image/jpeg;base64,{b64}"))
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to get file from Telegram API");
+            None
+        }
+    }
 }
 
 #[cfg(test)]
@@ -382,5 +516,323 @@ mod tests {
         }));
         let meta = reply_metadata_from_message(&msg).unwrap();
         assert_eq!(meta.reply_to_sender.as_deref(), Some("Bob"));
+    }
+
+    #[tokio::test]
+    async fn when_process_media_with_image_url_then_sends_image_content_part() {
+        let state = SharedState::new();
+        let (tx, mut rx) = mpsc::channel(16);
+        *state.outbound.lock().await = Some(tx);
+
+        process_media_message(
+            12345,
+            "private",
+            "image",
+            Some("a nice photo"),
+            Some("https://api.telegram.org/file/bot123/photos/file_0.jpg"),
+            None,
+            &state,
+        )
+        .await
+        .unwrap();
+
+        let msg = rx.try_recv().unwrap();
+        assert_eq!(
+            msg.content,
+            vec![
+                ContentPart::Image {
+                    url: "https://api.telegram.org/file/bot123/photos/file_0.jpg".into()
+                },
+                ContentPart::text("a nice photo"),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn when_process_media_with_image_url_no_caption_then_sends_image_only() {
+        let state = SharedState::new();
+        let (tx, mut rx) = mpsc::channel(16);
+        *state.outbound.lock().await = Some(tx);
+
+        process_media_message(
+            12345,
+            "private",
+            "image",
+            None,
+            Some("https://api.telegram.org/file/bot123/photos/file_0.jpg"),
+            None,
+            &state,
+        )
+        .await
+        .unwrap();
+
+        let msg = rx.try_recv().unwrap();
+        assert_eq!(
+            msg.content,
+            vec![ContentPart::Image {
+                url: "https://api.telegram.org/file/bot123/photos/file_0.jpg".into()
+            }]
+        );
+    }
+
+    #[tokio::test]
+    async fn when_process_media_with_caption_then_sends_label_and_caption() {
+        let state = SharedState::new();
+        let (tx, mut rx) = mpsc::channel(16);
+        *state.outbound.lock().await = Some(tx);
+
+        process_media_message(
+            12345,
+            "private",
+            "image",
+            Some("a nice photo"),
+            None,
+            None,
+            &state,
+        )
+        .await
+        .unwrap();
+
+        let msg = rx.try_recv().unwrap();
+        assert_eq!(
+            msg.content,
+            vec![ContentPart::text("[📷 Photo] a nice photo")]
+        );
+    }
+
+    #[tokio::test]
+    async fn when_process_media_without_caption_then_sends_placeholder() {
+        let state = SharedState::new();
+        let (tx, mut rx) = mpsc::channel(16);
+        *state.outbound.lock().await = Some(tx);
+
+        process_media_message(12345, "private", "image", None, None, None, &state)
+            .await
+            .unwrap();
+
+        let msg = rx.try_recv().unwrap();
+        assert_eq!(msg.content, vec![ContentPart::text("[📷 Photo]")]);
+    }
+
+    #[tokio::test]
+    async fn when_process_media_does_nothing_when_outbound_none() {
+        let state = SharedState::new();
+        let result = process_media_message(1, "private", "image", None, None, None, &state).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn when_process_media_video_then_sends_video_label() {
+        let state = SharedState::new();
+        let (tx, mut rx) = mpsc::channel(16);
+        *state.outbound.lock().await = Some(tx);
+
+        process_media_message(1, "private", "video", Some("my video"), None, None, &state)
+            .await
+            .unwrap();
+
+        let msg = rx.try_recv().unwrap();
+        assert_eq!(msg.content, vec![ContentPart::text("[🎬 Video] my video")]);
+    }
+
+    #[test]
+    fn when_media_type_image_then_label_is_photo() {
+        assert_eq!(media_label_from_type("image"), "📷 Photo");
+    }
+
+    #[test]
+    fn when_media_type_video_then_label_is_video() {
+        assert_eq!(media_label_from_type("video"), "🎬 Video");
+    }
+
+    #[test]
+    fn when_media_type_audio_then_label_is_audio() {
+        assert_eq!(media_label_from_type("audio"), "🎵 Audio");
+    }
+
+    #[test]
+    fn when_media_type_voice_then_label_is_voice() {
+        assert_eq!(media_label_from_type("voice"), "🎤 Voice");
+    }
+
+    #[test]
+    fn when_media_type_video_note_then_label_is_video_note() {
+        assert_eq!(media_label_from_type("video_note"), "📹 Video note");
+    }
+
+    #[test]
+    fn when_media_type_animation_then_label_is_gif() {
+        assert_eq!(media_label_from_type("animation"), "🎞 GIF");
+    }
+
+    #[test]
+    fn when_media_type_document_then_label_is_document() {
+        assert_eq!(media_label_from_type("document"), "📎 Document");
+    }
+
+    #[test]
+    fn when_media_type_sticker_then_label_is_sticker() {
+        assert_eq!(media_label_from_type("sticker"), "🏷 Sticker");
+    }
+
+    #[test]
+    fn when_media_type_location_then_label_is_location() {
+        assert_eq!(media_label_from_type("location"), "📍 Location");
+    }
+
+    #[test]
+    fn when_media_type_contact_then_label_is_contact() {
+        assert_eq!(media_label_from_type("contact"), "👤 Contact");
+    }
+
+    #[tokio::test]
+    async fn when_photo_message_without_caption_then_sends_photo_placeholder() {
+        let state = SharedState::new();
+        let (tx, mut rx) = mpsc::channel(16);
+        *state.outbound.lock().await = Some(tx);
+        let state = Arc::new(state);
+
+        let msg = telegram_msg(serde_json::json!({
+            "message_id": 200, "date": 0, "chat": base_chat(),
+            "photo": [{"file_id": "a", "file_unique_id": "b", "width": 100, "height": 100}]
+        }));
+
+        handle_text_message(Bot::new("test"), msg, state)
+            .await
+            .unwrap();
+
+        let sent = rx.try_recv().unwrap();
+        assert_eq!(sent.content, vec![ContentPart::text("[📷 Photo]")]);
+    }
+
+    #[tokio::test]
+    async fn when_photo_message_with_caption_then_sends_label_and_caption() {
+        let state = SharedState::new();
+        let (tx, mut rx) = mpsc::channel(16);
+        *state.outbound.lock().await = Some(tx);
+        let state = Arc::new(state);
+
+        let msg = telegram_msg(serde_json::json!({
+            "message_id": 201, "date": 0, "chat": base_chat(),
+            "caption": "look at this",
+            "photo": [{"file_id": "a", "file_unique_id": "b", "width": 100, "height": 100}]
+        }));
+
+        handle_text_message(Bot::new("test"), msg, state)
+            .await
+            .unwrap();
+
+        let sent = rx.try_recv().unwrap();
+        assert_eq!(
+            sent.content,
+            vec![ContentPart::text("[📷 Photo] look at this")]
+        );
+    }
+
+    #[tokio::test]
+    async fn when_video_message_then_sends_video_placeholder() {
+        let state = SharedState::new();
+        let (tx, mut rx) = mpsc::channel(16);
+        *state.outbound.lock().await = Some(tx);
+        let state = Arc::new(state);
+
+        let msg = telegram_msg(serde_json::json!({
+            "message_id": 202, "date": 0, "chat": base_chat(),
+            "from": base_user(),
+            "video": {
+                "file_id": "v1", "file_unique_id": "vu1",
+                "width": 640, "height": 480, "duration": 10,
+                "file_size": 1000, "mime_type": "video/mp4"
+            }
+        }));
+
+        handle_text_message(Bot::new("test"), msg, state)
+            .await
+            .unwrap();
+
+        let sent = rx.try_recv().unwrap();
+        assert_eq!(sent.content, vec![ContentPart::text("[🎬 Video]")]);
+    }
+
+    #[tokio::test]
+    async fn when_document_message_with_caption_then_sends_label_and_caption() {
+        let state = SharedState::new();
+        let (tx, mut rx) = mpsc::channel(16);
+        *state.outbound.lock().await = Some(tx);
+        let state = Arc::new(state);
+
+        let msg = telegram_msg(serde_json::json!({
+            "message_id": 203, "date": 0, "chat": base_chat(),
+            "caption": "here is the file",
+            "document": {
+                "file_id": "d1", "file_unique_id": "du1"
+            }
+        }));
+
+        handle_text_message(Bot::new("test"), msg, state)
+            .await
+            .unwrap();
+
+        let sent = rx.try_recv().unwrap();
+        assert_eq!(
+            sent.content,
+            vec![ContentPart::text("[📎 Document] here is the file")]
+        );
+    }
+
+    #[tokio::test]
+    async fn when_media_message_then_updates_last_message_id() {
+        let state = SharedState::new();
+        let (tx, _rx) = mpsc::channel(16);
+        *state.outbound.lock().await = Some(tx);
+        let state = Arc::new(state);
+
+        let msg = telegram_msg(serde_json::json!({
+            "message_id": 205, "date": 0, "chat": base_chat(),
+            "photo": [{"file_id": "a", "file_unique_id": "b", "width": 100, "height": 100}]
+        }));
+
+        handle_text_message(Bot::new("test"), msg, Arc::clone(&state))
+            .await
+            .unwrap();
+
+        let last = state.last_message_ids.read().await;
+        assert_eq!(last.get(&1).copied(), Some(205));
+    }
+
+    #[tokio::test]
+    async fn when_photo_message_sets_correct_peer_info() {
+        let state = SharedState::new();
+        let (tx, mut rx) = mpsc::channel(16);
+        *state.outbound.lock().await = Some(tx);
+        let state = Arc::new(state);
+
+        let msg = telegram_msg(serde_json::json!({
+            "message_id": 206, "date": 0, "chat": base_chat(),
+            "photo": [{"file_id": "a", "file_unique_id": "b", "width": 100, "height": 100}]
+        }));
+
+        handle_text_message(Bot::new("test"), msg, state)
+            .await
+            .unwrap();
+
+        let sent = rx.try_recv().unwrap();
+        assert_eq!(sent.peer_info.channel_name, "telegram");
+        assert_eq!(sent.peer_info.peer_id, "telegram:1");
+        assert_eq!(sent.peer_info.kind, "direct");
+    }
+
+    #[test]
+    fn when_video_json_then_media_type_is_video() {
+        let msg = telegram_msg(serde_json::json!({
+            "message_id": 202, "date": 0, "chat": base_chat(),
+            "from": base_user(),
+            "video": {
+                "file_id": "v1", "file_unique_id": "vu1",
+                "width": 640, "height": 480, "duration": 10,
+                "file_size": 1000, "mime_type": "video/mp4"
+            }
+        }));
+        assert_eq!(media_type_from_message(&msg), Some("video"));
     }
 }

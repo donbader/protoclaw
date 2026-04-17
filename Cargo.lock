@@ -3956,6 +3956,7 @@ version = "0.1.1"
 dependencies = [
  "anyclaw-sdk-channel",
  "anyclaw-sdk-types",
+ "base64",
  "regex",
  "rstest",
  "serde",
