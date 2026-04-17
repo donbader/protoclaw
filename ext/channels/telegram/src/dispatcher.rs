@@ -113,6 +113,7 @@ pub async fn process_text_message(
 }
 
 async fn handle_text_message(
+    bot: Bot,
     msg: Message,
     state: Arc<SharedState>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -138,7 +139,7 @@ async fn handle_text_message(
         )
         .await;
     } else if media_type_from_message(&msg).is_some() {
-        handle_media_message(msg, state).await?;
+        handle_media_message(bot, msg, state).await?;
     }
     Ok(())
 }
@@ -235,6 +236,7 @@ pub async fn process_media_message(
     chat_type: &str,
     media_type: &str,
     caption: Option<&str>,
+    image_url: Option<&str>,
     metadata: Option<MessageMetadata>,
     state: &SharedState,
 ) -> Result<(), ChannelSdkError> {
@@ -244,15 +246,27 @@ pub async fn process_media_message(
     };
 
     let label = media_label_from_type(media_type);
-    let text = match caption {
-        Some(cap) => format!("[{label}] {cap}"),
-        None => format!("[{label}]"),
-    };
+    let mut content = Vec::new();
+
+    if let Some(url) = image_url {
+        content.push(ContentPart::Image {
+            url: url.to_string(),
+        });
+        if let Some(cap) = caption {
+            content.push(ContentPart::text(cap));
+        }
+    } else {
+        let text = match caption {
+            Some(cap) => format!("[{label}] {cap}"),
+            None => format!("[{label}]"),
+        };
+        content.push(ContentPart::text(&text));
+    }
 
     let peer_info = peer_info_from_chat(chat_id, chat_type);
     let msg = ChannelSendMessage {
         peer_info,
-        content: vec![ContentPart::text(&text)],
+        content,
         metadata,
         meta: None,
     };
@@ -264,6 +278,7 @@ pub async fn process_media_message(
 }
 
 async fn handle_media_message(
+    bot: Bot,
     msg: Message,
     state: Arc<SharedState>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -283,17 +298,44 @@ async fn handle_media_message(
         .write()
         .await
         .insert(msg.chat.id.0, msg.id.0);
+
+    let image_url = if media_type == "image" {
+        resolve_photo_url(&bot, &msg).await
+    } else {
+        None
+    };
+
     let chat_type = chat_type_str(&msg.chat);
     let _ = process_media_message(
         msg.chat.id.0,
         chat_type,
         media_type,
         caption,
+        image_url.as_deref(),
         reply_metadata_from_message(&msg),
         &state,
     )
     .await;
     Ok(())
+}
+
+async fn resolve_photo_url(bot: &Bot, msg: &Message) -> Option<String> {
+    let photos = msg.photo()?;
+    let largest = photos.iter().max_by_key(|p| p.width * p.height)?;
+    match bot.get_file(largest.file.id.clone()).await {
+        Ok(file) => {
+            let url = format!(
+                "https://api.telegram.org/file/bot{}/{}",
+                bot.token(),
+                file.path
+            );
+            Some(url)
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to get file from Telegram API");
+            None
+        }
+    }
 }
 
 #[cfg(test)]
@@ -475,6 +517,63 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn when_process_media_with_image_url_then_sends_image_content_part() {
+        let state = SharedState::new();
+        let (tx, mut rx) = mpsc::channel(16);
+        *state.outbound.lock().await = Some(tx);
+
+        process_media_message(
+            12345,
+            "private",
+            "image",
+            Some("a nice photo"),
+            Some("https://api.telegram.org/file/bot123/photos/file_0.jpg"),
+            None,
+            &state,
+        )
+        .await
+        .unwrap();
+
+        let msg = rx.try_recv().unwrap();
+        assert_eq!(
+            msg.content,
+            vec![
+                ContentPart::Image {
+                    url: "https://api.telegram.org/file/bot123/photos/file_0.jpg".into()
+                },
+                ContentPart::text("a nice photo"),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn when_process_media_with_image_url_no_caption_then_sends_image_only() {
+        let state = SharedState::new();
+        let (tx, mut rx) = mpsc::channel(16);
+        *state.outbound.lock().await = Some(tx);
+
+        process_media_message(
+            12345,
+            "private",
+            "image",
+            None,
+            Some("https://api.telegram.org/file/bot123/photos/file_0.jpg"),
+            None,
+            &state,
+        )
+        .await
+        .unwrap();
+
+        let msg = rx.try_recv().unwrap();
+        assert_eq!(
+            msg.content,
+            vec![ContentPart::Image {
+                url: "https://api.telegram.org/file/bot123/photos/file_0.jpg".into()
+            }]
+        );
+    }
+
+    #[tokio::test]
     async fn when_process_media_with_caption_then_sends_label_and_caption() {
         let state = SharedState::new();
         let (tx, mut rx) = mpsc::channel(16);
@@ -485,6 +584,7 @@ mod tests {
             "private",
             "image",
             Some("a nice photo"),
+            None,
             None,
             &state,
         )
@@ -504,7 +604,7 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(16);
         *state.outbound.lock().await = Some(tx);
 
-        process_media_message(12345, "private", "image", None, None, &state)
+        process_media_message(12345, "private", "image", None, None, None, &state)
             .await
             .unwrap();
 
@@ -515,7 +615,7 @@ mod tests {
     #[tokio::test]
     async fn when_process_media_does_nothing_when_outbound_none() {
         let state = SharedState::new();
-        let result = process_media_message(1, "private", "image", None, None, &state).await;
+        let result = process_media_message(1, "private", "image", None, None, None, &state).await;
         assert!(result.is_ok());
     }
 
@@ -525,7 +625,7 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(16);
         *state.outbound.lock().await = Some(tx);
 
-        process_media_message(1, "private", "video", Some("my video"), None, &state)
+        process_media_message(1, "private", "video", Some("my video"), None, None, &state)
             .await
             .unwrap();
 
@@ -595,7 +695,9 @@ mod tests {
             "photo": [{"file_id": "a", "file_unique_id": "b", "width": 100, "height": 100}]
         }));
 
-        handle_text_message(msg, state).await.unwrap();
+        handle_text_message(Bot::new("test"), msg, state)
+            .await
+            .unwrap();
 
         let sent = rx.try_recv().unwrap();
         assert_eq!(sent.content, vec![ContentPart::text("[📷 Photo]")]);
@@ -614,7 +716,9 @@ mod tests {
             "photo": [{"file_id": "a", "file_unique_id": "b", "width": 100, "height": 100}]
         }));
 
-        handle_text_message(msg, state).await.unwrap();
+        handle_text_message(Bot::new("test"), msg, state)
+            .await
+            .unwrap();
 
         let sent = rx.try_recv().unwrap();
         assert_eq!(
@@ -640,7 +744,9 @@ mod tests {
             }
         }));
 
-        handle_text_message(msg, state).await.unwrap();
+        handle_text_message(Bot::new("test"), msg, state)
+            .await
+            .unwrap();
 
         let sent = rx.try_recv().unwrap();
         assert_eq!(sent.content, vec![ContentPart::text("[🎬 Video]")]);
@@ -661,7 +767,9 @@ mod tests {
             }
         }));
 
-        handle_text_message(msg, state).await.unwrap();
+        handle_text_message(Bot::new("test"), msg, state)
+            .await
+            .unwrap();
 
         let sent = rx.try_recv().unwrap();
         assert_eq!(
@@ -682,7 +790,9 @@ mod tests {
             "photo": [{"file_id": "a", "file_unique_id": "b", "width": 100, "height": 100}]
         }));
 
-        handle_text_message(msg, Arc::clone(&state)).await.unwrap();
+        handle_text_message(Bot::new("test"), msg, Arc::clone(&state))
+            .await
+            .unwrap();
 
         let last = state.last_message_ids.read().await;
         assert_eq!(last.get(&1).copied(), Some(205));
@@ -700,7 +810,9 @@ mod tests {
             "photo": [{"file_id": "a", "file_unique_id": "b", "width": 100, "height": 100}]
         }));
 
-        handle_text_message(msg, state).await.unwrap();
+        handle_text_message(Bot::new("test"), msg, state)
+            .await
+            .unwrap();
 
         let sent = rx.try_recv().unwrap();
         assert_eq!(sent.peer_info.channel_name, "telegram");
