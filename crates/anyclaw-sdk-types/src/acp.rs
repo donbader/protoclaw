@@ -191,13 +191,18 @@ impl Default for ContentPart {
 pub fn content_part_to_block(part: ContentPart) -> ContentBlock {
     match part {
         ContentPart::Text { text } => ContentBlock::Text(TextContent::new(text)),
-        ContentPart::Image { url } => ContentBlock::Image(ImageContent::new("", "").uri(url)),
-        ContentPart::File { url, mime_type, .. } => {
-            let mut res = TextResourceContents::new("", url);
-            res.mime_type = mime_type;
-            ContentBlock::Resource(EmbeddedResource::new(
-                EmbeddedResourceResource::TextResourceContents(res),
-            ))
+        ContentPart::Image { url } => {
+            ContentBlock::Image(ImageContent::new("", "image/png").uri(url))
+        }
+        ContentPart::File {
+            url,
+            filename,
+            mime_type,
+        } => {
+            let name = filename.unwrap_or_else(|| "file".to_string());
+            let mut link = ResourceLink::new(name, &url);
+            link.mime_type = mime_type;
+            ContentBlock::ResourceLink(link)
         }
         ContentPart::Audio { url, mime_type } => {
             let mt = mime_type.unwrap_or_else(|| "audio/mpeg".into());

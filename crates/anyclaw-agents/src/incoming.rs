@@ -305,39 +305,51 @@ impl AgentsManager {
             }
         };
 
-        if let Some(session_key) = self.slots[slot_idx]
+        let Some(session_key) = self.slots[slot_idx]
             .reverse_map
             .get(&push_params.session_id)
             .cloned()
-            && let Some(sender) = &self.channels_sender
-        {
-            for block in push_params.content {
-                let part = content_block_to_part(block);
-                let content = serde_json::json!({
-                    "update": {
-                        "sessionUpdate": "agent_message_chunk",
-                        "content": part,
-                    }
-                });
-                let _ = sender
-                    .send(ChannelEvent::DeliverMessage {
-                        session_key: session_key.clone(),
-                        content,
-                    })
-                    .await;
-            }
-
-            if let Some(conn) = self.slots[slot_idx].connection.as_ref() {
-                let resp = JsonRpcResponse::success(request.id.clone(), serde_json::json!({}));
-                let _ = conn.send_raw(resp).await;
-            }
-        } else {
+        else {
             tracing::warn!(
                 session_id = %push_params.session_id,
                 "session/push: no session mapping found"
             );
             Self::send_error_response(&self.slots[slot_idx], request, -32001, "Unknown session")
                 .await;
+            return;
+        };
+
+        let Some(sender) = &self.channels_sender else {
+            tracing::warn!("session/push: no channels sender available");
+            Self::send_error_response(
+                &self.slots[slot_idx],
+                request,
+                -32603,
+                "Channels not available",
+            )
+            .await;
+            return;
+        };
+
+        for block in push_params.content {
+            let part = content_block_to_part(block);
+            let content = serde_json::json!({
+                "update": {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": part,
+                }
+            });
+            let _ = sender
+                .send(ChannelEvent::DeliverMessage {
+                    session_key: session_key.clone(),
+                    content,
+                })
+                .await;
+        }
+
+        if let Some(conn) = self.slots[slot_idx].connection.as_ref() {
+            let resp = JsonRpcResponse::success(request.id.clone(), serde_json::json!({}));
+            let _ = conn.send_raw(resp).await;
         }
     }
 

@@ -270,19 +270,19 @@ impl ContentKind {
                 {
                     Some("image") => ContentKind::Image {
                         url: content_obj
-                            .and_then(|c| c.get("url"))
+                            .and_then(|c| c.get("uri").or_else(|| c.get("url")))
                             .and_then(|u| u.as_str())
                             .unwrap_or("")
                             .to_string(),
                     },
                     Some("file") => ContentKind::File {
                         url: content_obj
-                            .and_then(|c| c.get("url"))
+                            .and_then(|c| c.get("url").or_else(|| c.get("uri")))
                             .and_then(|u| u.as_str())
                             .unwrap_or("")
                             .to_string(),
                         filename: content_obj
-                            .and_then(|c| c.get("filename"))
+                            .and_then(|c| c.get("filename").or_else(|| c.get("name")))
                             .and_then(|f| f.as_str())
                             .map(String::from),
                         mime_type: content_obj
@@ -292,10 +292,25 @@ impl ContentKind {
                     },
                     Some("audio") => ContentKind::Audio {
                         url: content_obj
-                            .and_then(|c| c.get("url"))
+                            .and_then(|c| c.get("data").or_else(|| c.get("url")))
                             .and_then(|u| u.as_str())
                             .unwrap_or("")
                             .to_string(),
+                        mime_type: content_obj
+                            .and_then(|c| c.get("mimeType"))
+                            .and_then(|m| m.as_str())
+                            .map(String::from),
+                    },
+                    Some("resource_link") => ContentKind::File {
+                        url: content_obj
+                            .and_then(|c| c.get("uri"))
+                            .and_then(|u| u.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        filename: content_obj
+                            .and_then(|c| c.get("name"))
+                            .and_then(|f| f.as_str())
+                            .map(String::from),
                         mime_type: content_obj
                             .and_then(|c| c.get("mimeType"))
                             .and_then(|m| m.as_str())
