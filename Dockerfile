@@ -5,6 +5,18 @@ WORKDIR /build
 # mold linker + clang driver for faster link times
 RUN apk add --no-cache clang mold
 
+# sccache for cross-run compilation caching via GHA cache backend
+ARG TARGETARCH
+ENV SCCACHE=0.10.0
+RUN case "$TARGETARCH" in \
+      amd64) ARCH=x86_64 ;; \
+      arm64) ARCH=aarch64 ;; \
+      *) echo "unsupported arch: $TARGETARCH" && exit 1 ;; \
+    esac && \
+    wget -qO- "https://github.com/mozilla/sccache/releases/download/v${SCCACHE}/sccache-v${SCCACHE}-${ARCH}-unknown-linux-musl.tar.gz" \
+    | tar -xzv --strip-components=1 -C /usr/local/bin "sccache-v${SCCACHE}-${ARCH}-unknown-linux-musl/sccache" && \
+    chmod +x /usr/local/bin/sccache
+
 # Stage 2: Planner — generate recipe.json from workspace manifests
 FROM chef AS planner
 COPY . .
@@ -14,25 +26,38 @@ RUN cargo chef prepare --recipe-path recipe.json
 # PROFILE: "release" (default) or "debug" (for dev builds)
 FROM chef AS builder
 ARG PROFILE=release
+
+# Enable sccache when GHA credentials are available (CI only)
+ARG SCCACHE_GHA_ENABLED
+ENV RUSTC_WRAPPER=/usr/local/bin/sccache
+
 COPY --from=planner /build/recipe.json recipe.json
 COPY .cargo .cargo
 
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
+RUN --mount=type=secret,id=actions_results_url,env=ACTIONS_RESULTS_URL \
+    --mount=type=secret,id=actions_runtime_token,env=ACTIONS_RUNTIME_TOKEN \
+    --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/build/target \
-    cargo chef cook $(if [ "$PROFILE" = "release" ]; then echo "--release"; fi) --locked --recipe-path recipe.json
+    --mount=type=cache,target=/root/.cache/sccache \
+    cargo chef cook $(if [ "$PROFILE" = "release" ]; then echo "--release"; fi) --locked --recipe-path recipe.json \
+    && sccache --show-stats
 
 COPY . .
 
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
+RUN --mount=type=secret,id=actions_results_url,env=ACTIONS_RESULTS_URL \
+    --mount=type=secret,id=actions_runtime_token,env=ACTIONS_RUNTIME_TOKEN \
+    --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/build/target \
+    --mount=type=cache,target=/root/.cache/sccache \
     cargo build $(if [ "$PROFILE" = "release" ]; then echo "--release"; fi) --locked \
     --bin anyclaw \
     --bin telegram-channel \
     --bin debug-http \
     --bin mock-agent \
     --bin system-info \
+    && sccache --show-stats \
     && cp target/$PROFILE/anyclaw \
         target/$PROFILE/telegram-channel \
         target/$PROFILE/debug-http \
