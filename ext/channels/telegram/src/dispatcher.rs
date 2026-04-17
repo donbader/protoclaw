@@ -227,4 +227,68 @@ mod tests {
         let msg = rx.try_recv().unwrap();
         assert_eq!(msg.content, vec![ContentPart::text("")]);
     }
+
+    fn telegram_msg(json: serde_json::Value) -> Message {
+        serde_json::from_value(json).expect("fixture must be valid teloxide Message")
+    }
+
+    fn base_chat() -> serde_json::Value {
+        serde_json::json!({ "id": 1, "type": "private" })
+    }
+
+    #[test]
+    fn when_text_reply_then_extracts_id_and_text() {
+        let msg = telegram_msg(serde_json::json!({
+            "message_id": 100, "date": 0, "chat": base_chat(),
+            "text": "user message",
+            "reply_to_message": {
+                "message_id": 99, "date": 0, "chat": base_chat(),
+                "text": "quoted text"
+            }
+        }));
+        let meta = reply_metadata_from_message(&msg).unwrap();
+        assert_eq!(meta.reply_to_message_id.as_deref(), Some("99"));
+        assert_eq!(meta.reply_to_text.as_deref(), Some("quoted text"));
+        assert_eq!(meta.thread_id, None);
+    }
+
+    #[test]
+    fn when_media_reply_with_caption_then_extracts_caption() {
+        let msg = telegram_msg(serde_json::json!({
+            "message_id": 101, "date": 0, "chat": base_chat(),
+            "text": "user message",
+            "reply_to_message": {
+                "message_id": 50, "date": 0, "chat": base_chat(),
+                "caption": "photo caption",
+                "photo": [{"file_id": "x", "file_unique_id": "y", "width": 100, "height": 100}]
+            }
+        }));
+        let meta = reply_metadata_from_message(&msg).unwrap();
+        assert_eq!(meta.reply_to_message_id.as_deref(), Some("50"));
+        assert_eq!(meta.reply_to_text.as_deref(), Some("photo caption"));
+    }
+
+    #[test]
+    fn when_no_reply_then_returns_none() {
+        let msg = telegram_msg(serde_json::json!({
+            "message_id": 100, "date": 0, "chat": base_chat(),
+            "text": "plain message"
+        }));
+        assert!(reply_metadata_from_message(&msg).is_none());
+    }
+
+    #[test]
+    fn when_media_reply_without_text_or_caption_then_text_is_none() {
+        let msg = telegram_msg(serde_json::json!({
+            "message_id": 102, "date": 0, "chat": base_chat(),
+            "text": "user message",
+            "reply_to_message": {
+                "message_id": 60, "date": 0, "chat": base_chat(),
+                "photo": [{"file_id": "x", "file_unique_id": "y", "width": 100, "height": 100}]
+            }
+        }));
+        let meta = reply_metadata_from_message(&msg).unwrap();
+        assert_eq!(meta.reply_to_message_id.as_deref(), Some("60"));
+        assert_eq!(meta.reply_to_text, None);
+    }
 }
