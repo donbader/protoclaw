@@ -5,21 +5,72 @@ use anyclaw_sdk_types::ChannelSendMessage;
 use anyclaw_sdk_types::MessageMetadata;
 use anyclaw_sdk_types::acp::ContentPart;
 use teloxide::prelude::*;
-use teloxide::types::{Chat, ChatId, ChatKind, InlineKeyboardMarkup, MessageId, PublicChatKind};
+use teloxide::types::{
+    Chat, ChatId, ChatKind, InlineKeyboardMarkup, MediaKind, MessageId, MessageKind, PublicChatKind,
+};
 
 use crate::peer::peer_info_from_chat;
 use crate::state::SharedState;
 
+fn media_type_from_message(msg: &Message) -> Option<&'static str> {
+    if let MessageKind::Common(common) = &msg.kind {
+        match &common.media_kind {
+            MediaKind::Photo(_) => Some("image"),
+            MediaKind::Video(_) => Some("video"),
+            MediaKind::Audio(_) => Some("audio"),
+            MediaKind::Voice(_) => Some("voice"),
+            MediaKind::VideoNote(_) => Some("video_note"),
+            MediaKind::Animation(_) => Some("animation"),
+            MediaKind::Document(_) => Some("document"),
+            MediaKind::Sticker(_) => Some("sticker"),
+            MediaKind::Location(_) => Some("location"),
+            MediaKind::Contact(_) => Some("contact"),
+            _ => None,
+        }
+    } else {
+        None
+    }
+}
+
 fn reply_metadata_from_message(msg: &Message) -> Option<MessageMetadata> {
-    let reply_id = msg.reply_to_message().map(|r| r.id.0.to_string());
+    let reply_msg = msg.reply_to_message();
+    let reply_id = reply_msg.map(|r| r.id.0.to_string());
     let thread_id = msg.thread_id.map(|t| t.0.0.to_string());
 
     if reply_id.is_none() && thread_id.is_none() {
         return None;
     }
 
+    let (reply_text, is_quote) = if let Some(quote) = msg.quote() {
+        (Some(quote.text.clone()), Some(true))
+    } else if let Some(r) = reply_msg {
+        let text = r.text().or_else(|| r.caption()).map(str::to_string);
+        (text, None)
+    } else {
+        (None, None)
+    };
+
+    let reply_to_sender = reply_msg.and_then(|r| {
+        r.from.as_ref().map(|u| {
+            u.username
+                .as_deref()
+                .map(String::from)
+                .unwrap_or_else(|| u.first_name.clone())
+        })
+    });
+    let reply_to_sender_id = reply_msg.and_then(|r| r.from.as_ref().map(|u| u.id.0.to_string()));
+    let reply_to_media_type = reply_msg
+        .filter(|_| reply_text.is_none())
+        .and_then(media_type_from_message)
+        .map(String::from);
+
     Some(MessageMetadata {
         reply_to_message_id: reply_id,
+        reply_to_text: reply_text,
+        reply_to_sender,
+        reply_to_sender_id,
+        reply_to_is_quote: is_quote,
+        reply_to_media_type,
         thread_id,
     })
 }
@@ -223,5 +274,113 @@ mod tests {
 
         let msg = rx.try_recv().unwrap();
         assert_eq!(msg.content, vec![ContentPart::text("")]);
+    }
+
+    fn telegram_msg(json: serde_json::Value) -> Message {
+        serde_json::from_value(json).expect("fixture must be valid teloxide Message")
+    }
+
+    fn base_chat() -> serde_json::Value {
+        serde_json::json!({ "id": 1, "type": "private" })
+    }
+
+    fn base_user() -> serde_json::Value {
+        serde_json::json!({ "id": 42, "is_bot": false, "first_name": "Alice", "username": "alice_dev" })
+    }
+
+    #[test]
+    fn when_text_reply_then_extracts_id_text_and_sender() {
+        let msg = telegram_msg(serde_json::json!({
+            "message_id": 100, "date": 0, "chat": base_chat(),
+            "text": "user message",
+            "reply_to_message": {
+                "message_id": 99, "date": 0, "chat": base_chat(),
+                "from": base_user(),
+                "text": "quoted text"
+            }
+        }));
+        let meta = reply_metadata_from_message(&msg).unwrap();
+        assert_eq!(meta.reply_to_message_id.as_deref(), Some("99"));
+        assert_eq!(meta.reply_to_text.as_deref(), Some("quoted text"));
+        assert_eq!(meta.reply_to_sender.as_deref(), Some("alice_dev"));
+        assert_eq!(meta.reply_to_sender_id.as_deref(), Some("42"));
+        assert_eq!(meta.reply_to_is_quote, None);
+        assert_eq!(meta.reply_to_media_type, None);
+        assert_eq!(meta.thread_id, None);
+    }
+
+    #[test]
+    fn when_partial_quote_then_prefers_quote_text() {
+        let msg = telegram_msg(serde_json::json!({
+            "message_id": 103, "date": 0, "chat": base_chat(),
+            "text": "user message",
+            "quote": { "text": "partial selection", "position": 5 },
+            "reply_to_message": {
+                "message_id": 99, "date": 0, "chat": base_chat(),
+                "from": base_user(),
+                "text": "full original message with partial selection in it"
+            }
+        }));
+        let meta = reply_metadata_from_message(&msg).unwrap();
+        assert_eq!(meta.reply_to_text.as_deref(), Some("partial selection"));
+        assert_eq!(meta.reply_to_is_quote, Some(true));
+    }
+
+    #[test]
+    fn when_media_reply_with_caption_then_extracts_caption() {
+        let msg = telegram_msg(serde_json::json!({
+            "message_id": 101, "date": 0, "chat": base_chat(),
+            "text": "user message",
+            "reply_to_message": {
+                "message_id": 50, "date": 0, "chat": base_chat(),
+                "from": base_user(),
+                "caption": "photo caption",
+                "photo": [{"file_id": "x", "file_unique_id": "y", "width": 100, "height": 100}]
+            }
+        }));
+        let meta = reply_metadata_from_message(&msg).unwrap();
+        assert_eq!(meta.reply_to_message_id.as_deref(), Some("50"));
+        assert_eq!(meta.reply_to_text.as_deref(), Some("photo caption"));
+        assert_eq!(meta.reply_to_media_type, None);
+    }
+
+    #[test]
+    fn when_no_reply_then_returns_none() {
+        let msg = telegram_msg(serde_json::json!({
+            "message_id": 100, "date": 0, "chat": base_chat(),
+            "text": "plain message"
+        }));
+        assert!(reply_metadata_from_message(&msg).is_none());
+    }
+
+    #[test]
+    fn when_media_reply_without_text_or_caption_then_media_type_set() {
+        let msg = telegram_msg(serde_json::json!({
+            "message_id": 102, "date": 0, "chat": base_chat(),
+            "text": "user message",
+            "reply_to_message": {
+                "message_id": 60, "date": 0, "chat": base_chat(),
+                "photo": [{"file_id": "x", "file_unique_id": "y", "width": 100, "height": 100}]
+            }
+        }));
+        let meta = reply_metadata_from_message(&msg).unwrap();
+        assert_eq!(meta.reply_to_message_id.as_deref(), Some("60"));
+        assert_eq!(meta.reply_to_text, None);
+        assert_eq!(meta.reply_to_media_type.as_deref(), Some("image"));
+    }
+
+    #[test]
+    fn when_sender_has_no_username_then_uses_first_name() {
+        let msg = telegram_msg(serde_json::json!({
+            "message_id": 104, "date": 0, "chat": base_chat(),
+            "text": "user message",
+            "reply_to_message": {
+                "message_id": 70, "date": 0, "chat": base_chat(),
+                "from": { "id": 99, "is_bot": false, "first_name": "Bob" },
+                "text": "hi"
+            }
+        }));
+        let meta = reply_metadata_from_message(&msg).unwrap();
+        assert_eq!(meta.reply_to_sender.as_deref(), Some("Bob"));
     }
 }

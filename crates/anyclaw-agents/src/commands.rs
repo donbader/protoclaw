@@ -318,20 +318,10 @@ impl AgentsManager {
                 .tool_context_sent
                 .insert(acp_session_id.clone());
         }
-        if let Some(meta) = metadata {
-            let mut context_parts = Vec::new();
-            if let Some(ref thread_id) = meta.thread_id {
-                context_parts.push(format!("thread {thread_id}"));
-            }
-            if let Some(ref reply_id) = meta.reply_to_message_id {
-                context_parts.push(format!("reply to message {reply_id}"));
-            }
-            if !context_parts.is_empty() {
-                prompt_parts.push(ContentPart::text(format!(
-                    "[Context: {}]",
-                    context_parts.join(", ")
-                )));
-            }
+        if let Some(meta) = metadata
+            && let Some(context_text) = build_reply_context(meta)
+        {
+            prompt_parts.push(ContentPart::text(context_text));
         }
         prompt_parts.extend_from_slice(content);
 
@@ -653,4 +643,157 @@ pub(crate) fn extract_command_text(content: &[ContentPart]) -> Option<&str> {
         return Some(text.as_str());
     }
     None
+}
+
+/// Build a `[Context: ...]` string from reply/thread metadata for prompt injection.
+/// Returns `None` if metadata has no actionable context.
+pub(crate) fn build_reply_context(meta: &MessageMetadata) -> Option<String> {
+    let has_reply = meta.reply_to_message_id.is_some()
+        || meta.reply_to_text.is_some()
+        || meta.reply_to_media_type.is_some();
+
+    if !has_reply && meta.thread_id.is_none() {
+        return None;
+    }
+
+    let mut result = String::new();
+
+    if let Some(ref thread_id) = meta.thread_id {
+        result.push_str(&format!("[Context: thread {thread_id}]\n"));
+    }
+
+    if has_reply {
+        let is_quote = meta.reply_to_is_quote.unwrap_or(false);
+        let tag = if is_quote { "Quoting" } else { "Replying to" };
+        let sender = meta.reply_to_sender.as_deref().unwrap_or("unknown sender");
+        let id_part = meta
+            .reply_to_message_id
+            .as_deref()
+            .map(|id| format!(" id:{id}"))
+            .unwrap_or_default();
+
+        result.push_str(&format!("[{tag} {sender}{id_part}]\n"));
+
+        if let Some(ref text) = meta.reply_to_text {
+            if is_quote {
+                result.push_str(&format!("\"{text}\"\n"));
+            } else {
+                result.push_str(&format!("{text}\n"));
+            }
+        } else if let Some(ref media) = meta.reply_to_media_type {
+            result.push_str(&format!("<media:{media}>\n"));
+        }
+
+        let end_tag = if is_quote { "Quoting" } else { "Replying" };
+        result.push_str(&format!("[/{end_tag}]"));
+    }
+
+    Some(result.trim().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::rstest;
+
+    fn meta(overrides: impl FnOnce(&mut MessageMetadata)) -> MessageMetadata {
+        let mut m = MessageMetadata::default();
+        overrides(&mut m);
+        m
+    }
+
+    #[rstest]
+    fn when_reply_text_present_then_shows_replying_block() {
+        let m = meta(|m| {
+            m.reply_to_message_id = Some("5398".into());
+            m.reply_to_text = Some("hello world".into());
+            m.reply_to_sender = Some("Alice".into());
+        });
+        let result = build_reply_context(&m).unwrap();
+        assert_eq!(
+            result,
+            "[Replying to Alice id:5398]\nhello world\n[/Replying]"
+        );
+    }
+
+    #[rstest]
+    fn when_quote_then_shows_quoting_block_with_quotes() {
+        let m = meta(|m| {
+            m.reply_to_message_id = Some("100".into());
+            m.reply_to_text = Some("partial quote".into());
+            m.reply_to_sender = Some("Bob".into());
+            m.reply_to_is_quote = Some(true);
+        });
+        let result = build_reply_context(&m).unwrap();
+        assert_eq!(
+            result,
+            "[Quoting Bob id:100]\n\"partial quote\"\n[/Quoting]"
+        );
+    }
+
+    #[rstest]
+    fn when_media_reply_no_text_then_shows_media_placeholder() {
+        let m = meta(|m| {
+            m.reply_to_message_id = Some("200".into());
+            m.reply_to_sender = Some("Carol".into());
+            m.reply_to_media_type = Some("image".into());
+        });
+        let result = build_reply_context(&m).unwrap();
+        assert_eq!(
+            result,
+            "[Replying to Carol id:200]\n<media:image>\n[/Replying]"
+        );
+    }
+
+    #[rstest]
+    fn when_no_sender_then_falls_back_to_unknown() {
+        let m = meta(|m| {
+            m.reply_to_message_id = Some("300".into());
+            m.reply_to_text = Some("text".into());
+        });
+        let result = build_reply_context(&m).unwrap();
+        assert_eq!(
+            result,
+            "[Replying to unknown sender id:300]\ntext\n[/Replying]"
+        );
+    }
+
+    #[rstest]
+    fn when_thread_and_reply_then_both_shown() {
+        let m = meta(|m| {
+            m.thread_id = Some("42".into());
+            m.reply_to_message_id = Some("100".into());
+            m.reply_to_text = Some("quoted".into());
+            m.reply_to_sender = Some("Dave".into());
+        });
+        let result = build_reply_context(&m).unwrap();
+        assert_eq!(
+            result,
+            "[Context: thread 42]\n[Replying to Dave id:100]\nquoted\n[/Replying]"
+        );
+    }
+
+    #[rstest]
+    fn when_only_thread_then_shows_thread() {
+        let m = meta(|m| {
+            m.thread_id = Some("42".into());
+        });
+        let result = build_reply_context(&m).unwrap();
+        assert_eq!(result, "[Context: thread 42]");
+    }
+
+    #[rstest]
+    fn when_all_none_then_returns_none() {
+        let m = MessageMetadata::default();
+        assert!(build_reply_context(&m).is_none());
+    }
+
+    #[rstest]
+    fn when_only_reply_id_no_text_no_media_then_empty_reply_block() {
+        let m = meta(|m| {
+            m.reply_to_message_id = Some("999".into());
+        });
+        let result = build_reply_context(&m).unwrap();
+        assert_eq!(result, "[Replying to unknown sender id:999]\n[/Replying]");
+    }
 }

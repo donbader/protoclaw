@@ -24,7 +24,7 @@ Shared serde types used by all three SDK crates (agent, channel, tool) and by in
 - `DeliverMessage { session_id, content }` — anyclaw → channel (also used for agent-initiated push via per-part delivery)
 - `ChannelSendMessage { peer_info, content, metadata }` — channel → anyclaw. `content` is `Vec<ContentPart>`, `metadata` is `Option<MessageMetadata>` for reply/thread context
 - `PeerInfo { channel_name, peer_id, kind }` — inbound message identity
-- `MessageMetadata { reply_to_message_id, thread_id }` — optional reply/thread context on inbound messages
+- `MessageMetadata { reply_to_message_id, reply_to_text, reply_to_sender, reply_to_sender_id, reply_to_is_quote, reply_to_media_type, thread_id }` — optional reply/thread context on inbound messages
 - `ThoughtContent` — helper to extract `agent_thought_chunk` from `DeliverMessage.content`
 - `ContentKind` — typed dispatch enum over `DeliverMessage.content`: `Thought`, `MessageChunk`, `Result`, `UserMessageChunk`, `UsageUpdate`, `ToolCall`, `ToolCallUpdate`, `AvailableCommandsUpdate`, `Image`, `File`, `Audio`, `Unknown`
 - `AckNotification` / `AckLifecycleNotification` — ack reaction lifecycle

@@ -101,14 +101,14 @@ impl SessionQueue {
             }
             self.active.insert(session_key.clone());
             let mut merged_content = Vec::new();
-            let mut last_metadata = None;
+            let mut first_metadata = None;
             for (content, metadata) in queue {
                 merged_content.extend(content);
-                if metadata.is_some() {
-                    last_metadata = metadata;
+                if first_metadata.is_none() && metadata.is_some() {
+                    first_metadata = metadata;
                 }
             }
-            Some((merged_content, last_metadata))
+            Some((merged_content, first_metadata))
         } else {
             None
         }
@@ -476,24 +476,64 @@ mod tests {
     }
 
     #[rstest]
-    fn when_flush_pending_metadata_taken_from_last_entry() {
+    fn when_flush_pending_metadata_taken_from_first_entry() {
         use anyclaw_sdk_types::MessageMetadata;
         let mut q = SessionQueue::new();
         let meta1 = Some(MessageMetadata {
             reply_to_message_id: Some("id-1".into()),
+            reply_to_text: Some("first reply".into()),
+            reply_to_sender: None,
+            reply_to_sender_id: None,
+            reply_to_is_quote: None,
+            reply_to_media_type: None,
             thread_id: None,
         });
         let meta2 = Some(MessageMetadata {
             reply_to_message_id: Some("id-2".into()),
+            reply_to_text: Some("second reply".into()),
+            reply_to_sender: None,
+            reply_to_sender_id: None,
+            reply_to_is_quote: None,
+            reply_to_media_type: None,
             thread_id: None,
         });
-        q.push_only(&key("alice"), vec![ContentPart::text("a")], meta1);
-        q.push_only(&key("alice"), vec![ContentPart::text("b")], meta2.clone());
+        q.push_only(&key("alice"), vec![ContentPart::text("a")], meta1.clone());
+        q.push_only(&key("alice"), vec![ContentPart::text("b")], meta2);
 
         let (content, meta) = q
             .flush_pending(&key("alice"))
             .expect("should return payload");
         assert_eq!(content.len(), 2);
-        assert_eq!(meta, meta2);
+        assert_eq!(meta, meta1);
+    }
+
+    #[rstest]
+    fn when_flush_pending_reply_then_plain_then_reply_context_preserved() {
+        use anyclaw_sdk_types::MessageMetadata;
+        let mut q = SessionQueue::new();
+        let reply_meta = Some(MessageMetadata {
+            reply_to_message_id: Some("id-1".into()),
+            reply_to_text: Some("quoted text".into()),
+            reply_to_sender: None,
+            reply_to_sender_id: None,
+            reply_to_is_quote: None,
+            reply_to_media_type: None,
+            thread_id: None,
+        });
+        q.push_only(
+            &key("alice"),
+            vec![ContentPart::text("reply msg")],
+            reply_meta.clone(),
+        );
+        q.push_only(&key("alice"), vec![ContentPart::text("plain msg")], None);
+
+        let (content, meta) = q
+            .flush_pending(&key("alice"))
+            .expect("should return payload");
+        assert_eq!(content.len(), 2);
+        assert_eq!(
+            meta, reply_meta,
+            "reply context must survive a following plain message"
+        );
     }
 }
