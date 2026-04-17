@@ -1,5 +1,5 @@
 ---
-description: Release a new version — bump, changelog, PR, tag, cleanup
+description: Release a new version — bump, changelog, trigger Docker build
 ---
 
 # Release
@@ -10,7 +10,7 @@ Argument: `<version>` (optional). If omitted, auto-detect from commits.
 
 If no version argument provided, auto-detect:
 
-1. Get the latest tag: `git describe --tags --abbrev=0`
+1. Get the latest binary tag: `git tag -l 'v*' --sort=-v:refname | head -1`
 2. List commits since that tag: `git log <tag>..HEAD --format='%s' --no-merges`
 3. Parse conventional commit prefixes:
    - Any `feat:` or `feat(` → bump minor
@@ -27,84 +27,48 @@ Verify before starting:
 
 ## Steps
 
-### 1. Create worktree
+### 1. Generate changelog
+
+List commits since the last binary tag:
 
 ```bash
-git fetch origin main
-git worktree add .worktrees/release-<version> -b chore/release-<version> origin/main
-```
-
-Work exclusively in `.worktrees/release-<version>` for all subsequent steps.
-
-### 2. Generate changelog
-
-List commits since the last tag:
-
-```bash
-git log $(git describe --tags --abbrev=0)..HEAD --format='%h %s' --no-merges
+git log $(git tag -l 'v*' --sort=-v:refname | head -1)..HEAD --format='%h %s' --no-merges
 ```
 
 Categorize into `### Fixed`, `### Added`, `### Changed` sections following [Keep a Changelog](https://keepachangelog.com/). Include PR numbers. Skip `chore:`, `ci:`, `docs:` commits unless they're user-facing.
 
-### 3. Bump version
+### 2. Bump version
 
 - Update `crates/anyclaw/Cargo.toml`: set `version = "<version>"`
 - Update `CHANGELOG.md`:
   - Add new version section under `[Unreleased]` with today's date
-  - Add changelog entries from step 2
+  - Add changelog entries from step 1
   - Update bottom links: add `[<version>]` compare link, update `[Unreleased]` link
 - Run `cargo check -p anyclaw` to regenerate `Cargo.lock`
 
-### 4. Commit and push
+### 3. Commit and push to main
 
 ```bash
 git add CHANGELOG.md Cargo.lock crates/anyclaw/Cargo.toml
-git commit -m 'chore: bump version to <version> and update changelog'
-git push -u origin chore/release-<version>
+git commit -m 'chore: release v<version>'
+git push origin main
 ```
 
-### 5. Create PR
+No PR needed — the code was already tested on main before the release.
+
+### 4. Trigger Docker build
 
 ```bash
-gh pr create --title "chore: bump version to <version> and update changelog" \
-  --body "Release prep for v<version>. Version bump and changelog only."
+gh workflow run docker.yml -f version=<version>
 ```
 
-### 6. Wait for CI
+The workflow validates that `Cargo.toml` matches the input version, creates the `v<version>` git tag, then builds and pushes multi-arch Docker images to GHCR.
+
+### 5. Verify
 
 ```bash
-gh pr checks <pr-number> --watch
+gh run list --workflow=docker.yml --limit 3
 ```
 
-If CI fails due to `Cargo.lock` mismatch, that means you forgot step 3's `cargo check`. Fix and push.
-
-### 7. Merge PR
-
-```bash
-gh pr merge <pr-number> --squash --delete-branch
-```
-
-### 8. Tag release
-
-```bash
-git checkout main
-git pull origin main
-git tag v<version>
-git push origin v<version>
-```
-
-This triggers the Docker workflow — builds multi-arch images (amd64 + arm64) and pushes to GHCR.
-
-### 9. Cleanup worktree
-
-```bash
-git worktree remove .worktrees/release-<version>
-```
-
-### 10. Verify
-
-```bash
-gh run list --branch v<version> --limit 5
-```
-
-Confirm the Docker workflow is running. Report the GHCR image URL when done.
+Confirm the Docker workflow is running. Report the GHCR image URL when done:
+`ghcr.io/donbader/anyclaw:<version>`
