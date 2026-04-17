@@ -9,13 +9,6 @@ on:
       - "LICENSE-*"
       - ".github/workflows/ghcr-cleanup.yml"
       - ".github/workflows/docker.yml"
-  pull_request:
-    paths-ignore:
-      - "**.md"
-      - "docs/**"
-      - "LICENSE-*"
-      - ".github/workflows/ghcr-cleanup.yml"
-      - ".github/workflows/docker.yml"
 
 concurrency:
   group: coverage-${{ github.ref }}
