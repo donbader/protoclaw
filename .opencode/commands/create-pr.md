@@ -12,27 +12,19 @@ If on `main`:
 1. If argument provided, use it as branch name (e.g., `feat/wasm-permissions`)
 2. If no argument, ask: "What type of change? (feat/fix/docs/chore/refactor/ci) and short description?"
 
-If already on a feature branch, skip worktree creation — use current branch.
+If already on a feature branch, skip to Step 3.
 
 Valid prefixes: `feat/`, `fix/`, `docs/`, `chore/`, `refactor/`, `ci/`
 
-## Step 1. Create worktree (only if on `main`)
-
-`.worktrees/` exists and is gitignored. Create the worktree there:
-
-```bash
-git worktree add .worktrees/<branch-name> -b <branch-name>
-```
-
-Then bootstrap the worktree:
-- All subsequent commands run in `.worktrees/<branch-name>/`
-- Symlink gitignored files from the main checkout into the worktree:
+## Step 1. Create worktree (only from `main`)
 
 ```bash
 MAIN="$(git rev-parse --show-toplevel)"
-WT=".worktrees/<branch-name>"
+WT="$MAIN/.worktrees/<branch-name>"
 
-# Symlink all root-level gitignored files/dirs (skip .worktrees to avoid recursion)
+git worktree add "$WT" -b <branch-name>
+
+# Symlink all root-level gitignored files (skip .worktrees to avoid recursion)
 for f in "$MAIN"/.* "$MAIN"/*; do
   name="$(basename "$f")"
   [ "$name" = ".worktrees" ] && continue
@@ -40,53 +32,36 @@ for f in "$MAIN"/.* "$MAIN"/*; do
   ln -sf "$f" "$WT/$name"
 done
 
-# Also symlink nested .env files (gitignored, buried in examples/)
+# Symlink nested .env files
 find "$MAIN" -name '.env' -not -path '*/.worktrees/*' -not -path '*/target/*' | while read f; do
   rel="${f#$MAIN/}"
   mkdir -p "$WT/$(dirname "$rel")"
   ln -sf "$f" "$WT/$rel"
 done
 ```
-- Run `cargo check` to verify clean baseline (faster than full build since target/ is shared)
 
-If already on a feature branch, skip this step entirely.
+Run `cargo check` in the worktree to verify clean baseline. All subsequent commands run in the worktree.
 
 ## Step 2. Do the work
 
-Hand control back to the user (or the calling agent) to make changes in the worktree. This command does NOT implement changes — it sets up the workspace and creates the PR after work is done.
-
-If invoked after work is already done on a feature branch, skip to Step 3.
+Hand control back to the caller. This command does NOT implement changes.
 
 ## Step 3. Pre-flight checks
 
-Run fast local checks only. Full test suite runs on CI.
+Fast local checks only — full suite runs on CI:
 
 ```bash
 cargo fmt --all -- --check
 cargo clippy --workspace -- -D warnings
 ```
 
-If fixing a bug, also run scoped tests for affected crates:
+For bugfixes, also run `cargo test -p <affected-crate>`.
 
-```bash
-cargo test -p <affected-crate>
-```
+Fix formatting automatically (`cargo fmt --all`). Stop and report if clippy issues require design decisions.
 
-Do NOT run `cargo test` (full suite) or `cargo doc` locally — CI handles those.
+## Step 4. Commit
 
-If any check fails:
-- Fix if straightforward (formatting → `cargo fmt --all`)
-- Report and stop if fix requires design decisions
-
-## Step 4. Commit (if uncommitted changes exist)
-
-Follow conventional commits:
-
-- Subject: `<type>: <short description>` — imperative mood, lowercase, no period, max 72 chars
-- Body: explain *why*, not *what*
-- Types: `feat`, `fix`, `docs`, `chore`, `refactor`, `test`, `ci`
-
-Each commit must leave the codebase buildable. Separate concerns into multiple commits if needed.
+Conventional commits. Subject: `<type>: <description>` — imperative, lowercase, no period, ≤72 chars. Body: explain *why*. Types: `feat`, `fix`, `docs`, `chore`, `refactor`, `test`, `ci`.
 
 ## Step 5. Push and create PR
 
@@ -94,38 +69,22 @@ Each commit must leave the codebase buildable. Separate concerns into multiple c
 git push -u origin HEAD
 ```
 
-Create the PR with `gh pr create`. The PR title MUST follow conventional commits format (CI enforces via `amannn/action-semantic-pull-request`).
+Generate title from `git log main..HEAD` and `git diff main...HEAD --stat`. Title MUST be conventional commits format (CI enforces).
 
-Generate title by analyzing all commits and the diff against `main`:
-
-```bash
-git log main..HEAD --format='%s' --no-merges
-git diff main...HEAD --stat
-```
-
-PR body template (MUST include all three sections):
+PR body MUST include:
 
 ```markdown
 ## Motivation
-
-[Why this change exists — the problem or need it addresses]
+[Why this change exists]
 
 ## Solution
-
-[Technical approach — key design decisions, not a line-by-line changelog]
+[Technical approach — key decisions, not a changelog]
 
 ## Testing
-
-[How changes were verified — test commands, manual steps]
-
-- cargo test: [pass/fail]
-- cargo clippy: [pass/fail]
-- cargo fmt: [pass/fail]
+[How verified — commands, manual steps]
 ```
 
-If changes affect module structure, public APIs, or conventions, verify relevant `AGENTS.md` files were updated.
-
-Create as draft PR with self-assignment:
+If changes affect module structure, public APIs, or conventions, verify `AGENTS.md` files were updated.
 
 ```bash
 gh pr create --draft --title "<type>: <description>" --body "..." --assignee @me
@@ -133,21 +92,47 @@ gh pr create --draft --title "<type>: <description>" --body "..." --assignee @me
 
 ## Step 6. Verify CI
 
-After push, check CI status:
+Delegate CI monitoring to a background subagent:
 
-```bash
-gh pr checks <pr-number> --watch
+```
+task(category="quick", load_skills=[], run_in_background=true,
+  description="Monitor CI for PR #<number>",
+  prompt="Monitor CI for PR #<number> in <repo>. Working directory: <worktree-path>.
+    Poll `gh pr checks <number>` every 30s. Max wait: 10 minutes.
+    When all checks complete, report ONE of:
+    - CI_PASSED: All checks green. List check names and durations.
+    - CI_FAILED: List failed checks. For each, run `gh run view <run-id> --log-failed` and include the failure reason.
+    Your report MUST start with exactly CI_PASSED or CI_FAILED on the first line.")
 ```
 
-If CI fails: read failure logs, fix root cause, push again. Up to 3 attempts. After 3 failures, stop and report.
+After firing the subagent, **end your response immediately**. Do NOT poll `background_output`. The system will notify you when the subagent completes.
 
-## Step 7. Report
+When the notification arrives and you collect the result:
 
-Return the PR URL. Do NOT merge or approve — PRs exist for the user to review.
+- **CI_FAILED**: Read failure report, fix root cause, push, re-run Step 6. Max 3 attempts, then stop.
+- **CI_PASSED**: Proceed to Step 7.
 
-## Worktree cleanup
+## Step 7. Update PR if needed
 
-After PR is merged (separate invocation), clean up:
+If further commits were pushed after PR creation, update title and description:
+
+```bash
+gh pr edit <pr-number> --title "<type>: <updated description>" --body "..."
+```
+
+## Step 8. Hand off to user
+
+Report the PR URL and ask a blocking question:
+
+```
+PR is ready for review: <url>
+
+Let me know when it's merged and I'll clean up the worktree.
+```
+
+Do NOT poll, check status, or take further action. Wait for the user's response.
+
+## Step 9. Worktree cleanup (after user confirms merge)
 
 ```bash
 chmod -R u+w .worktrees/<branch-name> 2>/dev/null || true
