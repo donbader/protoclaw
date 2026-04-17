@@ -1260,7 +1260,54 @@ mod tests {
         let block = content_part_to_block(part);
         match block {
             ContentBlock::Image(img) => {
-                assert_eq!(img.uri.as_deref(), Some("https://example.com/img.png"))
+                assert_eq!(img.uri.as_deref(), Some("https://example.com/img.png"));
+                assert_eq!(img.data, "");
+            }
+            _ => panic!("expected Image block"),
+        }
+    }
+
+    #[rstest]
+    fn when_image_part_with_data_uri_then_base64_in_data_field() {
+        let part = ContentPart::Image {
+            url: "data:image/jpeg;base64,/9j/4AAQ".into(),
+        };
+        let block = content_part_to_block(part);
+        match block {
+            ContentBlock::Image(img) => {
+                assert_eq!(img.data, "/9j/4AAQ");
+                assert_eq!(img.mime_type, "image/jpeg");
+                assert!(img.uri.is_none(), "data URI should not set uri");
+            }
+            _ => panic!("expected Image block"),
+        }
+    }
+
+    #[rstest]
+    fn when_image_part_with_data_uri_png_then_correct_mime() {
+        let part = ContentPart::Image {
+            url: "data:image/png;base64,iVBOR".into(),
+        };
+        let block = content_part_to_block(part);
+        match block {
+            ContentBlock::Image(img) => {
+                assert_eq!(img.data, "iVBOR");
+                assert_eq!(img.mime_type, "image/png");
+            }
+            _ => panic!("expected Image block"),
+        }
+    }
+
+    #[rstest]
+    fn when_image_part_with_malformed_data_uri_then_falls_back_to_uri() {
+        let part = ContentPart::Image {
+            url: "data:image/jpeg".into(),
+        };
+        let block = content_part_to_block(part);
+        match block {
+            ContentBlock::Image(img) => {
+                assert_eq!(img.uri.as_deref(), Some("data:image/jpeg"));
+                assert_eq!(img.data, "");
             }
             _ => panic!("expected Image block"),
         }
