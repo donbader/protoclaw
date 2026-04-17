@@ -114,7 +114,10 @@ We're working toward a stable v1.0. Here's where things stand:
 |---------|--------|-------|
 | Telegram | ✅ | |
 | Debug HTTP (development + testing) | ✅ | |
-| Telegram: reply/thread context | ✅ | Agent sees thread ID, reply-to message ID, and quoted text |
+| Telegram: reply/thread context | ✅ | Sender attribution, partial quotes, media placeholders, openclaw-compatible format |
+| Telegram: external/cross-chat reply context | planned | Handle `external_reply` for replies to messages from other chats |
+| Telegram: reply media download | planned | Download and forward media from replied-to messages to the agent |
+| Telegram: reply context access control | planned | Suppress reply context in groups when original sender is not in allowlist |
 | Telegram: group/user allowlists | planned | Control who can interact with the agent |
 
 ### Tools

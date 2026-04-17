@@ -482,11 +482,19 @@ mod tests {
         let meta1 = Some(MessageMetadata {
             reply_to_message_id: Some("id-1".into()),
             reply_to_text: Some("first reply".into()),
+            reply_to_sender: None,
+            reply_to_sender_id: None,
+            reply_to_is_quote: None,
+            reply_to_media_type: None,
             thread_id: None,
         });
         let meta2 = Some(MessageMetadata {
             reply_to_message_id: Some("id-2".into()),
             reply_to_text: Some("second reply".into()),
+            reply_to_sender: None,
+            reply_to_sender_id: None,
+            reply_to_is_quote: None,
+            reply_to_media_type: None,
             thread_id: None,
         });
         q.push_only(&key("alice"), vec![ContentPart::text("a")], meta1.clone());
@@ -506,6 +514,10 @@ mod tests {
         let reply_meta = Some(MessageMetadata {
             reply_to_message_id: Some("id-1".into()),
             reply_to_text: Some("quoted text".into()),
+            reply_to_sender: None,
+            reply_to_sender_id: None,
+            reply_to_is_quote: None,
+            reply_to_media_type: None,
             thread_id: None,
         });
         q.push_only(

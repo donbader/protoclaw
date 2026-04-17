@@ -79,8 +79,21 @@ pub struct MessageMetadata {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reply_to_message_id: Option<String>,
     /// Text content of the message being replied to, if available.
+    /// Prefers partial quote text (`msg.quote`) over full message text/caption.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reply_to_text: Option<String>,
+    /// Display name of the sender of the replied-to message.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reply_to_sender: Option<String>,
+    /// Platform user ID of the sender of the replied-to message.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reply_to_sender_id: Option<String>,
+    /// Whether the reply text is a user-selected partial quote vs full message.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reply_to_is_quote: Option<bool>,
+    /// Media type placeholder when the replied-to message has no text (e.g. "image", "audio", "sticker").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reply_to_media_type: Option<String>,
     /// Platform thread or topic ID, if the message belongs to a thread.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thread_id: Option<String>,
@@ -1288,11 +1301,19 @@ mod tests {
         let original = MessageMetadata {
             reply_to_message_id: Some("msg-100".into()),
             reply_to_text: Some("quoted text here".into()),
+            reply_to_sender: Some("Alice".into()),
+            reply_to_sender_id: Some("user-1".into()),
+            reply_to_is_quote: Some(true),
+            reply_to_media_type: None,
             thread_id: Some("thread-42".into()),
         };
         let json = serde_json::to_value(&original).unwrap();
         assert_eq!(json["replyToMessageId"], "msg-100");
         assert_eq!(json["replyToText"], "quoted text here");
+        assert_eq!(json["replyToSender"], "Alice");
+        assert_eq!(json["replyToSenderId"], "user-1");
+        assert_eq!(json["replyToIsQuote"], true);
+        assert!(json.get("replyToMediaType").is_none());
         assert_eq!(json["threadId"], "thread-42");
         let restored: MessageMetadata = serde_json::from_value(json).unwrap();
         assert_eq!(original, restored);
@@ -1303,6 +1324,10 @@ mod tests {
         let original = MessageMetadata {
             reply_to_message_id: None,
             reply_to_text: None,
+            reply_to_sender: None,
+            reply_to_sender_id: None,
+            reply_to_is_quote: None,
+            reply_to_media_type: None,
             thread_id: None,
         };
         let json = serde_json::to_value(&original).unwrap();
@@ -1369,6 +1394,10 @@ mod tests {
             metadata: Some(MessageMetadata {
                 reply_to_message_id: Some("msg-99".into()),
                 reply_to_text: Some("original message".into()),
+                reply_to_sender: Some("Bob".into()),
+                reply_to_sender_id: Some("user-2".into()),
+                reply_to_is_quote: None,
+                reply_to_media_type: None,
                 thread_id: Some("thread-1".into()),
             }),
             meta: None,

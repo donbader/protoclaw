@@ -228,9 +228,13 @@ prop_compose! {
     fn arb_message_metadata()(
         reply_to_message_id in proptest::option::of(arb_string()),
         reply_to_text in proptest::option::of(arb_string()),
+        reply_to_sender in proptest::option::of(arb_string()),
+        reply_to_sender_id in proptest::option::of(arb_string()),
+        reply_to_is_quote in proptest::option::of(proptest::bool::ANY),
+        reply_to_media_type in proptest::option::of(arb_string()),
         thread_id in proptest::option::of(arb_string()),
     ) -> MessageMetadata {
-        MessageMetadata { reply_to_message_id, reply_to_text, thread_id }
+        MessageMetadata { reply_to_message_id, reply_to_text, reply_to_sender, reply_to_sender_id, reply_to_is_quote, reply_to_media_type, thread_id }
     }
 }
 
