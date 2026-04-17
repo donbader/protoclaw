@@ -12,6 +12,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-04-17
+
+### Added
+
+- **Rich media delivery**: Images, files, and audio can now flow between agents and channels in both directions (#33)
+- **Reply/thread context**: Agents receive context about which message the user is replying to (#33)
+- **Agent-initiated push**: Agents can push messages to channels without user input via `session/push` (#33)
+
+### Changed
+
+- **Docker-only distribution**: Dropped native binary releases in favor of Docker-only distribution (#41)
+- **CI security scanning**: Replaced `cargo-audit` with `cargo-deny` and optimized CI pipeline (#39)
+
 ## [0.5.2] — 2026-04-17
 
 ### Fixed
@@ -28,6 +41,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 Starting point for tracked binary releases. Prior versions were not formally documented.
 
-[Unreleased]: https://github.com/donbader/anyclaw/compare/v0.5.2...HEAD
+[Unreleased]: https://github.com/donbader/anyclaw/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/donbader/anyclaw/compare/v0.5.2...v0.6.0
 [0.5.2]: https://github.com/donbader/anyclaw/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/donbader/anyclaw/releases/tag/v0.5.1
