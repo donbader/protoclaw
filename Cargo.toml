@@ -34,10 +34,10 @@ tempfile = "3"
 axum = "0.8"
 tokio-stream = { version = "0.1", features = ["sync"] }
 anyclaw-channels = { path = "crates/anyclaw-channels" }
-anyclaw-sdk-types = { path = "crates/anyclaw-sdk-types", version = "0.7.0" }
-anyclaw-sdk-channel = { path = "crates/anyclaw-sdk-channel", version = "0.3.5" }
-anyclaw-sdk-tool = { path = "crates/anyclaw-sdk-tool", version = "0.2.11" }
-anyclaw-sdk-agent = { path = "crates/anyclaw-sdk-agent", version = "0.2.11" }
+anyclaw-sdk-types = { path = "crates/anyclaw-sdk-types", version = "0.8.0" }
+anyclaw-sdk-channel = { path = "crates/anyclaw-sdk-channel", version = "0.3.6" }
+anyclaw-sdk-tool = { path = "crates/anyclaw-sdk-tool", version = "0.2.12" }
+anyclaw-sdk-agent = { path = "crates/anyclaw-sdk-agent", version = "0.2.12" }
 anyclaw-test-helpers = { path = "crates/anyclaw-test-helpers" }
 wasmtime = "43"
 wasmtime-wasi = "43"
