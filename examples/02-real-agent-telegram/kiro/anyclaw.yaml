@@ -21,6 +21,7 @@ agents_manager:
         pull_policy: "never"
         volumes:
           - "kiro-auth-data:/home/agent-kiro/.local/share/kiro-cli"
+          - "kiro-session-data:/home/agent-kiro/.kiro"
           - "kiro-agent-workspace:/home/agent-kiro/workspace"
           - "kiro-agent-packages:/usr/local"
         env:

@@ -123,6 +123,7 @@ agents_manager:
       entrypoint: ["kiro-cli", "acp"]
       volumes:
         - "kiro-auth-data:/home/agent-kiro/.local/share/kiro-cli"
+        - "kiro-session-data:/home/agent-kiro/.kiro"
         - "kiro-agent-workspace:/home/agent-kiro/workspace"
         - "kiro-agent-packages:/usr/local"
       env:
@@ -133,7 +134,7 @@ The agent container runs as the `agent-kiro` user with scoped sudo for `apt-get`
 
 The `KIRO_API_KEY` env var is passed through from `.env` via `${KIRO_API_KEY:}` substitution. If using browser login instead, the `kiro-auth-data` volume provides credentials.
 
-Kiro CLI settings (`.kiro/`) can optionally be placed in this directory before building. The Dockerfile creates `/home/agent-kiro/.kiro` inside the agent image. However, runtime state (auth tokens, session data) lives in `/home/agent-kiro/.local/share/kiro-cli/` and is persisted via the `kiro-auth-data` Docker volume — not baked into the image.
+Kiro CLI stores data in two locations: auth tokens and chat history in `~/.local/share/kiro-cli/` (persisted via `kiro-auth-data` volume), and ACP session files (`<session-id>.json` + `<session-id>.jsonl`) in `~/.kiro/sessions/cli/` (persisted via `kiro-session-data` volume). Both volumes are required for session recovery after container restarts.
 
 For the full config schema and all available options, see the [Configuration Reference](../CONFIGURATION.md).
 
