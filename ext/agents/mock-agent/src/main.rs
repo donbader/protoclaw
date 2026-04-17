@@ -642,8 +642,8 @@ mod tests {
             "params": {
                 "prompt": [
                     {"type": "text", "text": "look at this"},
-                    {"type": "image", "url": "https://example.com/img.png"},
-                    {"type": "file", "url": "https://example.com/doc.pdf", "filename": "doc.pdf", "mimeType": "application/pdf"}
+                    {"type": "image", "data": "", "mimeType": "image/png", "uri": "https://example.com/img.png"},
+                    {"type": "resource_link", "uri": "https://example.com/doc.pdf", "name": "doc.pdf", "mimeType": "application/pdf"}
                 ]
             }
         });
@@ -651,19 +651,20 @@ mod tests {
         assert_eq!(parts.len(), 3);
         assert_eq!(parts[0]["type"], "text");
         assert_eq!(parts[1]["type"], "image");
-        assert_eq!(parts[2]["type"], "file");
+        assert_eq!(parts[2]["type"], "resource_link");
     }
 
     #[tokio::test]
     async fn when_image_part_then_echoes_image_chunk() {
-        let parts = vec![json!({"type": "image", "url": "https://example.com/img.png"})];
+        let parts = vec![
+            json!({"type": "image", "data": "", "mimeType": "image/png", "uri": "https://example.com/img.png"}),
+        ];
         let msgs = collect_parts_output(parts, false).await;
-        // 1 image echo chunk + result_notif + rpc_response = 3 messages
         assert_eq!(msgs.len(), 3);
         let echo = &msgs[0]["params"]["update"];
         assert_eq!(echo["sessionUpdate"], "agent_message_chunk");
         assert_eq!(echo["content"]["type"], "image");
-        assert_eq!(echo["content"]["url"], "https://example.com/img.png");
+        assert_eq!(echo["content"]["uri"], "https://example.com/img.png");
 
         let result = &msgs[1]["params"]["update"];
         assert_eq!(result["sessionUpdate"], "result");
@@ -674,10 +675,9 @@ mod tests {
     async fn when_mixed_parts_then_echoes_all_and_summarizes() {
         let parts = vec![
             json!({"type": "text", "text": "check this out"}),
-            json!({"type": "image", "url": "https://example.com/pic.jpg"}),
+            json!({"type": "image", "data": "", "mimeType": "image/png", "uri": "https://example.com/pic.jpg"}),
         ];
         let msgs = collect_parts_output(parts, false).await;
-        // 2 echo chunks + result_notif + rpc_response = 4 messages
         assert_eq!(msgs.len(), 4);
 
         let text_chunk = &msgs[0]["params"]["update"];
@@ -697,32 +697,35 @@ mod tests {
     #[tokio::test]
     async fn when_file_part_then_echoes_file_chunk() {
         let parts = vec![json!({
-            "type": "file",
-            "url": "https://example.com/report.pdf",
-            "filename": "report.pdf",
+            "type": "resource_link",
+            "uri": "https://example.com/report.pdf",
+            "name": "report.pdf",
             "mimeType": "application/pdf"
         })];
         let msgs = collect_parts_output(parts, false).await;
         assert_eq!(msgs.len(), 3);
         let echo = &msgs[0]["params"]["update"];
-        assert_eq!(echo["content"]["type"], "file");
-        assert_eq!(echo["content"]["url"], "https://example.com/report.pdf");
-        assert_eq!(echo["content"]["filename"], "report.pdf");
-        assert_eq!(echo["content"]["mimeType"], "application/pdf");
+        assert_eq!(echo["content"]["type"], "text");
+        assert!(
+            echo["content"]["text"]
+                .as_str()
+                .unwrap()
+                .contains("report.pdf")
+        );
     }
 
     #[tokio::test]
     async fn when_audio_part_then_echoes_audio_chunk() {
         let parts = vec![json!({
             "type": "audio",
-            "url": "https://example.com/clip.mp3",
+            "data": "https://example.com/clip.mp3",
             "mimeType": "audio/mpeg"
         })];
         let msgs = collect_parts_output(parts, false).await;
         assert_eq!(msgs.len(), 3);
         let echo = &msgs[0]["params"]["update"];
         assert_eq!(echo["content"]["type"], "audio");
-        assert_eq!(echo["content"]["url"], "https://example.com/clip.mp3");
+        assert_eq!(echo["content"]["data"], "https://example.com/clip.mp3");
         assert_eq!(echo["content"]["mimeType"], "audio/mpeg");
     }
 
