@@ -71,6 +71,14 @@ pub enum ValidationError {
         /// The invalid volume string.
         value: String,
     },
+    /// An extra_hosts entry is missing the required `:` separator.
+    #[error("{field}: extra_hosts entry '{value}' missing ':' separator (expected 'hostname:ip')")]
+    InvalidExtraHost {
+        /// Config field path.
+        field: String,
+        /// The invalid extra_hosts string.
+        value: String,
+    },
     /// The tools server host is not a valid hostname or IP address.
     #[error("{field}: invalid hostname or IP '{value}'")]
     InvalidToolsServerHost {
@@ -211,6 +219,14 @@ fn validate_docker_agent(
             errors.push(ValidationError::InvalidVolumeMount {
                 field: format!("agents_manager.agents.{name}.workspace.volumes"),
                 value: volume.clone(),
+            });
+        }
+    }
+    for entry in &docker.extra_hosts {
+        if !entry.contains(':') {
+            errors.push(ValidationError::InvalidExtraHost {
+                field: format!("agents_manager.agents.{name}.workspace.extra_hosts"),
+                value: entry.clone(),
             });
         }
     }
@@ -519,6 +535,7 @@ mod tests {
                     network: None,
                     pull_policy: PullPolicy::IfNotPresent,
                     working_dir: None,
+                    extra_hosts: vec![],
                 }),
                 enabled: true,
                 tools: vec![],
@@ -561,6 +578,7 @@ mod tests {
                     network: None,
                     pull_policy: PullPolicy::IfNotPresent,
                     working_dir: None,
+                    extra_hosts: vec![],
                 }),
                 enabled: true,
                 tools: vec![],
@@ -602,6 +620,7 @@ mod tests {
                     network: None,
                     pull_policy: PullPolicy::IfNotPresent,
                     working_dir: None,
+                    extra_hosts: vec![],
                 }),
                 enabled: true,
                 tools: vec![],
@@ -643,6 +662,7 @@ mod tests {
                     network: None,
                     pull_policy: PullPolicy::IfNotPresent,
                     working_dir: None,
+                    extra_hosts: vec![],
                 }),
                 enabled: true,
                 tools: vec![],
@@ -663,6 +683,48 @@ mod tests {
         assert!(
             has_error,
             "expected InvalidVolumeMount, got: {:?}",
+            result.errors
+        );
+    }
+
+    #[test]
+    fn when_docker_extra_hosts_has_no_colon_separator_then_invalid_extra_host_error() {
+        let mut config = valid_config();
+        config.agents_manager.agents.insert(
+            "docker-agent".to_string(),
+            AgentConfig {
+                workspace: WorkspaceConfig::Docker(DockerWorkspaceConfig {
+                    image: "my-agent:latest".to_string(),
+                    entrypoint: None,
+                    volumes: vec![],
+                    env: HashMap::new(),
+                    memory_limit: None,
+                    cpu_limit: None,
+                    docker_host: None,
+                    network: None,
+                    pull_policy: PullPolicy::IfNotPresent,
+                    working_dir: None,
+                    extra_hosts: vec!["nocolon".to_string()],
+                }),
+                enabled: true,
+                tools: vec![],
+                acp_timeout_secs: None,
+                backoff: None,
+                crash_tracker: None,
+                options: HashMap::new(),
+            },
+        );
+        let result = validate_config(&config);
+        let has_error = result.errors.iter().any(|e| {
+            matches!(
+                e,
+                ValidationError::InvalidExtraHost { field, value }
+                if field.contains("docker-agent") && value == "nocolon"
+            )
+        });
+        assert!(
+            has_error,
+            "expected InvalidExtraHost, got: {:?}",
             result.errors
         );
     }
@@ -782,6 +844,13 @@ mod tests {
             value: "nocolon".into(),
         },
         "agents_manager.agents.x.workspace.volumes: volume entry 'nocolon' missing ':' separator"
+    )]
+    #[case::invalid_extra_host(
+        ValidationError::InvalidExtraHost {
+            field: "agents_manager.agents.x.workspace.extra_hosts".into(),
+            value: "nocolon".into(),
+        },
+        "agents_manager.agents.x.workspace.extra_hosts: extra_hosts entry 'nocolon' missing ':' separator (expected 'hostname:ip')"
     )]
     #[case::invalid_tools_server_host(
         ValidationError::InvalidToolsServerHost {

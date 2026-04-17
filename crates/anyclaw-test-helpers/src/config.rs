@@ -566,6 +566,7 @@ pub fn docker_agent_config_with_options(
                     network: None,
                     pull_policy: anyclaw_config::PullPolicy::Never,
                     working_dir: None,
+                    extra_hosts: vec![],
                 },
             ),
             enabled: true,

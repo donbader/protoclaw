@@ -405,6 +405,9 @@ pub struct DockerWorkspaceConfig {
     /// usually wrong for Docker workspaces — set this to the container's WORKDIR).
     #[serde(default)]
     pub working_dir: Option<PathBuf>,
+    /// Extra `/etc/hosts` entries for the container, in `hostname:ip` format.
+    #[serde(default)]
+    pub extra_hosts: Vec<String>,
 }
 
 /// Tagged enum selecting the agent's execution environment.
@@ -1490,6 +1493,9 @@ cpu_limit: "1.5"
 docker_host: "unix:///var/run/docker.sock"
 network: "my-net"
 pull_policy: always
+extra_hosts:
+  - "myhost:192.168.1.100"
+  - "otherhost:10.0.0.1"
 "#;
         let ws: WorkspaceConfig = serde_yaml::from_str(yaml).unwrap();
         match ws {
@@ -1503,6 +1509,10 @@ pull_policy: always
                 assert_eq!(d.docker_host, Some("unix:///var/run/docker.sock".into()));
                 assert_eq!(d.network, Some("my-net".into()));
                 assert_eq!(d.pull_policy, PullPolicy::Always);
+                assert_eq!(
+                    d.extra_hosts,
+                    vec!["myhost:192.168.1.100", "otherhost:10.0.0.1"]
+                );
             }
             _ => panic!("expected Docker variant"),
         }
@@ -1523,6 +1533,7 @@ pull_policy: always
                 assert!(d.docker_host.is_none());
                 assert!(d.network.is_none());
                 assert_eq!(d.pull_policy, PullPolicy::IfNotPresent);
+                assert!(d.extra_hosts.is_empty());
             }
             _ => panic!("expected Docker variant"),
         }

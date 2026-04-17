@@ -422,11 +422,18 @@ pub(crate) fn build_host_config(config: &DockerWorkspaceConfig) -> Result<HostCo
 
     let network_mode = config.network.clone();
 
+    let extra_hosts: Option<Vec<String>> = if config.extra_hosts.is_empty() {
+        None
+    } else {
+        Some(config.extra_hosts.clone())
+    };
+
     Ok(HostConfig {
         memory,
         nano_cpus,
         binds,
         network_mode,
+        extra_hosts,
         ..Default::default()
     })
 }
@@ -468,6 +475,7 @@ mod tests {
             network: None,
             pull_policy: PullPolicy::IfNotPresent,
             working_dir: None,
+            extra_hosts: vec![],
         }
     }
 
@@ -483,6 +491,7 @@ mod tests {
             network: Some("my-net".to_string()),
             pull_policy: PullPolicy::IfNotPresent,
             working_dir: None,
+            extra_hosts: vec![],
         }
     }
 
@@ -574,6 +583,21 @@ mod tests {
         let config = given_docker_config_with_limits();
         let hc = build_host_config(&config).expect("build_host_config should succeed");
         assert_eq!(hc.network_mode, Some("my-net".to_string()));
+    }
+
+    #[rstest]
+    fn when_build_host_config_with_extra_hosts_then_extra_hosts_are_set() {
+        let mut config = given_minimal_docker_config();
+        config.extra_hosts = vec!["myhost:192.168.1.1".to_string()];
+        let hc = build_host_config(&config).expect("build_host_config should succeed");
+        assert_eq!(hc.extra_hosts, Some(vec!["myhost:192.168.1.1".to_string()]));
+    }
+
+    #[rstest]
+    fn when_build_host_config_with_no_extra_hosts_then_extra_hosts_are_none() {
+        let config = given_minimal_docker_config();
+        let hc = build_host_config(&config).expect("build_host_config should succeed");
+        assert!(hc.extra_hosts.is_none());
     }
 
     #[rstest]
