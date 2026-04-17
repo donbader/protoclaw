@@ -296,6 +296,14 @@
           "description": "Extra environment variables passed to the container.",
           "type": "object"
         },
+        "extra_hosts": {
+          "default": [],
+          "description": "Extra `/etc/hosts` entries for the container, in `hostname:ip` format.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "image": {
           "description": "Docker image name (e.g. `\"anyclaw/opencode:latest\"`).",
           "type": "string"
