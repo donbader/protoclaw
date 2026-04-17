@@ -1,16 +1,43 @@
 name: Docker
 
 on:
-  push:
-    tags:
-      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g. 0.7.0) — without 'v' prefix"
+        required: true
+        type: string
 
 env:
   REGISTRY: ghcr.io
+  VERSION: ${{ inputs.version }}
 
 jobs:
+  tag:
+    name: Create tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Validate version matches Cargo.toml
+        run: |
+          CARGO_VERSION=$(grep '^version' crates/anyclaw/Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
+          if [ "$CARGO_VERSION" != "${{ inputs.version }}" ]; then
+            echo "ERROR: Cargo.toml version ($CARGO_VERSION) does not match input version (${{ inputs.version }})"
+            echo "Commit the version bump to main before triggering the release."
+            exit 1
+          fi
+
+      - name: Create git tag
+        run: |
+          git tag "v${{ inputs.version }}"
+          git push origin "v${{ inputs.version }}"
+
   build:
     name: Build (${{ matrix.arch }})
+    needs: tag
     strategy:
       matrix:
         include:
@@ -26,6 +53,8 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: v${{ inputs.version }}
 
       - name: Set up Docker Buildx
         id: setup-buildx
@@ -124,16 +153,22 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Compute version tags
+        id: version
+        run: |
+          MAJOR_MINOR=$(echo "${{ inputs.version }}" | cut -d. -f1,2)
+          echo "major_minor=$MAJOR_MINOR" >> "$GITHUB_OUTPUT"
+
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v6
         with:
           images: ${{ matrix.image }}
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=${{ inputs.version }}
+            type=raw,value=${{ steps.version.outputs.major_minor }}
             type=sha,prefix=
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest
 
       - name: Create manifest list and push
         working-directory: /tmp/digests

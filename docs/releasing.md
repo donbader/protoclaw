@@ -16,17 +16,17 @@ SDK crate releases are fully automated via [release-plz](https://release-plz.ien
 
 Anyclaw is distributed as Docker images — no native binary releases. The release process:
 
-1. Update `crates/anyclaw/Cargo.toml` version
-2. Update `CHANGELOG.md` — move items from `[Unreleased]` to the new version section
-3. Create a PR with these changes, merge it
-4. Tag the merge commit and push:
+1. Update `crates/anyclaw/Cargo.toml` version and `CHANGELOG.md`
+2. Commit directly to `main` and push
+3. Trigger the Docker workflow:
 
 ```bash
-git tag v<version>
-git push origin v<version>
+gh workflow run docker.yml -f version=<version>
 ```
 
-5. The tag triggers the **Docker** workflow (`.github/workflows/docker.yml`): builds multi-arch Docker images (amd64 + arm64), pushes to GHCR
+The workflow validates that `Cargo.toml` matches the input version, creates the `v<version>` git tag, then builds multi-arch Docker images (amd64 + arm64) and pushes to GHCR.
+
+For AI-assisted releases, use the `/release` command which automates version detection, changelog generation, and workflow triggering.
 
 **Versioning:** The binary follows [semver](https://semver.org/). Bump minor for new features, patch for bugfixes.
 
@@ -35,9 +35,9 @@ git push origin v<version>
 - **SDK crates**: Automatically on every push to `main` that changes SDK code (release-plz decides)
 - **Binary**: When accumulated changes warrant it. No fixed schedule. The maintainer decides.
 
-## Checklist Before Tagging a Binary Release
+## Checklist Before Releasing
 
 - [ ] All CI checks pass on `main`
 - [ ] `CHANGELOG.md` is updated with the new version
-- [ ] `crates/anyclaw/Cargo.toml` version matches the tag you're about to push
+- [ ] `crates/anyclaw/Cargo.toml` version matches the version you're about to release
 - [ ] No known regressions in the examples

@@ -189,5 +189,5 @@ All changes go through pull requests — no direct commits to `main`.
 
 ### Release Process
 - SDK crate releases are automated via release-plz on push to `main`
-- Binary releases are triggered by pushing a `v*.*.*` tag
+- Binary releases are triggered via `gh workflow run docker.yml -f version=<version>`
 - See `docs/releasing.md` for the full process
