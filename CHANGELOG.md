@@ -12,6 +12,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.8.2] — 2026-04-18
+
+### Added
+
+- **Docker extra_hosts support**: `extra_hosts` can now be configured on Docker workspace agents, enabling custom host-to-IP mappings inside agent containers (#54)
+
 ## [0.8.1] — 2026-04-17
 
 ### Added
@@ -59,7 +65,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 Starting point for tracked binary releases. Prior versions were not formally documented.
 
-[Unreleased]: https://github.com/donbader/anyclaw/compare/v0.8.1...HEAD
+[Unreleased]: https://github.com/donbader/anyclaw/compare/v0.8.2...HEAD
+[0.8.2]: https://github.com/donbader/anyclaw/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/donbader/anyclaw/compare/v0.7.1...v0.8.1
 [0.7.1]: https://github.com/donbader/anyclaw/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/donbader/anyclaw/compare/v0.6.1...v0.7.0

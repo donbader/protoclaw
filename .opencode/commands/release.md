@@ -21,9 +21,10 @@ If no version argument provided, auto-detect:
 
 Verify before starting:
 1. You are on `main` and it's clean (`git status`)
-2. All CI checks pass on `main`
-3. No existing `v<version>` tag (`git tag -l v<version>`)
-4. The version follows semver: patch for bugfixes, minor for features
+2. Pull latest: `git pull origin main`
+3. All CI checks pass on `main`
+4. No existing `v<version>` tag (`git tag -l v<version>`)
+5. The version follows semver: patch for bugfixes, minor for features
 
 ## Steps
 
