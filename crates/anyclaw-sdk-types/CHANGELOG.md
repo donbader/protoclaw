@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1](https://github.com/donbader/anyclaw/compare/anyclaw-sdk-types-v0.8.0...anyclaw-sdk-types-v0.8.1) - 2026-04-17
+
+### Added
+
+- handle media messages in telegram channel ([#49](https://github.com/donbader/anyclaw/pull/49))
+
 ## [0.8.0](https://github.com/donbader/anyclaw/compare/anyclaw-sdk-types-v0.7.0...anyclaw-sdk-types-v0.8.0) - 2026-04-17
 
 ### Added

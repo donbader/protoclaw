@@ -1,6 +1,6 @@
 [package]
 name = "anyclaw-sdk-agent"
-version = "0.2.12"
+version = "0.2.13"
 description = "Agent adapter SDK for anyclaw — build ACP-compatible agents"
 edition.workspace = true
 rust-version.workspace = true
