@@ -199,10 +199,10 @@ pub fn content_part_to_block(part: ContentPart) -> ContentBlock {
                 EmbeddedResourceResource::TextResourceContents(res),
             ))
         }
-        ContentPart::Audio { url: _, mime_type } => ContentBlock::Audio(AudioContent::new(
-            "",
-            mime_type.unwrap_or_else(|| "audio/mpeg".into()),
-        )),
+        ContentPart::Audio { url, mime_type } => {
+            let mt = mime_type.unwrap_or_else(|| "audio/mpeg".into());
+            ContentBlock::Audio(AudioContent::new(url, &mt))
+        }
     }
 }
 
@@ -219,7 +219,7 @@ pub fn content_block_to_part(block: ContentBlock) -> ContentPart {
             url: img.uri.unwrap_or_default(),
         },
         ContentBlock::Audio(audio) => ContentPart::Audio {
-            url: String::new(),
+            url: audio.data,
             mime_type: Some(audio.mime_type),
         },
         ContentBlock::Resource(embedded) => match embedded.resource {

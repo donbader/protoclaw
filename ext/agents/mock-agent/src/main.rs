@@ -347,20 +347,24 @@ async fn handle_session_prompt<W: AsyncWrite + Unpin>(
                 json!({ "type": "text", "text": format!("{prefix}: {text}") })
             }
             "image" => {
-                json!({ "type": "image", "url": part["url"] })
+                let url = part["uri"]
+                    .as_str()
+                    .or_else(|| part["url"].as_str())
+                    .unwrap_or("");
+                json!({ "type": "image", "data": "", "mimeType": part["mimeType"].as_str().unwrap_or("image/png"), "uri": url })
             }
-            "file" => {
-                json!({
-                    "type": "file",
-                    "url": part["url"],
-                    "filename": part["filename"],
-                    "mimeType": part["mimeType"]
-                })
+            "resource" | "resource_link" => {
+                let uri = if part_type == "resource_link" {
+                    part["uri"].as_str().unwrap_or("")
+                } else {
+                    part["resource"]["uri"].as_str().unwrap_or("")
+                };
+                json!({ "type": "text", "text": format!("{prefix}: [resource {uri}]") })
             }
             "audio" => {
                 json!({
                     "type": "audio",
-                    "url": part["url"],
+                    "data": part["data"],
                     "mimeType": part["mimeType"]
                 })
             }

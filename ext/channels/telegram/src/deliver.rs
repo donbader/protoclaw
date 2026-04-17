@@ -992,12 +992,24 @@ pub async fn deliver_to_chat(
             Ok(())
         }
 
-        ContentKind::Audio { url, .. } => {
+        ContentKind::Audio { url, mime_type } => {
             if let Ok(parsed) = url.parse() {
-                let _ = bot
-                    .send_voice(ChatId(chat_id), InputFile::url(parsed))
-                    .await
-                    .map_err(|e| tracing::warn!(error = %e, "failed to send voice"));
+                let input_file = InputFile::url(parsed);
+                let is_voice = mime_type
+                    .as_deref()
+                    .map(|m| m.contains("ogg") || m.contains("opus"))
+                    .unwrap_or(false);
+                if is_voice {
+                    let _ = bot
+                        .send_voice(ChatId(chat_id), input_file)
+                        .await
+                        .map_err(|e| tracing::warn!(error = %e, "failed to send voice"));
+                } else {
+                    let _ = bot
+                        .send_audio(ChatId(chat_id), input_file)
+                        .await
+                        .map_err(|e| tracing::warn!(error = %e, "failed to send audio"));
+                }
             } else {
                 tracing::warn!(url = %url, "audio url failed to parse");
             }
