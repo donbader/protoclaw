@@ -313,6 +313,8 @@ impl AgentsManager {
             );
             for slot in &mut self.slots {
                 if let Some(acp_id) = slot.session_map.remove(&completion.session_key) {
+                    slot.stale_sessions
+                        .insert(completion.session_key.clone(), acp_id.clone());
                     slot.reverse_map.remove(&acp_id);
                     slot.tool_context_sent.remove(&acp_id);
                 }

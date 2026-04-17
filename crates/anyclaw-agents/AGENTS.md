@@ -86,6 +86,7 @@ Remaining `serde_json::Value` usages are documented D-03 extensible boundaries:
 - `CreateSession` checks `stale_sessions` before creating new sessions
 - `heal_session()` prefers `session/resume` (no replay) over `session/load` (replays history)
 - For `session/load`, replay events are suppressed until the first `session/prompt` via `awaiting_first_prompt` set
+- When the agent reports "session not found" for a prompt, `handle_prompt_completion` moves the dead mapping into `stale_sessions` (not just drops it), so the next prompt triggers `heal_session` with the stale ACP ID available for `session/resume` or `session/load`
 - Agent data directories must be volume-mounted so the agent can restore from its own session history
 
 ## Completion Signal Flow

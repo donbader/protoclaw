@@ -2489,6 +2489,56 @@ mod tests {
     }
 
     #[rstest]
+    #[tokio::test]
+    async fn when_session_expired_then_mapping_moved_to_stale_sessions_for_recovery() {
+        // When the agent reports "session not found", handle_prompt_completion must
+        // move the dead ACP session ID into stale_sessions so that heal_session can
+        // attempt session/resume or session/load on the next prompt — not just drop it.
+        let (handle, _rx) = make_tools_handle();
+        let mut m = AgentsManager::new(mock_agents_manager_config_with(HashMap::new()), handle);
+
+        let (channels_tx, _channels_rx) = mpsc::channel::<ChannelEvent>(16);
+        m.channels_sender = Some(channels_tx);
+
+        let cancel = CancellationToken::new();
+        let mut slot = AgentSlot::new("test-agent".into(), mock_agent_config(), &cancel);
+        let session_key = SessionKey::new("telegram", "direct", "user1");
+        let acp_session_id = "acp-sess-expired".to_string();
+        register_test_session(&mut slot, &session_key, &acp_session_id);
+        m.slots.push(slot);
+
+        let (_incoming_tx, mut incoming_rx) = mpsc::channel::<SlotIncoming>(16);
+
+        let completion = PromptCompletion {
+            session_key: session_key.clone(),
+            session_expired: true,
+            stop_reason: anyclaw_sdk_types::acp::StopReason::Refusal,
+        };
+        m.handle_prompt_completion(completion, &mut incoming_rx)
+            .await;
+
+        // session_map must no longer contain the dead mapping
+        assert!(
+            !m.slots[0].session_map.contains_key(&session_key),
+            "expired session must be removed from session_map"
+        );
+        assert!(
+            !m.slots[0].reverse_map.contains_key(&acp_session_id),
+            "expired session must be removed from reverse_map"
+        );
+
+        // stale_sessions must contain the dead ACP ID so heal_session can recover
+        assert_eq!(
+            m.slots[0]
+                .stale_sessions
+                .get(&session_key)
+                .map(String::as_str),
+            Some("acp-sess-expired"),
+            "expired session must be moved to stale_sessions for recovery"
+        );
+    }
+
+    #[rstest]
     fn when_apply_agent_defaults_called_then_missing_keys_are_populated() {
         let mut options: HashMap<String, serde_json::Value> = HashMap::new();
         options.insert("user_key".to_string(), serde_json::json!("user_value"));
