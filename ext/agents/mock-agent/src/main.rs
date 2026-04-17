@@ -385,18 +385,18 @@ async fn handle_session_prompt<W: AsyncWrite + Unpin>(
     }
 
     // Build the result summary string.
-    let result_content = if parts.len() == 1 && parts[0]["type"].as_str() == Some("text") {
+    let mut result_content = if parts.len() == 1 && parts[0]["type"].as_str() == Some("text") {
         let text = parts[0]["text"].as_str().unwrap_or("");
-        if echo_mcp_count {
-            let mcp = MCP_SERVER_COUNT.load(Ordering::SeqCst);
-            format!("{prefix}: {text} [mcp:{mcp}]")
-        } else {
-            format!("{prefix}: {text}")
-        }
+        format!("{prefix}: {text}")
     } else {
         let noun = if parts.len() == 1 { "part" } else { "parts" };
         format!("Echoed {} content {noun}", parts.len())
     };
+
+    if echo_mcp_count {
+        let mcp = MCP_SERVER_COUNT.load(Ordering::SeqCst);
+        result_content.push_str(&format!(" [mcp:{mcp}]"));
+    }
 
     let result_notif = json!({
         "jsonrpc": "2.0",
