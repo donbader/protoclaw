@@ -1,5 +1,6 @@
 target/
 .git/
+.worktrees/
 .planning/
 .opencode/
 !examples/02-real-agent-telegram/opencode/.opencode/
