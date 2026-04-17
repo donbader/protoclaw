@@ -186,6 +186,7 @@ mod tests {
             network: None,
             pull_policy: PullPolicy::default(),
             working_dir: None,
+            extra_hosts: vec![],
         };
         assert_eq!(docker.image, "my-agent:latest");
 
@@ -229,6 +230,7 @@ mod tests {
                             network: None,
                             pull_policy: PullPolicy::default(),
                             working_dir: None,
+                            extra_hosts: vec![],
                         }),
                         enabled: true,
                         tools: vec![],
