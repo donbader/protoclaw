@@ -186,8 +186,8 @@ impl Default for ContentPart {
 ///
 /// - `Text` → `ContentBlock::Text`
 /// - `Image` → `ContentBlock::Image` with empty `data`, `uri` set to the URL
-/// - `File` → `ContentBlock::Resource` with a `TextResourceContents` (uri-only)
-/// - `Audio` → `ContentBlock::Audio` with empty `data`, `uri` implied by URL
+/// - `File` → `ContentBlock::ResourceLink` with `name` and `uri`
+/// - `Audio` → `ContentBlock::Audio` with URL in `data` field (no `uri` on AudioContent)
 pub fn content_part_to_block(part: ContentPart) -> ContentBlock {
     match part {
         ContentPart::Text { text } => ContentBlock::Text(TextContent::new(text)),
