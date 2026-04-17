@@ -498,4 +498,30 @@ mod tests {
         assert_eq!(content.len(), 2);
         assert_eq!(meta, meta1);
     }
+
+    #[rstest]
+    fn when_flush_pending_reply_then_plain_then_reply_context_preserved() {
+        use anyclaw_sdk_types::MessageMetadata;
+        let mut q = SessionQueue::new();
+        let reply_meta = Some(MessageMetadata {
+            reply_to_message_id: Some("id-1".into()),
+            reply_to_text: Some("quoted text".into()),
+            thread_id: None,
+        });
+        q.push_only(
+            &key("alice"),
+            vec![ContentPart::text("reply msg")],
+            reply_meta.clone(),
+        );
+        q.push_only(&key("alice"), vec![ContentPart::text("plain msg")], None);
+
+        let (content, meta) = q
+            .flush_pending(&key("alice"))
+            .expect("should return payload");
+        assert_eq!(content.len(), 2);
+        assert_eq!(
+            meta, reply_meta,
+            "reply context must survive a following plain message"
+        );
+    }
 }

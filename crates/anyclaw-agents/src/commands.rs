@@ -318,22 +318,10 @@ impl AgentsManager {
                 .tool_context_sent
                 .insert(acp_session_id.clone());
         }
-        if let Some(meta) = metadata {
-            let mut context_parts = Vec::new();
-            if let Some(ref thread_id) = meta.thread_id {
-                context_parts.push(format!("thread {thread_id}"));
-            }
-            if let Some(ref reply_text) = meta.reply_to_text {
-                context_parts.push(format!("replying to: \"{reply_text}\""));
-            } else if let Some(ref reply_id) = meta.reply_to_message_id {
-                context_parts.push(format!("reply to message {reply_id}"));
-            }
-            if !context_parts.is_empty() {
-                prompt_parts.push(ContentPart::text(format!(
-                    "[Context: {}]",
-                    context_parts.join(", ")
-                )));
-            }
+        if let Some(meta) = metadata
+            && let Some(context_text) = build_reply_context(meta)
+        {
+            prompt_parts.push(ContentPart::text(context_text));
         }
         prompt_parts.extend_from_slice(content);
 
@@ -655,4 +643,82 @@ pub(crate) fn extract_command_text(content: &[ContentPart]) -> Option<&str> {
         return Some(text.as_str());
     }
     None
+}
+
+/// Build a `[Context: ...]` string from reply/thread metadata for prompt injection.
+/// Returns `None` if metadata has no actionable context.
+pub(crate) fn build_reply_context(meta: &MessageMetadata) -> Option<String> {
+    let mut parts = Vec::new();
+    if let Some(ref thread_id) = meta.thread_id {
+        parts.push(format!("thread {thread_id}"));
+    }
+    if let Some(ref reply_text) = meta.reply_to_text {
+        parts.push(format!("replying to: \"{reply_text}\""));
+    } else if let Some(ref reply_id) = meta.reply_to_message_id {
+        parts.push(format!("reply to message {reply_id}"));
+    }
+    if parts.is_empty() {
+        return None;
+    }
+    Some(format!("[Context: {}]", parts.join(", ")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::rstest;
+
+    #[rstest]
+    fn when_reply_text_present_then_shows_quoted_text() {
+        let meta = MessageMetadata {
+            reply_to_message_id: Some("5398".into()),
+            reply_to_text: Some("hello world".into()),
+            thread_id: None,
+        };
+        let result = build_reply_context(&meta).unwrap();
+        assert_eq!(result, r#"[Context: replying to: "hello world"]"#);
+    }
+
+    #[rstest]
+    fn when_only_reply_id_then_falls_back_to_id() {
+        let meta = MessageMetadata {
+            reply_to_message_id: Some("5398".into()),
+            reply_to_text: None,
+            thread_id: None,
+        };
+        let result = build_reply_context(&meta).unwrap();
+        assert_eq!(result, "[Context: reply to message 5398]");
+    }
+
+    #[rstest]
+    fn when_thread_and_reply_text_then_both_shown() {
+        let meta = MessageMetadata {
+            reply_to_message_id: Some("100".into()),
+            reply_to_text: Some("quoted".into()),
+            thread_id: Some("42".into()),
+        };
+        let result = build_reply_context(&meta).unwrap();
+        assert_eq!(result, r#"[Context: thread 42, replying to: "quoted"]"#);
+    }
+
+    #[rstest]
+    fn when_only_thread_then_shows_thread() {
+        let meta = MessageMetadata {
+            reply_to_message_id: None,
+            reply_to_text: None,
+            thread_id: Some("42".into()),
+        };
+        let result = build_reply_context(&meta).unwrap();
+        assert_eq!(result, "[Context: thread 42]");
+    }
+
+    #[rstest]
+    fn when_all_none_then_returns_none() {
+        let meta = MessageMetadata {
+            reply_to_message_id: None,
+            reply_to_text: None,
+            thread_id: None,
+        };
+        assert!(build_reply_context(&meta).is_none());
+    }
 }
