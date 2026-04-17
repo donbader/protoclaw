@@ -1,37 +1,66 @@
+# cargo-deny configuration
+# https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+# Match actual build targets from binary-release.yml + docker.yml
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+]
+all-features = true
+
+[output]
+feature-depth = 1
+
+# --- Advisories -----------------------------------------------------------
 [advisories]
+# Only flag unmaintained crates that are direct workspace deps
+unmaintained = "workspace"
+unsound = "all"
+# "warn" not "deny" — a surprise yank shouldn't block CI
+yanked = "warn"
 ignore = []
 
+# --- Licenses -------------------------------------------------------------
 [licenses]
+confidence-threshold = 0.93
 allow = [
     "MIT",
+    "MIT-0",
     "Apache-2.0",
     "Apache-2.0 WITH LLVM-exception",
     "BSD-2-Clause",
     "BSD-3-Clause",
     "ISC",
     "Unicode-3.0",
-    "Unicode-DFS-2016",
     "Zlib",
-    "OpenSSL",
+    "CC0-1.0",
     "MPL-2.0",
     "CDLA-Permissive-2.0",
 ]
-confidence-threshold = 0.8
-unused-allowed-license = "allow"
 
 [licenses.private]
 ignore = true
 
+[[licenses.clarify]]
+crate = "ring"
+expression = "MIT AND ISC AND OpenSSL"
+license-files = [{ path = "LICENSE", hash = 0xbd0eed23 }]
+
+# --- Bans -----------------------------------------------------------------
 [bans]
+# "warn" for initial onboarding — tighten to "deny" once skip list is clean
 multiple-versions = "warn"
-wildcards = "allow"
+wildcards = "deny"
+allow-wildcard-paths = true
 highlight = "all"
 deny = []
 skip = []
 skip-tree = []
 
-[bans.build]
-
+# --- Sources --------------------------------------------------------------
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
