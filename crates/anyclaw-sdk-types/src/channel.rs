@@ -469,20 +469,6 @@ pub struct SessionCreated {
     pub peer_info: PeerInfo,
 }
 
-/// Anyclaw → Channel: agent-initiated push message (no prior user prompt).
-/// Delivered via `channel/pushMessage` JSON-RPC notification.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct PushMessage {
-    /// ACP session that initiated the push.
-    pub session_id: String,
-    /// Agent content payload to deliver.
-    pub content: serde_json::Value,
-    /// Optional protocol extension metadata.
-    #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
-    pub meta: Option<serde_json::Value>,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1437,18 +1423,5 @@ mod tests {
             ContentKind::MessageChunk { text } => assert_eq!(text, "plain text"),
             other => panic!("expected MessageChunk, got {:?}", other),
         }
-    }
-
-    #[test]
-    fn when_push_message_round_trips_then_identical() {
-        let original = PushMessage {
-            session_id: "ses-1".into(),
-            content: serde_json::json!({"update": {"sessionUpdate": "agent_message_chunk", "content": "hello"}}),
-            meta: None,
-        };
-        let json = serde_json::to_value(&original).unwrap();
-        assert_eq!(json["sessionId"], "ses-1");
-        let restored: PushMessage = serde_json::from_value(json).unwrap();
-        assert_eq!(original, restored);
     }
 }

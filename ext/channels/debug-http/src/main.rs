@@ -228,18 +228,6 @@ impl Channel for DebugHttpChannel {
         Ok(())
     }
 
-    async fn push_message(
-        &mut self,
-        msg: anyclaw_sdk_types::PushMessage,
-    ) -> Result<(), ChannelSdkError> {
-        let payload = SsePayload {
-            event_type: Some("push_message".into()),
-            data: content_to_string(&msg.content),
-        };
-        let _ = self.state.event_tx.send(payload);
-        Ok(())
-    }
-
     async fn show_permission_prompt(
         &mut self,
         req: ChannelRequestPermission,

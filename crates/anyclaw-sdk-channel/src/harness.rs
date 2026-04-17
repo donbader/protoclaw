@@ -8,7 +8,7 @@ use crate::error::ChannelSdkError;
 use crate::trait_def::Channel;
 use anyclaw_sdk_types::{
     ChannelInitializeParams, ChannelInitializeResult, ChannelRequestPermission, ChannelSendMessage,
-    DeliverMessage, PermissionResponse, PushMessage, SessionCreated,
+    DeliverMessage, PermissionResponse, SessionCreated,
 };
 
 /// JSON-RPC stdio harness that drives a [`Channel`] implementation.

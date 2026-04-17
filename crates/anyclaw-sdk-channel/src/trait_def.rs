@@ -1,6 +1,6 @@
 use anyclaw_sdk_types::{
     ChannelCapabilities, ChannelInitializeParams, ChannelRequestPermission, ChannelSendMessage,
-    DeliverMessage, PermissionResponse, PushMessage, SessionCreated,
+    DeliverMessage, PermissionResponse, SessionCreated,
 };
 use tokio::sync::mpsc;
 
@@ -41,17 +41,6 @@ pub trait Channel: Send + 'static {
 
     /// Render an agent response to this channel's platform.
     async fn deliver_message(&mut self, msg: DeliverMessage) -> Result<(), ChannelSdkError>;
-
-    /// Deliver an agent-initiated push message to this channel's platform.
-    /// Default implementation delegates to [`Channel::deliver_message`].
-    async fn push_message(&mut self, msg: PushMessage) -> Result<(), ChannelSdkError> {
-        let deliver = DeliverMessage {
-            session_id: msg.session_id,
-            content: msg.content,
-            meta: msg.meta,
-        };
-        self.deliver_message(deliver).await
-    }
 
     /// Show a permission prompt to the user. Return immediately after displaying
     /// the UI (e.g. inline keyboard). When the user responds, send the
