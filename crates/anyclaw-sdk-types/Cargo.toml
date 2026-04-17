@@ -1,6 +1,6 @@
 [package]
 name = "anyclaw-sdk-types"
-version = "0.6.1"
+version = "0.7.0"
 description = "Shared types for the anyclaw agent-channel-tool SDK"
 edition.workspace = true
 rust-version.workspace = true

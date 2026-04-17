@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.11](https://github.com/donbader/anyclaw/compare/anyclaw-sdk-agent-v0.2.10...anyclaw-sdk-agent-v0.2.11) - 2026-04-17
+
+### Added
+
+- rich media delivery, reply/thread context, and agent-initiated push ([#33](https://github.com/donbader/anyclaw/pull/33))
+
 ## [0.2.10](https://github.com/donbader/anyclaw/compare/anyclaw-sdk-agent-v0.2.9...anyclaw-sdk-agent-v0.2.10) - 2026-04-16
 
 ### Other
