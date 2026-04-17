@@ -34,7 +34,7 @@ pub struct ChannelHarness<C: Channel> { channel: C }
 ## How to Implement
 
 1. Create a struct implementing `Channel`
-2. Return capabilities in `capabilities()` (streaming, rich_text)
+2. Return capabilities in `capabilities()` (streaming, rich_text, media)
 3. In `on_ready()`, store the `outbound` sender and `permission_tx` sender
 4. Implement `deliver_message()` to render agent responses to your platform
 5. Implement `show_permission_prompt()` to display permission UI — return immediately, send `PermissionResponse` through `permission_tx` when the user responds

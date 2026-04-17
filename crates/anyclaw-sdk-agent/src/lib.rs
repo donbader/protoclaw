@@ -25,9 +25,9 @@ mod tests {
     use super::*;
     use adapter::AgentAdapter;
     use anyclaw_sdk_types::{
-        ClientCapabilities, ContentPart, InitializeParams, InitializeResult, PermissionOption,
+        ClientCapabilities, ContentBlock, InitializeParams, InitializeResult, PermissionOption,
         PermissionRequest, SessionNewParams, SessionNewResult, SessionPromptParams,
-        SessionUpdateEvent, SessionUpdateType,
+        SessionUpdateEvent, SessionUpdateType, TextContent,
     };
 
     #[tokio::test]
@@ -37,6 +37,7 @@ mod tests {
             protocol_version: 1,
             agent_capabilities: None,
             defaults: None,
+            meta: None,
         };
         let output = AgentAdapter::on_initialize_result(&adapter, input.clone())
             .await
@@ -49,6 +50,7 @@ mod tests {
         let adapter = GenericAcpAdapter;
         let input = SessionNewResult {
             session_id: "sess-42".into(),
+            meta: None,
         };
         let output = AgentAdapter::on_session_new_result(&adapter, input.clone())
             .await
@@ -68,6 +70,7 @@ mod tests {
             protocol_version: 1,
             capabilities: ClientCapabilities { experimental: None },
             options: None,
+            meta: None,
         };
         let output = AgentAdapter::on_initialize_params(&adapter, input.clone())
             .await
@@ -82,6 +85,7 @@ mod tests {
             session_id: None,
             cwd: "/tmp".into(),
             mcp_servers: vec![],
+            meta: None,
         };
         let output = AgentAdapter::on_session_new_params(&adapter, input.clone())
             .await
@@ -94,7 +98,8 @@ mod tests {
         let adapter = GenericAcpAdapter;
         let input = SessionPromptParams {
             session_id: "s1".into(),
-            prompt: vec![ContentPart::text("hi")],
+            prompt: vec![ContentBlock::Text(TextContent::new("hi"))],
+            meta: None,
         };
         let output = AgentAdapter::on_session_prompt_params(&adapter, input.clone())
             .await
@@ -156,7 +161,9 @@ mod tests {
             &self,
             mut params: SessionPromptParams,
         ) -> Result<SessionPromptParams, AgentSdkError> {
-            params.prompt.push(ContentPart::text("injected"));
+            params
+                .prompt
+                .push(ContentBlock::Text(TextContent::new("injected")));
             Ok(params)
         }
     }
@@ -166,7 +173,8 @@ mod tests {
         let adapter = InjectingAdapter;
         let input = SessionPromptParams {
             session_id: "s1".into(),
-            prompt: vec![ContentPart::text("hi")],
+            prompt: vec![ContentBlock::Text(TextContent::new("hi"))],
+            meta: None,
         };
         let output = AgentAdapter::on_session_prompt_params(&adapter, input)
             .await
@@ -182,6 +190,7 @@ mod tests {
             protocol_version: 1,
             capabilities: ClientCapabilities { experimental: None },
             options: None,
+            meta: None,
         };
         let output = AgentAdapter::on_initialize_params(&adapter, input.clone())
             .await

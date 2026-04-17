@@ -113,7 +113,7 @@ async fn main() {
             }
             "session/prompt" => {
                 let sid = session_id.clone().unwrap_or_else(|| "unknown".to_string());
-                let Some(user_msg) = extract_prompt_message(&msg) else {
+                let Some(parts) = extract_prompt_parts(&msg) else {
                     let resp = json!({
                         "jsonrpc": "2.0",
                         "id": id,
@@ -127,7 +127,7 @@ async fn main() {
                     &mut stdout,
                     id,
                     &sid,
-                    &user_msg,
+                    &parts,
                     opts().request_permission,
                     think,
                     &mut lines,
@@ -172,17 +172,12 @@ async fn write_message<W: AsyncWrite + Unpin>(writer: &mut W, msg: &Value) {
     writer.flush().await.expect("failed to flush");
 }
 
-fn extract_prompt_message(msg: &Value) -> Option<String> {
-    // ACP wire format: prompt is a flat array of content parts
-    // e.g. {"prompt": [{"type": "text", "text": "hello"}]}
-    // The user message is always the last part; earlier parts may be
-    // injected platform context (e.g. tool descriptions).
+fn extract_prompt_parts(msg: &Value) -> Option<Vec<Value>> {
     let prompt = msg["params"]["prompt"].as_array()?;
-    let last = prompt.last()?;
-    if last["type"].as_str()? != "text" {
+    if prompt.is_empty() {
         return None;
     }
-    last["text"].as_str().map(std::string::ToString::to_string)
+    Some(prompt.clone())
 }
 
 async fn handle_initialize(stdout: &mut tokio::io::Stdout, id: Option<Value>, msg: &Value) {
@@ -282,7 +277,7 @@ async fn handle_session_prompt<W: AsyncWrite + Unpin>(
     stdout: &mut W,
     id: Option<Value>,
     session_id: &str,
-    user_msg: &str,
+    parts: &[Value],
     request_permission: bool,
     think: bool,
     lines: &mut tokio::io::Lines<BufReader<tokio::io::Stdin>>,
@@ -343,26 +338,69 @@ async fn handle_session_prompt<W: AsyncWrite + Unpin>(
         .map(|o| o.echo_mcp_count)
         .unwrap_or(false);
 
-    let chunk1 = json!({
-        "jsonrpc": "2.0",
-        "method": "session/update",
-        "params": { "sessionId": session_id, "update": { "sessionUpdate": "agent_message_chunk", "content": { "type": "text", "text": format!("{prefix}: ") } } }
-    });
-    write_message(stdout, &chunk1).await;
+    // Echo each content part back with an appropriate agent_message_chunk.
+    for part in parts {
+        let part_type = part["type"].as_str().unwrap_or("");
+        let content = match part_type {
+            "text" => {
+                let text = part["text"].as_str().unwrap_or("");
+                json!({ "type": "text", "text": format!("{prefix}: {text}") })
+            }
+            "image" => {
+                let url = part["uri"]
+                    .as_str()
+                    .or_else(|| part["url"].as_str())
+                    .unwrap_or("");
+                json!({ "type": "image", "data": "", "mimeType": part["mimeType"].as_str().unwrap_or("image/png"), "uri": url })
+            }
+            "resource" | "resource_link" => {
+                let uri = if part_type == "resource_link" {
+                    part["uri"].as_str().unwrap_or("")
+                } else {
+                    part["resource"]["uri"].as_str().unwrap_or("")
+                };
+                json!({ "type": "text", "text": format!("{prefix}: [resource {uri}]") })
+            }
+            "audio" => {
+                json!({
+                    "type": "audio",
+                    "data": part["data"],
+                    "mimeType": part["mimeType"]
+                })
+            }
+            _ => {
+                // Unknown part type — echo as text description.
+                json!({ "type": "text", "text": format!("{prefix}: [unknown part type '{part_type}']") })
+            }
+        };
 
-    let chunk2 = json!({
-        "jsonrpc": "2.0",
-        "method": "session/update",
-        "params": { "sessionId": session_id, "update": { "sessionUpdate": "agent_message_chunk", "content": { "type": "text", "text": user_msg } } }
-    });
-    write_message(stdout, &chunk2).await;
+        let chunk = json!({
+            "jsonrpc": "2.0",
+            "method": "session/update",
+            "params": {
+                "sessionId": session_id,
+                "update": {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": content
+                }
+            }
+        });
+        write_message(stdout, &chunk).await;
+    }
 
-    let result_content = if echo_mcp_count {
-        let count = MCP_SERVER_COUNT.load(Ordering::SeqCst);
-        format!("{prefix}: {user_msg} [mcp:{count}]")
+    // Build the result summary string.
+    let mut result_content = if parts.len() == 1 && parts[0]["type"].as_str() == Some("text") {
+        let text = parts[0]["text"].as_str().unwrap_or("");
+        format!("{prefix}: {text}")
     } else {
-        format!("{prefix}: {user_msg}")
+        let noun = if parts.len() == 1 { "part" } else { "parts" };
+        format!("Echoed {} content {noun}", parts.len())
     };
+
+    if echo_mcp_count {
+        let mcp = MCP_SERVER_COUNT.load(Ordering::SeqCst);
+        result_content.push_str(&format!(" [mcp:{mcp}]"));
+    }
 
     let result_notif = json!({
         "jsonrpc": "2.0",
@@ -449,12 +487,11 @@ mod tests {
     use super::*;
     use serde_json::Value;
 
-    async fn collect_prompt_output(user_msg: &str, think: bool) -> Vec<Value> {
+    async fn collect_parts_output(parts: Vec<Value>, think: bool) -> Vec<Value> {
         use tokio::io::AsyncBufReadExt;
 
         let (reader, mut writer) = tokio::io::duplex(8192);
 
-        let msg = user_msg.to_string();
         let write_handle = tokio::spawn(async move {
             let stdin = tokio::io::stdin();
             let buf = BufReader::new(stdin);
@@ -463,7 +500,7 @@ mod tests {
                 &mut writer,
                 Some(json!(1)),
                 "test-session",
-                &msg,
+                &parts,
                 false,
                 think,
                 &mut lines,
@@ -484,10 +521,15 @@ mod tests {
         messages
     }
 
+    fn text_parts(text: &str) -> Vec<Value> {
+        vec![json!({"type": "text", "text": text})]
+    }
+
     #[tokio::test]
     async fn no_thought_chunks_when_think_disabled() {
-        let msgs = collect_prompt_output("hello", false).await;
-        assert_eq!(msgs.len(), 4);
+        // Single text part: 1 echo chunk + result_notif + rpc_response = 3 messages
+        let msgs = collect_parts_output(text_parts("hello"), false).await;
+        assert_eq!(msgs.len(), 3);
         for msg in &msgs {
             if let Some(params) = msg.get("params") {
                 let update_type = params
@@ -501,8 +543,9 @@ mod tests {
 
     #[tokio::test]
     async fn thought_chunks_emitted_when_think_enabled() {
-        let msgs = collect_prompt_output("hello", true).await;
-        assert_eq!(msgs.len(), 6);
+        // Single text part: 2 thoughts + 1 echo chunk + result_notif + rpc_response = 5 messages
+        let msgs = collect_parts_output(text_parts("hello"), true).await;
+        assert_eq!(msgs.len(), 5);
 
         let t1 = &msgs[0]["params"]["update"];
         assert_eq!(t1["sessionUpdate"], "agent_thought_chunk");
@@ -517,80 +560,173 @@ mod tests {
 
     #[tokio::test]
     async fn echo_still_works_after_thoughts() {
-        let msgs = collect_prompt_output("test msg", true).await;
+        let msgs = collect_parts_output(text_parts("test msg"), true).await;
 
         let echo_chunk = &msgs[2]["params"]["update"];
         assert_eq!(echo_chunk["sessionUpdate"], "agent_message_chunk");
         assert_eq!(echo_chunk["content"]["type"], "text");
-        assert_eq!(echo_chunk["content"]["text"], "Echo: ");
+        assert_eq!(echo_chunk["content"]["text"], "Echo: test msg");
 
-        let echo_content = &msgs[3]["params"]["update"];
-        assert_eq!(echo_content["sessionUpdate"], "agent_message_chunk");
-        assert_eq!(echo_content["content"]["type"], "text");
-        assert_eq!(echo_content["content"]["text"], "test msg");
-
-        let result = &msgs[4]["params"]["update"];
+        let result = &msgs[3]["params"]["update"];
         assert_eq!(result["sessionUpdate"], "result");
         assert_eq!(result["content"], "Echo: test msg");
     }
 
     #[test]
-    fn extract_prompt_message_valid_array() {
+    fn extract_prompt_parts_valid_array() {
         let msg = json!({
             "params": {
                 "prompt": [{"type": "text", "text": "hello world"}]
             }
         });
-        assert_eq!(
-            extract_prompt_message(&msg),
-            Some("hello world".to_string())
-        );
+        let parts = extract_prompt_parts(&msg).expect("should extract parts");
+        assert_eq!(parts.len(), 1);
+        assert_eq!(parts[0]["type"], "text");
+        assert_eq!(parts[0]["text"], "hello world");
     }
 
     #[test]
-    fn extract_prompt_message_missing_prompt() {
+    fn extract_prompt_parts_missing_prompt() {
         let msg = json!({ "params": {} });
-        assert_eq!(extract_prompt_message(&msg), None);
+        assert!(extract_prompt_parts(&msg).is_none());
     }
 
     #[test]
-    fn extract_prompt_message_old_message_format_rejected() {
+    fn extract_prompt_parts_old_message_format_rejected() {
         let msg = json!({
             "params": {
                 "message": {"role": "user", "content": [{"type": "text", "text": "hello"}]}
             }
         });
-        assert_eq!(extract_prompt_message(&msg), None);
+        assert!(extract_prompt_parts(&msg).is_none());
     }
 
     #[test]
-    fn extract_prompt_message_prompt_not_array() {
+    fn extract_prompt_parts_prompt_not_array() {
         let msg = json!({
             "params": {
                 "prompt": "hello"
             }
         });
-        assert_eq!(extract_prompt_message(&msg), None);
+        assert!(extract_prompt_parts(&msg).is_none());
     }
 
     #[test]
-    fn extract_prompt_message_wrapped_message_format_rejected() {
+    fn extract_prompt_parts_wrapped_message_format_rejected() {
         let msg = json!({
             "params": {
                 "prompt": [{"role": "user", "content": [{"type": "text", "text": "hello"}]}]
             }
         });
-        assert_eq!(extract_prompt_message(&msg), None);
+        // Parts are returned (the array is valid), but they won't match known types when echoed.
+        let parts = extract_prompt_parts(&msg).expect("should extract parts");
+        assert_eq!(parts.len(), 1);
     }
 
     #[test]
-    fn extract_prompt_message_non_text_type_rejected() {
+    fn when_prompt_has_image_part_then_extracts_it() {
         let msg = json!({
             "params": {
-                "prompt": [{"type": "image", "data": "base64data", "mimeType": "image/png"}]
+                "prompt": [{"type": "image", "url": "https://example.com/img.png"}]
             }
         });
-        assert_eq!(extract_prompt_message(&msg), None);
+        let parts = extract_prompt_parts(&msg).expect("should extract parts");
+        assert_eq!(parts.len(), 1);
+        assert_eq!(parts[0]["type"], "image");
+        assert_eq!(parts[0]["url"], "https://example.com/img.png");
+    }
+
+    #[test]
+    fn when_prompt_has_mixed_parts_then_extracts_all() {
+        let msg = json!({
+            "params": {
+                "prompt": [
+                    {"type": "text", "text": "look at this"},
+                    {"type": "image", "data": "", "mimeType": "image/png", "uri": "https://example.com/img.png"},
+                    {"type": "resource_link", "uri": "https://example.com/doc.pdf", "name": "doc.pdf", "mimeType": "application/pdf"}
+                ]
+            }
+        });
+        let parts = extract_prompt_parts(&msg).expect("should extract parts");
+        assert_eq!(parts.len(), 3);
+        assert_eq!(parts[0]["type"], "text");
+        assert_eq!(parts[1]["type"], "image");
+        assert_eq!(parts[2]["type"], "resource_link");
+    }
+
+    #[tokio::test]
+    async fn when_image_part_then_echoes_image_chunk() {
+        let parts = vec![
+            json!({"type": "image", "data": "", "mimeType": "image/png", "uri": "https://example.com/img.png"}),
+        ];
+        let msgs = collect_parts_output(parts, false).await;
+        assert_eq!(msgs.len(), 3);
+        let echo = &msgs[0]["params"]["update"];
+        assert_eq!(echo["sessionUpdate"], "agent_message_chunk");
+        assert_eq!(echo["content"]["type"], "image");
+        assert_eq!(echo["content"]["uri"], "https://example.com/img.png");
+
+        let result = &msgs[1]["params"]["update"];
+        assert_eq!(result["sessionUpdate"], "result");
+        assert_eq!(result["content"], "Echoed 1 content part");
+    }
+
+    #[tokio::test]
+    async fn when_mixed_parts_then_echoes_all_and_summarizes() {
+        let parts = vec![
+            json!({"type": "text", "text": "check this out"}),
+            json!({"type": "image", "data": "", "mimeType": "image/png", "uri": "https://example.com/pic.jpg"}),
+        ];
+        let msgs = collect_parts_output(parts, false).await;
+        assert_eq!(msgs.len(), 4);
+
+        let text_chunk = &msgs[0]["params"]["update"];
+        assert_eq!(text_chunk["sessionUpdate"], "agent_message_chunk");
+        assert_eq!(text_chunk["content"]["type"], "text");
+        assert_eq!(text_chunk["content"]["text"], "Echo: check this out");
+
+        let image_chunk = &msgs[1]["params"]["update"];
+        assert_eq!(image_chunk["sessionUpdate"], "agent_message_chunk");
+        assert_eq!(image_chunk["content"]["type"], "image");
+
+        let result = &msgs[2]["params"]["update"];
+        assert_eq!(result["sessionUpdate"], "result");
+        assert_eq!(result["content"], "Echoed 2 content parts");
+    }
+
+    #[tokio::test]
+    async fn when_file_part_then_echoes_file_chunk() {
+        let parts = vec![json!({
+            "type": "resource_link",
+            "uri": "https://example.com/report.pdf",
+            "name": "report.pdf",
+            "mimeType": "application/pdf"
+        })];
+        let msgs = collect_parts_output(parts, false).await;
+        assert_eq!(msgs.len(), 3);
+        let echo = &msgs[0]["params"]["update"];
+        assert_eq!(echo["content"]["type"], "text");
+        assert!(
+            echo["content"]["text"]
+                .as_str()
+                .unwrap()
+                .contains("report.pdf")
+        );
+    }
+
+    #[tokio::test]
+    async fn when_audio_part_then_echoes_audio_chunk() {
+        let parts = vec![json!({
+            "type": "audio",
+            "data": "https://example.com/clip.mp3",
+            "mimeType": "audio/mpeg"
+        })];
+        let msgs = collect_parts_output(parts, false).await;
+        assert_eq!(msgs.len(), 3);
+        let echo = &msgs[0]["params"]["update"];
+        assert_eq!(echo["content"]["type"], "audio");
+        assert_eq!(echo["content"]["data"], "https://example.com/clip.mp3");
+        assert_eq!(echo["content"]["mimeType"], "audio/mpeg");
     }
 
     async fn collect_session_new_output(params: Value) -> Vec<Value> {

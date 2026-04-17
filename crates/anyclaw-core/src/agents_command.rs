@@ -1,8 +1,8 @@
 use tokio::sync::oneshot;
 
 use crate::SessionKey;
-use anyclaw_sdk_types::PermissionOption;
-use anyclaw_sdk_types::SessionListResult;
+use anyclaw_sdk_types::acp::ContentPart;
+use anyclaw_sdk_types::{MessageMetadata, PermissionOption, SessionListResult};
 
 /// Status snapshot for a single agent, returned by the admin API.
 #[derive(Debug, Clone)]
@@ -70,8 +70,10 @@ pub enum AgentsCommand {
         agent_name: String,
         /// Session identity to route the message to.
         session_key: SessionKey,
-        /// The user message text.
-        message: String,
+        /// Structured content parts of the user message.
+        content: Vec<ContentPart>,
+        /// Optional metadata providing threading and reply context.
+        metadata: Option<MessageMetadata>,
         /// Oneshot channel for acceptance (Ok = accepted/queued, Err = rejected).
         reply: oneshot::Sender<Result<(), String>>,
     },

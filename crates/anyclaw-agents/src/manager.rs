@@ -188,6 +188,7 @@ impl AgentsManager {
             protocol_version: 2,
             capabilities: ClientCapabilities { experimental: None },
             options,
+            meta: None,
         })?;
 
         let rx = conn.send_request("initialize", params).await?;
@@ -259,6 +260,7 @@ impl AgentsManager {
             session_id: None,
             cwd: cwd.to_string_lossy().into_owned(),
             mcp_servers,
+            meta: None,
         })?;
 
         let conn = slot
@@ -2336,7 +2338,14 @@ mod tests {
 
         m.slots[0].awaiting_first_prompt.insert(acp_id.clone());
 
-        let result = m.prompt_session("default", &default_key, "hello").await;
+        let result = m
+            .prompt_session(
+                "default",
+                &default_key,
+                &[anyclaw_sdk_types::acp::ContentPart::text("hello")],
+                None,
+            )
+            .await;
         assert!(result.is_ok(), "prompt_session should succeed: {result:?}");
 
         assert!(

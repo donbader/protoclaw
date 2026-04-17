@@ -88,9 +88,10 @@ We're working toward a stable v1.0. Here's where things stand:
 | YAML config with `!env` tag resolution and validation | ✅ | |
 | JSON Schema for `anyclaw.yaml` (IDE autocomplete) | ✅ | |
 | Extension defaults via initialize handshake | ✅ | |
-| Agent-initiated messages | planned | Agents can push to channels without user input — unblocks scheduling, webhooks, agent-to-agent |
+| Agent-initiated messages | ✅ | Agents can push to channels without user input via `session/push` |
+| Rich media delivery | ✅ | Images, files, audio between agents and channels (both directions) |
+| Reply/thread context | ✅ | Agent knows which message the user is replying to |
 | Rate limiting | planned | Per-session and per-channel depth caps with backpressure |
-| Rich media delivery | planned | Route images, files, audio between agents and channels |
 | Supervisor API with authentication | planned | Authenticated HTTP API for session introspection, agent control, and runtime status |
 | `anyclaw doctor` | planned | Config validation, binary probes, channel connectivity checks |
 

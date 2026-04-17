@@ -2,7 +2,7 @@ use anyclaw_sdk_channel::{
     Channel, ChannelCapabilities, ChannelHarness, ChannelSdkError, ChannelSendMessage,
     DeliverMessage, PeerInfo,
 };
-use anyclaw_sdk_types::{ChannelRequestPermission, PermissionResponse};
+use anyclaw_sdk_types::{ChannelRequestPermission, ContentPart, PermissionResponse};
 use tokio::sync::mpsc;
 
 struct SdkTestChannel {
@@ -15,6 +15,7 @@ impl Channel for SdkTestChannel {
         ChannelCapabilities {
             streaming: false,
             rich_text: false,
+            media: false,
         }
     }
 
@@ -42,7 +43,9 @@ impl Channel for SdkTestChannel {
                     peer_id: "test".into(),
                     kind: "test".into(),
                 },
-                content: content_str,
+                content: vec![ContentPart::text(content_str)],
+                metadata: None,
+                meta: None,
             };
             outbound.send(send_msg).await.ok();
         }
@@ -120,10 +123,14 @@ mod tests {
         let msg = DeliverMessage {
             session_id: "s1".into(),
             content: serde_json::json!("hello from agent"),
+            meta: None,
         };
         ch.deliver_message(msg).await.unwrap();
         let received = rx.recv().await.expect("should receive echoed message");
-        assert_eq!(received.content, "hello from agent");
+        assert_eq!(
+            received.content,
+            vec![ContentPart::text("hello from agent")]
+        );
         assert_eq!(received.peer_info.channel_name, "sdk-test-channel");
     }
 }

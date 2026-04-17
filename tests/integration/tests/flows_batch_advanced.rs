@@ -51,17 +51,20 @@ async fn given_slow_agent_when_messages_sent_rapidly_then_queued_messages_merge_
     }
 
     let has_merged_echo = events.iter().any(|e| {
-        let mut count = 0;
-        for i in 0..5 {
-            if e.data.contains(&format!("merge-{i}")) {
-                count += 1;
-            }
+        if let Some(rest) = e.data.strip_prefix("Echoed ") {
+            let count: usize = rest
+                .split_whitespace()
+                .next()
+                .and_then(|n| n.parse().ok())
+                .unwrap_or(0);
+            count >= 2
+        } else {
+            false
         }
-        count >= 2
     });
     assert!(
         has_merged_echo,
-        "at least one SSE event should contain 2+ merged messages; events: {events:?}",
+        "at least one SSE event should indicate 2+ merged content parts; events: {events:?}",
     );
 
     cancel.cancel();

@@ -8,6 +8,9 @@ pub struct ChannelCapabilities {
     pub streaming: bool,
     /// Whether the channel supports rich text (Markdown, HTML).
     pub rich_text: bool,
+    /// Whether the channel supports media delivery (images, files, audio).
+    #[serde(default)]
+    pub media: bool,
 }
 
 /// Initialize handshake — anyclaw sends to channel subprocess.
@@ -51,6 +54,9 @@ pub struct DeliverMessage {
     pub session_id: String,
     /// Agent content payload (streaming update, result, thought, etc.).
     pub content: serde_json::Value,
+    /// Optional protocol extension metadata.
+    #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
+    pub meta: Option<serde_json::Value>,
 }
 
 /// Peer identity information for inbound messages.
@@ -65,14 +71,32 @@ pub struct PeerInfo {
     pub kind: String,
 }
 
+/// Metadata attached to an inbound user message, providing threading and reply context.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageMetadata {
+    /// Platform message ID being replied to, if the user replied to a specific message.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reply_to_message_id: Option<String>,
+    /// Platform thread or topic ID, if the message belongs to a thread.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thread_id: Option<String>,
+}
+
 /// Channel → Anyclaw: user sent a message.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ChannelSendMessage {
     /// Identity of the user who sent the message.
     pub peer_info: PeerInfo,
-    /// User message text content.
-    pub content: String,
+    /// Structured content parts of the user message (text, images, files, audio).
+    pub content: Vec<crate::acp::ContentPart>,
+    /// Optional metadata providing threading and reply context.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<MessageMetadata>,
+    /// Optional protocol extension metadata.
+    #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
+    pub meta: Option<serde_json::Value>,
 }
 
 /// Helper for channel implementations to extract thought content from DeliverMessage.
@@ -192,6 +216,27 @@ pub enum ContentKind {
         // Extensible: command descriptors have agent-defined schemas (D-03)
         commands: serde_json::Value,
     },
+    /// Image content from agent.
+    Image {
+        /// URL pointing to the image.
+        url: String,
+    },
+    /// File content from agent.
+    File {
+        /// URL pointing to the file.
+        url: String,
+        /// Original filename, if known.
+        filename: Option<String>,
+        /// MIME type of the file.
+        mime_type: Option<String>,
+    },
+    /// Audio content from agent.
+    Audio {
+        /// URL pointing to the audio.
+        url: String,
+        /// MIME type of the audio.
+        mime_type: Option<String>,
+    },
     /// Unrecognized content type.
     Unknown,
 }
@@ -217,9 +262,65 @@ impl ContentKind {
                     content: text,
                 })
             }
-            "agent_message_chunk" => ContentKind::MessageChunk {
-                text: extract_content_text(update),
-            },
+            "agent_message_chunk" => {
+                let content_obj = update.get("content");
+                match content_obj
+                    .and_then(|c| c.get("type"))
+                    .and_then(|t| t.as_str())
+                {
+                    Some("image") => ContentKind::Image {
+                        url: content_obj
+                            .and_then(|c| c.get("uri").or_else(|| c.get("url")))
+                            .and_then(|u| u.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                    },
+                    Some("file") => ContentKind::File {
+                        url: content_obj
+                            .and_then(|c| c.get("url").or_else(|| c.get("uri")))
+                            .and_then(|u| u.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        filename: content_obj
+                            .and_then(|c| c.get("filename").or_else(|| c.get("name")))
+                            .and_then(|f| f.as_str())
+                            .map(String::from),
+                        mime_type: content_obj
+                            .and_then(|c| c.get("mimeType"))
+                            .and_then(|m| m.as_str())
+                            .map(String::from),
+                    },
+                    Some("audio") => ContentKind::Audio {
+                        url: content_obj
+                            .and_then(|c| c.get("data").or_else(|| c.get("url")))
+                            .and_then(|u| u.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        mime_type: content_obj
+                            .and_then(|c| c.get("mimeType"))
+                            .and_then(|m| m.as_str())
+                            .map(String::from),
+                    },
+                    Some("resource_link") => ContentKind::File {
+                        url: content_obj
+                            .and_then(|c| c.get("uri"))
+                            .and_then(|u| u.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        filename: content_obj
+                            .and_then(|c| c.get("name"))
+                            .and_then(|f| f.as_str())
+                            .map(String::from),
+                        mime_type: content_obj
+                            .and_then(|c| c.get("mimeType"))
+                            .and_then(|m| m.as_str())
+                            .map(String::from),
+                    },
+                    _ => ContentKind::MessageChunk {
+                        text: extract_content_text(update),
+                    },
+                }
+            }
             "result" => ContentKind::Result {
                 text: extract_content_text(update),
                 is_error: update
@@ -393,6 +494,7 @@ mod tests {
         let caps = ChannelCapabilities {
             streaming: true,
             rich_text: false,
+            media: false,
         };
         let json = serde_json::to_value(&caps).unwrap();
         assert_eq!(json["streaming"], true);
@@ -422,6 +524,7 @@ mod tests {
         let msg = DeliverMessage {
             session_id: "sess-1".into(),
             content: serde_json::json!({"text": "hello"}),
+            meta: None,
         };
         let json = serde_json::to_value(&msg).unwrap();
         assert_eq!(json["sessionId"], "sess-1");
@@ -438,11 +541,13 @@ mod tests {
                 peer_id: "local:dev".into(),
                 kind: "local".into(),
             },
-            content: "hello agent".into(),
+            content: vec![crate::acp::ContentPart::text("hello agent")],
+            metadata: None,
+            meta: None,
         };
         let json = serde_json::to_value(&msg).unwrap();
         assert_eq!(json["peerInfo"]["channelName"], "debug-http");
-        assert_eq!(json["content"], "hello agent");
+        assert_eq!(json["content"][0]["text"], "hello agent");
         let deser: ChannelSendMessage = serde_json::from_value(json).unwrap();
         assert_eq!(deser, msg);
     }
@@ -522,6 +627,7 @@ mod tests {
                 "type": "agent_thought_chunk",
                 "content": "deep thought"
             }),
+            meta: None,
         };
         let thought = ThoughtContent::from_content(&msg.content).unwrap();
         assert_eq!(thought.content, "deep thought");
@@ -534,6 +640,7 @@ mod tests {
             capabilities: ChannelCapabilities {
                 streaming: true,
                 rich_text: false,
+                media: false,
             },
             defaults: None,
         };
@@ -949,6 +1056,7 @@ mod tests {
         let original = ChannelCapabilities {
             streaming: true,
             rich_text: false,
+            media: false,
         };
         let json = serde_json::to_value(&original).unwrap();
         let restored: ChannelCapabilities = serde_json::from_value(json).unwrap();
@@ -995,6 +1103,7 @@ mod tests {
             capabilities: ChannelCapabilities {
                 streaming: true,
                 rich_text: true,
+                media: false,
             },
             defaults: None,
         };
@@ -1008,6 +1117,7 @@ mod tests {
         let original = DeliverMessage {
             session_id: "ses-1".into(),
             content: serde_json::json!({"update": {"sessionUpdate": "result", "content": "done"}}),
+            meta: None,
         };
         let json = serde_json::to_value(&original).unwrap();
         let restored: DeliverMessage = serde_json::from_value(json).unwrap();
@@ -1034,7 +1144,9 @@ mod tests {
                 peer_id: "dev".into(),
                 kind: "local".into(),
             },
-            content: "hello agent".into(),
+            content: vec![crate::acp::ContentPart::text("hello agent")],
+            metadata: None,
+            meta: None,
         };
         let json = serde_json::to_value(&original).unwrap();
         let restored: ChannelSendMessage = serde_json::from_value(json).unwrap();
@@ -1140,6 +1252,7 @@ mod tests {
             capabilities: ChannelCapabilities {
                 streaming: false,
                 rich_text: false,
+                media: false,
             },
             defaults: Some(defaults),
         };
@@ -1157,10 +1270,173 @@ mod tests {
             capabilities: ChannelCapabilities {
                 streaming: true,
                 rich_text: false,
+                media: false,
             },
             defaults: None,
         };
         let json = serde_json::to_value(&original).unwrap();
         assert!(json.get("defaults").is_none());
+    }
+
+    // ── MessageMetadata + ChannelCapabilities.media tests ─────────────
+
+    #[rstest]
+    fn when_message_metadata_round_trips_then_identical() {
+        let original = MessageMetadata {
+            reply_to_message_id: Some("msg-100".into()),
+            thread_id: Some("thread-42".into()),
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        assert_eq!(json["replyToMessageId"], "msg-100");
+        assert_eq!(json["threadId"], "thread-42");
+        let restored: MessageMetadata = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_message_metadata_empty_then_fields_absent() {
+        let original = MessageMetadata {
+            reply_to_message_id: None,
+            thread_id: None,
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        assert!(json.get("replyToMessageId").is_none());
+        assert!(json.get("threadId").is_none());
+        let restored: MessageMetadata = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_channel_capabilities_has_media_then_serializes() {
+        let caps = ChannelCapabilities {
+            streaming: false,
+            rich_text: false,
+            media: true,
+        };
+        let json = serde_json::to_value(&caps).unwrap();
+        assert_eq!(json["media"], true);
+        let restored: ChannelCapabilities = serde_json::from_value(json).unwrap();
+        assert_eq!(caps, restored);
+    }
+
+    #[rstest]
+    fn when_channel_capabilities_missing_media_then_defaults_false() {
+        let json = serde_json::json!({
+            "streaming": true,
+            "richText": false
+        });
+        let caps: ChannelCapabilities = serde_json::from_value(json).unwrap();
+        assert!(!caps.media);
+    }
+
+    #[rstest]
+    fn when_channel_send_message_with_rich_content_round_trips_then_identical() {
+        let original = ChannelSendMessage {
+            peer_info: PeerInfo {
+                channel_name: "telegram".into(),
+                peer_id: "tg:42".into(),
+                kind: "direct".into(),
+            },
+            content: vec![
+                crate::acp::ContentPart::text("hello"),
+                crate::acp::ContentPart::Image {
+                    url: "https://example.com/img.png".into(),
+                },
+            ],
+            metadata: None,
+            meta: None,
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        let restored: ChannelSendMessage = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_channel_send_message_with_metadata_round_trips_then_identical() {
+        let original = ChannelSendMessage {
+            peer_info: PeerInfo {
+                channel_name: "telegram".into(),
+                peer_id: "tg:42".into(),
+                kind: "direct".into(),
+            },
+            content: vec![crate::acp::ContentPart::text("reply here")],
+            metadata: Some(MessageMetadata {
+                reply_to_message_id: Some("msg-99".into()),
+                thread_id: Some("thread-1".into()),
+            }),
+            meta: None,
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        assert_eq!(json["metadata"]["replyToMessageId"], "msg-99");
+        assert_eq!(json["metadata"]["threadId"], "thread-1");
+        let restored: ChannelSendMessage = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_content_is_image_then_returns_image() {
+        let content = serde_json::json!({
+            "update": {
+                "sessionUpdate": "agent_message_chunk",
+                "content": {"type": "image", "url": "https://example.com/photo.jpg"}
+            }
+        });
+        match ContentKind::from_content(&content) {
+            ContentKind::Image { url } => assert_eq!(url, "https://example.com/photo.jpg"),
+            other => panic!("expected Image, got {:?}", other),
+        }
+    }
+
+    #[rstest]
+    fn when_content_is_file_then_returns_file() {
+        let content = serde_json::json!({
+            "update": {
+                "sessionUpdate": "agent_message_chunk",
+                "content": {"type": "file", "url": "https://example.com/doc.pdf", "filename": "doc.pdf", "mimeType": "application/pdf"}
+            }
+        });
+        match ContentKind::from_content(&content) {
+            ContentKind::File {
+                url,
+                filename,
+                mime_type,
+            } => {
+                assert_eq!(url, "https://example.com/doc.pdf");
+                assert_eq!(filename.as_deref(), Some("doc.pdf"));
+                assert_eq!(mime_type.as_deref(), Some("application/pdf"));
+            }
+            other => panic!("expected File, got {:?}", other),
+        }
+    }
+
+    #[rstest]
+    fn when_content_is_audio_then_returns_audio() {
+        let content = serde_json::json!({
+            "update": {
+                "sessionUpdate": "agent_message_chunk",
+                "content": {"type": "audio", "url": "https://example.com/voice.ogg", "mimeType": "audio/ogg"}
+            }
+        });
+        match ContentKind::from_content(&content) {
+            ContentKind::Audio { url, mime_type } => {
+                assert_eq!(url, "https://example.com/voice.ogg");
+                assert_eq!(mime_type.as_deref(), Some("audio/ogg"));
+            }
+            other => panic!("expected Audio, got {:?}", other),
+        }
+    }
+
+    #[rstest]
+    fn when_content_is_text_message_chunk_then_still_returns_message_chunk() {
+        let content = serde_json::json!({
+            "update": {
+                "sessionUpdate": "agent_message_chunk",
+                "content": "plain text"
+            }
+        });
+        match ContentKind::from_content(&content) {
+            ContentKind::MessageChunk { text } => assert_eq!(text, "plain text"),
+            other => panic!("expected MessageChunk, got {:?}", other),
+        }
     }
 }

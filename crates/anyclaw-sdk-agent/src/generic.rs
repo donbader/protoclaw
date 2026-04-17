@@ -38,6 +38,7 @@ mod tests {
             protocol_version: 1,
             capabilities: ClientCapabilities { experimental: None },
             options: None,
+            meta: None,
         };
 
         let output = AgentAdapter::on_initialize_params(&adapter, input.clone())

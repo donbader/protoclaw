@@ -86,6 +86,7 @@ mod tests {
             ChannelCapabilities {
                 streaming: true,
                 rich_text: false,
+                media: false,
             }
         }
 
@@ -142,6 +143,7 @@ mod tests {
         let msg = DeliverMessage {
             session_id: "s1".into(),
             content: serde_json::json!("hello"),
+            meta: None,
         };
         assert!(ch.deliver_message(msg).await.is_ok());
     }

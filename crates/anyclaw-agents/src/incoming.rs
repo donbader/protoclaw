@@ -4,7 +4,9 @@ use anyclaw_jsonrpc::types::{JsonRpcRequest, JsonRpcResponse, RequestId};
 use anyclaw_sdk_types::{ChannelEvent, PermissionOption};
 use tokio::sync::mpsc;
 
-use crate::acp_types::{SessionUpdateEvent, SessionUpdateType};
+use crate::acp_types::{
+    SessionPushParams, SessionUpdateEvent, SessionUpdateType, content_block_to_part,
+};
 use crate::connection::IncomingMessage;
 use crate::manager::{AgentsManager, PendingPermission, SlotIncoming};
 
@@ -24,6 +26,9 @@ impl AgentsManager {
             }
             "session/request_permission" => {
                 self.handle_permission_request(slot_idx, &request).await;
+            }
+            "session/push" | "_session/push" => {
+                self.handle_session_push(slot_idx, &request).await;
             }
             "fs/read_text_file" => {
                 Self::handle_fs_read(&self.slots[slot_idx], &request).await;
@@ -284,6 +289,70 @@ impl AgentsManager {
         }
     }
 
+    pub(crate) async fn handle_session_push(&mut self, slot_idx: usize, request: &JsonRpcRequest) {
+        let Some(params_val) = request.params.as_ref() else {
+            Self::send_error_response(&self.slots[slot_idx], request, -32602, "Missing params")
+                .await;
+            return;
+        };
+        let push_params = match serde_json::from_value::<SessionPushParams>(params_val.clone()) {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::warn!(error = %e, "session/push params deserialization failed");
+                Self::send_error_response(&self.slots[slot_idx], request, -32602, "Invalid params")
+                    .await;
+                return;
+            }
+        };
+
+        let Some(session_key) = self.slots[slot_idx]
+            .reverse_map
+            .get(&push_params.session_id)
+            .cloned()
+        else {
+            tracing::warn!(
+                session_id = %push_params.session_id,
+                "session/push: no session mapping found"
+            );
+            Self::send_error_response(&self.slots[slot_idx], request, -32001, "Unknown session")
+                .await;
+            return;
+        };
+
+        let Some(sender) = &self.channels_sender else {
+            tracing::warn!("session/push: no channels sender available");
+            Self::send_error_response(
+                &self.slots[slot_idx],
+                request,
+                -32603,
+                "Channels not available",
+            )
+            .await;
+            return;
+        };
+
+        for block in push_params.content {
+            let part = content_block_to_part(block);
+            let content = serde_json::json!({
+                "update": {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": part,
+                }
+            });
+            let _ = sender
+                .send(ChannelEvent::DeliverMessage {
+                    session_key: session_key.clone(),
+                    content,
+                })
+                .await;
+        }
+
+        if let Some(conn) = self.slots[slot_idx].connection.as_ref() {
+            let resp = JsonRpcResponse::success(request.id.clone(), serde_json::json!({}));
+            let _ = conn.send_raw(resp).await;
+        }
+    }
+
     pub(crate) async fn handle_prompt_completion(
         &mut self,
         completion: crate::manager::PromptCompletion,
@@ -336,6 +405,7 @@ impl AgentsManager {
                     anyclaw_sdk_types::acp::StopReason::MaxTurnRequests => "max_turn_requests",
                     anyclaw_sdk_types::acp::StopReason::Refusal => "refusal",
                     anyclaw_sdk_types::acp::StopReason::Cancelled => "cancelled",
+                    _ => "unknown",
                 };
                 let synthetic_result = serde_json::json!({
                     "sessionId": acp_session_id,
@@ -361,15 +431,16 @@ impl AgentsManager {
         }
 
         // Drain queued messages and dispatch next batch
-        if let Some(next_msg) = self.queue.mark_idle(&completion.session_key) {
+        if let Some((mut merged_content, mut merged_meta)) =
+            self.queue.mark_idle(&completion.session_key)
+        {
             let remaining = self.queue.drain_queued(&completion.session_key);
-            let merged = if remaining.is_empty() {
-                next_msg
-            } else {
-                let mut parts = vec![next_msg];
-                parts.extend(remaining);
-                parts.join("\n")
-            };
+            for (extra_content, extra_meta) in remaining {
+                merged_content.extend(extra_content);
+                if extra_meta.is_some() {
+                    merged_meta = extra_meta;
+                }
+            }
 
             let agent_name = self
                 .slots
@@ -387,7 +458,12 @@ impl AgentsManager {
                         .await;
                 }
                 if let Err(e) = self
-                    .prompt_session(&agent_name, &completion.session_key, &merged)
+                    .prompt_session(
+                        &agent_name,
+                        &completion.session_key,
+                        &merged_content,
+                        merged_meta.as_ref(),
+                    )
                     .await
                 {
                     tracing::warn!(

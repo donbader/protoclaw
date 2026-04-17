@@ -14,6 +14,7 @@ mod tests {
             protocol_version: 1,
             capabilities: ClientCapabilities { experimental: None },
             options: None,
+            meta: None,
         };
         assert_eq!(params.protocol_version, 1);
     }
@@ -43,6 +44,7 @@ mod tests {
             session_id: None,
             cwd: "/tmp".into(),
             mcp_servers: vec![],
+            meta: None,
         };
         assert_eq!(params.cwd, "/tmp");
     }

@@ -2,11 +2,27 @@ use std::sync::Arc;
 
 use anyclaw_sdk_channel::ChannelSdkError;
 use anyclaw_sdk_types::ChannelSendMessage;
+use anyclaw_sdk_types::MessageMetadata;
+use anyclaw_sdk_types::acp::ContentPart;
 use teloxide::prelude::*;
 use teloxide::types::{Chat, ChatId, ChatKind, InlineKeyboardMarkup, MessageId, PublicChatKind};
 
 use crate::peer::peer_info_from_chat;
 use crate::state::SharedState;
+
+fn reply_metadata_from_message(msg: &Message) -> Option<MessageMetadata> {
+    let reply_id = msg.reply_to_message().map(|r| r.id.0.to_string());
+    let thread_id = msg.thread_id.map(|t| t.0.0.to_string());
+
+    if reply_id.is_none() && thread_id.is_none() {
+        return None;
+    }
+
+    Some(MessageMetadata {
+        reply_to_message_id: reply_id,
+        thread_id,
+    })
+}
 
 pub fn chat_type_str(chat: &Chat) -> &str {
     match &chat.kind {
@@ -23,6 +39,7 @@ pub async fn process_text_message(
     chat_id: i64,
     chat_type: &str,
     text: &str,
+    metadata: Option<MessageMetadata>,
     state: &SharedState,
 ) -> Result<(), ChannelSdkError> {
     let guard = state.outbound.lock().await;
@@ -33,7 +50,9 @@ pub async fn process_text_message(
     let peer_info = peer_info_from_chat(chat_id, chat_type);
     let msg = ChannelSendMessage {
         peer_info,
-        content: text.to_string(),
+        content: vec![ContentPart::text(text)],
+        metadata,
+        meta: None,
     };
     outbound
         .send(msg)
@@ -59,7 +78,14 @@ async fn handle_text_message(
             .await
             .insert(msg.chat.id.0, msg.id.0);
         let chat_type = chat_type_str(&msg.chat);
-        let _ = process_text_message(msg.chat.id.0, chat_type, text, &state).await;
+        let _ = process_text_message(
+            msg.chat.id.0,
+            chat_type,
+            text,
+            reply_metadata_from_message(&msg),
+            &state,
+        )
+        .await;
     }
     Ok(())
 }
@@ -140,12 +166,12 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(16);
         *state.outbound.lock().await = Some(tx);
 
-        process_text_message(12345, "private", "hello", &state)
+        process_text_message(12345, "private", "hello", None, &state)
             .await
             .unwrap();
 
         let msg = rx.try_recv().unwrap();
-        assert_eq!(msg.content, "hello");
+        assert_eq!(msg.content, vec![ContentPart::text("hello")]);
         assert_eq!(msg.peer_info.channel_name, "telegram");
         assert_eq!(msg.peer_info.peer_id, "telegram:12345");
     }
@@ -156,7 +182,7 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(16);
         *state.outbound.lock().await = Some(tx);
 
-        process_text_message(100, "private", "hi", &state)
+        process_text_message(100, "private", "hi", None, &state)
             .await
             .unwrap();
 
@@ -170,7 +196,7 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(16);
         *state.outbound.lock().await = Some(tx);
 
-        process_text_message(-100123, "group", "hi", &state)
+        process_text_message(-100123, "group", "hi", None, &state)
             .await
             .unwrap();
 
@@ -181,7 +207,7 @@ mod tests {
     #[tokio::test]
     async fn process_text_does_nothing_when_outbound_is_none() {
         let state = SharedState::new();
-        let result = process_text_message(1, "private", "hi", &state).await;
+        let result = process_text_message(1, "private", "hi", None, &state).await;
         assert!(result.is_ok());
     }
 
@@ -191,11 +217,11 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(16);
         *state.outbound.lock().await = Some(tx);
 
-        process_text_message(1, "private", "", &state)
+        process_text_message(1, "private", "", None, &state)
             .await
             .unwrap();
 
         let msg = rx.try_recv().unwrap();
-        assert_eq!(msg.content, "");
+        assert_eq!(msg.content, vec![ContentPart::text("")]);
     }
 }

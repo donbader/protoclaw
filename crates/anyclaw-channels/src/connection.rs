@@ -438,6 +438,7 @@ mod tests {
         let caps = ChannelCapabilities {
             streaming: true,
             rich_text: false,
+            media: false,
         };
         conn.set_capabilities(caps.clone());
 

@@ -242,6 +242,7 @@ mod tests {
             ChannelCapabilities {
                 streaming: true,
                 rich_text: false,
+                media: false,
             }
         }
 
@@ -457,6 +458,7 @@ mod tests {
             .deliver(DeliverMessage {
                 session_id: "s1".into(),
                 content: serde_json::json!("test-msg"),
+                meta: None,
             })
             .await
             .unwrap();
@@ -475,6 +477,7 @@ mod tests {
                 ChannelCapabilities {
                     streaming: false,
                     rich_text: false,
+                    media: false,
                 }
             }
 

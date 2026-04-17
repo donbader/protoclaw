@@ -19,21 +19,27 @@ Shared serde types used by all three SDK crates (agent, channel, tool) and by in
 - `SessionKey` — routing key newtype: `"{channel_name}:{kind}:{peer_id}"`, with `new()`, `channel_name()`, `Display`, `FromStr`
 
 **Channel protocol:**
-- `ChannelCapabilities { streaming, rich_text }` — advertised during initialize
+- `ChannelCapabilities { streaming, rich_text, media }` — advertised during initialize
 - `ChannelInitializeParams { agent_name, ack_config, options }` / `ChannelInitializeResult` — handshake types. `options: HashMap<String, Value>` forwards channel-specific config from `anyclaw.yaml`
-- `DeliverMessage { session_id, content }` — anyclaw → channel
-- `ChannelSendMessage { peer_info, content }` — channel → anyclaw
+- `DeliverMessage { session_id, content }` — anyclaw → channel (also used for agent-initiated push via per-part delivery)
+- `ChannelSendMessage { peer_info, content, metadata }` — channel → anyclaw. `content` is `Vec<ContentPart>`, `metadata` is `Option<MessageMetadata>` for reply/thread context
 - `PeerInfo { channel_name, peer_id, kind }` — inbound message identity
+- `MessageMetadata { reply_to_message_id, thread_id }` — optional reply/thread context on inbound messages
 - `ThoughtContent` — helper to extract `agent_thought_chunk` from `DeliverMessage.content`
-- `ContentKind` — typed dispatch enum over `DeliverMessage.content`: `Thought`, `MessageChunk`, `Result`, `UserMessageChunk`, `UsageUpdate`, `ToolCall`, `ToolCallUpdate`, `AvailableCommandsUpdate`, `Unknown`
+- `ContentKind` — typed dispatch enum over `DeliverMessage.content`: `Thought`, `MessageChunk`, `Result`, `UserMessageChunk`, `UsageUpdate`, `ToolCall`, `ToolCallUpdate`, `AvailableCommandsUpdate`, `Image`, `File`, `Audio`, `Unknown`
 - `AckNotification` / `AckLifecycleNotification` — ack reaction lifecycle
 - `ChannelAckConfig` — ack settings passed via initialize
 - `SessionCreated` — session-to-peer mapping notification
 
-**ACP protocol:**
-- `StopReason` — why the agent stopped: `EndTurn`, `MaxTokens`, `MaxTurnRequests`, `Refusal`, `Cancelled`
+**ACP protocol (via `agent-client-protocol-schema` re-exports):**
+- `ContentBlock` — official ACP content enum: `Text`, `Image`, `Audio`, `Resource`, `ResourceLink` (from `agent-client-protocol-schema`)
+- `ContentPart` — internal tagged enum for channel routing: `Text { text }`, `Image { url }`, `File { url, filename, mime_type }`, `Audio { url, mime_type }`
+- Conversion functions: `content_part_to_block`, `content_block_to_part`, `content_parts_to_blocks`, `content_blocks_to_parts` — convert between internal `ContentPart` (URL-based) and ACP wire `ContentBlock` (base64-based) at the agent boundary
+- `StopReason` — re-exported from `agent-client-protocol-schema`: `EndTurn`, `MaxTokens`, `MaxTurnRequests`, `Refusal`, `Cancelled` (`#[non_exhaustive]`)
+- `SessionPushParams { session_id, content }` / `SessionPushResult` — anyclaw extension for agent-initiated push via `_session/push` method
 - `PromptResponse { stop_reason }` — parsed from `session/prompt` RPC response body; canonical completion signal per the ACP spec
-- `SessionUpdateType::Result` — extension type not in the official ACP spec; anyclaw-specific early completion hint for UX purposes (e.g., triggers Telegram finalization ~200ms early)
+- `SessionUpdateType::Result` — extension type not in the official ACP spec; anyclaw-specific early completion hint for UX purposes
+- All ACP wire types include `_meta: Option<Value>` for protocol extensibility per ACP spec
 
 **Permission protocol:**
 - `PermissionOption { option_id, label }` — single choice in a permission prompt
@@ -43,7 +49,7 @@ Shared serde types used by all three SDK crates (agent, channel, tool) and by in
 
 ## Why Separate
 
-All three SDK crates (`sdk-agent`, `sdk-channel`, `sdk-tool`) need shared wire types. Putting them in any one SDK crate would force the others to depend on it, creating coupling. `sdk-types` is a dependency-free leaf — it depends only on `serde` and `serde_json`.
+All three SDK crates (`sdk-agent`, `sdk-channel`, `sdk-tool`) need shared wire types. Putting them in any one SDK crate would force the others to depend on it, creating coupling. `sdk-types` is a leaf crate — it depends only on `serde`, `serde_json`, and `agent-client-protocol-schema` (for official ACP wire types).
 
 ## Serde Convention
 
