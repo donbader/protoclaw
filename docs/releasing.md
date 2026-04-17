@@ -14,7 +14,7 @@ SDK crate releases are fully automated via [release-plz](https://release-plz.ien
 
 ## Binary (manual trigger)
 
-The `anyclaw` binary is released by pushing a version tag:
+Anyclaw is distributed as Docker images — no native binary releases. The release process:
 
 1. Update `crates/anyclaw/Cargo.toml` version
 2. Update `CHANGELOG.md` — move items from `[Unreleased]` to the new version section
@@ -26,9 +26,7 @@ git tag v<version>
 git push origin v<version>
 ```
 
-5. The tag triggers two workflows:
-   - **Binary Release** (`.github/workflows/binary-release.yml`): Builds Linux + macOS binaries, creates a GitHub Release with artifacts and SHA256 checksums
-   - **Docker** (`.github/workflows/docker.yml`): Builds multi-arch Docker images, pushes to GHCR
+5. The tag triggers the **Docker** workflow (`.github/workflows/docker.yml`): builds multi-arch Docker images (amd64 + arm64), pushes to GHCR
 
 **Versioning:** The binary follows [semver](https://semver.org/). Bump minor for new features, patch for bugfixes.
 

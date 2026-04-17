@@ -136,7 +136,6 @@ We're working toward a stable v1.0. Here's where things stand:
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Cross-platform binary releases (Linux + macOS) | ✅ | |
 | Multi-arch Docker images (amd64 + arm64) | ✅ | |
 | PR-only workflow with conventional commit enforcement | ✅ | |
 | Security audit + Trivy scanning | ✅ | |
@@ -179,7 +178,7 @@ Deploy anyclaw with your own AI agent:
 - [Configuration reference](examples/02-real-agent-telegram/CONFIGURATION.md) — full `anyclaw.yaml` schema
 - [Container images](docs/container-images.md) — Docker image tags, platforms, usage
 - [Examples](examples/) — ready-to-run setups (fake agent, OpenCode, Kiro, Claude Code)
-- [Changelog](CHANGELOG.md) — binary release history
+- [Changelog](CHANGELOG.md) — release history
 
 ### For Extension Builders
 
