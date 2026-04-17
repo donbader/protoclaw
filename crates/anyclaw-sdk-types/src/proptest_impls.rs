@@ -227,9 +227,10 @@ prop_compose! {
 prop_compose! {
     fn arb_message_metadata()(
         reply_to_message_id in proptest::option::of(arb_string()),
+        reply_to_text in proptest::option::of(arb_string()),
         thread_id in proptest::option::of(arb_string()),
     ) -> MessageMetadata {
-        MessageMetadata { reply_to_message_id, thread_id }
+        MessageMetadata { reply_to_message_id, reply_to_text, thread_id }
     }
 }
 

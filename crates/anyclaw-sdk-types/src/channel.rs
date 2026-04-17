@@ -78,6 +78,9 @@ pub struct MessageMetadata {
     /// Platform message ID being replied to, if the user replied to a specific message.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reply_to_message_id: Option<String>,
+    /// Text content of the message being replied to, if available.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reply_to_text: Option<String>,
     /// Platform thread or topic ID, if the message belongs to a thread.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thread_id: Option<String>,
@@ -1284,10 +1287,12 @@ mod tests {
     fn when_message_metadata_round_trips_then_identical() {
         let original = MessageMetadata {
             reply_to_message_id: Some("msg-100".into()),
+            reply_to_text: Some("quoted text here".into()),
             thread_id: Some("thread-42".into()),
         };
         let json = serde_json::to_value(&original).unwrap();
         assert_eq!(json["replyToMessageId"], "msg-100");
+        assert_eq!(json["replyToText"], "quoted text here");
         assert_eq!(json["threadId"], "thread-42");
         let restored: MessageMetadata = serde_json::from_value(json).unwrap();
         assert_eq!(original, restored);
@@ -1297,6 +1302,7 @@ mod tests {
     fn when_message_metadata_empty_then_fields_absent() {
         let original = MessageMetadata {
             reply_to_message_id: None,
+            reply_to_text: None,
             thread_id: None,
         };
         let json = serde_json::to_value(&original).unwrap();
@@ -1362,6 +1368,7 @@ mod tests {
             content: vec![crate::acp::ContentPart::text("reply here")],
             metadata: Some(MessageMetadata {
                 reply_to_message_id: Some("msg-99".into()),
+                reply_to_text: Some("original message".into()),
                 thread_id: Some("thread-1".into()),
             }),
             meta: None,

@@ -481,10 +481,12 @@ mod tests {
         let mut q = SessionQueue::new();
         let meta1 = Some(MessageMetadata {
             reply_to_message_id: Some("id-1".into()),
+            reply_to_text: None,
             thread_id: None,
         });
         let meta2 = Some(MessageMetadata {
             reply_to_message_id: Some("id-2".into()),
+            reply_to_text: None,
             thread_id: None,
         });
         q.push_only(&key("alice"), vec![ContentPart::text("a")], meta1);
