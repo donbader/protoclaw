@@ -33,6 +33,7 @@ Served over HTTP via rmcp's `StreamableHttpService` (stateful mode) on a random 
 - `stateful_mode = true` is mandatory — without it, rmcp treats each HTTP request as independent, breaking multi-turn tool conversations that rely on session state
 - `cancellation_token` ties the MCP server lifecycle to the tools manager's cancel signal for clean shutdown
 - `allowed_hosts` must include `tools_server_host` when it differs from the defaults (`localhost`, `127.0.0.1`, `::1`). rmcp's default DNS rebinding protection rejects requests whose `Host` header doesn't match the allowed list — in Docker deployments where agents connect via container hostname (e.g. `anyclaw`), the host must be explicitly allowed or all MCP requests return 403 Forbidden
+- `sse_keep_alive` must be set (30s) — rmcp clients have a default keepalive timeout (typically 300s). Without server-side keepalive pings, idle SSE connections time out, killing the MCP session. This cascades: agent loses tool access → agent process may exit → infinite crash-respawn loop. Config construction is extracted into `build_server_config()` with dedicated tests for each requirement
 
 ## WASM Sandbox Model
 
