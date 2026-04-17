@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyclaw_config::ToolConfig;
 use anyclaw_core::{Manager, ManagerError, McpServerUrl, ToolsCommand};
@@ -389,28 +390,35 @@ impl ToolsManager {
         Ok(())
     }
 
+    fn build_server_config(
+        tools_server_host: &str,
+        ct: CancellationToken,
+    ) -> StreamableHttpServerConfig {
+        let mut allowed_hosts = vec![
+            "localhost".to_string(),
+            "127.0.0.1".to_string(),
+            "::1".to_string(),
+        ];
+        if tools_server_host != "127.0.0.1"
+            && tools_server_host != "localhost"
+            && tools_server_host != "::1"
+        {
+            allowed_hosts.push(tools_server_host.to_string());
+        }
+        StreamableHttpServerConfig::default()
+            .with_stateful_mode(true)
+            .with_cancellation_token(ct)
+            .with_allowed_hosts(allowed_hosts)
+            .with_sse_keep_alive(Some(Duration::from_secs(30)))
+    }
+
     async fn spawn_aggregated_server(
         &self,
         native_host: Arc<McpHost>,
         external_servers: Arc<Vec<ExternalMcpServer>>,
     ) -> Result<(tokio::task::JoinHandle<()>, String), ManagerError> {
         let ct = CancellationToken::new();
-        let mut allowed_hosts = vec![
-            "localhost".to_string(),
-            "127.0.0.1".to_string(),
-            "::1".to_string(),
-        ];
-        if self.tools_server_host != "127.0.0.1"
-            && self.tools_server_host != "localhost"
-            && self.tools_server_host != "::1"
-        {
-            allowed_hosts.push(self.tools_server_host.clone());
-        }
-        let config = StreamableHttpServerConfig::default()
-            .with_stateful_mode(true)
-            .with_cancellation_token(ct.clone())
-            .with_allowed_hosts(allowed_hosts)
-            .with_sse_keep_alive(None);
+        let config = Self::build_server_config(&self.tools_server_host, ct.clone());
 
         let service: StreamableHttpService<AggregatedToolServer, LocalSessionManager> =
             StreamableHttpService::new(
@@ -471,6 +479,37 @@ mod tests {
         ) -> Result<serde_json::Value, ToolSdkError> {
             Ok(input)
         }
+    }
+
+    #[test]
+    fn when_build_server_config_then_sse_keepalive_is_enabled() {
+        let ct = CancellationToken::new();
+        let config = ToolsManager::build_server_config("127.0.0.1", ct);
+        assert_eq!(
+            config.sse_keep_alive,
+            Some(Duration::from_secs(30)),
+            "SSE keepalive must be enabled to prevent rmcp client-side timeout"
+        );
+    }
+
+    #[test]
+    fn when_build_server_config_then_stateful_mode_is_enabled() {
+        let ct = CancellationToken::new();
+        let config = ToolsManager::build_server_config("127.0.0.1", ct);
+        assert!(
+            config.stateful_mode,
+            "stateful mode is required for multi-turn tool sessions"
+        );
+    }
+
+    #[test]
+    fn when_build_server_config_with_custom_host_then_host_is_in_allowed_list() {
+        let ct = CancellationToken::new();
+        let config = ToolsManager::build_server_config("anyclaw", ct);
+        assert!(
+            config.allowed_hosts.iter().any(|h| h == "anyclaw"),
+            "custom tools_server_host must be in allowed_hosts for Docker deployments"
+        );
     }
 
     #[test]
