@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=../../anyclaw.schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/donbader/anyclaw/refs/heads/main/anyclaw.schema.json
 # Anyclaw Fake Agent Example
 # Uses the mock agent — no AI API keys needed.
 # See README.md for setup instructions.

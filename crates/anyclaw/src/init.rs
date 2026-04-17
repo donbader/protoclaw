@@ -20,7 +20,7 @@ pub fn detect_agent_binary() -> Option<String> {
 /// Generate a starter `anyclaw.yaml` config file for the given agent binary.
 pub fn generate_config_yaml(agent_binary: &str) -> String {
     format!(
-        r#"# yaml-language-server: $schema=./anyclaw.schema.json
+        r#"# yaml-language-server: $schema=https://raw.githubusercontent.com/donbader/anyclaw/refs/heads/main/anyclaw.schema.json
 # Anyclaw configuration
 # Docs: https://github.com/user/anyclaw
 
@@ -124,7 +124,7 @@ mod tests {
         let yaml = generate_config_yaml("opencode");
         assert_eq!(
             yaml.lines().next().unwrap(),
-            "# yaml-language-server: $schema=./anyclaw.schema.json"
+            "# yaml-language-server: $schema=https://raw.githubusercontent.com/donbader/anyclaw/refs/heads/main/anyclaw.schema.json"
         );
     }
 
