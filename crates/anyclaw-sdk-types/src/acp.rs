@@ -192,7 +192,16 @@ pub fn content_part_to_block(part: ContentPart) -> ContentBlock {
     match part {
         ContentPart::Text { text } => ContentBlock::Text(TextContent::new(text)),
         ContentPart::Image { url } => {
-            ContentBlock::Image(ImageContent::new("", "image/png").uri(url))
+            if let Some(rest) = url.strip_prefix("data:") {
+                if let Some((mime_and_enc, data)) = rest.split_once(',') {
+                    let mime = mime_and_enc.strip_suffix(";base64").unwrap_or(mime_and_enc);
+                    ContentBlock::Image(ImageContent::new(data, mime))
+                } else {
+                    ContentBlock::Image(ImageContent::new("", "image/png").uri(url))
+                }
+            } else {
+                ContentBlock::Image(ImageContent::new("", "image/png").uri(url))
+            }
         }
         ContentPart::File {
             url,

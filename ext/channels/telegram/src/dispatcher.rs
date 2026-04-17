@@ -4,6 +4,7 @@ use anyclaw_sdk_channel::ChannelSdkError;
 use anyclaw_sdk_types::ChannelSendMessage;
 use anyclaw_sdk_types::MessageMetadata;
 use anyclaw_sdk_types::acp::ContentPart;
+use teloxide::net::Download;
 use teloxide::prelude::*;
 use teloxide::types::{
     Chat, ChatId, ChatKind, InlineKeyboardMarkup, MediaKind, MessageId, MessageKind, PublicChatKind,
@@ -324,12 +325,13 @@ async fn resolve_photo_url(bot: &Bot, msg: &Message) -> Option<String> {
     let largest = photos.iter().max_by_key(|p| p.width * p.height)?;
     match bot.get_file(largest.file.id.clone()).await {
         Ok(file) => {
-            let url = format!(
-                "https://api.telegram.org/file/bot{}/{}",
-                bot.token(),
-                file.path
-            );
-            Some(url)
+            let mut buf = Vec::new();
+            if let Err(e) = bot.download_file(&file.path, &mut buf).await {
+                tracing::warn!(error = %e, "failed to download photo from Telegram");
+                return None;
+            }
+            let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &buf);
+            Some(format!("data:image/jpeg;base64,{b64}"))
         }
         Err(e) => {
             tracing::warn!(error = %e, "failed to get file from Telegram API");
