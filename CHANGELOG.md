@@ -12,6 +12,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-04-17
+
+### Added
+
+- **Rich reply context**: Replies now include sender attribution, partial quotes, and media placeholders for richer conversational context (#46)
+
 ## [0.6.1] — 2026-04-17
 
 ### Added
@@ -41,7 +47,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 Starting point for tracked binary releases. Prior versions were not formally documented.
 
-[Unreleased]: https://github.com/donbader/anyclaw/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/donbader/anyclaw/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/donbader/anyclaw/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/donbader/anyclaw/compare/v0.5.2...v0.6.1
 [0.5.2]: https://github.com/donbader/anyclaw/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/donbader/anyclaw/releases/tag/v0.5.1
