@@ -323,12 +323,10 @@ impl AgentsManager {
             if let Some(ref thread_id) = meta.thread_id {
                 context_parts.push(format!("thread {thread_id}"));
             }
-            if let Some(ref reply_id) = meta.reply_to_message_id {
-                if let Some(ref reply_text) = meta.reply_to_text {
-                    context_parts.push(format!("reply to message {reply_id}: \"{reply_text}\""));
-                } else {
-                    context_parts.push(format!("reply to message {reply_id}"));
-                }
+            if let Some(ref reply_text) = meta.reply_to_text {
+                context_parts.push(format!("replying to: \"{reply_text}\""));
+            } else if let Some(ref reply_id) = meta.reply_to_message_id {
+                context_parts.push(format!("reply to message {reply_id}"));
             }
             if !context_parts.is_empty() {
                 prompt_parts.push(ContentPart::text(format!(

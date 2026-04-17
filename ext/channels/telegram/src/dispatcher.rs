@@ -13,7 +13,7 @@ use crate::state::SharedState;
 fn reply_metadata_from_message(msg: &Message) -> Option<MessageMetadata> {
     let reply_msg = msg.reply_to_message();
     let reply_id = reply_msg.map(|r| r.id.0.to_string());
-    let reply_text = reply_msg.and_then(|r| r.text().map(str::to_string));
+    let reply_text = reply_msg.and_then(|r| r.text().or_else(|| r.caption()).map(str::to_string));
     let thread_id = msg.thread_id.map(|t| t.0.0.to_string());
 
     if reply_id.is_none() && thread_id.is_none() {
