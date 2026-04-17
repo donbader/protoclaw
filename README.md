@@ -84,9 +84,11 @@ We're working toward a stable v1.0. Here's where things stand:
 | Per-subprocess crash recovery with exponential backoff | ✅ | |
 | Crash loop detection and escalation | ✅ | |
 | Graceful shutdown with per-manager timeouts | ✅ | |
-| Health check loop + admin HTTP server | ✅ | |
+| Health check loop + admin HTTP server | ✅ | Includes Prometheus `/metrics` endpoint |
 | YAML config with `!env` tag resolution and validation | ✅ | |
-| JSON Schema for `anyclaw.yaml` (IDE autocomplete) | ✅ | |
+| JSON Schema for `anyclaw.yaml` (IDE autocomplete) | ✅ | `anyclaw schema` CLI command |
+| Config validation CLI (`anyclaw validate`) | ✅ | Offline schema + semantic validation with `--strict` mode |
+| Structured JSON logging | ✅ | `log_format: json` for production log aggregators |
 | Extension defaults via initialize handshake | ✅ | |
 | Agent-initiated messages | ✅ | Agents can push to channels without user input via `session/push` |
 | Rich media delivery | ✅ | Images, files, audio between agents and channels (both directions) |
@@ -103,9 +105,12 @@ We're working toward a stable v1.0. Here's where things stand:
 | ACP↔HTTP bridge (connect any REST/SSE agent) | ✅ | |
 | Docker workspace (run agents in containers) | ✅ | |
 | Session persistence (SQLite-backed) | ✅ | |
-| Session recovery after crash | ✅ | |
+| Session recovery after crash | ✅ | Resume preferred; falls back to history replay |
+| Session fork and list | ✅ | `session/fork` and `session/list` ACP methods (capability-gated) |
 | Filesystem sandboxing | ✅ | |
 | Permission system (agent → user approval flow) | ✅ | |
+| Platform commands (`/new`, `/cancel`) | ✅ | Built-in slash commands intercepted by the sidecar |
+| Dynamic command menus | ✅ | Agents push `available_commands_update` to channels at runtime |
 | Agent-to-agent communication | planned | Handoff, delegation, or direct IPC between agents |
 
 ### Channels
@@ -116,7 +121,7 @@ We're working toward a stable v1.0. Here's where things stand:
 | Debug HTTP (development + testing) | ✅ | |
 | Telegram: reply/thread context | ✅ | Sender attribution, partial quotes, media placeholders, openclaw-compatible format |
 | Telegram: external/cross-chat reply context | planned | Handle `external_reply` for replies to messages from other chats |
-| Telegram: reply media download | planned | Download and forward media from replied-to messages to the agent |
+| Telegram: reply media download | ✅ | Photos from replies downloaded; other media types show placeholder |
 | Telegram: reply context access control | planned | Suppress reply context in groups when original sender is not in allowlist |
 | Telegram: group/user allowlists | planned | Control who can interact with the agent |
 
