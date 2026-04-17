@@ -2,8 +2,8 @@ use std::future::Future;
 use std::pin::Pin;
 
 use anyclaw_sdk_types::{
-    ContentBlock, InitializeParams, InitializeResult, PermissionRequest, SessionNewParams,
-    SessionNewResult, SessionPromptParams, SessionUpdateEvent, TextContent,
+    InitializeParams, InitializeResult, PermissionRequest, SessionNewParams, SessionNewResult,
+    SessionPromptParams, SessionUpdateEvent,
 };
 
 use crate::error::AgentSdkError;
@@ -172,9 +172,9 @@ mod tests {
     use super::*;
     use anyclaw_sdk_types::PermissionOption;
     use anyclaw_sdk_types::{
-        ClientCapabilities, ContentPart, InitializeParams, InitializeResult, PermissionRequest,
+        ClientCapabilities, ContentBlock, InitializeParams, InitializeResult, PermissionRequest,
         SessionNewParams, SessionNewResult, SessionPromptParams, SessionUpdateEvent,
-        SessionUpdateType,
+        SessionUpdateType, TextContent,
     };
     use rstest::rstest;
 
