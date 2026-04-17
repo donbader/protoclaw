@@ -91,6 +91,7 @@ pub async fn process_text_message(
     chat_id: i64,
     chat_type: &str,
     text: &str,
+    reply_image_url: Option<&str>,
     metadata: Option<MessageMetadata>,
     state: &SharedState,
 ) -> Result<(), ChannelSdkError> {
@@ -99,10 +100,18 @@ pub async fn process_text_message(
         return Ok(());
     };
 
+    let mut content = Vec::new();
+    if let Some(url) = reply_image_url {
+        content.push(ContentPart::Image {
+            url: url.to_string(),
+        });
+    }
+    content.push(ContentPart::text(text));
+
     let peer_info = peer_info_from_chat(chat_id, chat_type);
     let msg = ChannelSendMessage {
         peer_info,
-        content: vec![ContentPart::text(text)],
+        content,
         metadata,
         meta: None,
     };
@@ -131,10 +140,12 @@ async fn handle_text_message(
             .await
             .insert(msg.chat.id.0, msg.id.0);
         let chat_type = chat_type_str(&msg.chat);
+        let reply_image = resolve_reply_photo(&bot, &msg).await;
         let _ = process_text_message(
             msg.chat.id.0,
             chat_type,
             text,
+            reply_image.as_deref(),
             reply_metadata_from_message(&msg),
             &state,
         )
@@ -232,12 +243,14 @@ fn media_label_from_type(media_type: &str) -> &'static str {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn process_media_message(
     chat_id: i64,
     chat_type: &str,
     media_type: &str,
     caption: Option<&str>,
     image_url: Option<&str>,
+    reply_image_url: Option<&str>,
     metadata: Option<MessageMetadata>,
     state: &SharedState,
 ) -> Result<(), ChannelSdkError> {
@@ -248,6 +261,12 @@ pub async fn process_media_message(
 
     let label = media_label_from_type(media_type);
     let mut content = Vec::new();
+
+    if let Some(url) = reply_image_url {
+        content.push(ContentPart::Image {
+            url: url.to_string(),
+        });
+    }
 
     if let Some(url) = image_url {
         content.push(ContentPart::Image {
@@ -306,6 +325,8 @@ async fn handle_media_message(
         None
     };
 
+    let reply_image = resolve_reply_photo(&bot, &msg).await;
+
     let chat_type = chat_type_str(&msg.chat);
     let _ = process_media_message(
         msg.chat.id.0,
@@ -313,6 +334,7 @@ async fn handle_media_message(
         media_type,
         caption,
         image_url.as_deref(),
+        reply_image.as_deref(),
         reply_metadata_from_message(&msg),
         &state,
     )
@@ -340,6 +362,11 @@ async fn resolve_photo_url(bot: &Bot, msg: &Message) -> Option<String> {
     }
 }
 
+async fn resolve_reply_photo(bot: &Bot, msg: &Message) -> Option<String> {
+    let reply_msg = msg.reply_to_message()?;
+    resolve_photo_url(bot, reply_msg).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -351,7 +378,7 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(16);
         *state.outbound.lock().await = Some(tx);
 
-        process_text_message(12345, "private", "hello", None, &state)
+        process_text_message(12345, "private", "hello", None, None, &state)
             .await
             .unwrap();
 
@@ -367,7 +394,7 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(16);
         *state.outbound.lock().await = Some(tx);
 
-        process_text_message(100, "private", "hi", None, &state)
+        process_text_message(100, "private", "hi", None, None, &state)
             .await
             .unwrap();
 
@@ -381,7 +408,7 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(16);
         *state.outbound.lock().await = Some(tx);
 
-        process_text_message(-100123, "group", "hi", None, &state)
+        process_text_message(-100123, "group", "hi", None, None, &state)
             .await
             .unwrap();
 
@@ -392,7 +419,7 @@ mod tests {
     #[tokio::test]
     async fn process_text_does_nothing_when_outbound_is_none() {
         let state = SharedState::new();
-        let result = process_text_message(1, "private", "hi", None, &state).await;
+        let result = process_text_message(1, "private", "hi", None, None, &state).await;
         assert!(result.is_ok());
     }
 
@@ -402,7 +429,7 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(16);
         *state.outbound.lock().await = Some(tx);
 
-        process_text_message(1, "private", "", None, &state)
+        process_text_message(1, "private", "", None, None, &state)
             .await
             .unwrap();
 
@@ -531,6 +558,7 @@ mod tests {
             Some("a nice photo"),
             Some("https://api.telegram.org/file/bot123/photos/file_0.jpg"),
             None,
+            None,
             &state,
         )
         .await
@@ -561,6 +589,7 @@ mod tests {
             None,
             Some("https://api.telegram.org/file/bot123/photos/file_0.jpg"),
             None,
+            None,
             &state,
         )
         .await
@@ -588,6 +617,7 @@ mod tests {
             Some("a nice photo"),
             None,
             None,
+            None,
             &state,
         )
         .await
@@ -606,7 +636,7 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(16);
         *state.outbound.lock().await = Some(tx);
 
-        process_media_message(12345, "private", "image", None, None, None, &state)
+        process_media_message(12345, "private", "image", None, None, None, None, &state)
             .await
             .unwrap();
 
@@ -617,7 +647,8 @@ mod tests {
     #[tokio::test]
     async fn when_process_media_does_nothing_when_outbound_none() {
         let state = SharedState::new();
-        let result = process_media_message(1, "private", "image", None, None, None, &state).await;
+        let result =
+            process_media_message(1, "private", "image", None, None, None, None, &state).await;
         assert!(result.is_ok());
     }
 
@@ -627,9 +658,18 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(16);
         *state.outbound.lock().await = Some(tx);
 
-        process_media_message(1, "private", "video", Some("my video"), None, None, &state)
-            .await
-            .unwrap();
+        process_media_message(
+            1,
+            "private",
+            "video",
+            Some("my video"),
+            None,
+            None,
+            None,
+            &state,
+        )
+        .await
+        .unwrap();
 
         let msg = rx.try_recv().unwrap();
         assert_eq!(msg.content, vec![ContentPart::text("[🎬 Video] my video")]);
@@ -834,5 +874,112 @@ mod tests {
             }
         }));
         assert_eq!(media_type_from_message(&msg), Some("video"));
+    }
+
+    #[tokio::test]
+    async fn when_process_text_with_reply_image_then_image_before_text() {
+        let state = SharedState::new();
+        let (tx, mut rx) = mpsc::channel(16);
+        *state.outbound.lock().await = Some(tx);
+
+        process_text_message(
+            1,
+            "private",
+            "what is this?",
+            Some("data:image/jpeg;base64,/9j/reply"),
+            None,
+            &state,
+        )
+        .await
+        .unwrap();
+
+        let msg = rx.try_recv().unwrap();
+        assert_eq!(
+            msg.content,
+            vec![
+                ContentPart::Image {
+                    url: "data:image/jpeg;base64,/9j/reply".into()
+                },
+                ContentPart::text("what is this?"),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn when_process_text_without_reply_image_then_text_only() {
+        let state = SharedState::new();
+        let (tx, mut rx) = mpsc::channel(16);
+        *state.outbound.lock().await = Some(tx);
+
+        process_text_message(1, "private", "hello", None, None, &state)
+            .await
+            .unwrap();
+
+        let msg = rx.try_recv().unwrap();
+        assert_eq!(msg.content, vec![ContentPart::text("hello")]);
+    }
+
+    #[tokio::test]
+    async fn when_process_media_with_reply_image_then_reply_image_first() {
+        let state = SharedState::new();
+        let (tx, mut rx) = mpsc::channel(16);
+        *state.outbound.lock().await = Some(tx);
+
+        process_media_message(
+            1,
+            "private",
+            "video",
+            Some("cool video"),
+            None,
+            Some("data:image/jpeg;base64,/9j/reply"),
+            None,
+            &state,
+        )
+        .await
+        .unwrap();
+
+        let msg = rx.try_recv().unwrap();
+        assert_eq!(
+            msg.content,
+            vec![
+                ContentPart::Image {
+                    url: "data:image/jpeg;base64,/9j/reply".into()
+                },
+                ContentPart::text("[🎬 Video] cool video"),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn when_process_media_image_with_reply_image_then_both_images() {
+        let state = SharedState::new();
+        let (tx, mut rx) = mpsc::channel(16);
+        *state.outbound.lock().await = Some(tx);
+
+        process_media_message(
+            1,
+            "private",
+            "image",
+            None,
+            Some("data:image/jpeg;base64,/9j/direct"),
+            Some("data:image/jpeg;base64,/9j/reply"),
+            None,
+            &state,
+        )
+        .await
+        .unwrap();
+
+        let msg = rx.try_recv().unwrap();
+        assert_eq!(
+            msg.content,
+            vec![
+                ContentPart::Image {
+                    url: "data:image/jpeg;base64,/9j/reply".into()
+                },
+                ContentPart::Image {
+                    url: "data:image/jpeg;base64,/9j/direct".into()
+                },
+            ]
+        );
     }
 }
