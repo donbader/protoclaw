@@ -12,6 +12,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.7.1] — 2026-04-17
+
+### Added
+
+- **Media message handling**: Photo, video, audio, voice, document, sticker, animation, video_note, location, and contact messages are now forwarded to the agent instead of being silently dropped. Photos are downloaded and sent as base64-encoded image data so vision-capable models can see them (#49)
+
 ## [0.7.0] — 2026-04-17
 
 ### Added
@@ -47,7 +53,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 Starting point for tracked binary releases. Prior versions were not formally documented.
 
-[Unreleased]: https://github.com/donbader/anyclaw/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/donbader/anyclaw/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/donbader/anyclaw/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/donbader/anyclaw/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/donbader/anyclaw/compare/v0.5.2...v0.6.1
 [0.5.2]: https://github.com/donbader/anyclaw/compare/v0.5.1...v0.5.2
