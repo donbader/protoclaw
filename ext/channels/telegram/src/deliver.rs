@@ -636,30 +636,37 @@ pub async fn deliver_to_chat(
                 let handle = tokio::spawn(async move {
                     let debounce_ms = *state_clone.thought_debounce_ms.read().await;
                     tokio::time::sleep(Duration::from_millis(debounce_ms)).await;
-                    let (accumulated, response_msg_id, won) = {
-                        let mut turns = state_clone.turns.write().await;
-                        match turns.get_mut(&chat_id) {
+                    let (accumulated, response_msg_id) = {
+                        let turns = state_clone.turns.read().await;
+                        match turns.get(&chat_id) {
                             Some(turn) => match &turn.response {
-                                Some(track) => {
-                                    let buf = track.buffer.clone();
-                                    let mid = track.msg_id;
-                                    let won = turn.try_finalize_response();
-                                    (buf, mid, won)
-                                }
+                                Some(track) => (track.buffer.clone(), track.msg_id),
                                 None => return,
                             },
                             None => return,
                         }
                     };
-                    if !won {
-                        tracing::debug!(chat_id, "debounce: lost finalization race, skipping send");
-                        return;
-                    }
                     if accumulated.is_empty() {
                         return;
                     }
                     // If msg_id was set while we waited (e.g. by flush), skip send
                     if response_msg_id != 0 {
+                        return;
+                    }
+                    // Claim finalization AFTER all early-return guards pass.
+                    // If claimed before the msg_id check, a flush that sets msg_id
+                    // during the sleep would cause the debounce to consume the flag
+                    // without sending, and the Result timer would then lose the flag
+                    // too — dropping the final edit entirely.
+                    let won = {
+                        let mut turns = state_clone.turns.write().await;
+                        turns
+                            .get_mut(&chat_id)
+                            .map(ChatTurn::try_finalize_response)
+                            .unwrap_or(false)
+                    };
+                    if !won {
+                        tracing::debug!(chat_id, "debounce: lost finalization race, skipping send");
                         return;
                     }
                     let formatted = close_open_tags(&format_telegram_html(&accumulated));
