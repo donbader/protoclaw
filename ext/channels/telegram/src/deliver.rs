@@ -69,7 +69,7 @@ async fn send_or_edit_final(bot: &Bot, chat_id: i64, text: &str, msg_id: i32, la
     let chunks = split_message(&formatted, TELEGRAM_MAX_MESSAGE_LEN);
     let chunk0 = chunks[0].clone();
     if msg_id != 0 {
-        let _ = retry_telegram_op(label, chat_id, || {
+        let edit_result = retry_telegram_op(label, chat_id, || {
             let chunk0 = chunk0.clone();
             async move {
                 bot.edit_message_text(ChatId(chat_id), MessageId(msg_id), &chunk0)
@@ -78,6 +78,18 @@ async fn send_or_edit_final(bot: &Bot, chat_id: i64, text: &str, msg_id: i32, la
             }
         })
         .await;
+        if let Err(e) = edit_result {
+            tracing::warn!(%e, chat_id, msg_id, label, "edit failed, falling back to send_message");
+            let _ = retry_telegram_op(label, chat_id, || {
+                let chunk0 = chunk0.clone();
+                async move {
+                    bot.send_message(ChatId(chat_id), &chunk0)
+                        .parse_mode(ParseMode::Html)
+                        .await
+                }
+            })
+            .await;
+        }
     } else {
         let _ = retry_telegram_op(label, chat_id, || {
             let chunk0 = chunk0.clone();
@@ -954,6 +966,19 @@ pub async fn deliver_to_chat(
                     "failed" => ToolCallStatus::Failed(output),
                     _ => ToolCallStatus::InProgress,
                 };
+
+                let is_terminal = track.status.is_terminal();
+                let can_edit = if is_terminal {
+                    true
+                } else {
+                    let cooldown =
+                        Duration::from_millis(*state.response_edit_cooldown_ms.read().await);
+                    turn.can_edit_tools(cooldown)
+                };
+
+                if !can_edit {
+                    return Ok(());
+                }
 
                 (turn.render_tools_text(), turn.tools_msg_id)
             };
