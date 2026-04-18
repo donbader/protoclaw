@@ -24,20 +24,23 @@ WT="$MAIN/.worktrees/<branch-name>"
 
 git worktree add "$WT" -b <branch-name>
 
-# Symlink all root-level gitignored files (skip .worktrees to avoid recursion)
-for f in "$MAIN"/.* "$MAIN"/*; do
-  name="$(basename "$f")"
-  [ "$name" = ".worktrees" ] && continue
-  git check-ignore -q "$f" 2>/dev/null || continue
-  ln -sf "$f" "$WT/$name"
-done
-
-# Symlink nested .env files
-find "$MAIN" -name '.env' -not -path '*/.worktrees/*' -not -path '*/target/*' | while read f; do
-  rel="${f#$MAIN/}"
-  mkdir -p "$WT/$(dirname "$rel")"
-  ln -sf "$f" "$WT/$rel"
-done
+# Mirror gitignored items from main into worktree (recursive)
+mirror_ignored() {
+  local src="$1" dst="$2"
+  for f in "$src"/.* "$src"/*; do
+    name="$(basename "$f")"
+    [ "$name" = "." ] || [ "$name" = ".." ] || [ "$name" = ".worktrees" ] && continue
+    [ "$name" = ".git" ] && continue
+    git check-ignore -q "$f" 2>/dev/null || continue
+    if [ -d "$f" ]; then
+      mkdir -p "$dst/$name"
+      mirror_ignored "$f" "$dst/$name"
+    else
+      ln -sf "$f" "$dst/$name"
+    fi
+  done
+}
+mirror_ignored "$MAIN" "$WT"
 ```
 
 Run `cargo check` in the worktree to verify clean baseline. All subsequent commands run in the worktree.
