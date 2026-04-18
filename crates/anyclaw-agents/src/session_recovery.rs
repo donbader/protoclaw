@@ -51,13 +51,15 @@ impl AgentsManager {
         }
     }
 
-    async fn notify_crash_to_channels(&self, slot_idx: usize, agent_name: &str) {
+    async fn notify_crash_to_channels(&mut self, slot_idx: usize, agent_name: &str) {
         let Some(sender) = &self.channels_sender else {
+            self.slots[slot_idx].active_prompts.clear();
             return;
         };
         let session_keys: Vec<SessionKey> =
             self.slots[slot_idx].session_map.keys().cloned().collect();
         if session_keys.is_empty() {
+            self.slots[slot_idx].active_prompts.clear();
             return;
         }
         tracing::info!(
@@ -65,7 +67,17 @@ impl AgentsManager {
             sessions = session_keys.len(),
             "notifying channels of agent crash"
         );
-        for sk in session_keys {
+        for sk in &session_keys {
+            // Sessions with an active prompt will be notified via the spawned
+            // task's error path when response_rx drops — skip to avoid duplicates.
+            let has_active_prompt = self.slots[slot_idx]
+                .session_map
+                .get(sk)
+                .is_some_and(|acp_id| self.slots[slot_idx].active_prompts.contains_key(acp_id));
+            if has_active_prompt {
+                continue;
+            }
+
             let error_content = serde_json::json!({
                 "update": {
                     "sessionUpdate": "result",
@@ -75,11 +87,12 @@ impl AgentsManager {
             });
             let _ = sender
                 .send(ChannelEvent::DeliverMessage {
-                    session_key: sk,
+                    session_key: sk.clone(),
                     content: error_content,
                 })
                 .await;
         }
+        self.slots[slot_idx].active_prompts.clear();
     }
 
     pub(crate) async fn respawn_and_initialize(
