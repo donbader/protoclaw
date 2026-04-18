@@ -256,12 +256,13 @@ impl Channel for TelegramChannel {
         *self.state.permission_tx.lock().await = Some(permission_tx);
         match bot.get_me().await {
             Ok(me) => {
+                *self.state.bot_id.write().await = Some(me.id.0);
                 if let Some(ref username) = me.username {
                     *self.state.bot_username.write().await = Some(username.clone());
                 }
             }
             Err(e) => {
-                tracing::warn!(error = %e, "failed to fetch bot username for mention detection");
+                tracing::warn!(error = %e, "failed to fetch bot identity for mention detection");
             }
         }
         tokio::spawn(crate::dispatcher::run_dispatcher(bot, self.state.clone()));

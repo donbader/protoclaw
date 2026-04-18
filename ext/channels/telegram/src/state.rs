@@ -22,6 +22,7 @@ pub struct SharedState {
     pub finalization_delay_ms: RwLock<u64>,
     pub access_config: RwLock<AccessConfig>,
     pub bot_username: RwLock<Option<String>>,
+    pub bot_id: RwLock<Option<u64>>,
 }
 
 impl SharedState {
@@ -41,6 +42,7 @@ impl SharedState {
             finalization_delay_ms: RwLock::new(200),
             access_config: RwLock::new(AccessConfig::default()),
             bot_username: RwLock::new(None),
+            bot_id: RwLock::new(None),
         }
     }
 }

@@ -84,8 +84,35 @@ fn is_group_chat(chat: &Chat) -> bool {
 }
 
 fn text_mentions_bot(text: &str, bot_username: &str) -> bool {
-    let mention = format!("@{bot_username}");
-    text.contains(&mention)
+    let mention = format!("@{}", bot_username.to_lowercase());
+    text.to_lowercase().contains(&mention)
+}
+
+fn entity_mentions_bot(msg: &Message, bot_username: &str) -> bool {
+    let Some(text) = msg.text().or(msg.caption()) else {
+        return false;
+    };
+    let entities = msg
+        .entities()
+        .or(msg.caption_entities())
+        .unwrap_or_default();
+    let target = format!("@{}", bot_username.to_lowercase());
+    for entity in entities {
+        if entity.kind == teloxide::types::MessageEntityKind::Mention {
+            let slice = &text[entity.offset..entity.offset + entity.length];
+            if slice.to_lowercase() == target {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn is_reply_to_bot(msg: &Message, bot_id: Option<u64>) -> bool {
+    let Some(bot_id) = bot_id else { return false };
+    msg.reply_to_message()
+        .and_then(|r| r.from.as_ref())
+        .is_some_and(|u| u.id.0 == bot_id)
 }
 
 fn sender_from_message(msg: &Message) -> SenderIdentity {
@@ -103,10 +130,18 @@ async fn check_access(msg: &Message, state: &SharedState) -> AccessDecision {
     let sender = sender_from_message(msg);
     let bot_mentioned = if is_group {
         let username_guard = state.bot_username.read().await;
-        match (msg.text().or(msg.caption()), username_guard.as_deref()) {
-            (Some(text), Some(username)) => text_mentions_bot(text, username),
-            _ => false,
-        }
+        let bot_id = *state.bot_id.read().await;
+        let explicit = match username_guard.as_deref() {
+            Some(username) => {
+                entity_mentions_bot(msg, username) || {
+                    let text = msg.text().or(msg.caption()).unwrap_or_default();
+                    text_mentions_bot(text, username)
+                }
+            }
+            None => false,
+        };
+        let implicit = is_reply_to_bot(msg, bot_id);
+        explicit || implicit
     } else {
         false
     };
