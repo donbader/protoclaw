@@ -1,3 +1,13 @@
+
+## [0.9.4] — 2026-04-18
+
+
+### Fixed
+
+- Release workflow uses PR flow to respect branch protection (#67) (#67)
+- Release workflow speed and git-cliff errors (#66) (#66)
+- Disable rmcp session timeout, add per-tool call timeout, fix Docker version (#64) (#64)
+
 # Changelog
 
 All notable changes to the **anyclaw binary** are documented in this file.
@@ -91,7 +101,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 Starting point for tracked binary releases. Prior versions were not formally documented.
 
-[Unreleased]: https://github.com/donbader/anyclaw/compare/v0.9.3...HEAD
+[Unreleased]: https://github.com/donbader/anyclaw/compare/v0.9.4...HEAD
+[0.9.4]: https://github.com/donbader/anyclaw/compare/v0.9.3...v0.9.4
 [0.9.3]: https://github.com/donbader/anyclaw/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/donbader/anyclaw/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/donbader/anyclaw/compare/v0.8.2...v0.9.1
