@@ -170,7 +170,7 @@ Agents handle authentication differently. Document the auth flow in your README.
 | API key env var              | Kiro (`KIRO_API_KEY`)                | Agent supports headless API key auth                         |
 | API key + custom base URL    | Claude Code (`ANTHROPIC_API_KEY` + `ANTHROPIC_BASE_URL`) | Agent supports API key auth with optional proxy/local server |
 | Pre-authenticated volume     | Kiro (device flow)                   | Agent requires interactive login, credentials stored on disk |
-| Config file baked into image | OpenCode (`.opencode/`)              | Agent reads config from a known path                         |
+| Config file baked into image | OpenCode (`opencode-config/`)        | Agent reads config from a known path                         |
 
 For volume-based auth, the key is finding where the agent stores credentials. Run the agent interactively with the full home mounted, complete login, then `find` to locate the credential files:
 
@@ -199,10 +199,16 @@ Before submitting a new variant:
 
 ### Config changes not taking effect
 
-The `anyclaw-data` volume persists `/workspace` (including `anyclaw.yaml`) across restarts. If you change `anyclaw.yaml` and rebuild, the old config in the volume takes precedence over the one baked into the image. Fix with:
+`anyclaw.yaml` is baked into `/anyclaw/anyclaw.yaml` (the data volume mounts at `/anyclaw/data/`, so config isn't shadowed). Config changes take effect on rebuild without needing to remove volumes:
 
 ```sh
-docker compose down -v   # removes volumes
+docker compose up -d --build
+```
+
+If you still see stale behavior from persisted session data, remove volumes:
+
+```sh
+docker compose down -v
 docker compose up -d --build
 ```
 

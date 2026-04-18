@@ -28,9 +28,9 @@ COPY --from=builder /usr/local/bin/channels/telegram /usr/local/bin/channels/tel
 COPY --from=builder /usr/local/bin/tools/system-info /usr/local/bin/tools/system-info
 RUN mkdir -p /workspace && chown node:node /workspace
 WORKDIR /workspace
-COPY --chown=node:node anyclaw.yaml /workspace/anyclaw.yaml
+COPY --chown=node:node anyclaw.yaml /anyclaw/anyclaw.yaml
 USER node
-ENTRYPOINT ["anyclaw"]
+ENTRYPOINT ["anyclaw", "--config", "/anyclaw/anyclaw.yaml"]
 
 # OpenCode agent image (for Docker workspace mode)
 # Rebased on opencode-deps to avoid redundant apt-get update on every build.
@@ -38,17 +38,8 @@ FROM opencode-deps AS opencode-agent
 RUN usermod -l agent-opencode -d /home/agent-opencode -m node && \
     groupmod -n agent-opencode node && \
     echo "agent-opencode ALL=(ALL) NOPASSWD: /usr/bin/apt-get" >> /etc/sudoers.d/agent-opencode
-# .opencode/ is gitignored — users provide their own config or run without it.
-# Glob trick: README.md always exists so COPY never fails; .opencode is optional.
-RUN mkdir -p /home/agent-opencode/.config/opencode
-COPY README.md .opencode* /tmp/build-staging/
-RUN if [ -f /tmp/build-staging/opencode.json ]; then \
-      cp /tmp/build-staging/opencode.json /home/agent-opencode/.config/opencode/ && \
-      cp /tmp/build-staging/package*.json /home/agent-opencode/.config/opencode/ 2>/dev/null || true; \
-    fi && rm -rf /tmp/build-staging
-RUN if [ -f /home/agent-opencode/.config/opencode/package.json ]; then \
-      cd /home/agent-opencode/.config/opencode && npm install --omit=dev; \
-    fi
+# opencode-config/ contains minimal committed config — customize as needed.
+COPY opencode-config/ /home/agent-opencode/.config/opencode/
 RUN mkdir -p /home/agent-opencode/.local/share /home/agent-opencode/.local/state /home/agent-opencode/workspace && \
     chown -R agent-opencode:agent-opencode /home/agent-opencode
 USER agent-opencode

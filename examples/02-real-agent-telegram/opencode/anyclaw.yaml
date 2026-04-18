@@ -57,5 +57,5 @@ tools_manager:
 
 session_store:
   type: sqlite
-  path: "/workspace/data/sessions.db"
+  path: "/anyclaw/data/sessions.db"
   ttl_days: 7

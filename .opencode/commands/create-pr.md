@@ -27,13 +27,12 @@ git worktree add "$WT" -b <branch-name>
 # Mirror gitignored items from main into worktree (recursive).
 # Directories are created (not symlinked) so trailing-slash .gitignore patterns still match.
 # Files are symlinked so .env, etc. stay in sync.
+# Uses find instead of globs to avoid zsh nomatch errors on empty directories.
 mirror_ignored() {
   local src="$1" dst="$2"
-  for f in "$src"/.* "$src"/*; do
-    name="$(basename "$f")"
-    [ "$name" = "." ] || [ "$name" = ".." ] || [ "$name" = ".worktrees" ] && continue
-    [ "$name" = ".git" ] && continue
+  find "$src" -maxdepth 1 -mindepth 1 -not -name ".git" -not -name ".worktrees" | while IFS= read -r f; do
     git check-ignore -q "$f" 2>/dev/null || continue
+    name="$(basename "$f")"
     if [ -d "$f" ]; then
       mkdir -p "$dst/$name"
       mirror_ignored "$f" "$dst/$name"
@@ -53,18 +52,18 @@ Hand control back to the caller. This command does NOT implement changes.
 
 ## Step 3. Pre-flight checks
 
-Run the project's formatting and linting checks. Detect from config files:
+First, check what actually changed: `git diff main...HEAD --name-only`. Only run checks relevant to the changed file types.
 
-| Detected | Format | Lint |
-|----------|--------|------|
-| `Cargo.toml` | `cargo fmt --all -- --check` | `cargo clippy --workspace -- -D warnings` |
-| `package.json` | `npm run format --check` or `prettier --check .` | `npm run lint` or `eslint .` |
-| `pyproject.toml` / `setup.py` | `ruff format --check .` or `black --check .` | `ruff check .` or `flake8` |
-| `go.mod` | `gofmt -l .` | `go vet ./...` |
+| Detected | Format | Lint | Skip when |
+|----------|--------|------|-----------|
+| `Cargo.toml` | `cargo fmt --all -- --check` | `cargo clippy --workspace -- -D warnings` | No `.rs` files changed |
+| `package.json` | `npm run format --check` or `prettier --check .` | `npm run lint` or `eslint .` | No `.js`/`.ts`/`.jsx`/`.tsx` files changed |
+| `pyproject.toml` / `setup.py` | `ruff format --check .` or `black --check .` | `ruff check .` or `flake8` | No `.py` files changed |
+| `go.mod` | `gofmt -l .` | `go vet ./...` | No `.go` files changed |
 
 Fix formatting automatically. Stop and report if lint issues require design decisions.
 
-For bugfixes, also run the relevant test subset.
+For bugfixes, also run the relevant test subset. Skip test suites unrelated to the changes (e.g., don't run `cargo test` for docs-only or config-only changes).
 
 ## Step 4. Pre-commit checklist
 
