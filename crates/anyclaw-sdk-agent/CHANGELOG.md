@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.14](https://github.com/donbader/anyclaw/compare/anyclaw-sdk-agent-v0.2.13...anyclaw-sdk-agent-v0.2.14) - 2026-04-18
+
+### Other
+
+- updated the following local packages: anyclaw-sdk-types
+
 ## [0.2.13](https://github.com/donbader/anyclaw/compare/anyclaw-sdk-agent-v0.2.12...anyclaw-sdk-agent-v0.2.13) - 2026-04-17
 
 ### Other

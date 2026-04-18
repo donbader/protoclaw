@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.2](https://github.com/donbader/anyclaw/compare/anyclaw-sdk-types-v0.8.1...anyclaw-sdk-types-v0.8.2) - 2026-04-18
+
+### Fixed
+
+- discard stale ToolCallUpdate events and surface agent errors to channels ([#61](https://github.com/donbader/anyclaw/pull/61))
+
 ## [0.8.1](https://github.com/donbader/anyclaw/compare/anyclaw-sdk-types-v0.8.0...anyclaw-sdk-types-v0.8.1) - 2026-04-17
 
 ### Added
