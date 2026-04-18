@@ -23,6 +23,7 @@ async fn send_prompt_error(
     completion_tx: &tokio::sync::mpsc::Sender<PromptCompletion>,
     sk: SessionKey,
     message: &str,
+    idle_timed_out: bool,
 ) {
     tracing::warn!(session_key = %sk, error = message, "prompt failed");
     if let Some(sender) = channels_tx {
@@ -44,6 +45,7 @@ async fn send_prompt_error(
         .send(PromptCompletion {
             session_key: sk,
             session_expired: false,
+            idle_timed_out,
             stop_reason: StopReason::Refusal,
         })
         .await;
@@ -409,6 +411,7 @@ impl AgentsManager {
                                 &completion_tx,
                                 sk,
                                 "Agent connection lost",
+                                false,
                             )
                             .await;
                             return;
@@ -430,6 +433,7 @@ impl AgentsManager {
                                             &completion_tx,
                                             sk,
                                             "Agent connection lost",
+                                            false,
                                         ).await;
                                         return;
                                     }
@@ -448,6 +452,7 @@ impl AgentsManager {
                                     &format!(
                                         "Agent idle timeout after {idle_timeout_secs}s with no activity"
                                     ),
+                                    true,
                                 ).await;
                                 return;
                             }
@@ -513,6 +518,7 @@ impl AgentsManager {
                         .send(PromptCompletion {
                             session_key: sk,
                             session_expired,
+                            idle_timed_out: false,
                             stop_reason,
                         })
                         .await;
@@ -721,6 +727,32 @@ impl AgentsManager {
             .clone();
 
         let conn = slot
+            .connection
+            .as_ref()
+            .ok_or(AgentsError::ConnectionClosed)?;
+        let params = serde_json::to_value(SessionCancelParams {
+            session_id: acp_session_id,
+        })?;
+        conn.send_notification("session/cancel", params).await?;
+        Ok(())
+    }
+
+    pub(crate) async fn cancel_session_by_key(
+        &self,
+        session_key: &SessionKey,
+    ) -> Result<(), AgentsError> {
+        let (slot_idx, acp_session_id) = self
+            .slots
+            .iter()
+            .enumerate()
+            .find_map(|(idx, slot)| {
+                slot.session_map
+                    .get(session_key)
+                    .map(|id| (idx, id.clone()))
+            })
+            .ok_or(AgentsError::ConnectionClosed)?;
+
+        let conn = self.slots[slot_idx]
             .connection
             .as_ref()
             .ok_or(AgentsError::ConnectionClosed)?;

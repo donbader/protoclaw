@@ -386,6 +386,16 @@ impl AgentsManager {
             }
         }
 
+        if completion.idle_timed_out
+            && let Err(e) = self.cancel_session_by_key(&completion.session_key).await
+        {
+            tracing::debug!(
+                session_key = %completion.session_key,
+                error = %e,
+                "failed to cancel agent after idle timeout (may have already finished)"
+            );
+        }
+
         // When the agent reports "session not found", invalidate the stale mapping
         // so the next inbound prompt triggers heal_session() instead of reusing
         // the dead ACP session ID.

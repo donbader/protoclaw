@@ -42,6 +42,9 @@ pub(crate) struct PromptCompletion {
     /// so `handle_prompt_completion` can invalidate the stale mapping.
     /// Read via `completion_rx` channel in `handle_prompt_completion`.
     pub(crate) session_expired: bool,
+    /// Set when the idle timeout fired before the agent responded.
+    /// `handle_prompt_completion` sends `session/cancel` to stop the agent.
+    pub(crate) idle_timed_out: bool,
     pub(crate) stop_reason: anyclaw_sdk_types::acp::StopReason,
 }
 
@@ -980,6 +983,7 @@ mod tests {
         let completion = PromptCompletion {
             session_key: session_key.clone(),
             session_expired: false,
+            idle_timed_out: false,
             stop_reason: anyclaw_sdk_types::acp::StopReason::EndTurn,
         };
         m.handle_prompt_completion(completion, &mut incoming_rx)
@@ -1044,6 +1048,7 @@ mod tests {
         let completion = PromptCompletion {
             session_key: session_key.clone(),
             session_expired: false,
+            idle_timed_out: false,
             stop_reason: anyclaw_sdk_types::acp::StopReason::EndTurn,
         };
         m.handle_prompt_completion(completion, &mut incoming_rx)
@@ -1143,6 +1148,7 @@ mod tests {
         let completion = PromptCompletion {
             session_key: session_key.clone(),
             session_expired: false,
+            idle_timed_out: false,
             stop_reason: anyclaw_sdk_types::acp::StopReason::EndTurn,
         };
         m.handle_prompt_completion(completion, &mut incoming_rx)
@@ -2521,6 +2527,7 @@ mod tests {
         let completion = PromptCompletion {
             session_key: session_key.clone(),
             session_expired: true,
+            idle_timed_out: false,
             stop_reason: anyclaw_sdk_types::acp::StopReason::Refusal,
         };
         m.handle_prompt_completion(completion, &mut incoming_rx)
