@@ -228,6 +228,107 @@ supervisor:
     }
 
     #[test]
+    fn when_docker_workspace_has_extra_hosts_then_field_survives_figment_load() {
+        Jail::expect_with(|jail| {
+            jail.create_file(
+                "anyclaw.yaml",
+                r#"
+agents_manager:
+  agents:
+    opencode:
+      workspace:
+        type: docker
+        image: "anyclaw-opencode-agent:latest"
+        entrypoint: ["opencode", "acp"]
+        network: "anyclaw-external"
+        extra_hosts:
+          - "host.docker.internal:host-gateway"
+        volumes:
+          - "data:/data"
+"#,
+            )?;
+            let config = AnyclawConfig::load(Some("anyclaw.yaml")).unwrap();
+            let agent = &config.agents_manager.agents["opencode"];
+            match &agent.workspace {
+                WorkspaceConfig::Docker(d) => {
+                    assert_eq!(
+                        d.extra_hosts,
+                        vec!["host.docker.internal:host-gateway"],
+                        "extra_hosts should survive Figment config loading"
+                    );
+                }
+                _ => panic!("expected Docker workspace"),
+            }
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn when_full_docker_config_with_extra_hosts_then_field_not_lost_during_merge() {
+        Jail::expect_with(|jail| {
+            jail.create_file(
+                "anyclaw.yaml",
+                r#"
+log_level: "debug,hyper=warn,reqwest=warn,h2=warn,hyper_util=warn,tower=warn"
+agents_manager:
+  acp_timeout_secs: 120
+  agents:
+    opencode:
+      workspace:
+        type: docker
+        image: "anyclaw-opencode-agent:latest"
+        entrypoint: ["opencode", "acp"]
+        docker_host: "tcp://socket-proxy:2375"
+        network: "anyclaw-external"
+        working_dir: "/home/agent-opencode/workspace"
+        pull_policy: "never"
+        extra_hosts:
+          - "host.docker.internal:host-gateway"
+        volumes:
+          - "opencode-agent-data:/home/agent-opencode/.local/share"
+          - "opencode-agent-workspace:/home/agent-opencode/workspace"
+          - "opencode-agent-packages:/usr/local"
+        env:
+          XDG_CONFIG_HOME: "/home/agent-opencode/.config"
+          XDG_DATA_HOME: "/home/agent-opencode/.local/share"
+      tools:
+        - "system-info"
+channels_manager:
+  channels:
+    debug-http:
+      binary: "debug-http"
+      agent: "opencode"
+tools_manager:
+  tools_server_host: "anyclaw"
+  tools:
+    system-info:
+      binary: "system-info"
+session_store:
+  type: sqlite
+  path: "/workspace/data/sessions.db"
+  ttl_days: 7
+"#,
+            )?;
+            let config = AnyclawConfig::load(Some("anyclaw.yaml")).unwrap();
+            let agent = &config.agents_manager.agents["opencode"];
+            match &agent.workspace {
+                WorkspaceConfig::Docker(d) => {
+                    assert_eq!(
+                        d.extra_hosts,
+                        vec!["host.docker.internal:host-gateway"],
+                        "extra_hosts must not be lost when merging defaults with full user config"
+                    );
+                    assert_eq!(d.network, Some("anyclaw-external".into()));
+                    assert_eq!(d.volumes.len(), 3);
+                    assert_eq!(d.docker_host, Some("tcp://socket-proxy:2375".into()));
+                }
+                _ => panic!("expected Docker workspace"),
+            }
+            Ok(())
+        });
+    }
+
+    #[test]
     fn when_generate_schema_called_then_schema_has_schema_key_with_draft_2020() {
         let schema = generate_schema();
         let schema_key = schema["$schema"]
