@@ -24,6 +24,10 @@ pub const DEFAULT_BACKOFF_MAX_SECS: u64 = 30;
 pub const DEFAULT_CRASH_MAX: u32 = 5;
 /// Default crash tracking window (seconds).
 pub const DEFAULT_CRASH_WINDOW_SECS: u64 = 60;
+/// Default max crashes for the long-horizon counter.
+pub const DEFAULT_CRASH_LONG_MAX: u32 = 10;
+/// Default long-horizon crash tracking window (seconds). 1 hour.
+pub const DEFAULT_CRASH_LONG_WINDOW_SECS: u64 = 3600;
 
 #[cfg(test)]
 mod tests {
@@ -67,5 +71,15 @@ mod tests {
     #[test]
     fn when_checking_crash_window_secs_then_matches_expected_value() {
         assert_eq!(DEFAULT_CRASH_WINDOW_SECS, 60);
+    }
+
+    #[test]
+    fn when_checking_crash_long_max_then_matches_expected_value() {
+        assert_eq!(DEFAULT_CRASH_LONG_MAX, 10);
+    }
+
+    #[test]
+    fn when_checking_crash_long_window_secs_then_matches_expected_value() {
+        assert_eq!(DEFAULT_CRASH_LONG_WINDOW_SECS, 3600);
     }
 }

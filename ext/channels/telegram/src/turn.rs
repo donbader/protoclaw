@@ -133,6 +133,12 @@ pub struct ChatTurn {
     pub last_result_was_error: bool,
     /// Last time the tools message was edited — used for edit cooldown.
     pub last_tools_edit: Instant,
+    /// Guards against duplicate final sends. The debounce timer and the
+    /// finalization timer can race when the agent response is short (single
+    /// chunk + immediate Result). Both see `msg_id == 0` and would each call
+    /// `send_message`, producing a duplicate. This flag ensures only the
+    /// first caller wins.
+    response_finalized: bool,
 }
 
 impl ChatTurn {
@@ -148,6 +154,7 @@ impl ChatTurn {
             render_tick: 0,
             last_result_was_error: false,
             last_tools_edit: Instant::now() - Duration::from_secs(60),
+            response_finalized: false,
         }
     }
 
@@ -279,6 +286,18 @@ impl ChatTurn {
         self.response.as_ref().map(|r| (r.buffer.clone(), r.msg_id))
     }
 
+    /// Attempt to claim the one-shot finalization right for this turn.
+    /// Returns `true` exactly once — subsequent calls return `false`.
+    /// Used by both the debounce timer and the finalization timer to
+    /// prevent duplicate sends when they race.
+    pub fn try_finalize_response(&mut self) -> bool {
+        if self.response_finalized {
+            return false;
+        }
+        self.response_finalized = true;
+        true
+    }
+
     pub fn is_finalizing(&self) -> bool {
         matches!(self.phase, TurnPhase::Finalizing(_))
     }
@@ -316,6 +335,7 @@ impl ChatTurn {
         self.tool_call_order.clear();
         self.render_tick = 0;
         self.last_result_was_error = false;
+        self.response_finalized = false;
         self.phase = TurnPhase::Active;
     }
 }
@@ -812,5 +832,26 @@ mod tests {
         let mut turn = ChatTurn::new("msg-1".to_string());
         turn.last_tools_edit = Instant::now() - Duration::from_secs(2);
         assert!(turn.can_edit_tools(Duration::from_millis(1000)));
+    }
+
+    #[rstest]
+    fn when_try_finalize_called_first_time_then_returns_true() {
+        let mut turn = ChatTurn::new("msg-1".to_string());
+        assert!(turn.try_finalize_response());
+    }
+
+    #[rstest]
+    fn when_try_finalize_called_twice_then_second_returns_false() {
+        let mut turn = ChatTurn::new("msg-1".to_string());
+        assert!(turn.try_finalize_response());
+        assert!(!turn.try_finalize_response());
+    }
+
+    #[rstest]
+    fn when_cleanup_called_then_finalize_flag_reset() {
+        let mut turn = ChatTurn::new("msg-1".to_string());
+        assert!(turn.try_finalize_response());
+        turn.cleanup();
+        assert!(turn.try_finalize_response());
     }
 }

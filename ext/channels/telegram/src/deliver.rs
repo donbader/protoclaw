@@ -563,9 +563,13 @@ pub async fn deliver_to_chat(
                     tokio::time::sleep(Duration::from_millis(delay_ms)).await;
                     let final_data = {
                         let mut turns = state_clone.turns.write().await;
-                        turns
-                            .get_mut(&chat_id)
-                            .and_then(ChatTurn::take_response_for_finalize)
+                        turns.get_mut(&chat_id).and_then(|t| {
+                            if t.try_finalize_response() {
+                                t.take_response_for_finalize()
+                            } else {
+                                None
+                            }
+                        })
                     };
                     if let Some((text, msg_id)) = final_data
                         && !text.is_empty()
@@ -647,6 +651,22 @@ pub async fn deliver_to_chat(
                     }
                     // If msg_id was set while we waited (e.g. by flush), skip send
                     if response_msg_id != 0 {
+                        return;
+                    }
+                    // Claim finalization AFTER all early-return guards pass.
+                    // If claimed before the msg_id check, a flush that sets msg_id
+                    // during the sleep would cause the debounce to consume the flag
+                    // without sending, and the Result timer would then lose the flag
+                    // too — dropping the final edit entirely.
+                    let won = {
+                        let mut turns = state_clone.turns.write().await;
+                        turns
+                            .get_mut(&chat_id)
+                            .map(ChatTurn::try_finalize_response)
+                            .unwrap_or(false)
+                    };
+                    if !won {
+                        tracing::debug!(chat_id, "debounce: lost finalization race, skipping send");
                         return;
                     }
                     let formatted = close_open_tags(&format_telegram_html(&accumulated));
@@ -784,9 +804,13 @@ pub async fn deliver_to_chat(
                 tokio::time::sleep(Duration::from_millis(delay_ms)).await;
                 let final_data = {
                     let mut turns = state_clone.turns.write().await;
-                    turns
-                        .get_mut(&chat_id)
-                        .and_then(ChatTurn::take_response_for_finalize)
+                    turns.get_mut(&chat_id).and_then(|t| {
+                        if t.try_finalize_response() {
+                            t.take_response_for_finalize()
+                        } else {
+                            None
+                        }
+                    })
                 };
                 if let Some((text, msg_id)) = final_data {
                     tracing::debug!(
@@ -829,12 +853,28 @@ pub async fn deliver_to_chat(
 
             let (tools_text, existing_tools_msg_id) = {
                 let mut turns = state.turns.write().await;
-                let mid = message_id.unwrap_or("").to_string();
-                let turn = turns
-                    .entry(chat_id)
-                    .or_insert_with(|| ChatTurn::new(mid.clone()));
-                if !mid.is_empty() {
-                    turn.message_id = mid;
+                let Some(turn) = turns.get_mut(&chat_id) else {
+                    tracing::debug!(
+                        chat_id,
+                        tool_call_id,
+                        "discarding tool call: no active turn for chat"
+                    );
+                    return Ok(());
+                };
+
+                if turn.is_finalizing() {
+                    tracing::debug!(
+                        chat_id,
+                        tool_call_id,
+                        "discarding tool call: turn is finalizing"
+                    );
+                    return Ok(());
+                }
+
+                if let Some(mid) = message_id
+                    && !mid.is_empty()
+                {
+                    turn.message_id = mid.to_string();
                 }
 
                 if let Some(track) = turn.thought.as_mut() {
@@ -1232,6 +1272,66 @@ mod tests {
         assert!(
             turn.response.is_none(),
             "non-error result with no prior text must not create a response"
+        );
+    }
+
+    #[tokio::test]
+    async fn when_tool_call_arrives_with_no_turn_then_discarded() {
+        let state = Arc::new(SharedState::new());
+        state
+            .session_chat_map
+            .write()
+            .await
+            .insert("sess-tc".into(), 77777);
+
+        let bot = Bot::new("test-token");
+        let content = serde_json::json!({
+            "update": {
+                "sessionUpdate": "tool_call",
+                "toolCallId": "tc-1",
+                "toolName": "bash",
+            }
+        });
+        let result = deliver_to_chat(&bot, &state, "sess-tc", &content).await;
+        assert!(result.is_ok());
+        assert!(
+            state.turns.read().await.get(&77777).is_none(),
+            "tool call with no existing turn must not create a new turn"
+        );
+    }
+
+    #[tokio::test]
+    async fn when_tool_call_arrives_while_finalizing_then_discarded() {
+        let state = Arc::new(SharedState::new());
+        state
+            .session_chat_map
+            .write()
+            .await
+            .insert("sess-fin".into(), 66666);
+
+        {
+            let mut turns = state.turns.write().await;
+            let mut turn = ChatTurn::new("msg-fin".to_string());
+            let handle = tokio::spawn(async { tokio::time::sleep(Duration::from_secs(60)).await });
+            turn.begin_finalizing(handle);
+            turns.insert(66666, turn);
+        }
+
+        let bot = Bot::new("test-token");
+        let content = serde_json::json!({
+            "update": {
+                "sessionUpdate": "tool_call",
+                "toolCallId": "tc-2",
+                "toolName": "read",
+            }
+        });
+        let result = deliver_to_chat(&bot, &state, "sess-fin", &content).await;
+        assert!(result.is_ok());
+        let turns = state.turns.read().await;
+        let turn = turns.get(&66666).expect("finalizing turn must still exist");
+        assert!(
+            turn.tool_calls.is_empty(),
+            "tool call during finalization must not be inserted"
         );
     }
 }
