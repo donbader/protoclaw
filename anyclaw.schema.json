@@ -201,6 +201,12 @@
           "additionalProperties": true,
           "default": {},
           "description": "Arbitrary key-value options passed to the channel during initialization.",
+          "properties": {
+            "access_control": {
+              "$ref": "#/$defs/TelegramAccessControlConfig",
+              "description": "Access control configuration (Telegram channel)."
+            }
+          },
           "type": "object"
         }
       },
@@ -541,6 +547,92 @@
           "format": "uint64",
           "minimum": 0,
           "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "TelegramAccessControlConfig": {
+      "description": "Telegram channel access control. Controls which users and groups can interact with the bot.",
+      "properties": {
+        "allowed_users": {
+          "default": [
+            "*"
+          ],
+          "description": "User allowlist for DMs and groups (when group_policy is 'allowlist'). Use '*' for everyone, '@username' or a numeric Telegram user ID. Omitting defaults to ['*']; an explicit empty array blocks all users.",
+          "items": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "group_policy": {
+          "default": "open",
+          "description": "Default group policy. 'open' allows anyone, 'allowlist' restricts to allowed_users, 'disabled' blocks all groups.",
+          "enum": [
+            "open",
+            "allowlist",
+            "disabled"
+          ],
+          "type": "string"
+        },
+        "groups": {
+          "additionalProperties": {
+            "$ref": "#/$defs/TelegramAccessControlGroupConfig"
+          },
+          "default": {},
+          "description": "Per-group overrides keyed by chat ID string (e.g. '-100123456789').",
+          "type": "object"
+        },
+        "require_mention": {
+          "default": false,
+          "description": "Whether the bot must be @mentioned in groups. Overridable per-group.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "TelegramAccessControlGroupConfig": {
+      "description": "Per-group access control override, keyed by Telegram chat ID.",
+      "properties": {
+        "allowed_users": {
+          "default": [],
+          "description": "Per-group allowlist. Empty array falls back to the top-level allowed_users.",
+          "items": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "enabled": {
+          "default": true,
+          "description": "Whether this group can interact with the bot.",
+          "type": "boolean"
+        },
+        "group_policy": {
+          "description": "Policy override for this group. Omit to inherit the top-level group_policy.",
+          "enum": [
+            "open",
+            "allowlist",
+            "disabled"
+          ],
+          "type": "string"
+        },
+        "require_mention": {
+          "default": false,
+          "description": "Whether the bot must be @mentioned in this group.",
+          "type": "boolean"
         }
       },
       "type": "object"

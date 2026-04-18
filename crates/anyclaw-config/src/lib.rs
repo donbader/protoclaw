@@ -13,6 +13,8 @@ pub mod parse;
 /// Binary path resolution (`@built-in/` prefix expansion).
 pub mod resolve;
 // Grandfathered: typed replacement in Phase 2-4
+/// Extension option schema overlays — injects typed definitions for known extension options.
+pub mod schema_overlays;
 #[allow(clippy::disallowed_types)]
 /// All configuration structs and their serde defaults.
 pub mod types;
@@ -34,7 +36,9 @@ use figment::{Figment, providers::Format};
 #[allow(clippy::disallowed_types)] // Schema is inherently untyped JSON
 pub fn generate_schema() -> serde_json::Value {
     let schema = schemars::schema_for!(AnyclawConfig);
-    serde_json::to_value(schema).expect("schema serialization cannot fail")
+    let mut schema_value = serde_json::to_value(schema).expect("schema serialization cannot fail");
+    schema_overlays::apply_extension_overlays(&mut schema_value);
+    schema_value
 }
 
 impl AnyclawConfig {
