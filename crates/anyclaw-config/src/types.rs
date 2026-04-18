@@ -254,6 +254,12 @@ pub struct AgentsManagerConfig {
     /// silent. Default: 120s. Set to 0 to disable.
     #[serde(default = "default_prompt_idle_timeout_secs")]
     pub prompt_idle_timeout_secs: u64,
+    /// Interval between keepalive pings to agent subprocesses (seconds).
+    /// Prevents idle connection timeouts (e.g., Docker attach dropping after
+    /// inactivity). Sends a fire-and-forget JSON-RPC notification that
+    /// well-behaved agents silently ignore. Default: 300s. Set to 0 to disable.
+    #[serde(default = "default_keepalive_interval_secs")]
+    pub keepalive_interval_secs: u64,
     /// Grace period after sending shutdown before force-killing agent subprocesses (ms).
     #[serde(default = "default_shutdown_grace_ms")]
     pub shutdown_grace_ms: u64,
@@ -267,6 +273,7 @@ impl Default for AgentsManagerConfig {
         Self {
             acp_timeout_secs: default_acp_timeout_secs(),
             prompt_idle_timeout_secs: default_prompt_idle_timeout_secs(),
+            keepalive_interval_secs: default_keepalive_interval_secs(),
             shutdown_grace_ms: default_shutdown_grace_ms(),
             agents: HashMap::new(),
         }
@@ -747,6 +754,9 @@ fn default_acp_timeout_secs() -> u64 {
 fn default_prompt_idle_timeout_secs() -> u64 {
     120
 }
+fn default_keepalive_interval_secs() -> u64 {
+    300
+}
 fn default_init_timeout_secs() -> u64 {
     10
 }
@@ -1078,6 +1088,11 @@ call_timeout_secs: 60
             config.agents_manager.prompt_idle_timeout_secs,
             default_prompt_idle_timeout_secs(),
             "prompt_idle_timeout_secs drift"
+        );
+        assert_eq!(
+            config.agents_manager.keepalive_interval_secs,
+            default_keepalive_interval_secs(),
+            "keepalive_interval_secs drift"
         );
 
         assert_eq!(

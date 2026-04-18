@@ -91,6 +91,13 @@
           "description": "Named agent configurations (keys are agent names used in routing).",
           "type": "object"
         },
+        "keepalive_interval_secs": {
+          "default": 300,
+          "description": "Interval between keepalive pings to agent subprocesses (seconds).\nPrevents idle connection timeouts (e.g., Docker attach dropping after\ninactivity). Sends a fire-and-forget JSON-RPC notification that\nwell-behaved agents silently ignore. Default: 300s. Set to 0 to disable.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
         "prompt_idle_timeout_secs": {
           "default": 120,
           "description": "Idle timeout for session/prompt in seconds. The timer resets on every\nsession/update from the agent. Only fires when the agent goes completely\nsilent. Default: 120s. Set to 0 to disable.",
@@ -834,6 +841,7 @@
       "default": {
         "acp_timeout_secs": 30,
         "agents": {},
+        "keepalive_interval_secs": 300,
         "prompt_idle_timeout_secs": 120,
         "shutdown_grace_ms": 100
       },
