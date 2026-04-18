@@ -88,6 +88,27 @@ fn text_mentions_bot(text: &str, bot_username: &str) -> bool {
     text.to_lowercase().contains(&mention)
 }
 
+/// Extract a substring using UTF-16 offset and length (Telegram's encoding).
+fn slice_utf16(text: &str, utf16_offset: usize, utf16_length: usize) -> Option<&str> {
+    let mut byte_start = None;
+    let mut utf16_pos = 0;
+
+    for (byte_idx, ch) in text.char_indices() {
+        if utf16_pos == utf16_offset {
+            byte_start = Some(byte_idx);
+        }
+        if utf16_pos == utf16_offset + utf16_length {
+            return Some(&text[byte_start?..byte_idx]);
+        }
+        utf16_pos += ch.len_utf16();
+    }
+
+    if utf16_pos == utf16_offset + utf16_length {
+        return Some(&text[byte_start?..]);
+    }
+    None
+}
+
 fn entity_mentions_bot(msg: &Message, bot_username: &str) -> bool {
     let Some(text) = msg.text().or(msg.caption()) else {
         return false;
@@ -98,11 +119,11 @@ fn entity_mentions_bot(msg: &Message, bot_username: &str) -> bool {
         .unwrap_or_default();
     let target = format!("@{}", bot_username.to_lowercase());
     for entity in entities {
-        if entity.kind == teloxide::types::MessageEntityKind::Mention {
-            let slice = &text[entity.offset..entity.offset + entity.length];
-            if slice.to_lowercase() == target {
-                return true;
-            }
+        if entity.kind == teloxide::types::MessageEntityKind::Mention
+            && let Some(slice) = slice_utf16(text, entity.offset, entity.length)
+            && slice.to_lowercase() == target
+        {
+            return true;
         }
     }
     false
@@ -496,6 +517,7 @@ async fn resolve_reply_photo(bot: &Bot, msg: &Message) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
     use tokio::sync::mpsc;
 
     #[tokio::test]
@@ -1107,5 +1129,52 @@ mod tests {
                 },
             ]
         );
+    }
+
+    // --- slice_utf16 ---
+
+    #[rstest]
+    fn when_slice_utf16_ascii_then_correct() {
+        assert_eq!(slice_utf16("@mybot hello", 0, 6), Some("@mybot"));
+    }
+
+    #[rstest]
+    fn when_slice_utf16_emoji_before_mention_then_correct() {
+        // 👋 is 2 UTF-16 code units, 4 UTF-8 bytes
+        // "👋 @mybot" → UTF-16 offsets: 👋=0..2, space=2, @=3, m=4..8
+        assert_eq!(slice_utf16("👋 @mybot", 3, 6), Some("@mybot"));
+    }
+
+    #[rstest]
+    fn when_slice_utf16_multiple_emoji_before_mention_then_correct() {
+        // "🎉🎊 @mybot" → 🎉=0..2, 🎊=2..4, space=4, @=5, mybot=6..11
+        assert_eq!(slice_utf16("🎉🎊 @mybot", 5, 6), Some("@mybot"));
+    }
+
+    #[rstest]
+    fn when_slice_utf16_out_of_bounds_then_none() {
+        assert_eq!(slice_utf16("hi", 10, 5), None);
+    }
+
+    #[rstest]
+    fn when_slice_utf16_at_end_of_string_then_correct() {
+        assert_eq!(slice_utf16("hello @bot", 6, 4), Some("@bot"));
+    }
+
+    // --- text_mentions_bot ---
+
+    #[rstest]
+    fn when_text_mentions_bot_present_then_true() {
+        assert!(text_mentions_bot("hello @mybot how are you", "mybot"));
+    }
+
+    #[rstest]
+    fn when_text_mentions_bot_absent_then_false() {
+        assert!(!text_mentions_bot("hello world", "mybot"));
+    }
+
+    #[rstest]
+    fn when_text_mentions_bot_case_insensitive_then_true() {
+        assert!(text_mentions_bot("Hello @MyBot", "mybot"));
     }
 }

@@ -233,12 +233,12 @@ impl AccessConfig {
         let allowed_users = ac
             .get("allowed_users")
             .map(parse_allowlist)
-            .unwrap_or_default();
+            .unwrap_or_else(|| vec![AllowlistEntry::Wildcard]);
 
         let group_allowed_users = ac
             .get("group_allowed_users")
             .map(parse_allowlist)
-            .unwrap_or_default();
+            .unwrap_or_else(|| vec![AllowlistEntry::Wildcard]);
 
         let default_require_mention = ac
             .get("require_mention")
@@ -775,5 +775,24 @@ mod tests {
     fn when_parse_allowlist_entry_without_at_prefix_still_works() {
         let entry = parse_allowlist_entry(&serde_json::json!("alice")).unwrap();
         assert_eq!(entry, AllowlistEntry::Username("alice".into()));
+    }
+
+    #[rstest]
+    fn when_from_options_omits_allowed_users_then_defaults_to_wildcard() {
+        let opts = serde_json::json!({
+            "access_control": { "require_mention": true }
+        });
+        let cfg = AccessConfig::from_options(&opts);
+        assert_eq!(cfg.allowed_users, vec![AllowlistEntry::Wildcard]);
+        assert_eq!(cfg.group_allowed_users, vec![AllowlistEntry::Wildcard]);
+    }
+
+    #[rstest]
+    fn when_from_options_has_explicit_empty_list_then_blocks_all() {
+        let opts = serde_json::json!({
+            "access_control": { "allowed_users": [] }
+        });
+        let cfg = AccessConfig::from_options(&opts);
+        assert!(cfg.allowed_users.is_empty());
     }
 }
