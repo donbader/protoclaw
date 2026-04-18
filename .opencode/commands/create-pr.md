@@ -26,20 +26,19 @@ git pull origin main --ff-only
 
 git worktree add "$WT" -b <branch-name>
 
-# Mirror gitignored items from main into worktree (recursive).
-# Directories are created (not symlinked) so trailing-slash .gitignore patterns still match.
-# Files are symlinked so .env, etc. stay in sync.
+# Mirror gitignored items from main into worktree as symlinks.
+# Directories are symlinked whole (no recursion into them).
+# Non-gitignored directories are walked to find nested gitignored items.
 # Uses find instead of globs to avoid zsh nomatch errors on empty directories.
 mirror_ignored() {
   local src="$1" dst="$2"
   find "$src" -maxdepth 1 -mindepth 1 -not -name ".git" -not -name ".worktrees" | while IFS= read -r f; do
-    git check-ignore -q "$f" 2>/dev/null || continue
     name="$(basename "$f")"
-    if [ -d "$f" ]; then
+    if git check-ignore -q "$f" 2>/dev/null; then
+      ln -sf "$f" "$dst/$name"
+    elif [ -d "$f" ]; then
       mkdir -p "$dst/$name"
       mirror_ignored "$f" "$dst/$name"
-    else
-      ln -sf "$f" "$dst/$name"
     fi
   done
 }
@@ -51,6 +50,13 @@ Verify clean baseline in the worktree (e.g., build or type-check). All subsequen
 ## Step 2. Do the work
 
 Hand control back to the caller. This command does NOT implement changes.
+
+**TDD requirement**: All code changes MUST follow test-driven development. For each behavior change:
+1. Write a failing test that captures the expected behavior
+2. Implement the minimal code to make it pass
+3. Refactor if needed
+
+No code lands without a test that exercises it. For bugfixes, the test must reproduce the bug before the fix is applied.
 
 ## Step 3. Pre-flight checks
 
@@ -65,7 +71,7 @@ First, check what actually changed: `git diff main...HEAD --name-only`. Only run
 
 Fix formatting automatically. Stop and report if lint issues require design decisions.
 
-For bugfixes, also run the relevant test subset. Skip test suites unrelated to the changes (e.g., don't run `cargo test` for docs-only or config-only changes).
+Run the relevant test suite for changed crates/packages. All tests must pass.
 
 ## Step 4. Pre-commit checklist
 
@@ -73,6 +79,7 @@ Before committing, create a todo list and verify each item. Do NOT skip items â€
 
 - [ ] **Format + lint clean**: Step 3 checks pass
 - [ ] **Tests pass**: Run relevant test suite for changed crates/packages
+- [ ] **Test coverage adequate**: For each new behavior/branch/guard added, verify a corresponding test exists. List untested paths and add tests or justify why they're untestable (e.g., requires real network). Aim for: every `if`/`match` arm you added has a test that exercises it.
 - [ ] **No absolute symlinks staged**: Run staging guard (below)
 - [ ] **Knowledge base updated**: If module structure, public APIs, or conventions changed, update relevant docs (e.g., `AGENTS.md`, `README.md` roadmap)
 - [ ] **Defaults updated**: If new config options were added, update defaults files
@@ -139,7 +146,18 @@ When the notification arrives and you collect the result:
 - **CI_FAILED**: Read failure report, fix root cause, push, re-run Step 7. Max 3 attempts, then stop.
 - **CI_PASSED**: Proceed to Step 8.
 
-## Step 8. Update PR if needed
+## Step 8. Self-review
+
+Before handing off, review your own diff critically. Run `git diff main...HEAD` and check:
+
+1. **Every new code path has a test**: For each `if`/`match`/guard you added, find the test that exercises it. If missing, write it now.
+2. **No accidental changes**: Revert any unrelated formatting, import reordering, or whitespace-only changes.
+3. **Commit hygiene**: Each commit has a clear purpose. Squash fixup commits if needed.
+4. **Edge cases**: Think about what happens when inputs are empty, None, zero, or arrive out of order. Add tests for non-obvious cases.
+
+If you find gaps, fix them, push, and let CI re-run before proceeding.
+
+## Step 9. Update PR if needed
 
 If further commits were pushed after PR creation, update title and description:
 
@@ -147,7 +165,7 @@ If further commits were pushed after PR creation, update title and description:
 gh pr edit <pr-number> --title "<type>: <updated description>" --body "..."
 ```
 
-## Step 9. Hand off to user
+## Step 10. Hand off to user
 
 Report the PR URL and ask a blocking question:
 
@@ -159,7 +177,7 @@ Let me know when it's merged and I'll clean up the worktree.
 
 Do NOT poll, check status, or take further action. Wait for the user's response.
 
-## Step 10. Worktree cleanup (after user confirms merge)
+## Step 11. Worktree cleanup (after user confirms merge)
 
 ```bash
 chmod -R u+w .worktrees/<branch-name> 2>/dev/null || true
