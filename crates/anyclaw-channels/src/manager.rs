@@ -748,7 +748,13 @@ impl ChannelsManager {
                 {
                     let error_params = serde_json::json!({
                         "sessionId": entry.acp_session_id,
-                        "content": format!("⚠️ Session recovery failed: {e}"),
+                        "content": {
+                            "update": {
+                                "sessionUpdate": "result",
+                                "isError": true,
+                                "content": format!("Session recovery failed: {e}"),
+                            }
+                        },
                     });
                     if let Err(notify_err) = conn
                         .send_notification("channel/deliverMessage", error_params)
@@ -846,7 +852,13 @@ impl ChannelsManager {
                 if let Some(conn) = &self.slots[slot_index].connection {
                     let error_params = serde_json::json!({
                         "sessionId": "",
-                        "content": format!("⚠️ Failed to create session: {e}"),
+                        "content": {
+                            "update": {
+                                "sessionUpdate": "result",
+                                "isError": true,
+                                "content": format!("Failed to create session: {e}"),
+                            }
+                        },
                     });
                     if let Err(notify_err) = conn
                         .send_notification("channel/deliverMessage", error_params)
@@ -862,7 +874,13 @@ impl ChannelsManager {
                 if let Some(conn) = &self.slots[slot_index].connection {
                     let error_params = serde_json::json!({
                         "sessionId": "",
-                        "content": "⚠️ Failed to create session: internal error (reply dropped)",
+                        "content": {
+                            "update": {
+                                "sessionUpdate": "result",
+                                "isError": true,
+                                "content": "Failed to create session: internal error (reply dropped)",
+                            }
+                        },
                     });
                     if let Err(notify_err) = conn
                         .send_notification("channel/deliverMessage", error_params)

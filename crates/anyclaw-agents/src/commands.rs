@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyclaw_core::{
     AgentStatusInfo, AgentsCommand, PendingPermissionInfo, PersistedSession, SessionKey,
@@ -16,6 +17,24 @@ use crate::acp_types::{
 use crate::error::AgentsError;
 use crate::manager::{AgentsManager, PromptCompletion};
 use crate::slot::find_slot_by_name;
+
+async fn send_prompt_error(
+    completion_tx: &tokio::sync::mpsc::Sender<PromptCompletion>,
+    sk: SessionKey,
+    message: &str,
+    idle_timed_out: bool,
+) {
+    tracing::warn!(session_key = %sk, error = message, "prompt failed");
+    let _ = completion_tx
+        .send(PromptCompletion {
+            session_key: sk,
+            session_expired: false,
+            idle_timed_out,
+            error_message: Some(message.to_string()),
+            stop_reason: StopReason::Refusal,
+        })
+        .await;
+}
 
 impl AgentsManager {
     pub(crate) async fn handle_command(&mut self, cmd: AgentsCommand) -> bool {
@@ -357,69 +376,115 @@ impl AgentsManager {
             });
         }
 
+        let activity = std::sync::Arc::new(tokio::sync::Notify::new());
+        self.slots[slot_idx]
+            .active_prompts
+            .insert(acp_session_id.clone(), activity.clone());
+
         {
             let completion_tx = self.completion_tx.clone();
-            let channels_tx = self.channels_sender.clone();
             let sk = session_key.clone();
+            let idle_timeout_secs = self.manager_config.prompt_idle_timeout_secs;
             tokio::spawn(async move {
-                match response_rx.await {
-                    Ok(response) => {
-                        // Check if the agent returned a JSON-RPC error
-                        let mut session_expired = false;
-                        let stop_reason;
-                        if let Some(error) = &response.error {
-                            let msg = &error.message;
-                            tracing::warn!(session_key = %sk, error = %msg, "agent returned error for prompt");
-
-                            // Detect "session not found" so the stale mapping gets
-                            // invalidated in handle_prompt_completion, allowing the
-                            // next prompt to trigger heal_session.
-                            let combined = format!(
-                                "{} {}",
-                                msg,
-                                error
-                                    .data
-                                    .as_ref()
-                                    .map(std::string::ToString::to_string)
-                                    .unwrap_or_default()
-                            );
-                            if combined.to_lowercase().contains("session not found") {
-                                session_expired = true;
+                let response = if idle_timeout_secs == 0 {
+                    match response_rx.await {
+                        Ok(resp) => resp,
+                        Err(_) => {
+                            send_prompt_error(&completion_tx, sk, "Agent connection lost", false)
+                                .await;
+                            return;
+                        }
+                    }
+                } else {
+                    let idle_dur = Duration::from_secs(idle_timeout_secs);
+                    let deadline = tokio::time::sleep(idle_dur);
+                    tokio::pin!(deadline);
+                    tokio::pin!(response_rx);
+                    loop {
+                        tokio::select! {
+                            result = &mut response_rx => {
+                                match result {
+                                    Ok(resp) => break resp,
+                                    Err(_) => {
+                                        send_prompt_error(
+                                            &completion_tx,
+                                            sk,
+                                            "Agent connection lost",
+                                            false,
+                                        ).await;
+                                        return;
+                                    }
+                                }
                             }
-                            stop_reason = anyclaw_sdk_types::acp::StopReason::Refusal;
-
-                            if let Some(sender) = &channels_tx {
-                                let error_content = serde_json::json!({
-                                    "error": msg,
-                                    "update": { "sessionUpdate": "result" }
-                                });
-                                let _ = sender
-                                    .send(ChannelEvent::DeliverMessage {
-                                        session_key: sk.clone(),
-                                        content: error_content,
-                                    })
-                                    .await;
+                            () = &mut deadline => {
+                                tracing::error!(
+                                    session_key = %sk,
+                                    idle_timeout_secs,
+                                    "session/prompt idle timeout — agent went silent"
+                                );
+                                send_prompt_error(
+                                    &completion_tx,
+                                    sk,
+                                    &format!(
+                                        "Agent idle timeout after {idle_timeout_secs}s with no activity"
+                                    ),
+                                    true,
+                                ).await;
+                                return;
                             }
-                        } else {
-                            let prompt_resp: PromptResponse =
+                            _ = activity.notified() => {
+                                deadline.as_mut().reset(
+                                    tokio::time::Instant::now() + idle_dur
+                                );
+                            }
+                        }
+                    }
+                };
+
+                {
+                    // Check if the agent returned a JSON-RPC error
+                    let mut session_expired = false;
+                    let stop_reason;
+                    let mut error_msg = None;
+                    if let Some(error) = &response.error {
+                        let msg = &error.message;
+                        error_msg = Some(msg.clone());
+                        tracing::warn!(session_key = %sk, error = %msg, "agent returned error for prompt");
+
+                        // Detect "session not found" so the stale mapping gets
+                        // invalidated in handle_prompt_completion, allowing the
+                        // next prompt to trigger heal_session.
+                        let combined = format!(
+                            "{} {}",
+                            msg,
+                            error
+                                .data
+                                .as_ref()
+                                .map(std::string::ToString::to_string)
+                                .unwrap_or_default()
+                        );
+                        if combined.to_lowercase().contains("session not found") {
+                            session_expired = true;
+                        }
+                        stop_reason = anyclaw_sdk_types::acp::StopReason::Refusal;
+                    } else {
+                        let prompt_resp: PromptResponse =
                                 serde_json::from_value(response.result.unwrap_or_default())
                                     .unwrap_or_else(|e| {
                                         tracing::warn!(session_key = %sk, error = %e, "failed to parse PromptResponse, defaulting");
                                         PromptResponse { stop_reason: anyclaw_sdk_types::acp::StopReason::EndTurn }
                                     });
-                            stop_reason = prompt_resp.stop_reason;
-                        }
-                        let _ = completion_tx
-                            .send(PromptCompletion {
-                                session_key: sk,
-                                session_expired,
-                                stop_reason,
-                            })
-                            .await;
+                        stop_reason = prompt_resp.stop_reason;
                     }
-                    Err(_) => {
-                        tracing::warn!(session_key = %sk, "prompt response channel dropped");
-                    }
+                    let _ = completion_tx
+                        .send(PromptCompletion {
+                            session_key: sk,
+                            session_expired,
+                            idle_timed_out: false,
+                            error_message: error_msg,
+                            stop_reason,
+                        })
+                        .await;
                 }
             });
         }
@@ -625,6 +690,32 @@ impl AgentsManager {
             .clone();
 
         let conn = slot
+            .connection
+            .as_ref()
+            .ok_or(AgentsError::ConnectionClosed)?;
+        let params = serde_json::to_value(SessionCancelParams {
+            session_id: acp_session_id,
+        })?;
+        conn.send_notification("session/cancel", params).await?;
+        Ok(())
+    }
+
+    pub(crate) async fn cancel_session_by_key(
+        &self,
+        session_key: &SessionKey,
+    ) -> Result<(), AgentsError> {
+        let (slot_idx, acp_session_id) = self
+            .slots
+            .iter()
+            .enumerate()
+            .find_map(|(idx, slot)| {
+                slot.session_map
+                    .get(session_key)
+                    .map(|id| (idx, id.clone()))
+            })
+            .ok_or(AgentsError::ConnectionClosed)?;
+
+        let conn = self.slots[slot_idx]
             .connection
             .as_ref()
             .ok_or(AgentsError::ConnectionClosed)?;

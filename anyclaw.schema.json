@@ -91,6 +91,13 @@
           "description": "Named agent configurations (keys are agent names used in routing).",
           "type": "object"
         },
+        "prompt_idle_timeout_secs": {
+          "default": 120,
+          "description": "Idle timeout for session/prompt in seconds. The timer resets on every\nsession/update from the agent. Only fires when the agent goes completely\nsilent. Default: 120s. Set to 0 to disable.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
         "shutdown_grace_ms": {
           "default": 100,
           "description": "Grace period after sending shutdown before force-killing agent subprocesses (ms).",
@@ -817,6 +824,7 @@
       "default": {
         "acp_timeout_secs": 30,
         "agents": {},
+        "prompt_idle_timeout_secs": 120,
         "shutdown_grace_ms": 100
       },
       "description": "Agents manager configuration and named agent map."

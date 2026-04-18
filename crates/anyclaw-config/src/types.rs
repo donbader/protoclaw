@@ -249,6 +249,11 @@ pub struct AgentsManagerConfig {
     /// Default ACP request timeout in seconds (overridable per-agent).
     #[serde(default = "default_acp_timeout_secs")]
     pub acp_timeout_secs: u64,
+    /// Idle timeout for session/prompt in seconds. The timer resets on every
+    /// session/update from the agent. Only fires when the agent goes completely
+    /// silent. Default: 120s. Set to 0 to disable.
+    #[serde(default = "default_prompt_idle_timeout_secs")]
+    pub prompt_idle_timeout_secs: u64,
     /// Grace period after sending shutdown before force-killing agent subprocesses (ms).
     #[serde(default = "default_shutdown_grace_ms")]
     pub shutdown_grace_ms: u64,
@@ -261,6 +266,7 @@ impl Default for AgentsManagerConfig {
     fn default() -> Self {
         Self {
             acp_timeout_secs: default_acp_timeout_secs(),
+            prompt_idle_timeout_secs: default_prompt_idle_timeout_secs(),
             shutdown_grace_ms: default_shutdown_grace_ms(),
             agents: HashMap::new(),
         }
@@ -734,6 +740,9 @@ fn default_admin_port() -> u16 {
 fn default_acp_timeout_secs() -> u64 {
     30
 }
+fn default_prompt_idle_timeout_secs() -> u64 {
+    120
+}
 fn default_init_timeout_secs() -> u64 {
     10
 }
@@ -1044,6 +1053,11 @@ tools_manager:
             default_shutdown_grace_ms(),
             "shutdown_grace_ms drift"
         );
+        assert_eq!(
+            config.agents_manager.prompt_idle_timeout_secs,
+            default_prompt_idle_timeout_secs(),
+            "prompt_idle_timeout_secs drift"
+        );
 
         assert_eq!(
             config.channels_manager.init_timeout_secs,
@@ -1142,6 +1156,61 @@ tools_manager:
             "restart_window_secs should be > 0"
         );
         assert!(config.supervisor.admin_port > 0, "admin_port should be > 0");
+    }
+
+    #[test]
+    fn when_defaults_yaml_keys_compared_to_struct_default_then_no_missing_keys() {
+        let yaml_value: serde_yaml::Value = serde_yaml::from_str(DEFAULTS_YAML).unwrap();
+        let struct_default: AnyclawConfig = serde_yaml::from_str("{}").unwrap();
+        let struct_value: serde_yaml::Value = serde_yaml::to_value(&struct_default).unwrap();
+        let mut missing = Vec::new();
+        find_missing_keys(&yaml_value, &struct_value, "", &mut missing);
+
+        assert!(
+            missing.is_empty(),
+            "defaults.yaml is missing keys that exist in AnyclawConfig::default():\n  {}",
+            missing.join("\n  ")
+        );
+    }
+
+    fn find_missing_keys(
+        yaml: &serde_yaml::Value,
+        expected: &serde_yaml::Value,
+        path: &str,
+        missing: &mut Vec<String>,
+    ) {
+        let (serde_yaml::Value::Mapping(yaml_map), serde_yaml::Value::Mapping(expected_map)) =
+            (yaml, expected)
+        else {
+            return;
+        };
+
+        for (key, expected_val) in expected_map {
+            let key_str = key.as_str().unwrap_or("?");
+            let full_path = if path.is_empty() {
+                key_str.to_string()
+            } else {
+                format!("{path}.{key_str}")
+            };
+
+            if expected_val.is_null() {
+                continue;
+            }
+            if let serde_yaml::Value::Mapping(m) = expected_val {
+                if m.is_empty() {
+                    continue;
+                }
+            }
+
+            match yaml_map.get(key) {
+                Some(yaml_val) => {
+                    find_missing_keys(yaml_val, expected_val, &full_path, missing);
+                }
+                None => {
+                    missing.push(full_path);
+                }
+            }
+        }
     }
 
     #[test]

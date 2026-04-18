@@ -124,6 +124,10 @@ impl AgentsManager {
             return;
         }
 
+        if let Some(notify) = self.slots[slot_idx].active_prompts.get(&event.session_id) {
+            notify.notify_one();
+        }
+
         if let Some(session_key) = self.slots[slot_idx]
             .reverse_map
             .get(&event.session_id)
@@ -163,8 +167,11 @@ impl AgentsManager {
         };
 
         let error_content = serde_json::json!({
-            "error": format!("Agent sent malformed update: {error}"),
-            "update": { "sessionUpdate": "result" }
+            "update": {
+                "sessionUpdate": "result",
+                "isError": true,
+                "content": format!("Agent sent malformed update: {error}"),
+            }
         });
         let _ = sender
             .send(ChannelEvent::DeliverMessage {
@@ -372,6 +379,16 @@ impl AgentsManager {
 
         let already_got_result = self.streaming_completed.remove(&completion.session_key);
 
+        if completion.idle_timed_out
+            && let Err(e) = self.cancel_session_by_key(&completion.session_key).await
+        {
+            tracing::debug!(
+                session_key = %completion.session_key,
+                error = %e,
+                "failed to cancel agent after idle timeout (may have already finished)"
+            );
+        }
+
         // When the agent reports "session not found", invalidate the stale mapping
         // so the next inbound prompt triggers heal_session() instead of reusing
         // the dead ACP session ID.
@@ -392,34 +409,50 @@ impl AgentsManager {
 
         if let Some(sender) = &self.channels_sender {
             if !already_got_result {
-                let acp_session_id = self.slots.iter()
-                    .find_map(|slot| slot.session_map.get(&completion.session_key).cloned())
-                    .unwrap_or_else(|| {
-                        tracing::warn!(session_key = %completion.session_key, "no acp_session_id in reverse_map for synthetic result");
-                        String::new()
+                if let Some(error_msg) = &completion.error_message {
+                    let error_content = serde_json::json!({
+                        "update": {
+                            "sessionUpdate": "result",
+                            "isError": true,
+                            "content": error_msg,
+                        }
                     });
+                    let _ = sender
+                        .send(ChannelEvent::DeliverMessage {
+                            session_key: completion.session_key.clone(),
+                            content: error_content,
+                        })
+                        .await;
+                } else {
+                    let acp_session_id = self.slots.iter()
+                        .find_map(|slot| slot.session_map.get(&completion.session_key).cloned())
+                        .unwrap_or_else(|| {
+                            tracing::warn!(session_key = %completion.session_key, "no acp_session_id in reverse_map for synthetic result");
+                            String::new()
+                        });
 
-                let stop_reason_str = match completion.stop_reason {
-                    anyclaw_sdk_types::acp::StopReason::EndTurn => "end_turn",
-                    anyclaw_sdk_types::acp::StopReason::MaxTokens => "max_tokens",
-                    anyclaw_sdk_types::acp::StopReason::MaxTurnRequests => "max_turn_requests",
-                    anyclaw_sdk_types::acp::StopReason::Refusal => "refusal",
-                    anyclaw_sdk_types::acp::StopReason::Cancelled => "cancelled",
-                    _ => "unknown",
-                };
-                let synthetic_result = serde_json::json!({
-                    "sessionId": acp_session_id,
-                    "update": {
-                        "sessionUpdate": "result",
-                        "stopReason": stop_reason_str,
-                    }
-                });
-                let _ = sender
-                    .send(ChannelEvent::DeliverMessage {
-                        session_key: completion.session_key.clone(),
-                        content: synthetic_result,
-                    })
-                    .await;
+                    let stop_reason_str = match completion.stop_reason {
+                        anyclaw_sdk_types::acp::StopReason::EndTurn => "end_turn",
+                        anyclaw_sdk_types::acp::StopReason::MaxTokens => "max_tokens",
+                        anyclaw_sdk_types::acp::StopReason::MaxTurnRequests => "max_turn_requests",
+                        anyclaw_sdk_types::acp::StopReason::Refusal => "refusal",
+                        anyclaw_sdk_types::acp::StopReason::Cancelled => "cancelled",
+                        _ => "unknown",
+                    };
+                    let synthetic_result = serde_json::json!({
+                        "sessionId": acp_session_id,
+                        "update": {
+                            "sessionUpdate": "result",
+                            "stopReason": stop_reason_str,
+                        }
+                    });
+                    let _ = sender
+                        .send(ChannelEvent::DeliverMessage {
+                            session_key: completion.session_key.clone(),
+                            content: synthetic_result,
+                        })
+                        .await;
+                }
             }
 
             let _ = sender

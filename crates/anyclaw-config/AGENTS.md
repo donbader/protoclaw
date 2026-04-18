@@ -134,6 +134,15 @@ When adding a new extension option to the schema:
 
 - **Don't use `anyhow`** — use `ConfigError` for all error paths
 - **Don't skip validation** — `validate_config()` catches runtime failures at boot time
-- **Don't hardcode defaults outside serde** — all defaults live in `defaults.yaml` or `#[serde(default = "...")]` functions in `types.rs`
+- **Don't split defaults** — every defaulted field must appear in **both** `defaults.yaml` (Figment base layer) **and** `#[serde(default = "...")]` in `types.rs`. Values must agree. The structural drift test (`when_defaults_yaml_keys_compared_to_struct_default_then_no_missing_keys`) catches missing YAML keys automatically.
 - **Don't add `name` fields to entity structs** — names come from HashMap keys (manager-hierarchy pattern)
 - **Don't use `!env` without a default for optional config** — missing env vars cause a hard error at load time; use `!env "VAR:default"` if the value is optional
+
+## Adding a Config Field
+
+1. Add field to struct in `types.rs` with `#[serde(default = "default_fn")]`
+2. Add `default_fn()` returning the default value
+3. Add key + value to `defaults.yaml`
+4. Add field to test fixtures in `resolve.rs` and `validate.rs`
+5. Run `cargo test -p anyclaw-config -- generate_and_write_schema --ignored` to regenerate schema
+6. `cargo test -p anyclaw-config` — the structural drift test catches any missed step

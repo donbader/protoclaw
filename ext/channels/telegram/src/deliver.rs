@@ -672,7 +672,7 @@ pub async fn deliver_to_chat(
             Ok(())
         }
 
-        ContentKind::Result { is_error, .. } => {
+        ContentKind::Result { is_error, text } => {
             {
                 let turns = state.turns.read().await;
                 if let Some(turn) = turns.get(&chat_id) {
@@ -743,6 +743,10 @@ pub async fn deliver_to_chat(
                     turn.message_id = mid;
                 }
                 turn.last_result_was_error = is_error;
+                if is_error && !text.is_empty() {
+                    let error_text = format!("⚠️ {text}");
+                    turn.append_response(&error_text, 0);
+                }
                 // Do NOT abort the debounce — it may be mid-flight (send_message
                 // succeeded, msg_id not yet stored). Aborting loses the msg_id,
                 // causing finalization to send a duplicate. Let it complete naturally.
@@ -900,6 +904,20 @@ pub async fn deliver_to_chat(
                     return Ok(());
                 };
 
+                // Guard 1: turn is finalizing — the result has already arrived
+                // and the finalization timer is running. Stale heartbeats arriving
+                // after the result would each trigger a Telegram API edit, blocking
+                // the delivery queue and racing with the finalization timer.
+                if turn.is_finalizing() {
+                    tracing::debug!(
+                        chat_id,
+                        tool_call_id,
+                        status,
+                        "discarding tool call update: turn is finalizing"
+                    );
+                    return Ok(());
+                }
+
                 let Some(track) = turn.tool_calls.get_mut(&tool_call_id) else {
                     tracing::warn!(
                         chat_id,
@@ -908,6 +926,19 @@ pub async fn deliver_to_chat(
                     );
                     return Ok(());
                 };
+
+                // Guard 2: tool call already reached a terminal status.
+                // Late in_progress heartbeats must not regress the status
+                // or trigger redundant Telegram edits.
+                if track.status.is_terminal() {
+                    tracing::debug!(
+                        chat_id,
+                        tool_call_id,
+                        status,
+                        "discarding tool call update: status already terminal"
+                    );
+                    return Ok(());
+                }
 
                 // Backfill input if the initial ToolCall arrived without it
                 if track.input.is_none() && input.is_some() {
@@ -1112,6 +1143,70 @@ mod tests {
         assert!(
             state.turns.read().await.get(&12345).is_some(),
             "unknown update types must not destroy active turns"
+        );
+    }
+
+    #[tokio::test]
+    async fn when_error_result_received_then_error_text_appended_to_response() {
+        let state = Arc::new(SharedState::new());
+        state
+            .session_chat_map
+            .write()
+            .await
+            .insert("sess-err".into(), 99999);
+
+        let bot = Bot::new("test-token");
+        let content = serde_json::json!({
+            "update": {
+                "sessionUpdate": "result",
+                "isError": true,
+                "content": "Session recovery failed: connection refused",
+            }
+        });
+        let _ = deliver_to_chat(&bot, &state, "sess-err", &content).await;
+
+        let turns = state.turns.read().await;
+        let turn = turns
+            .get(&99999)
+            .expect("turn must exist after error result");
+        assert!(turn.last_result_was_error);
+        let resp = turn.response.as_ref().expect("response must be populated");
+        assert!(
+            resp.buffer.contains("⚠️ Session recovery failed"),
+            "error text must be in response buffer, got: {}",
+            resp.buffer
+        );
+    }
+
+    #[tokio::test]
+    async fn when_non_error_result_received_then_no_error_text_appended() {
+        let state = Arc::new(SharedState::new());
+        state
+            .session_chat_map
+            .write()
+            .await
+            .insert("sess-ok".into(), 88888);
+
+        {
+            let mut turns = state.turns.write().await;
+            turns.insert(88888, ChatTurn::new("msg-ok".to_string()));
+        }
+
+        let bot = Bot::new("test-token");
+        let content = serde_json::json!({
+            "update": {
+                "sessionUpdate": "result",
+                "stopReason": "end_turn",
+            }
+        });
+        let _ = deliver_to_chat(&bot, &state, "sess-ok", &content).await;
+
+        let turns = state.turns.read().await;
+        let turn = turns.get(&88888).expect("turn must exist");
+        assert!(!turn.last_result_was_error);
+        assert!(
+            turn.response.is_none(),
+            "non-error result with no prior text must not create a response"
         );
     }
 }

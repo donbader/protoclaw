@@ -4,6 +4,7 @@ extensions_dir: "/usr/local/bin"
 
 agents_manager:
   acp_timeout_secs: 30
+  prompt_idle_timeout_secs: 120
   shutdown_grace_ms: 100
 
 channels_manager:
