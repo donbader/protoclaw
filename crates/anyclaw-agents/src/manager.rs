@@ -387,6 +387,31 @@ impl AgentsManager {
         }
     }
 
+    async fn send_keepalive(&self) {
+        for (i, slot) in self.slots.iter().enumerate() {
+            if slot.lifecycle.disabled {
+                continue;
+            }
+            if !slot.config.workspace.is_docker() {
+                continue;
+            }
+            let Some(conn) = &slot.connection else {
+                continue;
+            };
+            if let Err(e) = conn
+                .send_notification("keepalive", serde_json::json!({}))
+                .await
+            {
+                tracing::debug!(
+                    agent = %slot.name(),
+                    slot = i,
+                    error = %e,
+                    "keepalive send failed (connection may be dead)"
+                );
+            }
+        }
+    }
+
     async fn build_started_slot(
         &self,
         name: &str,
@@ -503,35 +528,53 @@ impl Manager for AgentsManager {
         let mut incoming_rx = self.incoming_rx.take().expect("incoming_rx must exist");
         let mut completion_rx = self.completion_rx.take().expect("completion_rx must exist");
 
+        let keepalive_secs = self.manager_config.keepalive_interval_secs;
+        let mut keepalive_interval = if keepalive_secs > 0 {
+            let mut interval = tokio::time::interval(Duration::from_secs(keepalive_secs));
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            interval.tick().await; // consume the immediate first tick
+            Some(interval)
+        } else {
+            None
+        };
+
         tracing::info!(manager = self.name(), "manager running");
 
         loop {
             tokio::select! {
-                _ = cancel.cancelled() => {
-                    tracing::info!(manager = "agents", "shutting down");
-                    self.shutdown_all().await;
-                    break;
-                }
-                Some(cmd) = cmd_rx.recv() => {
-                    if self.handle_command(cmd).await {
+                    _ = cancel.cancelled() => {
+                        tracing::info!(manager = "agents", "shutting down");
+                        self.shutdown_all().await;
                         break;
                     }
-                }
-                Some(slot_msg) = incoming_rx.recv() => {
-                    match slot_msg.msg {
-                        Some(incoming_msg) => self.handle_incoming(slot_msg.slot_idx, incoming_msg).await,
-                        None => {
-                            if self.slots[slot_msg.slot_idx].lifecycle.disabled {
-                                continue;
-                            }
-                            self.handle_crash(slot_msg.slot_idx).await;
+                    Some(cmd) = cmd_rx.recv() => {
+                        if self.handle_command(cmd).await {
+                            break;
                         }
                     }
+                    Some(slot_msg) = incoming_rx.recv() => {
+                        match slot_msg.msg {
+                            Some(incoming_msg) => self.handle_incoming(slot_msg.slot_idx, incoming_msg).await,
+            None => {
+                    if self.slots[slot_msg.slot_idx].lifecycle.disabled {
+                        continue;
+                    }
+                    self.handle_crash(slot_msg.slot_idx).await;
+                            }
+                        }
+                    }
+                    Some(completion) = completion_rx.recv() => {
+                        self.handle_prompt_completion(completion, &mut incoming_rx).await;
+                    }
+                    _ = async {
+                        match keepalive_interval.as_mut() {
+                            Some(interval) => interval.tick().await,
+                            None => std::future::pending().await,
+                        }
+                    } => {
+                        self.send_keepalive().await;
+                    }
                 }
-                Some(completion) = completion_rx.recv() => {
-                    self.handle_prompt_completion(completion, &mut incoming_rx).await;
-                }
-            }
         }
 
         tracing::info!(manager = "agents", "manager stopped");
@@ -2605,5 +2648,72 @@ mod tests {
             "default must be applied for missing key"
         );
         assert_eq!(options.len(), 2);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_send_keepalive_called_then_connected_docker_slots_receive_notification() {
+        let (handle, rx) = make_tools_handle();
+        let tools_task = tokio::spawn(serve_tools_urls(rx));
+
+        let mut m = AgentsManager::new(mock_agents_manager_config(), handle);
+        m.start().await.unwrap();
+
+        assert!(m.slots[0].connection.is_some());
+        // mock-agent uses Local workspace — keepalive should be skipped
+        m.send_keepalive().await;
+
+        m.shutdown_all().await;
+        tools_task.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_send_keepalive_called_with_local_agent_then_skipped() {
+        let (handle, rx) = make_tools_handle();
+        let tools_task = tokio::spawn(serve_tools_urls(rx));
+
+        let mut m = AgentsManager::new(mock_agents_manager_config(), handle);
+        m.start().await.unwrap();
+
+        assert!(m.slots[0].connection.is_some());
+        assert!(
+            !m.slots[0].config.workspace.is_docker(),
+            "mock-agent must be a local workspace"
+        );
+        // Local agents don't need keepalives — no Docker attach timeout
+        m.send_keepalive().await;
+
+        m.shutdown_all().await;
+        tools_task.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_send_keepalive_called_with_disabled_slot_then_skipped() {
+        let (handle, rx) = make_tools_handle();
+        let tools_task = tokio::spawn(serve_tools_urls(rx));
+
+        let mut m = AgentsManager::new(mock_agents_manager_config(), handle);
+        m.start().await.unwrap();
+
+        m.slots[0].lifecycle.disabled = true;
+        m.send_keepalive().await;
+
+        m.shutdown_all().await;
+        tools_task.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_send_keepalive_called_with_no_connection_then_skipped() {
+        let (handle, _rx) = make_tools_handle();
+        let mut m = AgentsManager::new(mock_agents_manager_config_with(HashMap::new()), handle);
+
+        let cancel = CancellationToken::new();
+        let slot = AgentSlot::new("test-agent".into(), mock_agent_config(), &cancel);
+        m.slots.push(slot);
+
+        m.send_keepalive().await;
     }
 }

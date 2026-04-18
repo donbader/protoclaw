@@ -369,6 +369,7 @@ mod tests {
             agents_manager: AgentsManagerConfig {
                 acp_timeout_secs: 30,
                 prompt_idle_timeout_secs: 120,
+                keepalive_interval_secs: 300,
                 shutdown_grace_ms: 100,
                 agents,
             },
