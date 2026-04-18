@@ -1,43 +1,136 @@
-name: Docker
+name: Release
+run-name: "Release v${{ inputs.version || '(auto)' }}"
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release version (e.g. 0.7.0) — without 'v' prefix"
-        required: true
+        description: "Version (e.g. 0.10.0) — leave empty to auto-detect from commits"
+        required: false
         type: string
 
 env:
   REGISTRY: ghcr.io
-  VERSION: ${{ inputs.version }}
 
 jobs:
+  prepare:
+    name: Prepare release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Detect version
+        id: version
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+            echo "Using provided version: ${{ inputs.version }}"
+            exit 0
+          fi
+
+          LAST_TAG=$(git tag -l 'v*' --sort=-v:refname | head -1)
+          if [ -z "$LAST_TAG" ]; then
+            echo "ERROR: No existing v* tags found. Provide version explicitly."
+            exit 1
+          fi
+
+          CURRENT=$(echo "$LAST_TAG" | sed 's/^v//')
+          MAJOR=$(echo "$CURRENT" | cut -d. -f1)
+          MINOR=$(echo "$CURRENT" | cut -d. -f2)
+          PATCH=$(echo "$CURRENT" | cut -d. -f3)
+
+          HAS_FEAT=$(git log "$LAST_TAG"..HEAD --format='%s' --no-merges | grep -c '^feat' || true)
+          if [ "$HAS_FEAT" -gt 0 ]; then
+            MINOR=$((MINOR + 1))
+            PATCH=0
+          else
+            PATCH=$((PATCH + 1))
+          fi
+
+          VERSION="$MAJOR.$MINOR.$PATCH"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Auto-detected version: $VERSION (from $LAST_TAG)"
+
+      - name: Check tag doesn't exist
+        run: |
+          if git rev-parse "v${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
+            echo "ERROR: Tag v${{ steps.version.outputs.version }} already exists"
+            exit 1
+          fi
+
+      - name: Bump Cargo.toml version
+        run: |
+          sed -i "s/^version = \".*\"/version = \"${{ steps.version.outputs.version }}\"/" crates/anyclaw/Cargo.toml
+          cargo check -p anyclaw --quiet 2>/dev/null || true
+
+      - name: Install git-cliff
+        uses: orhun/git-cliff-action@v4
+        id: git-cliff
+        with:
+          config: cliff.toml
+          args: --unreleased --tag "v${{ steps.version.outputs.version }}" --prepend CHANGELOG.md
+        env:
+          OUTPUT: CHANGELOG.md
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update changelog links
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          LAST_TAG=$(git tag -l 'v*' --sort=-v:refname | head -1 | sed 's/^v//')
+
+          # Update [Unreleased] compare link
+          sed -i "s|\[Unreleased\]: .*|[Unreleased]: https://github.com/donbader/anyclaw/compare/v${VERSION}...HEAD|" CHANGELOG.md
+
+          # Add version compare link if not present
+          if ! grep -q "^\[${VERSION}\]:" CHANGELOG.md; then
+            sed -i "/^\[Unreleased\]:/a [${VERSION}]: https://github.com/donbader/anyclaw/compare/v${LAST_TAG}...v${VERSION}" CHANGELOG.md
+          fi
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md Cargo.lock crates/anyclaw/Cargo.toml
+          git commit -m "chore: release v${{ steps.version.outputs.version }}"
+          git push origin main
+
   tag:
     name: Create tag
+    needs: prepare
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: main
+
+      - name: Pull release commit
+        run: git pull origin main
 
       - name: Validate version matches Cargo.toml
         run: |
           CARGO_VERSION=$(grep '^version' crates/anyclaw/Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
-          if [ "$CARGO_VERSION" != "${{ inputs.version }}" ]; then
-            echo "ERROR: Cargo.toml version ($CARGO_VERSION) does not match input version (${{ inputs.version }})"
-            echo "Commit the version bump to main before triggering the release."
+          if [ "$CARGO_VERSION" != "${{ needs.prepare.outputs.version }}" ]; then
+            echo "ERROR: Cargo.toml version ($CARGO_VERSION) does not match release version (${{ needs.prepare.outputs.version }})"
             exit 1
           fi
 
       - name: Create git tag
         run: |
-          git tag "v${{ inputs.version }}"
-          git push origin "v${{ inputs.version }}"
+          git tag "v${{ needs.prepare.outputs.version }}"
+          git push origin "v${{ needs.prepare.outputs.version }}"
 
   build:
     name: Build (${{ matrix.arch }})
-    needs: tag
+    needs: [prepare, tag]
     strategy:
       matrix:
         include:
@@ -54,7 +147,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: v${{ inputs.version }}
+          ref: v${{ needs.prepare.outputs.version }}
 
       - name: Set up Docker Buildx
         id: setup-buildx
@@ -74,7 +167,6 @@ jobs:
             core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '');
             core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
 
-      # Build both targets sequentially — shares the builder stage via local cache
       - name: Build and push core
         id: core
         uses: docker/build-push-action@v7
@@ -137,7 +229,7 @@ jobs:
 
   manifest:
     name: Manifest (${{ matrix.target }})
-    needs: build
+    needs: [prepare, build]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -175,7 +267,7 @@ jobs:
       - name: Compute version tags
         id: version
         run: |
-          MAJOR_MINOR=$(echo "${{ inputs.version }}" | cut -d. -f1,2)
+          MAJOR_MINOR=$(echo "${{ needs.prepare.outputs.version }}" | cut -d. -f1,2)
           echo "major_minor=$MAJOR_MINOR" >> "$GITHUB_OUTPUT"
 
       - name: Extract metadata
@@ -184,7 +276,7 @@ jobs:
         with:
           images: ${{ matrix.image }}
           tags: |
-            type=raw,value=${{ inputs.version }}
+            type=raw,value=${{ needs.prepare.outputs.version }}
             type=raw,value=${{ steps.version.outputs.major_minor }}
             type=sha,prefix=
             type=raw,value=latest

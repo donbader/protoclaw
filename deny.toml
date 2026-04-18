@@ -2,7 +2,7 @@
 # https://embarkstudios.github.io/cargo-deny/
 
 [graph]
-# Match actual build targets from binary-release.yml + docker.yml
+# Match actual build targets from release.yml (Docker multi-arch)
 targets = [
     "x86_64-unknown-linux-gnu",
     "aarch64-unknown-linux-gnu",

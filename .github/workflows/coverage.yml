@@ -8,7 +8,7 @@ on:
       - "docs/**"
       - "LICENSE-*"
       - ".github/workflows/ghcr-cleanup.yml"
-      - ".github/workflows/docker.yml"
+      - ".github/workflows/release.yml"
 
 concurrency:
   group: coverage-${{ github.ref }}
