@@ -39,16 +39,7 @@ RUN usermod -l agent-opencode -d /home/agent-opencode -m node && \
     groupmod -n agent-opencode node && \
     echo "agent-opencode ALL=(ALL) NOPASSWD: /usr/bin/apt-get" >> /etc/sudoers.d/agent-opencode
 # opencode-config/ contains minimal committed config — customize as needed.
-# Glob trick: README.md always exists so COPY never fails; opencode-config is optional.
-RUN mkdir -p /home/agent-opencode/.config/opencode
-COPY README.md opencode-config* /tmp/build-staging/
-RUN if [ -f /tmp/build-staging/opencode.json ]; then \
-      cp /tmp/build-staging/opencode.json /home/agent-opencode/.config/opencode/ && \
-      cp /tmp/build-staging/package*.json /home/agent-opencode/.config/opencode/ 2>/dev/null || true; \
-    fi && rm -rf /tmp/build-staging
-RUN if [ -f /home/agent-opencode/.config/opencode/package.json ]; then \
-      cd /home/agent-opencode/.config/opencode && npm install --omit=dev; \
-    fi
+COPY opencode-config/ /home/agent-opencode/.config/opencode/
 RUN mkdir -p /home/agent-opencode/.local/share /home/agent-opencode/.local/state /home/agent-opencode/workspace && \
     chown -R agent-opencode:agent-opencode /home/agent-opencode
 USER agent-opencode

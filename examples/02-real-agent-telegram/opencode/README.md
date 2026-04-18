@@ -92,13 +92,12 @@ agents_manager:
 
 The agent container runs as the `agent-opencode` user with scoped sudo for `apt-get` only — the agent can install packages at runtime via `sudo apt-get install` without full root access. The `/usr/local` volume persists packages installed via `pip`, `npm install -g`, or `cargo install` across container restarts. Note that `apt-get` installs to system dirs (`/usr/bin`, `/usr/lib`) which are not on this volume — pre-install apt packages in the Dockerfile for persistence.
 
-OpenCode config (`opencode-config/`) can optionally be baked into the agent image. To use it:
+OpenCode config (`opencode-config/`) is baked into the agent image. To customize:
 
-1. Create `opencode-config/opencode.json` with your OpenCode configuration
-2. Optionally add `opencode-config/package.json` for MCP server dependencies
-3. Rebuild: `docker compose up --build -d`
+1. Edit `opencode-config/opencode.json` with your OpenCode configuration
+2. Rebuild: `docker compose up --build -d`
 
-The Dockerfile detects these files and copies them to `/home/agent-opencode/.config/opencode/` inside the agent image. If a `package.json` is present, `npm install` runs automatically. A minimal `opencode.json` is committed — add your provider config and MCP server deps as needed.
+The Dockerfile copies `opencode-config/` to `/home/agent-opencode/.config/opencode/` inside the agent image. A minimal `opencode.json` is committed — add your provider config as needed.
 
 For the full config schema and all available options, see the [Configuration Reference](../CONFIGURATION.md).
 
