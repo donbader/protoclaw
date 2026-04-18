@@ -82,7 +82,9 @@ jobs:
           context: .
           target: core
           platforms: ${{ matrix.platform }}
-          build-args: SCCACHE_GHA_ENABLED=true
+          build-args: |
+            SCCACHE_GHA_ENABLED=true
+            ANYCLAW_VERSION=${{ inputs.version }}
           secrets: |
             actions_results_url=${{ env.ACTIONS_RESULTS_URL }}
             actions_runtime_token=${{ env.ACTIONS_RUNTIME_TOKEN }}
@@ -97,7 +99,9 @@ jobs:
           context: .
           target: builder-export
           platforms: ${{ matrix.platform }}
-          build-args: SCCACHE_GHA_ENABLED=true
+          build-args: |
+            SCCACHE_GHA_ENABLED=true
+            ANYCLAW_VERSION=${{ inputs.version }}
           secrets: |
             actions_results_url=${{ env.ACTIONS_RESULTS_URL }}
             actions_runtime_token=${{ env.ACTIONS_RUNTIME_TOKEN }}
