@@ -112,6 +112,7 @@ async fn when_disabled_tool_configured_then_supervisor_boots_normally() {
             input_schema: None,
             sandbox: Default::default(),
             options: std::collections::HashMap::new(),
+            call_timeout_secs: None,
         },
     );
 

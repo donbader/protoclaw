@@ -30,17 +30,23 @@ pub struct AggregatedToolServer {
     native_host: Arc<McpHost>,
     external_servers: Arc<Vec<ExternalMcpServer>>,
     server_info: ServerInfo,
+    call_timeouts: Arc<HashMap<String, Duration>>,
 }
 
 impl AggregatedToolServer {
     /// Create a new aggregated server from native and external tool sources.
-    pub fn new(native_host: Arc<McpHost>, external_servers: Arc<Vec<ExternalMcpServer>>) -> Self {
+    pub fn new(
+        native_host: Arc<McpHost>,
+        external_servers: Arc<Vec<ExternalMcpServer>>,
+        call_timeouts: Arc<HashMap<String, Duration>>,
+    ) -> Self {
         let mut server_info = ServerInfo::new(ServerCapabilities::builder().enable_tools().build());
         server_info.server_info = Implementation::new("anyclaw-tools", "0.1.0");
         Self {
             native_host,
             external_servers,
             server_info,
+            call_timeouts,
         }
     }
 
@@ -105,10 +111,23 @@ impl AggregatedToolServer {
             {
                 let mut params = CallToolRequestParams::new(name.to_string());
                 params.arguments = args;
-                return ext
-                    .call_tool(params)
-                    .await
-                    .map_err(|e| McpError::internal_error(e.to_string(), None));
+                let fut = ext.call_tool(params);
+                let result = if let Some(timeout_duration) = self.call_timeouts.get(&ext.name) {
+                    tokio::time::timeout(*timeout_duration, fut)
+                        .await
+                        .map_err(|_| {
+                            McpError::internal_error(
+                                format!(
+                                    "tool call '{name}' timed out after {}s",
+                                    timeout_duration.as_secs()
+                                ),
+                                None,
+                            )
+                        })?
+                } else {
+                    fut.await
+                };
+                return result.map_err(|e| McpError::internal_error(e.to_string(), None));
             }
         }
         Err(McpError::invalid_params(
@@ -420,15 +439,30 @@ impl ToolsManager {
         let ct = CancellationToken::new();
         let config = Self::build_server_config(&self.tools_server_host, ct.clone());
 
+        let mut session_manager = LocalSessionManager::default();
+        session_manager.session_config.keep_alive = None;
+        let session_manager = Arc::new(session_manager);
+
+        let call_timeouts: HashMap<String, Duration> = self
+            .tool_configs
+            .iter()
+            .filter_map(|(name, cfg)| {
+                cfg.call_timeout_secs
+                    .map(|secs| (name.clone(), Duration::from_secs(secs)))
+            })
+            .collect();
+        let call_timeouts = Arc::new(call_timeouts);
+
         let service: StreamableHttpService<AggregatedToolServer, LocalSessionManager> =
             StreamableHttpService::new(
                 move || {
                     Ok(AggregatedToolServer::new(
                         Arc::clone(&native_host),
                         Arc::clone(&external_servers),
+                        Arc::clone(&call_timeouts),
                     ))
                 },
-                Default::default(),
+                session_manager,
                 config,
             );
 
@@ -569,7 +603,7 @@ mod tests {
         ];
         let host = Arc::new(McpHost::new(tools));
         let ext = Arc::new(vec![]);
-        let agg = AggregatedToolServer::new(host, ext);
+        let agg = AggregatedToolServer::new(host, ext, Arc::new(HashMap::new()));
 
         let list = agg.aggregate_tool_list().await;
         assert_eq!(list.len(), 2);
@@ -585,7 +619,7 @@ mod tests {
         })];
         let host = Arc::new(McpHost::new(tools));
         let ext = Arc::new(vec![]);
-        let agg = AggregatedToolServer::new(host, ext);
+        let agg = AggregatedToolServer::new(host, ext, Arc::new(HashMap::new()));
 
         let result = agg.route_call("my-tool", None).await.unwrap();
         assert!(result.is_error.is_none() || result.is_error == Some(false));
@@ -595,7 +629,7 @@ mod tests {
     async fn when_unknown_tool_called_via_aggregated_server_then_returns_error() {
         let host = Arc::new(McpHost::new(vec![]));
         let ext = Arc::new(vec![]);
-        let agg = AggregatedToolServer::new(host, ext);
+        let agg = AggregatedToolServer::new(host, ext, Arc::new(HashMap::new()));
 
         let result = agg.route_call("nonexistent", None).await;
         assert!(result.is_err());
@@ -639,6 +673,7 @@ mod tests {
                 input_schema: None,
                 sandbox: anyclaw_config::WasmSandboxConfig::default(),
                 options: HashMap::new(),
+                call_timeout_secs: None,
             },
         )]);
 
@@ -669,6 +704,7 @@ mod tests {
                 input_schema: None,
                 sandbox: anyclaw_config::WasmSandboxConfig::default(),
                 options: HashMap::new(),
+                call_timeout_secs: None,
             },
         )]);
 
@@ -708,6 +744,7 @@ mod tests {
                 input_schema: None,
                 sandbox: anyclaw_config::WasmSandboxConfig::default(),
                 options: HashMap::new(),
+                call_timeout_secs: None,
             },
         )]);
 
@@ -818,6 +855,7 @@ mod tests {
                 input_schema: None,
                 sandbox: Default::default(),
                 options: HashMap::new(),
+                call_timeout_secs: None,
             },
         )]);
         let mut m = ToolsManager::new(tool_configs, "127.0.0.1".into());
@@ -833,7 +871,7 @@ mod tests {
     async fn when_route_call_with_unknown_tool_then_error_contains_tool_name() {
         let host = Arc::new(McpHost::new(vec![]));
         let ext = Arc::new(vec![]);
-        let agg = AggregatedToolServer::new(host, ext);
+        let agg = AggregatedToolServer::new(host, ext, Arc::new(HashMap::new()));
 
         let result = agg.route_call("my-missing-tool", None).await;
         let err = result.unwrap_err();
@@ -851,7 +889,7 @@ mod tests {
         })];
         let host = Arc::new(McpHost::new(tools));
         let ext = Arc::new(vec![]);
-        let agg = AggregatedToolServer::new(host, ext);
+        let agg = AggregatedToolServer::new(host, ext, Arc::new(HashMap::new()));
 
         let result = agg.route_call("native-only", None).await;
         assert!(result.is_ok(), "native tool should be found and dispatched");
@@ -870,7 +908,7 @@ mod tests {
         let host = Arc::new(McpHost::new(tools));
         let native_list = host.tool_list();
         let ext = Arc::new(vec![]);
-        let agg = AggregatedToolServer::new(host, ext);
+        let agg = AggregatedToolServer::new(host, ext, Arc::new(HashMap::new()));
 
         let agg_list = agg.aggregate_tool_list().await;
         assert_eq!(

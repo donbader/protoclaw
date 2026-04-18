@@ -202,6 +202,7 @@ pub fn sdk_tool_config() -> anyclaw_config::AnyclawConfig {
             input_schema: None,
             sandbox: Default::default(),
             options: HashMap::new(),
+            call_timeout_secs: None,
         },
     );
 
@@ -326,6 +327,7 @@ pub fn wasm_tool_config() -> anyclaw_config::AnyclawConfig {
             input_schema: None,
             sandbox: Default::default(),
             options: HashMap::new(),
+            call_timeout_secs: None,
         },
     );
 
@@ -409,6 +411,7 @@ pub fn multi_tool_config() -> anyclaw_config::AnyclawConfig {
             input_schema: None,
             sandbox: Default::default(),
             options: HashMap::new(),
+            call_timeout_secs: None,
         },
     );
     tools.insert(
@@ -423,6 +426,7 @@ pub fn multi_tool_config() -> anyclaw_config::AnyclawConfig {
             input_schema: None,
             sandbox: Default::default(),
             options: HashMap::new(),
+            call_timeout_secs: None,
         },
     );
 
@@ -508,6 +512,7 @@ pub fn invalid_tool_config() -> anyclaw_config::AnyclawConfig {
             input_schema: None,
             sandbox: Default::default(),
             options: HashMap::new(),
+            call_timeout_secs: None,
         },
     );
 

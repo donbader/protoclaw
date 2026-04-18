@@ -95,6 +95,7 @@ Example/ext binaries:
 - **Test-driven development**: Write a failing test before implementation. Red → green → refactor. No code lands without a test that exercises it.
 - **Test framework**: `rstest = "0.23"` with `#[rstest]` for all tests. BDD naming: `when_action_then_result` or `given_precondition_when_action_then_result`. Fixtures: `fn given_*()`. Parameterised: `#[case::label_name]`. Async: `#[rstest] #[tokio::test]`.
 - **AGENTS.md maintenance**: When code changes affect module structure, public APIs, conventions, or anti-patterns, update the relevant AGENTS.md file(s) in the same commit.
+- **Better design over patches**: Prefer fixing the root cause with correct design over patching symptoms. If a timeout is wrong, remove it — don't add retry logic around it.
 
 ## Anti-Patterns (DO NOT)
 

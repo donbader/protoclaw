@@ -114,6 +114,7 @@ mod tests {
             input_schema: None,
             sandbox: Default::default(),
             options: HashMap::new(),
+            call_timeout_secs: None,
         };
         let result = ExternalMcpServer::spawn("bad-server", &config).await;
         assert!(result.is_err());
@@ -137,6 +138,7 @@ mod tests {
             input_schema: None,
             sandbox: Default::default(),
             options: HashMap::new(),
+            call_timeout_secs: None,
         };
         let result = ExternalMcpServer::spawn("no-binary", &config).await;
         assert!(result.is_err());

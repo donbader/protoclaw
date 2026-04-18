@@ -26,6 +26,8 @@ RUN cargo chef prepare --recipe-path recipe.json
 # PROFILE: "release" (default) or "debug" (for dev builds)
 FROM chef AS builder
 ARG PROFILE=release
+ARG ANYCLAW_VERSION=unknown
+ENV ANYCLAW_VERSION=${ANYCLAW_VERSION}
 
 # Enable sccache when GHA credentials are available (CI only)
 ARG SCCACHE_GHA_ENABLED

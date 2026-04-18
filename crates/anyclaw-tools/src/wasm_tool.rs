@@ -98,6 +98,7 @@ mod tests {
             input_schema: Some(r#"{"type":"object","properties":{"x":{"type":"number"}}}"#.into()),
             sandbox: WasmSandboxConfig::default(),
             options: HashMap::new(),
+            call_timeout_secs: None,
         }
     }
 
