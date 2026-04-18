@@ -199,7 +199,7 @@ Before submitting a new variant:
 
 ### Config changes not taking effect
 
-`anyclaw.yaml` is baked into `/etc/anyclaw/` (outside the `/workspace` volume), so config changes take effect on rebuild without needing to remove volumes:
+`anyclaw.yaml` is baked into `/anyclaw/anyclaw.yaml` (the data volume mounts at `/anyclaw/data/`, so config isn't shadowed). Config changes take effect on rebuild without needing to remove volumes:
 
 ```sh
 docker compose up -d --build
