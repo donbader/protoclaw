@@ -433,6 +433,13 @@ pub enum WorkspaceConfig {
     Docker(DockerWorkspaceConfig),
 }
 
+impl WorkspaceConfig {
+    /// Whether this workspace uses Docker.
+    pub fn is_docker(&self) -> bool {
+        matches!(self, Self::Docker(_))
+    }
+}
+
 // LIMITATION: Do not access binary/env/working_dir on AgentConfig directly
 // AgentConfig.workspace is a tagged enum (WorkspaceConfig::Local or WorkspaceConfig::Docker).
 // Binary, env, and working_dir live on the variant structs, not on AgentConfig itself.

@@ -392,6 +392,9 @@ impl AgentsManager {
             if slot.lifecycle.disabled {
                 continue;
             }
+            if !slot.config.workspace.is_docker() {
+                continue;
+            }
             let Some(conn) = &slot.connection else {
                 continue;
             };
@@ -2649,7 +2652,7 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn when_send_keepalive_called_then_connected_slots_receive_notification() {
+    async fn when_send_keepalive_called_then_connected_docker_slots_receive_notification() {
         let (handle, rx) = make_tools_handle();
         let tools_task = tokio::spawn(serve_tools_urls(rx));
 
@@ -2657,6 +2660,28 @@ mod tests {
         m.start().await.unwrap();
 
         assert!(m.slots[0].connection.is_some());
+        // mock-agent uses Local workspace — keepalive should be skipped
+        m.send_keepalive().await;
+
+        m.shutdown_all().await;
+        tools_task.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_send_keepalive_called_with_local_agent_then_skipped() {
+        let (handle, rx) = make_tools_handle();
+        let tools_task = tokio::spawn(serve_tools_urls(rx));
+
+        let mut m = AgentsManager::new(mock_agents_manager_config(), handle);
+        m.start().await.unwrap();
+
+        assert!(m.slots[0].connection.is_some());
+        assert!(
+            !m.slots[0].config.workspace.is_docker(),
+            "mock-agent must be a local workspace"
+        );
+        // Local agents don't need keepalives — no Docker attach timeout
         m.send_keepalive().await;
 
         m.shutdown_all().await;
