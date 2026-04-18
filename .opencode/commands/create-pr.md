@@ -27,13 +27,12 @@ git worktree add "$WT" -b <branch-name>
 # Mirror gitignored items from main into worktree (recursive).
 # Directories are created (not symlinked) so trailing-slash .gitignore patterns still match.
 # Files are symlinked so .env, etc. stay in sync.
+# Uses find instead of globs to avoid zsh nomatch errors on empty directories.
 mirror_ignored() {
   local src="$1" dst="$2"
-  for f in "$src"/.* "$src"/*; do
-    name="$(basename "$f")"
-    [ "$name" = "." ] || [ "$name" = ".." ] || [ "$name" = ".worktrees" ] && continue
-    [ "$name" = ".git" ] && continue
+  find "$src" -maxdepth 1 -mindepth 1 -not -name ".git" -not -name ".worktrees" | while IFS= read -r f; do
     git check-ignore -q "$f" 2>/dev/null || continue
+    name="$(basename "$f")"
     if [ -d "$f" ]; then
       mkdir -p "$dst/$name"
       mirror_ignored "$f" "$dst/$name"
