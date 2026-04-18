@@ -586,6 +586,27 @@ mod tests {
     }
 
     #[rstest]
+    fn when_build_container_config_with_extra_hosts_then_json_contains_extra_hosts_key() {
+        let mut config = given_minimal_docker_config();
+        config.extra_hosts = vec!["host.docker.internal:host-gateway".to_string()];
+        let labels = container_labels("test-agent");
+        let host_config = build_host_config(&config).expect("build_host_config should succeed");
+        let container_config = DockerBackend::build_container_config(&config, labels, host_config);
+        let json =
+            serde_json::to_value(&container_config).expect("ContainerCreateBody should serialize");
+        let hc = &json["HostConfig"];
+        assert!(
+            hc.get("ExtraHosts").is_some(),
+            "HostConfig JSON must contain ExtraHosts key, got: {hc}"
+        );
+        assert_eq!(
+            hc["ExtraHosts"],
+            serde_json::json!(["host.docker.internal:host-gateway"]),
+            "ExtraHosts should contain the configured entries"
+        );
+    }
+
+    #[rstest]
     fn when_build_host_config_with_extra_hosts_then_extra_hosts_are_set() {
         let mut config = given_minimal_docker_config();
         config.extra_hosts = vec!["myhost:192.168.1.1".to_string()];
