@@ -99,7 +99,7 @@ jobs:
           git checkout -b "$BRANCH"
           git add CHANGELOG.md Cargo.lock crates/anyclaw/Cargo.toml
           git commit -m "chore: release v${VERSION}"
-          git push origin "$BRANCH"
+          git push origin "$BRANCH" --force
           PR_URL=$(gh pr create \
             --title "chore: release v${VERSION}" \
             --body "Automated release PR for v${VERSION}. Merging triggers tag + Docker build." \
