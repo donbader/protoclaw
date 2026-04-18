@@ -7,14 +7,14 @@ coverage/
 *.profraw
 
 # Internal planning artifacts (local-only)
-.planning/
-.sisyphus/
+.planning
+.sisyphus
 docs/superpowers/
 
 # IDE / OS
 .DS_Store
-.idea/
-.vscode/
+.idea
+.vscode
 
 # WASM artifacts
 *.wasm
