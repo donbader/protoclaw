@@ -12,6 +12,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.9.3] — 2026-04-18
+
+### Fixed
+
+- **Tool call update throttling**: Telegram channel now applies the same edit cooldown to tool call updates as response edits, preventing Telegram API rate limiting during verbose commands (e.g. `apt-get install`) that produce many rapid heartbeats (#63)
+- **Finalization delivery fallback**: If editing the response message fails (rate-limited, deleted), the channel now falls back to sending a new message instead of silently dropping the response (#63)
+
 ## [0.9.2] — 2026-04-18
 
 ### Fixed
@@ -84,7 +91,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 Starting point for tracked binary releases. Prior versions were not formally documented.
 
-[Unreleased]: https://github.com/donbader/anyclaw/compare/v0.9.2...HEAD
+[Unreleased]: https://github.com/donbader/anyclaw/compare/v0.9.3...HEAD
+[0.9.3]: https://github.com/donbader/anyclaw/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/donbader/anyclaw/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/donbader/anyclaw/compare/v0.8.2...v0.9.1
 [0.8.2]: https://github.com/donbader/anyclaw/compare/v0.8.1...v0.8.2
