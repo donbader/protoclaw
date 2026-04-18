@@ -32,7 +32,7 @@ jobs:
               - '!docs/**'
               - '!LICENSE-*'
               - '!.github/workflows/ghcr-cleanup.yml'
-              - '!.github/workflows/docker.yml'
+              - '!.github/workflows/release.yml'
 
   lint:
     needs: [changes]

@@ -22,6 +22,8 @@ Valid prefixes: `feat/`, `fix/`, `docs/`, `chore/`, `refactor/`, `ci/`
 MAIN="$(git rev-parse --show-toplevel)"
 WT="$MAIN/.worktrees/<branch-name>"
 
+git pull origin main --ff-only
+
 git worktree add "$WT" -b <branch-name>
 
 # Mirror gitignored items from main into worktree (recursive).

@@ -12,23 +12,37 @@ SDK crate releases are fully automated via [release-plz](https://release-plz.ien
 
 **Publish order:** `sdk-types` → `sdk-agent`, `sdk-channel`, `sdk-tool` (dependency order).
 
-## Binary (manual trigger)
+**Workflow:** `.github/workflows/release-sdk.yml`
 
-Anyclaw is distributed as Docker images — no native binary releases. The release process:
+## Binary (one-click workflow_dispatch)
 
-1. Update `crates/anyclaw/Cargo.toml` version and `CHANGELOG.md`
-2. Commit directly to `main` and push
-3. Trigger the Docker workflow:
+Anyclaw is distributed as Docker images — no native binary releases. The entire release is a single click:
+
+1. Go to Actions → "Release" → Run workflow
+2. Optionally provide a version (e.g. `0.10.0`). If left empty, version is auto-detected from conventional commits since the last tag (feat → minor bump, otherwise → patch bump).
+3. The workflow handles everything:
+   - Detects version from commits (if not provided)
+   - Generates changelog entries via git-cliff
+   - Bumps `crates/anyclaw/Cargo.toml`
+   - Commits to `main` and pushes
+   - Creates the `v<version>` git tag
+   - Builds multi-arch Docker images (amd64 + arm64)
+   - Pushes to GHCR with tags: `<version>`, `<major>.<minor>`, `<sha>`, `latest`
+   - Runs Trivy vulnerability scan
+   - Verifies multi-arch manifest
+
+**Workflow:** `.github/workflows/release.yml`
+
+**CLI shortcut:**
 
 ```bash
-gh workflow run docker.yml -f version=<version>
+gh workflow run release.yml
+gh workflow run release.yml -f version=0.10.0
 ```
 
-The workflow validates that `Cargo.toml` matches the input version, creates the `v<version>` git tag, then builds multi-arch Docker images (amd64 + arm64) and pushes to GHCR.
-
-For AI-assisted releases, use the `/release` command which automates version detection, changelog generation, and workflow triggering.
-
 **Versioning:** The binary follows [semver](https://semver.org/). Bump minor for new features, patch for bugfixes.
+
+**Run-name:** Each run shows as "Release v0.X.Y" in the Actions tab for easy identification.
 
 ## When to Release
 
@@ -38,6 +52,5 @@ For AI-assisted releases, use the `/release` command which automates version det
 ## Checklist Before Releasing
 
 - [ ] All CI checks pass on `main`
-- [ ] `CHANGELOG.md` is updated with the new version
-- [ ] `crates/anyclaw/Cargo.toml` version matches the version you're about to release
+- [ ] You're on `main` with a clean working tree
 - [ ] No known regressions in the examples
