@@ -18,8 +18,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: write
     outputs:
       version: ${{ steps.version.outputs.version }}
+      pr_number: ${{ steps.pr.outputs.pr_number }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -82,26 +84,57 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           LAST_TAG=$(git tag -l 'v*' --sort=-v:refname | head -1 | sed 's/^v//')
-
-          # Update [Unreleased] compare link
           sed -i "s|\[Unreleased\]: .*|[Unreleased]: https://github.com/donbader/anyclaw/compare/v${VERSION}...HEAD|" CHANGELOG.md
-
-          # Add version compare link if not present
           if ! grep -q "^\[${VERSION}\]:" CHANGELOG.md; then
             sed -i "/^\[Unreleased\]:/a [${VERSION}]: https://github.com/donbader/anyclaw/compare/v${LAST_TAG}...v${VERSION}" CHANGELOG.md
           fi
 
-      - name: Commit and push
+      - name: Create release branch and PR
+        id: pr
         run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          BRANCH="release/v${VERSION}"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
           git add CHANGELOG.md Cargo.lock crates/anyclaw/Cargo.toml
-          git commit -m "chore: release v${{ steps.version.outputs.version }}"
-          git push origin main
+          git commit -m "chore: release v${VERSION}"
+          git push origin "$BRANCH"
+          PR_URL=$(gh pr create \
+            --title "chore: release v${VERSION}" \
+            --body "Automated release PR for v${VERSION}. Merging triggers tag + Docker build." \
+            --base main \
+            --head "$BRANCH")
+          PR_NUMBER=$(echo "$PR_URL" | grep -o '[0-9]*$')
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          gh pr merge "$PR_NUMBER" --auto --squash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  wait-for-merge:
+    name: Wait for merge
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - name: Poll until PR is merged
+        run: |
+          for i in $(seq 1 60); do
+            STATE=$(gh pr view ${{ needs.prepare.outputs.pr_number }} --repo ${{ github.repository }} --json state -q '.state')
+            if [ "$STATE" = "MERGED" ]; then
+              echo "PR #${{ needs.prepare.outputs.pr_number }} merged"
+              exit 0
+            fi
+            echo "Waiting for merge... attempt $i/60 (state: $STATE)"
+            sleep 15
+          done
+          echo "ERROR: PR did not merge within 15 minutes"
+          exit 1
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   tag:
     name: Create tag
-    needs: prepare
+    needs: [prepare, wait-for-merge]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -109,6 +142,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           ref: main
+          fetch-depth: 0
 
       - name: Pull release commit
         run: git pull origin main
