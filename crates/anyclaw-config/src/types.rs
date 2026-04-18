@@ -610,6 +610,10 @@ pub struct ToolConfig {
     /// Arbitrary key-value options passed to the tool during initialization.
     #[serde(default)]
     pub options: HashMap<String, serde_json::Value>,
+    /// Per-tool call timeout in seconds. `None` = no timeout (tool calls can run indefinitely).
+    /// Applies to external MCP tool invocations only (WASM tools use `sandbox.epoch_timeout_secs`).
+    #[serde(default)]
+    pub call_timeout_secs: Option<u64>,
 }
 
 /// WASM sandbox resource limits for sandboxed tool execution.
@@ -999,6 +1003,23 @@ tools_manager:
         let yaml = "binary: \"mcp-server-filesystem\"";
         let config: ToolConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(config.binary, Some("mcp-server-filesystem".into()));
+    }
+
+    #[test]
+    fn when_tool_config_has_call_timeout_then_parses_to_some() {
+        let yaml = r#"
+binary: "mcp-server-filesystem"
+call_timeout_secs: 60
+"#;
+        let config: ToolConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(config.call_timeout_secs, Some(60));
+    }
+
+    #[test]
+    fn when_tool_config_has_no_call_timeout_then_defaults_to_none() {
+        let yaml = "binary: \"mcp-server-filesystem\"";
+        let config: ToolConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(config.call_timeout_secs, None);
     }
 
     #[test]

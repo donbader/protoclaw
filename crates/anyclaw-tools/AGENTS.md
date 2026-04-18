@@ -25,7 +25,7 @@ Manages tool availability: spawns external MCP servers, loads WASM-sandboxed too
 
 Implements rmcp's `ServerHandler` trait. Aggregates tools from all three sources into a single MCP endpoint:
 - `list_tools()` — merges native host tools + external server tools
-- `call_tool()` — routes to native host first, then external servers by name match
+- `call_tool()` — routes to native host first, then external servers by name match. Per-server call timeouts are enforced via `tokio::time::timeout` when `call_timeout_secs` is configured on the tool
 
 Served over HTTP via rmcp's `StreamableHttpService` (stateful mode) on a random port bound to `0.0.0.0`. The advertised URL uses `tools_server_host` from `ToolsManagerConfig` (default `127.0.0.1`; set to the container hostname in Docker deployments so agent containers can reach it). The URL is registered in `server_urls` so `AgentsManager` can pass it to agents via `session/new` → `mcp_servers`. Each configured external MCP tool gets its own `McpServerUrl` entry pointing to the shared aggregated endpoint.
 

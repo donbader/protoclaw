@@ -663,6 +663,16 @@
             "null"
           ]
         },
+        "call_timeout_secs": {
+          "default": null,
+          "description": "Per-tool call timeout in seconds. `None` = no timeout (tool calls can run indefinitely).\nApplies to external MCP tool invocations only (WASM tools use `sandbox.epoch_timeout_secs`).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "description": {
           "default": "",
           "description": "Human-readable description of what the tool does.",
