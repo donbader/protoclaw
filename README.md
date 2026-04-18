@@ -123,8 +123,8 @@ We're working toward a stable v1.0. Here's where things stand:
 | Telegram: reply/thread context | ✅ | Sender attribution, partial quotes, media placeholders, openclaw-compatible format |
 | Telegram: external/cross-chat reply context | planned | Handle `external_reply` for replies to messages from other chats |
 | Telegram: reply media download | ✅ | Photos from replies downloaded; other media types show placeholder |
-| Telegram: reply context access control | planned | Suppress reply context in groups when original sender is not in allowlist |
-| Telegram: group/user allowlists | planned | Control who can interact with the agent |
+| Telegram: reply context access control | ✅ | Suppress reply context in groups when original sender is not in allowlist |
+| Telegram: group/user allowlists | ✅ | Control who can interact with the agent via `access_control` options |
 
 ### Tools
 

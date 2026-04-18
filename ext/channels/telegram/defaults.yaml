@@ -7,3 +7,9 @@ ack:
   typing: false
   reaction_emoji: "👀"
   reaction_lifecycle: "remove"
+access_control:
+  group_policy: "open"
+  allowed_users: ["*"]
+  group_allowed_users: ["*"]
+  require_mention: false
+  groups: {}

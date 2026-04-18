@@ -226,6 +226,15 @@ impl Channel for TelegramChannel {
         {
             *self.state.finalization_delay_ms.write().await = v;
         }
+        let options_value = serde_json::Value::Object(
+            params
+                .options
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
+        );
+        *self.state.access_config.write().await =
+            crate::access_control::AccessConfig::from_options(&options_value);
         let token = params
             .options
             .get("bot_token")
@@ -245,6 +254,16 @@ impl Channel for TelegramChannel {
         let bot = self.bot()?.clone();
         *self.state.outbound.lock().await = Some(outbound);
         *self.state.permission_tx.lock().await = Some(permission_tx);
+        match bot.get_me().await {
+            Ok(me) => {
+                if let Some(ref username) = me.username {
+                    *self.state.bot_username.write().await = Some(username.clone());
+                }
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "failed to fetch bot username for mention detection");
+            }
+        }
         tokio::spawn(crate::dispatcher::run_dispatcher(bot, self.state.clone()));
         Ok(())
     }
