@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use anyclaw_config::WorkspaceConfig;
 use anyclaw_core::{CrashAction, SessionKey};
+use anyclaw_sdk_types::ChannelEvent;
 
 use crate::acp_types::SessionLoadParams;
 use crate::connection::AgentConnection;
@@ -16,6 +17,8 @@ impl AgentsManager {
         if !self.prepare_restart(slot_idx, &agent_name).await {
             return;
         }
+
+        self.notify_crash_to_channels(slot_idx, &agent_name).await;
 
         if !self.respawn_and_initialize(slot_idx, &agent_name).await {
             return;
@@ -45,6 +48,37 @@ impl AgentsManager {
                 tokio::time::sleep(delay).await;
                 true
             }
+        }
+    }
+
+    async fn notify_crash_to_channels(&self, slot_idx: usize, agent_name: &str) {
+        let Some(sender) = &self.channels_sender else {
+            return;
+        };
+        let session_keys: Vec<SessionKey> =
+            self.slots[slot_idx].session_map.keys().cloned().collect();
+        if session_keys.is_empty() {
+            return;
+        }
+        tracing::info!(
+            agent = %agent_name,
+            sessions = session_keys.len(),
+            "notifying channels of agent crash"
+        );
+        for sk in session_keys {
+            let error_content = serde_json::json!({
+                "update": {
+                    "sessionUpdate": "result",
+                    "isError": true,
+                    "content": format!("Agent crashed — restarting ({agent_name})"),
+                }
+            });
+            let _ = sender
+                .send(ChannelEvent::DeliverMessage {
+                    session_key: sk,
+                    content: error_content,
+                })
+                .await;
         }
     }
 

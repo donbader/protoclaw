@@ -361,65 +361,128 @@ impl AgentsManager {
             let completion_tx = self.completion_tx.clone();
             let channels_tx = self.channels_sender.clone();
             let sk = session_key.clone();
+            let prompt_timeout =
+                Self::acp_timeout_for(&self.slots[slot_idx].config, &self.manager_config);
             tokio::spawn(async move {
-                match response_rx.await {
-                    Ok(response) => {
-                        // Check if the agent returned a JSON-RPC error
-                        let mut session_expired = false;
-                        let stop_reason;
-                        if let Some(error) = &response.error {
-                            let msg = &error.message;
-                            tracing::warn!(session_key = %sk, error = %msg, "agent returned error for prompt");
+                let response = match tokio::time::timeout(prompt_timeout, response_rx).await {
+                    Ok(Ok(resp)) => resp,
+                    Ok(Err(_)) => {
+                        tracing::warn!(session_key = %sk, "prompt response channel dropped");
+                        if let Some(sender) = &channels_tx {
+                            let error_content = serde_json::json!({
+                                "update": {
+                                    "sessionUpdate": "result",
+                                    "isError": true,
+                                    "content": "Agent connection lost",
+                                }
+                            });
+                            let _ = sender
+                                .send(ChannelEvent::DeliverMessage {
+                                    session_key: sk.clone(),
+                                    content: error_content,
+                                })
+                                .await;
+                        }
+                        let _ = completion_tx
+                            .send(PromptCompletion {
+                                session_key: sk,
+                                session_expired: false,
+                                stop_reason: anyclaw_sdk_types::acp::StopReason::Refusal,
+                            })
+                            .await;
+                        return;
+                    }
+                    Err(_elapsed) => {
+                        tracing::error!(
+                            session_key = %sk,
+                            timeout_secs = prompt_timeout.as_secs(),
+                            "session/prompt timed out"
+                        );
+                        if let Some(sender) = &channels_tx {
+                            let error_content = serde_json::json!({
+                                "update": {
+                                    "sessionUpdate": "result",
+                                    "isError": true,
+                                    "content": format!(
+                                        "Agent timed out after {}s",
+                                        prompt_timeout.as_secs()
+                                    ),
+                                }
+                            });
+                            let _ = sender
+                                .send(ChannelEvent::DeliverMessage {
+                                    session_key: sk.clone(),
+                                    content: error_content,
+                                })
+                                .await;
+                        }
+                        let _ = completion_tx
+                            .send(PromptCompletion {
+                                session_key: sk,
+                                session_expired: false,
+                                stop_reason: anyclaw_sdk_types::acp::StopReason::Refusal,
+                            })
+                            .await;
+                        return;
+                    }
+                };
 
-                            // Detect "session not found" so the stale mapping gets
-                            // invalidated in handle_prompt_completion, allowing the
-                            // next prompt to trigger heal_session.
-                            let combined = format!(
-                                "{} {}",
-                                msg,
-                                error
-                                    .data
-                                    .as_ref()
-                                    .map(std::string::ToString::to_string)
-                                    .unwrap_or_default()
-                            );
-                            if combined.to_lowercase().contains("session not found") {
-                                session_expired = true;
-                            }
-                            stop_reason = anyclaw_sdk_types::acp::StopReason::Refusal;
+                {
+                    // Check if the agent returned a JSON-RPC error
+                    let mut session_expired = false;
+                    let stop_reason;
+                    if let Some(error) = &response.error {
+                        let msg = &error.message;
+                        tracing::warn!(session_key = %sk, error = %msg, "agent returned error for prompt");
 
-                            if let Some(sender) = &channels_tx {
-                                let error_content = serde_json::json!({
-                                    "error": msg,
-                                    "update": { "sessionUpdate": "result" }
-                                });
-                                let _ = sender
-                                    .send(ChannelEvent::DeliverMessage {
-                                        session_key: sk.clone(),
-                                        content: error_content,
-                                    })
-                                    .await;
-                            }
-                        } else {
-                            let prompt_resp: PromptResponse =
+                        // Detect "session not found" so the stale mapping gets
+                        // invalidated in handle_prompt_completion, allowing the
+                        // next prompt to trigger heal_session.
+                        let combined = format!(
+                            "{} {}",
+                            msg,
+                            error
+                                .data
+                                .as_ref()
+                                .map(std::string::ToString::to_string)
+                                .unwrap_or_default()
+                        );
+                        if combined.to_lowercase().contains("session not found") {
+                            session_expired = true;
+                        }
+                        stop_reason = anyclaw_sdk_types::acp::StopReason::Refusal;
+
+                        if let Some(sender) = &channels_tx {
+                            let error_content = serde_json::json!({
+                                "update": {
+                                    "sessionUpdate": "result",
+                                    "isError": true,
+                                    "content": msg,
+                                }
+                            });
+                            let _ = sender
+                                .send(ChannelEvent::DeliverMessage {
+                                    session_key: sk.clone(),
+                                    content: error_content,
+                                })
+                                .await;
+                        }
+                    } else {
+                        let prompt_resp: PromptResponse =
                                 serde_json::from_value(response.result.unwrap_or_default())
                                     .unwrap_or_else(|e| {
                                         tracing::warn!(session_key = %sk, error = %e, "failed to parse PromptResponse, defaulting");
                                         PromptResponse { stop_reason: anyclaw_sdk_types::acp::StopReason::EndTurn }
                                     });
-                            stop_reason = prompt_resp.stop_reason;
-                        }
-                        let _ = completion_tx
-                            .send(PromptCompletion {
-                                session_key: sk,
-                                session_expired,
-                                stop_reason,
-                            })
-                            .await;
+                        stop_reason = prompt_resp.stop_reason;
                     }
-                    Err(_) => {
-                        tracing::warn!(session_key = %sk, "prompt response channel dropped");
-                    }
+                    let _ = completion_tx
+                        .send(PromptCompletion {
+                            session_key: sk,
+                            session_expired,
+                            stop_reason,
+                        })
+                        .await;
                 }
             });
         }

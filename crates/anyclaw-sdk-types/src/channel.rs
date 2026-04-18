@@ -1475,4 +1475,57 @@ mod tests {
             other => panic!("expected MessageChunk, got {:?}", other),
         }
     }
+
+    #[rstest]
+    fn when_result_has_is_error_true_then_content_kind_reflects_it() {
+        let content = serde_json::json!({
+            "update": {
+                "sessionUpdate": "result",
+                "isError": true,
+                "content": "Agent sent malformed update: missing field",
+            }
+        });
+        match ContentKind::from_content(&content) {
+            ContentKind::Result { text, is_error } => {
+                assert!(is_error);
+                assert_eq!(text, "Agent sent malformed update: missing field");
+            }
+            other => panic!("expected Result, got {:?}", other),
+        }
+    }
+
+    #[rstest]
+    fn when_result_has_is_error_false_then_content_kind_reflects_it() {
+        let content = serde_json::json!({
+            "update": {
+                "sessionUpdate": "result",
+                "content": "normal result",
+            }
+        });
+        match ContentKind::from_content(&content) {
+            ContentKind::Result { text, is_error } => {
+                assert!(!is_error);
+                assert_eq!(text, "normal result");
+            }
+            other => panic!("expected Result, got {:?}", other),
+        }
+    }
+
+    #[rstest]
+    fn when_error_content_nested_in_deliver_message_then_content_kind_parses() {
+        let deliver_content = serde_json::json!({
+            "update": {
+                "sessionUpdate": "result",
+                "isError": true,
+                "content": "Failed to create session: connection refused",
+            }
+        });
+        match ContentKind::from_content(&deliver_content) {
+            ContentKind::Result { text, is_error } => {
+                assert!(is_error);
+                assert_eq!(text, "Failed to create session: connection refused");
+            }
+            other => panic!("expected Result, got {:?}", other),
+        }
+    }
 }

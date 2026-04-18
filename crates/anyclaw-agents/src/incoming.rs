@@ -163,8 +163,11 @@ impl AgentsManager {
         };
 
         let error_content = serde_json::json!({
-            "error": format!("Agent sent malformed update: {error}"),
-            "update": { "sessionUpdate": "result" }
+            "update": {
+                "sessionUpdate": "result",
+                "isError": true,
+                "content": format!("Agent sent malformed update: {error}"),
+            }
         });
         let _ = sender
             .send(ChannelEvent::DeliverMessage {
