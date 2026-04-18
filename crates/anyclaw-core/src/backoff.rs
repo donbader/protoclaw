@@ -53,6 +53,9 @@ pub struct CrashTracker {
     timestamps: Vec<Instant>,
     max_crashes: u32,
     window: Duration,
+    long_max_crashes: u32,
+    long_window: Duration,
+    total_crashes: u32,
 }
 
 impl CrashTracker {
@@ -62,31 +65,58 @@ impl CrashTracker {
             timestamps: Vec::new(),
             max_crashes,
             window,
+            long_max_crashes: constants::DEFAULT_CRASH_LONG_MAX,
+            long_window: Duration::from_secs(constants::DEFAULT_CRASH_LONG_WINDOW_SECS),
+            total_crashes: 0,
         }
+    }
+
+    /// Configure a long-horizon crash window that catches low-frequency
+    /// but persistent crashes (e.g., every 10 minutes for an hour).
+    pub fn with_long_horizon(mut self, max_crashes: u32, window: Duration) -> Self {
+        self.long_max_crashes = max_crashes;
+        self.long_window = window;
+        self
     }
 
     /// Record a crash and prune timestamps outside the window.
     pub fn record_crash(&mut self) {
         let now = Instant::now();
         self.timestamps
-            .retain(|t| now.duration_since(*t) < self.window);
+            .retain(|t| now.duration_since(*t) < self.long_window);
         self.timestamps.push(now);
+        self.total_crashes += 1;
     }
 
     /// Check whether the number of recent crashes meets or exceeds the threshold.
+    /// Checks both the short sliding window and the long-horizon counter.
     pub fn is_crash_loop(&self) -> bool {
         let now = Instant::now();
-        let recent = self
+        let short_recent = self
             .timestamps
             .iter()
             .filter(|t| now.duration_since(**t) < self.window)
             .count();
-        recent >= self.max_crashes as usize
+        if short_recent >= self.max_crashes as usize {
+            return true;
+        }
+        let long_recent = self
+            .timestamps
+            .iter()
+            .filter(|t| now.duration_since(**t) < self.long_window)
+            .count();
+        long_recent >= self.long_max_crashes as usize
     }
 
     /// Clear all recorded crash timestamps.
     pub fn reset(&mut self) {
         self.timestamps.clear();
+        self.total_crashes = 0;
+    }
+
+    /// Total number of crashes recorded since creation or last reset.
+    pub fn total_crashes(&self) -> u32 {
+        self.total_crashes
     }
 }
 
@@ -191,6 +221,40 @@ mod tests {
     fn when_default_crash_tracker_created_then_max_is_5_in_60s() {
         let mut tracker = CrashTracker::default();
         for _ in 0..4 {
+            tracker.record_crash();
+        }
+        assert!(!tracker.is_crash_loop());
+        tracker.record_crash();
+        assert!(tracker.is_crash_loop());
+    }
+
+    #[test]
+    fn given_low_frequency_crashes_when_long_horizon_exceeded_then_crash_loop_detected() {
+        let mut tracker = CrashTracker::new(5, Duration::from_secs(60))
+            .with_long_horizon(3, Duration::from_secs(3600));
+        tracker.record_crash();
+        assert!(!tracker.is_crash_loop());
+        tracker.record_crash();
+        assert!(!tracker.is_crash_loop());
+        tracker.record_crash();
+        assert!(tracker.is_crash_loop());
+    }
+
+    #[test]
+    fn when_reset_called_then_total_crashes_cleared() {
+        let mut tracker = CrashTracker::new(5, Duration::from_secs(60));
+        tracker.record_crash();
+        tracker.record_crash();
+        assert_eq!(tracker.total_crashes(), 2);
+        tracker.reset();
+        assert_eq!(tracker.total_crashes(), 0);
+    }
+
+    #[test]
+    fn given_default_long_horizon_when_10_crashes_in_hour_then_crash_loop_detected() {
+        let mut tracker = CrashTracker::new(100, Duration::from_secs(60))
+            .with_long_horizon(10, Duration::from_secs(3600));
+        for _ in 0..9 {
             tracker.record_crash();
         }
         assert!(!tracker.is_crash_loop());

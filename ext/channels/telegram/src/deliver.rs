@@ -563,9 +563,13 @@ pub async fn deliver_to_chat(
                     tokio::time::sleep(Duration::from_millis(delay_ms)).await;
                     let final_data = {
                         let mut turns = state_clone.turns.write().await;
-                        turns
-                            .get_mut(&chat_id)
-                            .and_then(ChatTurn::take_response_for_finalize)
+                        turns.get_mut(&chat_id).and_then(|t| {
+                            if t.try_finalize_response() {
+                                t.take_response_for_finalize()
+                            } else {
+                                None
+                            }
+                        })
                     };
                     if let Some((text, msg_id)) = final_data
                         && !text.is_empty()
@@ -632,16 +636,25 @@ pub async fn deliver_to_chat(
                 let handle = tokio::spawn(async move {
                     let debounce_ms = *state_clone.thought_debounce_ms.read().await;
                     tokio::time::sleep(Duration::from_millis(debounce_ms)).await;
-                    let (accumulated, response_msg_id) = {
-                        let turns = state_clone.turns.read().await;
-                        match turns.get(&chat_id) {
+                    let (accumulated, response_msg_id, won) = {
+                        let mut turns = state_clone.turns.write().await;
+                        match turns.get_mut(&chat_id) {
                             Some(turn) => match &turn.response {
-                                Some(track) => (track.buffer.clone(), track.msg_id),
+                                Some(track) => {
+                                    let buf = track.buffer.clone();
+                                    let mid = track.msg_id;
+                                    let won = turn.try_finalize_response();
+                                    (buf, mid, won)
+                                }
                                 None => return,
                             },
                             None => return,
                         }
                     };
+                    if !won {
+                        tracing::debug!(chat_id, "debounce: lost finalization race, skipping send");
+                        return;
+                    }
                     if accumulated.is_empty() {
                         return;
                     }
@@ -784,9 +797,13 @@ pub async fn deliver_to_chat(
                 tokio::time::sleep(Duration::from_millis(delay_ms)).await;
                 let final_data = {
                     let mut turns = state_clone.turns.write().await;
-                    turns
-                        .get_mut(&chat_id)
-                        .and_then(ChatTurn::take_response_for_finalize)
+                    turns.get_mut(&chat_id).and_then(|t| {
+                        if t.try_finalize_response() {
+                            t.take_response_for_finalize()
+                        } else {
+                            None
+                        }
+                    })
                 };
                 if let Some((text, msg_id)) = final_data {
                     tracing::debug!(
@@ -829,12 +846,28 @@ pub async fn deliver_to_chat(
 
             let (tools_text, existing_tools_msg_id) = {
                 let mut turns = state.turns.write().await;
-                let mid = message_id.unwrap_or("").to_string();
-                let turn = turns
-                    .entry(chat_id)
-                    .or_insert_with(|| ChatTurn::new(mid.clone()));
-                if !mid.is_empty() {
-                    turn.message_id = mid;
+                let Some(turn) = turns.get_mut(&chat_id) else {
+                    tracing::debug!(
+                        chat_id,
+                        tool_call_id,
+                        "discarding tool call: no active turn for chat"
+                    );
+                    return Ok(());
+                };
+
+                if turn.is_finalizing() {
+                    tracing::debug!(
+                        chat_id,
+                        tool_call_id,
+                        "discarding tool call: turn is finalizing"
+                    );
+                    return Ok(());
+                }
+
+                if let Some(mid) = message_id
+                    && !mid.is_empty()
+                {
+                    turn.message_id = mid.to_string();
                 }
 
                 if let Some(track) = turn.thought.as_mut() {
