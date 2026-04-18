@@ -1267,4 +1267,64 @@ mod tests {
             "non-error result with no prior text must not create a response"
         );
     }
+
+    #[tokio::test]
+    async fn when_tool_call_arrives_with_no_turn_then_discarded() {
+        let state = Arc::new(SharedState::new());
+        state
+            .session_chat_map
+            .write()
+            .await
+            .insert("sess-tc".into(), 77777);
+
+        let bot = Bot::new("test-token");
+        let content = serde_json::json!({
+            "update": {
+                "sessionUpdate": "tool_call",
+                "toolCallId": "tc-1",
+                "toolName": "bash",
+            }
+        });
+        let result = deliver_to_chat(&bot, &state, "sess-tc", &content).await;
+        assert!(result.is_ok());
+        assert!(
+            state.turns.read().await.get(&77777).is_none(),
+            "tool call with no existing turn must not create a new turn"
+        );
+    }
+
+    #[tokio::test]
+    async fn when_tool_call_arrives_while_finalizing_then_discarded() {
+        let state = Arc::new(SharedState::new());
+        state
+            .session_chat_map
+            .write()
+            .await
+            .insert("sess-fin".into(), 66666);
+
+        {
+            let mut turns = state.turns.write().await;
+            let mut turn = ChatTurn::new("msg-fin".to_string());
+            let handle = tokio::spawn(async { tokio::time::sleep(Duration::from_secs(60)).await });
+            turn.begin_finalizing(handle);
+            turns.insert(66666, turn);
+        }
+
+        let bot = Bot::new("test-token");
+        let content = serde_json::json!({
+            "update": {
+                "sessionUpdate": "tool_call",
+                "toolCallId": "tc-2",
+                "toolName": "read",
+            }
+        });
+        let result = deliver_to_chat(&bot, &state, "sess-fin", &content).await;
+        assert!(result.is_ok());
+        let turns = state.turns.read().await;
+        let turn = turns.get(&66666).expect("finalizing turn must still exist");
+        assert!(
+            turn.tool_calls.is_empty(),
+            "tool call during finalization must not be inserted"
+        );
+    }
 }
