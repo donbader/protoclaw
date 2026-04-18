@@ -261,4 +261,16 @@ mod tests {
         tracker.record_crash();
         assert!(tracker.is_crash_loop());
     }
+
+    #[test]
+    fn given_both_windows_when_short_window_exceeded_first_then_crash_loop_detected() {
+        let mut tracker = CrashTracker::new(3, Duration::from_secs(60))
+            .with_long_horizon(10, Duration::from_secs(3600));
+        tracker.record_crash();
+        tracker.record_crash();
+        assert!(!tracker.is_crash_loop());
+        tracker.record_crash();
+        assert!(tracker.is_crash_loop());
+        assert_eq!(tracker.total_crashes(), 3);
+    }
 }
