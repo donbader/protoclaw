@@ -1,6 +1,7 @@
 # anyclaw
 
 [![CI](https://github.com/donbader/anyclaw/actions/workflows/ci.yml/badge.svg)](https://github.com/donbader/anyclaw/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/donbader/anyclaw/graph/badge.svg)](https://codecov.io/gh/donbader/anyclaw)
 [![crates.io](https://img.shields.io/crates/v/anyclaw-sdk-types.svg)](https://crates.io/crates/anyclaw-sdk-types)
 [![docs.rs](https://img.shields.io/docsrs/anyclaw-sdk-types)](https://docs.rs/anyclaw-sdk-types)
 [![MSRV](https://img.shields.io/badge/MSRV-1.94-blue)](https://github.com/donbader/anyclaw/blob/main/Cargo.toml)
