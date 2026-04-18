@@ -4,6 +4,7 @@ use anyclaw_sdk_channel::{ChannelAckConfig, PermissionBroker};
 use anyclaw_sdk_types::{ChannelSendMessage, PermissionResponse};
 use tokio::sync::{Mutex, RwLock, mpsc};
 
+use crate::access_control::AccessConfig;
 use crate::turn::ChatTurn;
 
 pub struct SharedState {
@@ -19,6 +20,9 @@ pub struct SharedState {
     pub response_edit_cooldown_ms: RwLock<u64>,
     pub thought_debounce_ms: RwLock<u64>,
     pub finalization_delay_ms: RwLock<u64>,
+    pub access_config: RwLock<AccessConfig>,
+    pub bot_username: RwLock<Option<String>>,
+    pub bot_id: RwLock<Option<u64>>,
 }
 
 impl SharedState {
@@ -36,6 +40,9 @@ impl SharedState {
             response_edit_cooldown_ms: RwLock::new(500),
             thought_debounce_ms: RwLock::new(200),
             finalization_delay_ms: RwLock::new(200),
+            access_config: RwLock::new(AccessConfig::default()),
+            bot_username: RwLock::new(None),
+            bot_id: RwLock::new(None),
         }
     }
 }

@@ -2,6 +2,7 @@
 // and for ChannelInitializeParams.options (channel-specific config with channel-defined schemas)
 mod channel;
 // D-03: deliver.rs processes DeliverMessage.content (Value) — agent-defined content structure
+mod access_control;
 mod deliver;
 mod dispatcher;
 mod formatting;

@@ -10,6 +10,9 @@ use teloxide::types::{
     Chat, ChatId, ChatKind, InlineKeyboardMarkup, MediaKind, MessageId, MessageKind, PublicChatKind,
 };
 
+use crate::access_control::{
+    AccessDecision, SenderIdentity, evaluate_access, should_suppress_reply_context,
+};
 use crate::peer::peer_info_from_chat;
 use crate::state::SharedState;
 
@@ -76,6 +79,129 @@ fn reply_metadata_from_message(msg: &Message) -> Option<MessageMetadata> {
     })
 }
 
+fn is_group_chat(chat: &Chat) -> bool {
+    matches!(&chat.kind, ChatKind::Public(_))
+}
+
+fn text_mentions_bot(text: &str, bot_username: &str) -> bool {
+    let mention = format!("@{}", bot_username.to_lowercase());
+    text.to_lowercase().contains(&mention)
+}
+
+/// Extract a substring using UTF-16 offset and length (Telegram's encoding).
+fn slice_utf16(text: &str, utf16_offset: usize, utf16_length: usize) -> Option<&str> {
+    let mut byte_start = None;
+    let mut utf16_pos = 0;
+
+    for (byte_idx, ch) in text.char_indices() {
+        if utf16_pos == utf16_offset {
+            byte_start = Some(byte_idx);
+        }
+        if utf16_pos == utf16_offset + utf16_length {
+            return Some(&text[byte_start?..byte_idx]);
+        }
+        utf16_pos += ch.len_utf16();
+    }
+
+    if utf16_pos == utf16_offset + utf16_length {
+        return Some(&text[byte_start?..]);
+    }
+    None
+}
+
+fn entity_mentions_bot(msg: &Message, bot_username: &str) -> bool {
+    let Some(text) = msg.text().or(msg.caption()) else {
+        return false;
+    };
+    let entities = msg
+        .entities()
+        .or(msg.caption_entities())
+        .unwrap_or_default();
+    let target = format!("@{}", bot_username.to_lowercase());
+    for entity in entities {
+        if entity.kind == teloxide::types::MessageEntityKind::Mention
+            && let Some(slice) = slice_utf16(text, entity.offset, entity.length)
+            && slice.to_lowercase() == target
+        {
+            return true;
+        }
+    }
+    false
+}
+
+fn is_reply_to_bot(msg: &Message, bot_id: Option<u64>) -> bool {
+    let Some(bot_id) = bot_id else { return false };
+    msg.reply_to_message()
+        .and_then(|r| r.from.as_ref())
+        .is_some_and(|u| u.id.0 == bot_id)
+}
+
+fn sender_from_message(msg: &Message) -> SenderIdentity {
+    match msg.from.as_ref() {
+        Some(user) => SenderIdentity {
+            user_id: Some(user.id.0 as i64),
+            username: user.username.clone(),
+        },
+        None => SenderIdentity::default(),
+    }
+}
+
+async fn check_access(msg: &Message, state: &SharedState) -> AccessDecision {
+    let is_group = is_group_chat(&msg.chat);
+    let sender = sender_from_message(msg);
+    let bot_mentioned = if is_group {
+        let username_guard = state.bot_username.read().await;
+        let bot_id = *state.bot_id.read().await;
+        let explicit = match username_guard.as_deref() {
+            Some(username) => {
+                entity_mentions_bot(msg, username) || {
+                    let text = msg.text().or(msg.caption()).unwrap_or_default();
+                    text_mentions_bot(text, username)
+                }
+            }
+            None => false,
+        };
+        let implicit = is_reply_to_bot(msg, bot_id);
+        explicit || implicit
+    } else {
+        false
+    };
+
+    let access_cfg = state.access_config.read().await;
+    evaluate_access(&access_cfg, msg.chat.id.0, &sender, is_group, bot_mentioned)
+}
+
+async fn maybe_suppress_reply_context(
+    msg: &Message,
+    state: &SharedState,
+) -> Option<MessageMetadata> {
+    let is_group = is_group_chat(&msg.chat);
+    if !is_group {
+        return reply_metadata_from_message(msg);
+    }
+
+    let reply_sender = msg
+        .reply_to_message()
+        .and_then(|r| r.from.as_ref())
+        .map(|u| SenderIdentity {
+            user_id: Some(u.id.0 as i64),
+            username: u.username.clone(),
+        })
+        .unwrap_or_default();
+
+    let access_cfg = state.access_config.read().await;
+    if should_suppress_reply_context(&access_cfg, msg.chat.id.0, &reply_sender, true) {
+        tracing::debug!(
+            chat_id = msg.chat.id.0,
+            ?reply_sender,
+            "suppressing reply context for non-allowlisted sender"
+        );
+        return None;
+    }
+
+    reply_metadata_from_message(msg)
+}
+
 pub fn chat_type_str(chat: &Chat) -> &str {
     match &chat.kind {
         ChatKind::Private(_) => "private",
@@ -127,6 +253,25 @@ async fn handle_text_message(
     msg: Message,
     state: Arc<SharedState>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    match check_access(&msg, &state).await {
+        AccessDecision::Allow => {}
+        AccessDecision::Deny(reason) => {
+            tracing::debug!(
+                chat_id = msg.chat.id.0,
+                ?reason,
+                "access denied, dropping message"
+            );
+            return Ok(());
+        }
+        AccessDecision::SkipNoMention => {
+            tracing::debug!(
+                chat_id = msg.chat.id.0,
+                "bot not mentioned in group, skipping"
+            );
+            return Ok(());
+        }
+    }
+
     if let Some(text) = msg.text() {
         tracing::debug!(
             chat_id = msg.chat.id.0,
@@ -141,12 +286,13 @@ async fn handle_text_message(
             .insert(msg.chat.id.0, msg.id.0);
         let chat_type = chat_type_str(&msg.chat);
         let reply_image = resolve_reply_photo(&bot, &msg).await;
+        let metadata = maybe_suppress_reply_context(&msg, &state).await;
         let _ = process_text_message(
             msg.chat.id.0,
             chat_type,
             text,
             reply_image.as_deref(),
-            reply_metadata_from_message(&msg),
+            metadata,
             &state,
         )
         .await;
@@ -328,6 +474,7 @@ async fn handle_media_message(
     let reply_image = resolve_reply_photo(&bot, &msg).await;
 
     let chat_type = chat_type_str(&msg.chat);
+    let metadata = maybe_suppress_reply_context(&msg, &state).await;
     let _ = process_media_message(
         msg.chat.id.0,
         chat_type,
@@ -335,7 +482,7 @@ async fn handle_media_message(
         caption,
         image_url.as_deref(),
         reply_image.as_deref(),
-        reply_metadata_from_message(&msg),
+        metadata,
         &state,
     )
     .await;
@@ -370,6 +517,7 @@ async fn resolve_reply_photo(bot: &Bot, msg: &Message) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
     use tokio::sync::mpsc;
 
     #[tokio::test]
@@ -981,5 +1129,52 @@ mod tests {
                 },
             ]
         );
+    }
+
+    // --- slice_utf16 ---
+
+    #[rstest]
+    fn when_slice_utf16_ascii_then_correct() {
+        assert_eq!(slice_utf16("@mybot hello", 0, 6), Some("@mybot"));
+    }
+
+    #[rstest]
+    fn when_slice_utf16_emoji_before_mention_then_correct() {
+        // 👋 is 2 UTF-16 code units, 4 UTF-8 bytes
+        // "👋 @mybot" → UTF-16 offsets: 👋=0..2, space=2, @=3, m=4..8
+        assert_eq!(slice_utf16("👋 @mybot", 3, 6), Some("@mybot"));
+    }
+
+    #[rstest]
+    fn when_slice_utf16_multiple_emoji_before_mention_then_correct() {
+        // "🎉🎊 @mybot" → 🎉=0..2, 🎊=2..4, space=4, @=5, mybot=6..11
+        assert_eq!(slice_utf16("🎉🎊 @mybot", 5, 6), Some("@mybot"));
+    }
+
+    #[rstest]
+    fn when_slice_utf16_out_of_bounds_then_none() {
+        assert_eq!(slice_utf16("hi", 10, 5), None);
+    }
+
+    #[rstest]
+    fn when_slice_utf16_at_end_of_string_then_correct() {
+        assert_eq!(slice_utf16("hello @bot", 6, 4), Some("@bot"));
+    }
+
+    // --- text_mentions_bot ---
+
+    #[rstest]
+    fn when_text_mentions_bot_present_then_true() {
+        assert!(text_mentions_bot("hello @mybot how are you", "mybot"));
+    }
+
+    #[rstest]
+    fn when_text_mentions_bot_absent_then_false() {
+        assert!(!text_mentions_bot("hello world", "mybot"));
+    }
+
+    #[rstest]
+    fn when_text_mentions_bot_case_insensitive_then_true() {
+        assert!(text_mentions_bot("Hello @MyBot", "mybot"));
     }
 }

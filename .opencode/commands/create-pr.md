@@ -24,23 +24,28 @@ WT="$MAIN/.worktrees/<branch-name>"
 
 git worktree add "$WT" -b <branch-name>
 
-# Symlink all root-level gitignored files (skip .worktrees to avoid recursion)
-for f in "$MAIN"/.* "$MAIN"/*; do
-  name="$(basename "$f")"
-  [ "$name" = ".worktrees" ] && continue
-  git check-ignore -q "$f" 2>/dev/null || continue
-  ln -sf "$f" "$WT/$name"
-done
-
-# Symlink nested .env files
-find "$MAIN" -name '.env' -not -path '*/.worktrees/*' -not -path '*/target/*' | while read f; do
-  rel="${f#$MAIN/}"
-  mkdir -p "$WT/$(dirname "$rel")"
-  ln -sf "$f" "$WT/$rel"
-done
+# Mirror gitignored items from main into worktree (recursive).
+# Directories are created (not symlinked) so trailing-slash .gitignore patterns still match.
+# Files are symlinked so .env, etc. stay in sync.
+mirror_ignored() {
+  local src="$1" dst="$2"
+  for f in "$src"/.* "$src"/*; do
+    name="$(basename "$f")"
+    [ "$name" = "." ] || [ "$name" = ".." ] || [ "$name" = ".worktrees" ] && continue
+    [ "$name" = ".git" ] && continue
+    git check-ignore -q "$f" 2>/dev/null || continue
+    if [ -d "$f" ]; then
+      mkdir -p "$dst/$name"
+      mirror_ignored "$f" "$dst/$name"
+    else
+      ln -sf "$f" "$dst/$name"
+    fi
+  done
+}
+mirror_ignored "$MAIN" "$WT"
 ```
 
-Run `cargo check` in the worktree to verify clean baseline. All subsequent commands run in the worktree.
+Verify clean baseline in the worktree (e.g., build or type-check). All subsequent commands run in the worktree.
 
 ## Step 2. Do the work
 
@@ -48,22 +53,45 @@ Hand control back to the caller. This command does NOT implement changes.
 
 ## Step 3. Pre-flight checks
 
-Fast local checks only — full suite runs on CI:
+Run the project's formatting and linting checks. Detect from config files:
+
+| Detected | Format | Lint |
+|----------|--------|------|
+| `Cargo.toml` | `cargo fmt --all -- --check` | `cargo clippy --workspace -- -D warnings` |
+| `package.json` | `npm run format --check` or `prettier --check .` | `npm run lint` or `eslint .` |
+| `pyproject.toml` / `setup.py` | `ruff format --check .` or `black --check .` | `ruff check .` or `flake8` |
+| `go.mod` | `gofmt -l .` | `go vet ./...` |
+
+Fix formatting automatically. Stop and report if lint issues require design decisions.
+
+For bugfixes, also run the relevant test subset.
+
+## Step 4. Pre-commit checklist
+
+Before committing, create a todo list and verify each item. Do NOT skip items — this is the gate.
+
+- [ ] **Format + lint clean**: Step 3 checks pass
+- [ ] **Tests pass**: Run relevant test suite for changed crates/packages
+- [ ] **No absolute symlinks staged**: Run staging guard (below)
+- [ ] **Knowledge base updated**: If module structure, public APIs, or conventions changed, update relevant docs (e.g., `AGENTS.md`, `README.md` roadmap)
+- [ ] **Defaults updated**: If new config options were added, update defaults files
+- [ ] **No debug artifacts**: No `println!`, `console.log`, `dbg!`, or temp files in diff
+
+**Staging guard**: Before `git add`, verify no symlinks to absolute paths will be staged:
 
 ```bash
-cargo fmt --all -- --check
-cargo clippy --workspace -- -D warnings
+git status --porcelain | grep '^?' | while read -r _ f; do
+  [ -L "$f" ] && readlink "$f" | grep -q '^/' && echo "WARNING: absolute symlink: $f"
+done
 ```
 
-For bugfixes, also run `cargo test -p <affected-crate>`.
+If any are found, add them to `.gitignore` or exclude from staging. Never commit symlinks to absolute paths.
 
-Fix formatting automatically (`cargo fmt --all`). Stop and report if clippy issues require design decisions.
-
-## Step 4. Commit
+## Step 5. Commit
 
 Conventional commits. Subject: `<type>: <description>` — imperative, lowercase, no period, ≤72 chars. Body: explain *why*. Types: `feat`, `fix`, `docs`, `chore`, `refactor`, `test`, `ci`.
 
-## Step 5. Push and create PR
+## Step 6. Push and create PR
 
 ```bash
 git push -u origin HEAD
@@ -84,13 +112,11 @@ PR body MUST include:
 [How verified — commands, manual steps]
 ```
 
-If changes affect module structure, public APIs, or conventions, verify `AGENTS.md` files were updated.
-
 ```bash
 gh pr create --draft --title "<type>: <description>" --body "..." --assignee @me
 ```
 
-## Step 6. Verify CI
+## Step 7. Verify CI
 
 Delegate CI monitoring to a background subagent:
 
@@ -109,10 +135,10 @@ After firing the subagent, **end your response immediately**. Do NOT poll `backg
 
 When the notification arrives and you collect the result:
 
-- **CI_FAILED**: Read failure report, fix root cause, push, re-run Step 6. Max 3 attempts, then stop.
-- **CI_PASSED**: Proceed to Step 7.
+- **CI_FAILED**: Read failure report, fix root cause, push, re-run Step 7. Max 3 attempts, then stop.
+- **CI_PASSED**: Proceed to Step 8.
 
-## Step 7. Update PR if needed
+## Step 8. Update PR if needed
 
 If further commits were pushed after PR creation, update title and description:
 
@@ -120,7 +146,7 @@ If further commits were pushed after PR creation, update title and description:
 gh pr edit <pr-number> --title "<type>: <updated description>" --body "..."
 ```
 
-## Step 8. Hand off to user
+## Step 9. Hand off to user
 
 Report the PR URL and ask a blocking question:
 
@@ -132,7 +158,7 @@ Let me know when it's merged and I'll clean up the worktree.
 
 Do NOT poll, check status, or take further action. Wait for the user's response.
 
-## Step 9. Worktree cleanup (after user confirms merge)
+## Step 10. Worktree cleanup (after user confirms merge)
 
 ```bash
 chmod -R u+w .worktrees/<branch-name> 2>/dev/null || true
