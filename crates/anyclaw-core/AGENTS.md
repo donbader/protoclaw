@@ -43,6 +43,7 @@ Crates that already depend on `anyclaw-sdk-types` should import directly from th
 ## Backoff Defaults (tested explicitly)
 
 - `ExponentialBackoff::default()` = 100ms base, 30s cap, doubles each attempt
-- `CrashTracker::default()` = 5 crashes within 60s = crash loop
+- `CrashTracker::default()` = 5 crashes within 60s (short window) OR 10 crashes within 1 hour (long horizon) = crash loop
+- Long horizon is configurable via `with_long_horizon(max_crashes, window)`
 
 Do not change defaults without updating tests in `backoff.rs`.
