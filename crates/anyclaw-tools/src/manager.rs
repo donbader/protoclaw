@@ -420,6 +420,10 @@ impl ToolsManager {
         let ct = CancellationToken::new();
         let config = Self::build_server_config(&self.tools_server_host, ct.clone());
 
+        let mut session_manager = LocalSessionManager::default();
+        session_manager.session_config.keep_alive = None;
+        let session_manager = Arc::new(session_manager);
+
         let service: StreamableHttpService<AggregatedToolServer, LocalSessionManager> =
             StreamableHttpService::new(
                 move || {
@@ -428,7 +432,7 @@ impl ToolsManager {
                         Arc::clone(&external_servers),
                     ))
                 },
-                Default::default(),
+                session_manager,
                 config,
             );
 
