@@ -68,16 +68,14 @@ jobs:
       - name: Bump Cargo.toml version
         run: |
           sed -i "s/^version = \".*\"/version = \"${{ steps.version.outputs.version }}\"/" crates/anyclaw/Cargo.toml
-          cargo check -p anyclaw --quiet 2>/dev/null || true
+          cargo generate-lockfile
 
-      - name: Install git-cliff
+      - name: Generate changelog
         uses: orhun/git-cliff-action@v4
-        id: git-cliff
         with:
           config: cliff.toml
           args: --unreleased --tag "v${{ steps.version.outputs.version }}" --prepend CHANGELOG.md
         env:
-          OUTPUT: CHANGELOG.md
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Update changelog links
