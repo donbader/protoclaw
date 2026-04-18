@@ -38,7 +38,7 @@ FROM opencode-deps AS opencode-agent
 RUN usermod -l agent-opencode -d /home/agent-opencode -m node && \
     groupmod -n agent-opencode node && \
     echo "agent-opencode ALL=(ALL) NOPASSWD: /usr/bin/apt-get" >> /etc/sudoers.d/agent-opencode
-# opencode-config/ is gitignored — users provide their own config or run without it.
+# opencode-config/ contains minimal committed config — customize as needed.
 # Glob trick: README.md always exists so COPY never fails; opencode-config is optional.
 RUN mkdir -p /home/agent-opencode/.config/opencode
 COPY README.md opencode-config* /tmp/build-staging/
