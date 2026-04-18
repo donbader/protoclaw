@@ -131,6 +131,8 @@ pub struct ChatTurn {
     /// Incremented on each render — drives dot animation for in-progress tools.
     pub render_tick: u32,
     pub last_result_was_error: bool,
+    /// Last time the tools message was edited — used for edit cooldown.
+    pub last_tools_edit: Instant,
 }
 
 impl ChatTurn {
@@ -145,6 +147,7 @@ impl ChatTurn {
             tool_call_order: Vec::new(),
             render_tick: 0,
             last_result_was_error: false,
+            last_tools_edit: Instant::now() - Duration::from_secs(60),
         }
     }
 
@@ -238,6 +241,14 @@ impl ChatTurn {
             }
             None => false,
         }
+    }
+
+    pub fn can_edit_tools(&mut self, cooldown: Duration) -> bool {
+        if self.last_tools_edit.elapsed() < cooldown {
+            return false;
+        }
+        self.last_tools_edit = Instant::now();
+        true
     }
 
     pub fn append_thought(&mut self, text: &str, msg_id: i32, origin_time: Option<Instant>) {
@@ -786,5 +797,20 @@ mod tests {
         let handle = tokio::spawn(async { tokio::time::sleep(Duration::from_secs(10)).await });
         turn.begin_finalizing(handle);
         assert!(turn.is_finalizing());
+    }
+
+    #[rstest]
+    fn when_can_edit_tools_within_cooldown_then_false() {
+        let mut turn = ChatTurn::new("msg-1".to_string());
+        assert!(turn.can_edit_tools(Duration::from_millis(1000)));
+        assert!(!turn.can_edit_tools(Duration::from_millis(1000)));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn given_tools_edit_after_cooldown_when_can_edit_tools_then_true() {
+        let mut turn = ChatTurn::new("msg-1".to_string());
+        turn.last_tools_edit = Instant::now() - Duration::from_secs(2);
+        assert!(turn.can_edit_tools(Duration::from_millis(1000)));
     }
 }

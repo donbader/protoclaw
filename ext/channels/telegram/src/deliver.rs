@@ -955,6 +955,19 @@ pub async fn deliver_to_chat(
                     _ => ToolCallStatus::InProgress,
                 };
 
+                let is_terminal = track.status.is_terminal();
+                let can_edit = if is_terminal {
+                    true
+                } else {
+                    let cooldown =
+                        Duration::from_millis(*state.response_edit_cooldown_ms.read().await);
+                    turn.can_edit_tools(cooldown)
+                };
+
+                if !can_edit {
+                    return Ok(());
+                }
+
                 (turn.render_tools_text(), turn.tools_msg_id)
             };
 
