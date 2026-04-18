@@ -12,6 +12,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.9.2] — 2026-04-18
+
+### Fixed
+
+- **Stale ToolCallUpdate flood**: Telegram channel now discards tool call heartbeats after the turn enters finalization or the tool reaches a terminal status, preventing the final agent response from being dropped (#61)
+- **Agent errors surfaced to channels**: Error messages from agent crashes, timeouts, session failures, and malformed updates are now delivered to the user instead of being silently swallowed (#61)
+- **Idle-based prompt timeout**: New `prompt_idle_timeout_secs` config (default: 120s) detects hung agents by tracking activity rather than wall-clock time, avoiding false kills during long-running operations (#61)
+- **Telegram access_control schema**: Added access control config to JSON schema for IDE autocomplete (#58)
+
+### Changed
+
+- **Config dotfile paths**: Renamed config directory paths for container environments (#59)
+
 ## [0.9.1] — 2026-04-18
 
 ### Added
@@ -71,7 +84,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 Starting point for tracked binary releases. Prior versions were not formally documented.
 
-[Unreleased]: https://github.com/donbader/anyclaw/compare/v0.9.1...HEAD
+[Unreleased]: https://github.com/donbader/anyclaw/compare/v0.9.2...HEAD
+[0.9.2]: https://github.com/donbader/anyclaw/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/donbader/anyclaw/compare/v0.8.2...v0.9.1
 [0.8.2]: https://github.com/donbader/anyclaw/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/donbader/anyclaw/compare/v0.7.1...v0.8.1
