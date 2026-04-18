@@ -67,6 +67,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Export sccache credentials
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
       # Build both targets sequentially — shares the builder stage via local cache
       - name: Build and push core
         id: core
@@ -75,9 +82,13 @@ jobs:
           context: .
           target: core
           platforms: ${{ matrix.platform }}
+          build-args: SCCACHE_GHA_ENABLED=true
+          secrets: |
+            actions_results_url=${{ env.ACTIONS_RESULTS_URL }}
+            actions_runtime_token=${{ env.ACTIONS_RUNTIME_TOKEN }}
           outputs: type=image,name=ghcr.io/donbader/anyclaw,push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=gha,scope=build-core-${{ matrix.platform }}
-          cache-to: type=gha,scope=build-core-${{ matrix.platform }},mode=max
+          cache-from: type=registry,ref=ghcr.io/donbader/anyclaw:cache-core-${{ matrix.arch }}
+          cache-to: type=registry,ref=ghcr.io/donbader/anyclaw:cache-core-${{ matrix.arch }},mode=max
 
       - name: Build and push builder-export
         id: builder-export
@@ -86,11 +97,15 @@ jobs:
           context: .
           target: builder-export
           platforms: ${{ matrix.platform }}
+          build-args: SCCACHE_GHA_ENABLED=true
+          secrets: |
+            actions_results_url=${{ env.ACTIONS_RESULTS_URL }}
+            actions_runtime_token=${{ env.ACTIONS_RUNTIME_TOKEN }}
           outputs: type=image,name=ghcr.io/donbader/anyclaw-builder,push-by-digest=true,name-canonical=true,push=true
           cache-from: |
-            type=gha,scope=build-builder-${{ matrix.platform }}
-            type=gha,scope=build-core-${{ matrix.platform }}
-          cache-to: type=gha,scope=build-builder-${{ matrix.platform }},mode=max
+            type=registry,ref=ghcr.io/donbader/anyclaw:cache-builder-${{ matrix.arch }}
+            type=registry,ref=ghcr.io/donbader/anyclaw:cache-core-${{ matrix.arch }}
+          cache-to: type=registry,ref=ghcr.io/donbader/anyclaw:cache-builder-${{ matrix.arch }},mode=max
 
       - name: Export digests
         run: |
