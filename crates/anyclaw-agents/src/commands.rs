@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyclaw_core::{
     AgentStatusInfo, AgentsCommand, PendingPermissionInfo, PersistedSession, SessionKey,
@@ -16,6 +17,37 @@ use crate::acp_types::{
 use crate::error::AgentsError;
 use crate::manager::{AgentsManager, PromptCompletion};
 use crate::slot::find_slot_by_name;
+
+async fn send_prompt_error(
+    channels_tx: &Option<tokio::sync::mpsc::Sender<ChannelEvent>>,
+    completion_tx: &tokio::sync::mpsc::Sender<PromptCompletion>,
+    sk: SessionKey,
+    message: &str,
+) {
+    tracing::warn!(session_key = %sk, error = message, "prompt failed");
+    if let Some(sender) = channels_tx {
+        let error_content = serde_json::json!({
+            "update": {
+                "sessionUpdate": "result",
+                "isError": true,
+                "content": message,
+            }
+        });
+        let _ = sender
+            .send(ChannelEvent::DeliverMessage {
+                session_key: sk.clone(),
+                content: error_content,
+            })
+            .await;
+    }
+    let _ = completion_tx
+        .send(PromptCompletion {
+            session_key: sk,
+            session_expired: false,
+            stop_reason: StopReason::Refusal,
+        })
+        .await;
+}
 
 impl AgentsManager {
     pub(crate) async fn handle_command(&mut self, cmd: AgentsCommand) -> bool {
@@ -357,73 +389,74 @@ impl AgentsManager {
             });
         }
 
+        let activity = std::sync::Arc::new(tokio::sync::Notify::new());
+        self.slots[slot_idx]
+            .active_prompts
+            .insert(acp_session_id.clone(), activity.clone());
+
         {
             let completion_tx = self.completion_tx.clone();
             let channels_tx = self.channels_sender.clone();
             let sk = session_key.clone();
-            let prompt_timeout =
-                Self::acp_timeout_for(&self.slots[slot_idx].config, &self.manager_config);
+            let idle_timeout_secs = self.manager_config.prompt_idle_timeout_secs;
             tokio::spawn(async move {
-                let response = match tokio::time::timeout(prompt_timeout, response_rx).await {
-                    Ok(Ok(resp)) => resp,
-                    Ok(Err(_)) => {
-                        tracing::warn!(session_key = %sk, "prompt response channel dropped");
-                        if let Some(sender) = &channels_tx {
-                            let error_content = serde_json::json!({
-                                "update": {
-                                    "sessionUpdate": "result",
-                                    "isError": true,
-                                    "content": "Agent connection lost",
-                                }
-                            });
-                            let _ = sender
-                                .send(ChannelEvent::DeliverMessage {
-                                    session_key: sk.clone(),
-                                    content: error_content,
-                                })
-                                .await;
-                        }
-                        let _ = completion_tx
-                            .send(PromptCompletion {
-                                session_key: sk,
-                                session_expired: false,
-                                stop_reason: anyclaw_sdk_types::acp::StopReason::Refusal,
-                            })
+                let response = if idle_timeout_secs == 0 {
+                    match response_rx.await {
+                        Ok(resp) => resp,
+                        Err(_) => {
+                            send_prompt_error(
+                                &channels_tx,
+                                &completion_tx,
+                                sk,
+                                "Agent connection lost",
+                            )
                             .await;
-                        return;
+                            return;
+                        }
                     }
-                    Err(_elapsed) => {
-                        tracing::error!(
-                            session_key = %sk,
-                            timeout_secs = prompt_timeout.as_secs(),
-                            "session/prompt timed out"
-                        );
-                        if let Some(sender) = &channels_tx {
-                            let error_content = serde_json::json!({
-                                "update": {
-                                    "sessionUpdate": "result",
-                                    "isError": true,
-                                    "content": format!(
-                                        "Agent timed out after {}s",
-                                        prompt_timeout.as_secs()
-                                    ),
+                } else {
+                    let idle_dur = Duration::from_secs(idle_timeout_secs);
+                    let deadline = tokio::time::sleep(idle_dur);
+                    tokio::pin!(deadline);
+                    tokio::pin!(response_rx);
+                    loop {
+                        tokio::select! {
+                            result = &mut response_rx => {
+                                match result {
+                                    Ok(resp) => break resp,
+                                    Err(_) => {
+                                        send_prompt_error(
+                                            &channels_tx,
+                                            &completion_tx,
+                                            sk,
+                                            "Agent connection lost",
+                                        ).await;
+                                        return;
+                                    }
                                 }
-                            });
-                            let _ = sender
-                                .send(ChannelEvent::DeliverMessage {
-                                    session_key: sk.clone(),
-                                    content: error_content,
-                                })
-                                .await;
+                            }
+                            () = &mut deadline => {
+                                tracing::error!(
+                                    session_key = %sk,
+                                    idle_timeout_secs,
+                                    "session/prompt idle timeout — agent went silent"
+                                );
+                                send_prompt_error(
+                                    &channels_tx,
+                                    &completion_tx,
+                                    sk,
+                                    &format!(
+                                        "Agent idle timeout after {idle_timeout_secs}s with no activity"
+                                    ),
+                                ).await;
+                                return;
+                            }
+                            _ = activity.notified() => {
+                                deadline.as_mut().reset(
+                                    tokio::time::Instant::now() + idle_dur
+                                );
+                            }
                         }
-                        let _ = completion_tx
-                            .send(PromptCompletion {
-                                session_key: sk,
-                                session_expired: false,
-                                stop_reason: anyclaw_sdk_types::acp::StopReason::Refusal,
-                            })
-                            .await;
-                        return;
                     }
                 };
 

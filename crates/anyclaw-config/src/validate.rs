@@ -368,6 +368,7 @@ mod tests {
             extensions_dir: "/usr/local/bin".into(),
             agents_manager: AgentsManagerConfig {
                 acp_timeout_secs: 30,
+                prompt_idle_timeout_secs: 120,
                 shutdown_grace_ms: 100,
                 agents,
             },

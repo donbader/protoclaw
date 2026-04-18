@@ -1,8 +1,10 @@
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyclaw_config::AgentConfig;
 use anyclaw_core::{CrashTracker, ExponentialBackoff, SessionKey, SlotLifecycle};
+use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 
 use crate::PendingPermission;
@@ -50,6 +52,10 @@ pub struct AgentSlot {
     /// ACP session IDs that have already received the tool context injection.
     /// Prevents re-injecting on subsequent prompts within the same session.
     pub(crate) tool_context_sent: HashSet<String>,
+    /// Activity notifiers for in-flight prompts, keyed by ACP session ID.
+    /// Each `session/update` from the agent calls `notify_one()` to reset
+    /// the idle timeout in the prompt_session spawned task.
+    pub(crate) active_prompts: HashMap<String, Arc<Notify>>,
 }
 
 impl AgentSlot {
@@ -84,6 +90,7 @@ impl AgentSlot {
             last_available_commands: None,
             tool_context: None,
             tool_context_sent: HashSet::new(),
+            active_prompts: HashMap::new(),
         }
     }
 

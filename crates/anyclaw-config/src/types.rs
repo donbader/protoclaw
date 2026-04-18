@@ -249,6 +249,11 @@ pub struct AgentsManagerConfig {
     /// Default ACP request timeout in seconds (overridable per-agent).
     #[serde(default = "default_acp_timeout_secs")]
     pub acp_timeout_secs: u64,
+    /// Idle timeout for session/prompt in seconds. The timer resets on every
+    /// session/update from the agent. Only fires when the agent goes completely
+    /// silent. Default: 120s. Set to 0 to disable.
+    #[serde(default = "default_prompt_idle_timeout_secs")]
+    pub prompt_idle_timeout_secs: u64,
     /// Grace period after sending shutdown before force-killing agent subprocesses (ms).
     #[serde(default = "default_shutdown_grace_ms")]
     pub shutdown_grace_ms: u64,
@@ -261,6 +266,7 @@ impl Default for AgentsManagerConfig {
     fn default() -> Self {
         Self {
             acp_timeout_secs: default_acp_timeout_secs(),
+            prompt_idle_timeout_secs: default_prompt_idle_timeout_secs(),
             shutdown_grace_ms: default_shutdown_grace_ms(),
             agents: HashMap::new(),
         }
@@ -733,6 +739,9 @@ fn default_admin_port() -> u16 {
 }
 fn default_acp_timeout_secs() -> u64 {
     30
+}
+fn default_prompt_idle_timeout_secs() -> u64 {
+    120
 }
 fn default_init_timeout_secs() -> u64 {
     10

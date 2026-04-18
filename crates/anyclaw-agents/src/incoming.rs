@@ -124,6 +124,10 @@ impl AgentsManager {
             return;
         }
 
+        if let Some(notify) = self.slots[slot_idx].active_prompts.get(&event.session_id) {
+            notify.notify_one();
+        }
+
         if let Some(session_key) = self.slots[slot_idx]
             .reverse_map
             .get(&event.session_id)
@@ -374,6 +378,13 @@ impl AgentsManager {
         }
 
         let already_got_result = self.streaming_completed.remove(&completion.session_key);
+
+        for slot in &mut self.slots {
+            if let Some(acp_id) = slot.session_map.get(&completion.session_key) {
+                slot.active_prompts.remove(acp_id);
+                break;
+            }
+        }
 
         // When the agent reports "session not found", invalidate the stale mapping
         // so the next inbound prompt triggers heal_session() instead of reusing
