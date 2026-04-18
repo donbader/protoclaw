@@ -11,7 +11,7 @@ Each agent variant contains an `anyclaw.yaml` that configures the entire stack. 
 └── .env.example        # Template for .env
 ```
 
-`anyclaw.yaml` is copied into the Docker image at build time (`COPY anyclaw.yaml /workspace/anyclaw.yaml`). To change config, edit the file and rebuild: `docker compose up --build -d`.
+`anyclaw.yaml` is copied into the Docker image at `/etc/anyclaw/anyclaw.yaml` at build time, outside the `/workspace` volume so it's never shadowed by persistent data. The entrypoint passes `--config /etc/anyclaw/anyclaw.yaml`. To change config, edit the file and rebuild: `docker compose up --build -d`.
 
 ## Environment Variable Substitution
 

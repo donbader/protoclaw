@@ -28,9 +28,9 @@ COPY --from=builder /usr/local/bin/channels/telegram /usr/local/bin/channels/tel
 COPY --from=builder /usr/local/bin/tools/system-info /usr/local/bin/tools/system-info
 RUN mkdir -p /workspace && chown node:node /workspace
 WORKDIR /workspace
-COPY --chown=node:node anyclaw.yaml /workspace/anyclaw.yaml
+COPY --chown=node:node anyclaw.yaml /etc/anyclaw/anyclaw.yaml
 USER node
-ENTRYPOINT ["anyclaw"]
+ENTRYPOINT ["anyclaw", "--config", "/etc/anyclaw/anyclaw.yaml"]
 
 # OpenCode agent image (for Docker workspace mode)
 # Rebased on opencode-deps to avoid redundant apt-get update on every build.

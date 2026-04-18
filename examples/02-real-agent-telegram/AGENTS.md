@@ -199,10 +199,16 @@ Before submitting a new variant:
 
 ### Config changes not taking effect
 
-The `anyclaw-data` volume persists `/workspace` (including `anyclaw.yaml`) across restarts. If you change `anyclaw.yaml` and rebuild, the old config in the volume takes precedence over the one baked into the image. Fix with:
+`anyclaw.yaml` is baked into `/etc/anyclaw/` (outside the `/workspace` volume), so config changes take effect on rebuild without needing to remove volumes:
 
 ```sh
-docker compose down -v   # removes volumes
+docker compose up -d --build
+```
+
+If you still see stale behavior from persisted session data, remove volumes:
+
+```sh
+docker compose down -v
 docker compose up -d --build
 ```
 
