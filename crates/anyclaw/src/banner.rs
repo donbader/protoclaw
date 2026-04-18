@@ -93,6 +93,7 @@ mod tests {
                     input_schema: None,
                     sandbox: Default::default(),
                     options: HashMap::new(),
+                    call_timeout_secs: None,
                 },
             );
         }

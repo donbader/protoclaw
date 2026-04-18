@@ -33,8 +33,14 @@ Served over HTTP via rmcp's `StreamableHttpService` (stateful mode) on a random 
 - `stateful_mode = true` is mandatory — without it, rmcp treats each HTTP request as independent, breaking multi-turn tool conversations that rely on session state
 - `cancellation_token` ties the MCP server lifecycle to the tools manager's cancel signal for clean shutdown
 - `allowed_hosts` must include `tools_server_host` when it differs from the defaults (`localhost`, `127.0.0.1`, `::1`). rmcp's default DNS rebinding protection rejects requests whose `Host` header doesn't match the allowed list — in Docker deployments where agents connect via container hostname (e.g. `anyclaw`), the host must be explicitly allowed or all MCP requests return 403 Forbidden
-- `sse_keep_alive` must be set (30s) — rmcp clients have a default keepalive timeout (typically 300s). Without server-side keepalive pings, idle SSE connections time out, killing the MCP session. This cascades: agent loses tool access → agent process may exit → infinite crash-respawn loop. Config construction is extracted into `build_server_config()` with dedicated tests for each requirement
-- `SessionConfig.keep_alive` is set to `None` (disabled) — rmcp's default session timeout (300s) kills sessions when no events flow through the worker loop. During long-running tool calls (e.g., agent running `apt-get install`), the agent makes no MCP requests, so the session dies. SSE keep-alive pings do NOT reset this timer — they only keep the HTTP connection alive. Disabling the session timeout is safe because our sessions are tied to agent container lifetime and the cancellation token handles cleanup on shutdown
+- `sse_keep_alive` must be set (30s) — keeps the HTTP/SSE connection alive at the transport layer. Without it, idle SSE connections may be dropped by intermediate proxies or the OS TCP stack. Note: this does NOT reset the rmcp session worker's keep-alive timer — it only maintains the HTTP connection
+- `SessionConfig.keep_alive` is set to `None` (disabled) — rmcp's default session timeout (300s) kills sessions when no events flow through the worker loop. During long-running tool calls (e.g., agent running `apt-get install`), the agent makes no MCP requests, so the session dies. Disabling the session timeout is safe because our sessions are tied to agent container lifetime and the cancellation token handles cleanup on shutdown
+
+**Per-tool call timeouts:**
+- `call_timeout_secs` on `ToolConfig` wraps external MCP tool invocations with `tokio::time::timeout`
+- Keyed by server name (config key), not individual tool name — one MCP server can expose multiple tools
+- `None` (default) = no timeout, tool calls can run indefinitely
+- WASM tools are unaffected — they use `sandbox.epoch_timeout_secs` (epoch interruption)
 
 ## WASM Sandbox Model
 
