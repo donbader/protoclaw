@@ -31,9 +31,9 @@ COPY --from=builder /usr/local/bin/tools/system-info /usr/local/bin/tools/system
 RUN useradd -m -s /bin/bash anyclaw && \
     mkdir -p /workspace && chown anyclaw:anyclaw /workspace
 WORKDIR /workspace
-COPY --chown=anyclaw:anyclaw anyclaw.yaml /etc/anyclaw/anyclaw.yaml
+COPY --chown=anyclaw:anyclaw anyclaw.yaml /anyclaw/anyclaw.yaml
 USER anyclaw
-ENTRYPOINT ["anyclaw", "--config", "/etc/anyclaw/anyclaw.yaml"]
+ENTRYPOINT ["anyclaw", "--config", "/anyclaw/anyclaw.yaml"]
 
 # Kiro agent image (for Docker workspace mode)
 # Auth: either KIRO_API_KEY env var (Pro+) or pre-authenticated volume at ~/.local/share/kiro-cli.

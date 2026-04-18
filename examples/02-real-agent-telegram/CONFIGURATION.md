@@ -11,7 +11,7 @@ Each agent variant contains an `anyclaw.yaml` that configures the entire stack. 
 └── .env.example        # Template for .env
 ```
 
-`anyclaw.yaml` is baked into `/etc/anyclaw/anyclaw.yaml` (read-only, outside the data volume). Session data persists at `/anyclaw/` via the `anyclaw-data` volume. The entrypoint passes `--config /etc/anyclaw/anyclaw.yaml`. To change config, edit the file and rebuild: `docker compose up --build -d`.
+`anyclaw.yaml` is baked into `/anyclaw/anyclaw.yaml` at build time. Session data persists at `/anyclaw/data/` via the `anyclaw-data` volume (mounted as a subdirectory so it doesn't shadow the config). The entrypoint passes `--config /anyclaw/anyclaw.yaml`. To change config, edit the file and rebuild: `docker compose up --build -d`.
 
 ## Environment Variable Substitution
 
