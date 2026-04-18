@@ -1,140 +1,37 @@
-name: Release
-run-name: "Release v${{ inputs.version || '(auto)' }}"
+name: Release — Publish
+run-name: "Publish release ${{ github.event.pull_request.head.ref }}"
 
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: "Version (e.g. 0.10.0) — leave empty to auto-detect from commits"
-        required: false
-        type: string
+  pull_request:
+    types: [closed]
+    branches: [main]
 
 env:
   REGISTRY: ghcr.io
 
 jobs:
-  prepare:
-    name: Prepare release
+  resolve:
+    name: Resolve version
+    if: github.event.pull_request.merged && startsWith(github.event.pull_request.head.ref, 'release/v')
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
     outputs:
       version: ${{ steps.version.outputs.version }}
-      pr_number: ${{ steps.pr.outputs.pr_number }}
     steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Detect version
+      - name: Extract version from branch name
         id: version
         run: |
-          if [ -n "${{ inputs.version }}" ]; then
-            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
-            echo "Using provided version: ${{ inputs.version }}"
-            exit 0
-          fi
-
-          LAST_TAG=$(git tag -l 'v*' --sort=-v:refname | head -1)
-          if [ -z "$LAST_TAG" ]; then
-            echo "ERROR: No existing v* tags found. Provide version explicitly."
+          BRANCH="${{ github.event.pull_request.head.ref }}"
+          VERSION="${BRANCH#release/v}"
+          if [ -z "$VERSION" ]; then
+            echo "ERROR: Could not extract version from branch $BRANCH"
             exit 1
           fi
-
-          CURRENT=$(echo "$LAST_TAG" | sed 's/^v//')
-          MAJOR=$(echo "$CURRENT" | cut -d. -f1)
-          MINOR=$(echo "$CURRENT" | cut -d. -f2)
-          PATCH=$(echo "$CURRENT" | cut -d. -f3)
-
-          HAS_FEAT=$(git log "$LAST_TAG"..HEAD --format='%s' --no-merges | grep -c '^feat' || true)
-          if [ "$HAS_FEAT" -gt 0 ]; then
-            MINOR=$((MINOR + 1))
-            PATCH=0
-          else
-            PATCH=$((PATCH + 1))
-          fi
-
-          VERSION="$MAJOR.$MINOR.$PATCH"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Auto-detected version: $VERSION (from $LAST_TAG)"
-
-      - name: Check tag doesn't exist
-        run: |
-          if git rev-parse "v${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
-            echo "ERROR: Tag v${{ steps.version.outputs.version }} already exists"
-            exit 1
-          fi
-
-      - name: Bump Cargo.toml version
-        run: |
-          sed -i "s/^version = \".*\"/version = \"${{ steps.version.outputs.version }}\"/" crates/anyclaw/Cargo.toml
-          cargo generate-lockfile
-
-      - name: Generate changelog
-        uses: orhun/git-cliff-action@v4
-        with:
-          config: cliff.toml
-          args: --unreleased --tag "v${{ steps.version.outputs.version }}" --prepend CHANGELOG.md
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Update changelog links
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          LAST_TAG=$(git tag -l 'v*' --sort=-v:refname | head -1 | sed 's/^v//')
-          sed -i "s|\[Unreleased\]: .*|[Unreleased]: https://github.com/donbader/anyclaw/compare/v${VERSION}...HEAD|" CHANGELOG.md
-          if ! grep -q "^\[${VERSION}\]:" CHANGELOG.md; then
-            sed -i "/^\[Unreleased\]:/a [${VERSION}]: https://github.com/donbader/anyclaw/compare/v${LAST_TAG}...v${VERSION}" CHANGELOG.md
-          fi
-
-      - name: Create release branch and PR
-        id: pr
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          BRANCH="release/v${VERSION}"
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git checkout -b "$BRANCH"
-          git add CHANGELOG.md Cargo.lock crates/anyclaw/Cargo.toml
-          git commit -m "chore: release v${VERSION}"
-          git push origin "$BRANCH" --force
-          PR_URL=$(gh pr create \
-            --title "chore: release v${VERSION}" \
-            --body "Automated release PR for v${VERSION}. Merging triggers tag + Docker build." \
-            --base main \
-            --head "$BRANCH")
-          PR_NUMBER=$(echo "$PR_URL" | grep -o '[0-9]*$')
-          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
-          gh pr merge "$PR_NUMBER" --auto --squash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  wait-for-merge:
-    name: Wait for merge
-    needs: prepare
-    runs-on: ubuntu-latest
-    steps:
-      - name: Poll until PR is merged
-        run: |
-          for i in $(seq 1 60); do
-            STATE=$(gh pr view ${{ needs.prepare.outputs.pr_number }} --repo ${{ github.repository }} --json state -q '.state')
-            if [ "$STATE" = "MERGED" ]; then
-              echo "PR #${{ needs.prepare.outputs.pr_number }} merged"
-              exit 0
-            fi
-            echo "Waiting for merge... attempt $i/60 (state: $STATE)"
-            sleep 15
-          done
-          echo "ERROR: PR did not merge within 15 minutes"
-          exit 1
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          echo "Resolved version: $VERSION"
 
   tag:
     name: Create tag
-    needs: [prepare, wait-for-merge]
+    needs: resolve
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -150,19 +47,19 @@ jobs:
       - name: Validate version matches Cargo.toml
         run: |
           CARGO_VERSION=$(grep '^version' crates/anyclaw/Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
-          if [ "$CARGO_VERSION" != "${{ needs.prepare.outputs.version }}" ]; then
-            echo "ERROR: Cargo.toml version ($CARGO_VERSION) does not match release version (${{ needs.prepare.outputs.version }})"
+          if [ "$CARGO_VERSION" != "${{ needs.resolve.outputs.version }}" ]; then
+            echo "ERROR: Cargo.toml version ($CARGO_VERSION) does not match release version (${{ needs.resolve.outputs.version }})"
             exit 1
           fi
 
       - name: Create git tag
         run: |
-          git tag "v${{ needs.prepare.outputs.version }}"
-          git push origin "v${{ needs.prepare.outputs.version }}"
+          git tag "v${{ needs.resolve.outputs.version }}"
+          git push origin "v${{ needs.resolve.outputs.version }}"
 
   build:
     name: Build (${{ matrix.arch }})
-    needs: [prepare, tag]
+    needs: [resolve, tag]
     strategy:
       matrix:
         include:
@@ -179,7 +76,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: v${{ needs.prepare.outputs.version }}
+          ref: v${{ needs.resolve.outputs.version }}
 
       - name: Set up Docker Buildx
         id: setup-buildx
@@ -208,7 +105,7 @@ jobs:
           platforms: ${{ matrix.platform }}
           build-args: |
             SCCACHE_GHA_ENABLED=true
-            ANYCLAW_VERSION=${{ inputs.version }}
+            ANYCLAW_VERSION=${{ needs.resolve.outputs.version }}
           secrets: |
             actions_results_url=${{ env.ACTIONS_RESULTS_URL }}
             actions_runtime_token=${{ env.ACTIONS_RUNTIME_TOKEN }}
@@ -225,7 +122,7 @@ jobs:
           platforms: ${{ matrix.platform }}
           build-args: |
             SCCACHE_GHA_ENABLED=true
-            ANYCLAW_VERSION=${{ inputs.version }}
+            ANYCLAW_VERSION=${{ needs.resolve.outputs.version }}
           secrets: |
             actions_results_url=${{ env.ACTIONS_RESULTS_URL }}
             actions_runtime_token=${{ env.ACTIONS_RUNTIME_TOKEN }}
@@ -261,7 +158,7 @@ jobs:
 
   manifest:
     name: Manifest (${{ matrix.target }})
-    needs: [prepare, build]
+    needs: [resolve, build]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -299,7 +196,7 @@ jobs:
       - name: Compute version tags
         id: version
         run: |
-          MAJOR_MINOR=$(echo "${{ needs.prepare.outputs.version }}" | cut -d. -f1,2)
+          MAJOR_MINOR=$(echo "${{ needs.resolve.outputs.version }}" | cut -d. -f1,2)
           echo "major_minor=$MAJOR_MINOR" >> "$GITHUB_OUTPUT"
 
       - name: Extract metadata
@@ -308,7 +205,7 @@ jobs:
         with:
           images: ${{ matrix.image }}
           tags: |
-            type=raw,value=${{ needs.prepare.outputs.version }}
+            type=raw,value=${{ needs.resolve.outputs.version }}
             type=raw,value=${{ steps.version.outputs.major_minor }}
             type=sha,prefix=
             type=raw,value=latest

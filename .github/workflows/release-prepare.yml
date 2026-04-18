@@ -1,0 +1,109 @@
+name: Release — Prepare
+run-name: "Prepare release v${{ inputs.version || '(auto)' }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version (e.g. 0.10.0) — leave empty to auto-detect from commits"
+        required: false
+        type: string
+
+jobs:
+  prepare:
+    name: Prepare release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      pr_number: ${{ steps.pr.outputs.pr_number }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Detect version
+        id: version
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+            echo "Using provided version: ${{ inputs.version }}"
+            exit 0
+          fi
+
+          LAST_TAG=$(git tag -l 'v*' --sort=-v:refname | head -1)
+          if [ -z "$LAST_TAG" ]; then
+            echo "ERROR: No existing v* tags found. Provide version explicitly."
+            exit 1
+          fi
+
+          CURRENT=$(echo "$LAST_TAG" | sed 's/^v//')
+          MAJOR=$(echo "$CURRENT" | cut -d. -f1)
+          MINOR=$(echo "$CURRENT" | cut -d. -f2)
+          PATCH=$(echo "$CURRENT" | cut -d. -f3)
+
+          HAS_FEAT=$(git log "$LAST_TAG"..HEAD --format='%s' --no-merges | grep -c '^feat' || true)
+          if [ "$HAS_FEAT" -gt 0 ]; then
+            MINOR=$((MINOR + 1))
+            PATCH=0
+          else
+            PATCH=$((PATCH + 1))
+          fi
+
+          VERSION="$MAJOR.$MINOR.$PATCH"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Auto-detected version: $VERSION (from $LAST_TAG)"
+
+      - name: Check tag doesn't exist
+        run: |
+          if git rev-parse "v${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
+            echo "ERROR: Tag v${{ steps.version.outputs.version }} already exists"
+            exit 1
+          fi
+
+      - name: Bump Cargo.toml version
+        run: |
+          sed -i "s/^version = \".*\"/version = \"${{ steps.version.outputs.version }}\"/" crates/anyclaw/Cargo.toml
+          cargo generate-lockfile
+
+      - name: Generate changelog
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --unreleased --tag "v${{ steps.version.outputs.version }}" --prepend CHANGELOG.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update changelog links
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          LAST_TAG=$(git tag -l 'v*' --sort=-v:refname | head -1 | sed 's/^v//')
+          sed -i "s|\[Unreleased\]: .*|[Unreleased]: https://github.com/donbader/anyclaw/compare/v${VERSION}...HEAD|" CHANGELOG.md
+          if ! grep -q "^\[${VERSION}\]:" CHANGELOG.md; then
+            sed -i "/^\[Unreleased\]:/a [${VERSION}]: https://github.com/donbader/anyclaw/compare/v${LAST_TAG}...v${VERSION}" CHANGELOG.md
+          fi
+
+      - name: Create release branch and PR
+        id: pr
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          BRANCH="release/v${VERSION}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add CHANGELOG.md Cargo.lock crates/anyclaw/Cargo.toml
+          git commit -m "chore: release v${VERSION}"
+          git push origin "$BRANCH" --force
+          PR_URL=$(gh pr create \
+            --title "chore: release v${VERSION}" \
+            --body "Automated release PR for v${VERSION}. Merging triggers tag creation + Docker build via the **Release — Publish** workflow." \
+            --base main \
+            --head "$BRANCH")
+          PR_NUMBER=$(echo "$PR_URL" | grep -o '[0-9]*$')
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          gh pr merge "$PR_NUMBER" --auto --squash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
