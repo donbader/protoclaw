@@ -26,8 +26,7 @@ Pure synchronous logic, no async, no Telegram types — fully unit-testable.
 ```yaml
 access_control:
   group_policy: "open"              # open | allowlist | disabled
-  allowed_users: ["*"]              # DM allowlist: "*", "@username", or numeric ID
-  group_allowed_users: ["*"]        # group sender allowlist (when policy=allowlist)
+  allowed_users: ["*"]              # "*", "@username", or numeric ID — applies to DMs and groups
   require_mention: false            # bot must be @mentioned in groups
   groups:                           # per-group overrides keyed by chat_id
     "-100123":

@@ -52,10 +52,7 @@ pub struct GroupConfig {
 #[derive(Debug, Clone)]
 pub struct AccessConfig {
     pub group_policy: GroupPolicy,
-    /// DM allowlist. Empty = allow all DMs.
     pub allowed_users: Vec<AllowlistEntry>,
-    /// Group sender allowlist (used when `group_policy` is `Allowlist`).
-    pub group_allowed_users: Vec<AllowlistEntry>,
     pub groups: HashMap<i64, GroupConfig>,
     pub default_require_mention: bool,
 }
@@ -65,7 +62,6 @@ impl Default for AccessConfig {
         Self {
             group_policy: GroupPolicy::Open,
             allowed_users: vec![AllowlistEntry::Wildcard],
-            group_allowed_users: vec![AllowlistEntry::Wildcard],
             groups: HashMap::new(),
             default_require_mention: false,
         }
@@ -132,7 +128,7 @@ fn evaluate_group(
             let per_group = group_cfg
                 .map(|gc| &gc.allowed_users)
                 .filter(|u| !u.is_empty());
-            let effective = per_group.unwrap_or(&cfg.group_allowed_users);
+            let effective = per_group.unwrap_or(&cfg.allowed_users);
 
             if !sender.matches_any(effective) {
                 return AccessDecision::Deny(DenyReason::GroupSenderNotAllowed);
@@ -173,7 +169,7 @@ pub fn should_suppress_reply_context(
     let per_group = group_cfg
         .map(|gc| &gc.allowed_users)
         .filter(|u| !u.is_empty());
-    let effective = per_group.unwrap_or(&cfg.group_allowed_users);
+    let effective = per_group.unwrap_or(&cfg.allowed_users);
 
     !reply_sender.matches_any(effective)
 }
@@ -235,11 +231,6 @@ impl AccessConfig {
             .map(parse_allowlist)
             .unwrap_or_else(|| vec![AllowlistEntry::Wildcard]);
 
-        let group_allowed_users = ac
-            .get("group_allowed_users")
-            .map(parse_allowlist)
-            .unwrap_or_else(|| vec![AllowlistEntry::Wildcard]);
-
         let default_require_mention = ac
             .get("require_mention")
             .and_then(serde_json::Value::as_bool)
@@ -285,7 +276,6 @@ impl AccessConfig {
         Self {
             group_policy,
             allowed_users,
-            group_allowed_users,
             groups,
             default_require_mention,
         }
@@ -318,7 +308,7 @@ mod tests {
     fn given_group_allowlist_config(entries: Vec<AllowlistEntry>) -> AccessConfig {
         AccessConfig {
             group_policy: GroupPolicy::Allowlist,
-            group_allowed_users: entries,
+            allowed_users: entries,
             ..Default::default()
         }
     }
@@ -578,7 +568,7 @@ mod tests {
     fn when_mention_check_happens_after_allowlist_check() {
         let cfg = AccessConfig {
             group_policy: GroupPolicy::Allowlist,
-            group_allowed_users: vec![id(99)],
+            allowed_users: vec![id(99)],
             default_require_mention: true,
             ..Default::default()
         };
@@ -681,7 +671,6 @@ mod tests {
         let cfg = AccessConfig::from_options(&opts);
         assert_eq!(cfg.group_policy, GroupPolicy::Open);
         assert_eq!(cfg.allowed_users, vec![AllowlistEntry::Wildcard]);
-        assert_eq!(cfg.group_allowed_users, vec![AllowlistEntry::Wildcard]);
         assert!(cfg.groups.is_empty());
         assert!(!cfg.default_require_mention);
     }
@@ -698,13 +687,11 @@ mod tests {
         let opts = serde_json::json!({
             "access_control": {
                 "group_policy": "allowlist",
-                "allowed_users": [42, 99],
-                "group_allowed_users": [42]
+                "allowed_users": [42, 99]
             }
         });
         let cfg = AccessConfig::from_options(&opts);
         assert_eq!(cfg.allowed_users, vec![id(42), id(99)]);
-        assert_eq!(cfg.group_allowed_users, vec![id(42)]);
     }
 
     #[rstest]
@@ -784,7 +771,6 @@ mod tests {
         });
         let cfg = AccessConfig::from_options(&opts);
         assert_eq!(cfg.allowed_users, vec![AllowlistEntry::Wildcard]);
-        assert_eq!(cfg.group_allowed_users, vec![AllowlistEntry::Wildcard]);
     }
 
     #[rstest]
