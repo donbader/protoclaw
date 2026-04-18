@@ -19,33 +19,18 @@ use crate::manager::{AgentsManager, PromptCompletion};
 use crate::slot::find_slot_by_name;
 
 async fn send_prompt_error(
-    channels_tx: &Option<tokio::sync::mpsc::Sender<ChannelEvent>>,
     completion_tx: &tokio::sync::mpsc::Sender<PromptCompletion>,
     sk: SessionKey,
     message: &str,
     idle_timed_out: bool,
 ) {
     tracing::warn!(session_key = %sk, error = message, "prompt failed");
-    if let Some(sender) = channels_tx {
-        let error_content = serde_json::json!({
-            "update": {
-                "sessionUpdate": "result",
-                "isError": true,
-                "content": message,
-            }
-        });
-        let _ = sender
-            .send(ChannelEvent::DeliverMessage {
-                session_key: sk.clone(),
-                content: error_content,
-            })
-            .await;
-    }
     let _ = completion_tx
         .send(PromptCompletion {
             session_key: sk,
             session_expired: false,
             idle_timed_out,
+            error_message: Some(message.to_string()),
             stop_reason: StopReason::Refusal,
         })
         .await;
@@ -398,7 +383,6 @@ impl AgentsManager {
 
         {
             let completion_tx = self.completion_tx.clone();
-            let channels_tx = self.channels_sender.clone();
             let sk = session_key.clone();
             let idle_timeout_secs = self.manager_config.prompt_idle_timeout_secs;
             tokio::spawn(async move {
@@ -406,14 +390,8 @@ impl AgentsManager {
                     match response_rx.await {
                         Ok(resp) => resp,
                         Err(_) => {
-                            send_prompt_error(
-                                &channels_tx,
-                                &completion_tx,
-                                sk,
-                                "Agent connection lost",
-                                false,
-                            )
-                            .await;
+                            send_prompt_error(&completion_tx, sk, "Agent connection lost", false)
+                                .await;
                             return;
                         }
                     }
@@ -429,7 +407,6 @@ impl AgentsManager {
                                     Ok(resp) => break resp,
                                     Err(_) => {
                                         send_prompt_error(
-                                            &channels_tx,
                                             &completion_tx,
                                             sk,
                                             "Agent connection lost",
@@ -446,7 +423,6 @@ impl AgentsManager {
                                     "session/prompt idle timeout — agent went silent"
                                 );
                                 send_prompt_error(
-                                    &channels_tx,
                                     &completion_tx,
                                     sk,
                                     &format!(
@@ -469,8 +445,10 @@ impl AgentsManager {
                     // Check if the agent returned a JSON-RPC error
                     let mut session_expired = false;
                     let stop_reason;
+                    let mut error_msg = None;
                     if let Some(error) = &response.error {
                         let msg = &error.message;
+                        error_msg = Some(msg.clone());
                         tracing::warn!(session_key = %sk, error = %msg, "agent returned error for prompt");
 
                         // Detect "session not found" so the stale mapping gets
@@ -489,22 +467,6 @@ impl AgentsManager {
                             session_expired = true;
                         }
                         stop_reason = anyclaw_sdk_types::acp::StopReason::Refusal;
-
-                        if let Some(sender) = &channels_tx {
-                            let error_content = serde_json::json!({
-                                "update": {
-                                    "sessionUpdate": "result",
-                                    "isError": true,
-                                    "content": msg,
-                                }
-                            });
-                            let _ = sender
-                                .send(ChannelEvent::DeliverMessage {
-                                    session_key: sk.clone(),
-                                    content: error_content,
-                                })
-                                .await;
-                        }
                     } else {
                         let prompt_resp: PromptResponse =
                                 serde_json::from_value(response.result.unwrap_or_default())
@@ -519,6 +481,7 @@ impl AgentsManager {
                             session_key: sk,
                             session_expired,
                             idle_timed_out: false,
+                            error_message: error_msg,
                             stop_reason,
                         })
                         .await;
