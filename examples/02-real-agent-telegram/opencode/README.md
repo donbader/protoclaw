@@ -92,13 +92,13 @@ agents_manager:
 
 The agent container runs as the `agent-opencode` user with scoped sudo for `apt-get` only — the agent can install packages at runtime via `sudo apt-get install` without full root access. The `/usr/local` volume persists packages installed via `pip`, `npm install -g`, or `cargo install` across container restarts. Note that `apt-get` installs to system dirs (`/usr/bin`, `/usr/lib`) which are not on this volume — pre-install apt packages in the Dockerfile for persistence.
 
-OpenCode config (`.opencode/`) can optionally be baked into the agent image. To use it:
+OpenCode config (`opencode-config/`) can optionally be baked into the agent image. To use it:
 
-1. Create `.opencode/opencode.json` with your OpenCode configuration
-2. Optionally add `.opencode/package.json` for MCP server dependencies
+1. Create `opencode-config/opencode.json` with your OpenCode configuration
+2. Optionally add `opencode-config/package.json` for MCP server dependencies
 3. Rebuild: `docker compose up --build -d`
 
-The Dockerfile detects these files and copies them to `/home/agent-opencode/.config/opencode/` inside the agent image. If a `package.json` is present, `npm install` runs automatically. This directory is gitignored — each user provides their own.
+The Dockerfile detects these files and copies them to `/home/agent-opencode/.config/opencode/` inside the agent image. If a `package.json` is present, `npm install` runs automatically. A minimal `opencode.json` is committed — add your provider config and MCP server deps as needed.
 
 For the full config schema and all available options, see the [Configuration Reference](../CONFIGURATION.md).
 
@@ -109,7 +109,7 @@ For the full config schema and all available options, see the [Configuration Ref
 | `Dockerfile`             | Multi-stage: pulls ghcr.io base + opencode target + agent image               |
 | `docker-compose.yml`     | Socket-proxy + anyclaw + agent image build                                    |
 | `anyclaw.yaml`           | Agent, channel, tool, and supervisor config                                   |
-| `.opencode/`             | OpenCode config baked into agent image (gitignored — create your own or omit) |
+| `opencode-config/`       | OpenCode config baked into agent image (minimal committed — customize as needed) |
 | `.env.example`           | Environment template                                                          |
 | `docker-compose.dev.yml` | Contributor-only: dev build override (passes `BUILDER_IMAGE` arg)             |
 

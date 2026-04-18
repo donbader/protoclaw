@@ -127,12 +127,12 @@ Only the `agents_manager.agents` block changes between variants. Everything else
 
 ## Agent-Specific Config Directories
 
-Each variant may include an optional config directory that gets baked into the agent Docker image at build time. These are gitignored — each user provides their own.
+Each variant may include a config directory that gets baked into the agent Docker image at build time. Minimal configs are committed — customize with your provider settings and MCP server deps as needed.
 
 | Variant | Directory | Baked into | Purpose |
 |---------|-----------|------------|---------|
-| OpenCode | `.opencode/` | `/home/agent-opencode/.config/opencode/` | `opencode.json` config + optional `package.json` for MCP server deps |
-| Kiro | `.kiro/` | `/home/agent-kiro/.kiro/` | Kiro CLI settings (not auth — auth lives in a Docker volume) |
+| OpenCode | `opencode-config/` | `/home/agent-opencode/.config/opencode/` | `opencode.json` config + optional `package.json` for MCP server deps |
+| Kiro | `kiro-config/` | `/home/agent-kiro/.kiro/` | Kiro CLI settings (not auth — auth lives in a Docker volume) |
 
 These directories are separate from runtime state. Auth tokens and session data are persisted via Docker volumes configured in `anyclaw.yaml`, not baked into images.
 

@@ -1,7 +1,7 @@
 target/
 .git/
 .planning/
-.opencode/
+opencode-config/
 .claude/
 *.md
 !README.md
