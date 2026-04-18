@@ -96,6 +96,15 @@ pub enum ToolCallStatus {
     Failed(Option<String>),
 }
 
+impl ToolCallStatus {
+    /// A terminal status cannot regress to an earlier state.
+    /// Once a tool call is `Completed` or `Failed`, subsequent
+    /// `in_progress` heartbeats are stale and must be discarded.
+    pub fn is_terminal(&self) -> bool {
+        matches!(self, Self::Completed | Self::Failed(_))
+    }
+}
+
 pub struct ToolCallTrack {
     pub name: String,
     pub status: ToolCallStatus,
@@ -257,6 +266,10 @@ impl ChatTurn {
 
     pub fn take_response_for_finalize(&mut self) -> Option<(String, i32)> {
         self.response.as_ref().map(|r| (r.buffer.clone(), r.msg_id))
+    }
+
+    pub fn is_finalizing(&self) -> bool {
+        matches!(self.phase, TurnPhase::Finalizing(_))
     }
 
     pub fn is_different_turn(&self, message_id: &str) -> bool {
@@ -745,5 +758,33 @@ mod tests {
         assert_ne!(t2, t3, "dots must change between renders");
         let t4 = turn.render_tools_text();
         assert_eq!(t1, t4, "dots must cycle every 3 renders");
+    }
+
+    #[rstest]
+    #[case::started(ToolCallStatus::Started, false)]
+    #[case::in_progress(ToolCallStatus::InProgress, false)]
+    #[case::completed(ToolCallStatus::Completed, true)]
+    #[case::failed_none(ToolCallStatus::Failed(None), true)]
+    #[case::failed_some(ToolCallStatus::Failed(Some("err".into())), true)]
+    fn when_status_checked_then_terminal_correct(
+        #[case] status: ToolCallStatus,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(status.is_terminal(), expected);
+    }
+
+    #[rstest]
+    fn given_active_turn_when_is_finalizing_then_false() {
+        let turn = ChatTurn::new("msg-1".to_string());
+        assert!(!turn.is_finalizing());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn given_finalizing_turn_when_is_finalizing_then_true() {
+        let mut turn = ChatTurn::new("msg-1".to_string());
+        let handle = tokio::spawn(async { tokio::time::sleep(Duration::from_secs(10)).await });
+        turn.begin_finalizing(handle);
+        assert!(turn.is_finalizing());
     }
 }

@@ -900,6 +900,20 @@ pub async fn deliver_to_chat(
                     return Ok(());
                 };
 
+                // Guard 1: turn is finalizing — the result has already arrived
+                // and the finalization timer is running. Stale heartbeats arriving
+                // after the result would each trigger a Telegram API edit, blocking
+                // the delivery queue and racing with the finalization timer.
+                if turn.is_finalizing() {
+                    tracing::debug!(
+                        chat_id,
+                        tool_call_id,
+                        status,
+                        "discarding tool call update: turn is finalizing"
+                    );
+                    return Ok(());
+                }
+
                 let Some(track) = turn.tool_calls.get_mut(&tool_call_id) else {
                     tracing::warn!(
                         chat_id,
@@ -908,6 +922,19 @@ pub async fn deliver_to_chat(
                     );
                     return Ok(());
                 };
+
+                // Guard 2: tool call already reached a terminal status.
+                // Late in_progress heartbeats must not regress the status
+                // or trigger redundant Telegram edits.
+                if track.status.is_terminal() {
+                    tracing::debug!(
+                        chat_id,
+                        tool_call_id,
+                        status,
+                        "discarding tool call update: status already terminal"
+                    );
+                    return Ok(());
+                }
 
                 // Backfill input if the initial ToolCall arrived without it
                 if track.input.is_none() && input.is_some() {
