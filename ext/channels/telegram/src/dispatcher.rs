@@ -11,9 +11,6 @@ use teloxide::types::{
     Chat, ChatId, ChatKind, InlineKeyboardMarkup, MediaKind, MessageId, MessageKind, PublicChatKind,
 };
 
-use crate::access_control::{
-    AccessDecision, SenderIdentity, evaluate_access, should_suppress_reply_context,
-};
 use crate::peer::peer_info_from_chat;
 use crate::state::SharedState;
 
@@ -137,16 +134,6 @@ fn is_reply_to_bot(msg: &Message, bot_id: Option<u64>) -> bool {
         .is_some_and(|u| u.id.0 == bot_id)
 }
 
-fn sender_from_message(msg: &Message) -> SenderIdentity {
-    match msg.from.as_ref() {
-        Some(user) => SenderIdentity {
-            user_id: Some(user.id.0 as i64),
-            username: user.username.clone(),
-        },
-        None => SenderIdentity::default(),
-    }
-}
-
 fn sender_info_from_message(msg: &Message) -> Option<SenderInfo> {
     let user = msg.from.as_ref()?;
     Some(SenderInfo {
@@ -172,46 +159,6 @@ async fn bot_mentioned(msg: &Message, state: &SharedState) -> bool {
     };
     let implicit = is_reply_to_bot(msg, bot_id);
     explicit || implicit
-}
-
-async fn check_access(msg: &Message, state: &SharedState) -> AccessDecision {
-    let is_group = is_group_chat(&msg.chat);
-    let sender = sender_from_message(msg);
-    let mentioned = bot_mentioned(msg, state).await;
-
-    let access_cfg = state.access_config.read().await;
-    evaluate_access(&access_cfg, msg.chat.id.0, &sender, is_group, mentioned)
-}
-
-async fn maybe_suppress_reply_context(
-    msg: &Message,
-    state: &SharedState,
-) -> Option<MessageMetadata> {
-    let is_group = is_group_chat(&msg.chat);
-    if !is_group {
-        return reply_metadata_from_message(msg);
-    }
-
-    let reply_sender = msg
-        .reply_to_message()
-        .and_then(|r| r.from.as_ref())
-        .map(|u| SenderIdentity {
-            user_id: Some(u.id.0 as i64),
-            username: u.username.clone(),
-        })
-        .unwrap_or_default();
-
-    let access_cfg = state.access_config.read().await;
-    if should_suppress_reply_context(&access_cfg, msg.chat.id.0, &reply_sender, true) {
-        tracing::debug!(
-            chat_id = msg.chat.id.0,
-            ?reply_sender,
-            "suppressing reply context for non-allowlisted sender"
-        );
-        return None;
-    }
-
-    reply_metadata_from_message(msg)
 }
 
 pub fn chat_type_str(chat: &Chat) -> &str {
@@ -270,25 +217,6 @@ async fn handle_text_message(
     msg: Message,
     state: Arc<SharedState>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    match check_access(&msg, &state).await {
-        AccessDecision::Allow => {}
-        AccessDecision::Deny(reason) => {
-            tracing::debug!(
-                chat_id = msg.chat.id.0,
-                ?reason,
-                "access denied, dropping message"
-            );
-            return Ok(());
-        }
-        AccessDecision::SkipNoMention => {
-            tracing::debug!(
-                chat_id = msg.chat.id.0,
-                "bot not mentioned in group, skipping"
-            );
-            return Ok(());
-        }
-    }
-
     if let Some(text) = msg.text() {
         tracing::debug!(
             chat_id = msg.chat.id.0,
@@ -303,7 +231,7 @@ async fn handle_text_message(
             .insert(msg.chat.id.0, msg.id.0);
         let chat_type = chat_type_str(&msg.chat);
         let reply_image = resolve_reply_photo(&bot, &msg).await;
-        let metadata = maybe_suppress_reply_context(&msg, &state).await;
+        let metadata = reply_metadata_from_message(&msg);
         let si = sender_info_from_message(&msg);
         let mentioned = Some(bot_mentioned(&msg, &state).await);
         let _ = process_text_message(
@@ -499,7 +427,7 @@ async fn handle_media_message(
     let reply_image = resolve_reply_photo(&bot, &msg).await;
 
     let chat_type = chat_type_str(&msg.chat);
-    let metadata = maybe_suppress_reply_context(&msg, &state).await;
+    let metadata = reply_metadata_from_message(&msg);
     let si = sender_info_from_message(&msg);
     let mentioned = Some(bot_mentioned(&msg, &state).await);
     let _ = process_media_message(

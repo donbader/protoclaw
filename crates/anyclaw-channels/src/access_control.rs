@@ -1,18 +1,23 @@
 use std::collections::HashMap;
 
 /// A single entry in an allowlist — `"*"` allows everyone, `@username` matches by name,
-/// numeric IDs match by stable Telegram user ID.
+/// numeric IDs match by stable user ID.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AllowlistEntry {
+    /// Match all senders.
     Wildcard,
+    /// Match by numeric user ID.
     UserId(i64),
+    /// Match by username (case-insensitive).
     Username(String),
 }
 
-/// Identity of a Telegram sender, used for allowlist matching.
+/// Identity of a sender, used for allowlist matching.
 #[derive(Debug, Clone, Default)]
 pub struct SenderIdentity {
+    /// Platform-specific numeric user ID.
     pub user_id: Option<i64>,
+    /// Platform-specific username.
     pub username: Option<String>,
 }
 
@@ -33,27 +38,41 @@ impl SenderIdentity {
     }
 }
 
+/// Group messaging policy — controls whether the bot responds in group chats.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum GroupPolicy {
+    /// Allow all group messages (no filtering).
     #[default]
     Open,
+    /// Only allow messages from users in the allowlist.
     Allowlist,
+    /// Ignore all group messages.
     Disabled,
 }
 
+/// Per-group configuration overrides.
 #[derive(Debug, Clone, Default)]
 pub struct GroupConfig {
+    /// Whether this group is enabled for bot interaction.
     pub enabled: bool,
+    /// Override the global group policy for this specific group.
     pub group_policy: Option<GroupPolicy>,
+    /// Per-group allowlist (falls back to global if empty).
     pub allowed_users: Vec<AllowlistEntry>,
+    /// Whether the bot must be @mentioned to respond in this group.
     pub require_mention: bool,
 }
 
+/// Top-level access control configuration parsed from channel `options.access_control`.
 #[derive(Debug, Clone)]
 pub struct AccessConfig {
+    /// Default group messaging policy.
     pub group_policy: GroupPolicy,
+    /// Global allowlist applied to DMs and as fallback for groups.
     pub allowed_users: Vec<AllowlistEntry>,
+    /// Per-group overrides keyed by chat ID.
     pub groups: HashMap<i64, GroupConfig>,
+    /// Default require-mention setting for groups without a per-group override.
     pub default_require_mention: bool,
 }
 
@@ -68,21 +87,31 @@ impl Default for AccessConfig {
     }
 }
 
+/// Result of evaluating access control for a message.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AccessDecision {
+    /// Message is allowed through.
     Allow,
+    /// Message is denied for the given reason.
     Deny(DenyReason),
+    /// Message skipped because the bot was not mentioned (group mention gating).
     SkipNoMention,
 }
 
+/// Reason a message was denied by access control.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DenyReason {
+    /// The specific group has `enabled: false`.
     GroupDisabled,
+    /// The effective group policy is `Disabled`.
     GroupPolicyDisabled,
+    /// The sender is not in the effective group allowlist.
     GroupSenderNotAllowed,
+    /// The sender is not in the DM allowlist.
     DmSenderNotAllowed,
 }
 
+/// Evaluate whether a message should be allowed, denied, or skipped.
 pub fn evaluate_access(
     cfg: &AccessConfig,
     chat_id: i64,
@@ -147,6 +176,7 @@ fn evaluate_group(
     AccessDecision::Allow
 }
 
+/// Check whether reply context should be suppressed (reply sender not in allowlist).
 pub fn should_suppress_reply_context(
     cfg: &AccessConfig,
     chat_id: i64,
@@ -213,6 +243,7 @@ fn parse_allowlist(value: &serde_json::Value) -> Vec<AllowlistEntry> {
 }
 
 impl AccessConfig {
+    /// Parse access control configuration from channel options JSON.
     // D-03: options is HashMap<String, Value> — channel-specific config with channel-defined schemas
     #[allow(clippy::disallowed_types)]
     pub fn from_options(options: &serde_json::Value) -> Self {
