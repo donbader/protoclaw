@@ -561,7 +561,7 @@ mod tests {
         let mut conn = AgentConnection::spawn(&config, "test-agent").await.unwrap();
 
         let params = serde_json::json!({
-            "protocolVersion": 1,
+            "protocolVersion": 2,
             "capabilities": {}
         });
         let rx = conn.send_request("initialize", params).await.unwrap();
@@ -582,7 +582,7 @@ mod tests {
         let mut conn = AgentConnection::spawn(&config, "test-agent").await.unwrap();
 
         let params = serde_json::json!({
-            "protocolVersion": 1,
+            "protocolVersion": 2,
             "capabilities": {}
         });
         let rx = conn.send_request("initialize", params).await.unwrap();
