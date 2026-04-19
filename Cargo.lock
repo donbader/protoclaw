@@ -258,7 +258,7 @@ dependencies = [
 
 [[package]]
 name = "anyclaw-sdk-agent"
-version = "0.2.14"
+version = "0.2.15"
 dependencies = [
  "anyclaw-sdk-types",
  "rstest",
@@ -270,7 +270,7 @@ dependencies = [
 
 [[package]]
 name = "anyclaw-sdk-channel"
-version = "0.3.8"
+version = "0.3.9"
 dependencies = [
  "anyclaw-sdk-types",
  "rstest",
@@ -283,7 +283,7 @@ dependencies = [
 
 [[package]]
 name = "anyclaw-sdk-tool"
-version = "0.2.14"
+version = "0.2.15"
 dependencies = [
  "anyclaw-sdk-types",
  "rmcp",
@@ -298,7 +298,7 @@ dependencies = [
 
 [[package]]
 name = "anyclaw-sdk-types"
-version = "0.8.2"
+version = "0.9.0"
 dependencies = [
  "agent-client-protocol-schema",
  "proptest",

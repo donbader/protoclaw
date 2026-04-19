@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.9](https://github.com/donbader/anyclaw/compare/anyclaw-sdk-channel-v0.3.8...anyclaw-sdk-channel-v0.3.9) - 2026-04-19
+
+### Added
+
+- add SenderInfo and was_mentioned to ChannelSendMessage ([#83](https://github.com/donbader/anyclaw/pull/83))
+
 ## [0.3.8](https://github.com/donbader/anyclaw/compare/anyclaw-sdk-channel-v0.3.7...anyclaw-sdk-channel-v0.3.8) - 2026-04-18
 
 ### Other
