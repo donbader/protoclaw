@@ -19,6 +19,7 @@ use crate::connection::{ChannelConnection, IncomingChannelMessage};
 use crate::error::ChannelsError;
 use anyclaw_sdk_types::{
     ChannelCapabilities, ChannelInitializeResult, ChannelRespondPermission, ChannelSendMessage,
+    PeerInfo,
 };
 
 type SpawnInitResult = (
@@ -55,6 +56,7 @@ struct RoutingEntry {
     acp_session_id: String,
     slot_index: usize,
     _agent_name: String,
+    peer_info: PeerInfo,
 }
 
 struct ChannelSlot {
@@ -251,6 +253,7 @@ impl ChannelsManager {
                         slot.config.options.entry(k).or_insert(v);
                     }
                 }
+                self.replay_sessions_to_channel(slot_index).await;
             }
             Err(e) => {
                 tracing::error!(
@@ -259,6 +262,67 @@ impl ChannelsManager {
                     "failed to respawn channel"
                 );
                 slot.connection = None;
+            }
+        }
+    }
+
+    async fn replay_sessions_to_channel(&mut self, slot_index: usize) {
+        let channel_name = &self.slots[slot_index].name;
+
+        let sessions_to_replay: Vec<(SessionKey, String, PeerInfo)> = self
+            .routing_table
+            .iter()
+            .filter(|(_, entry)| entry.slot_index == slot_index)
+            .map(|(sk, entry)| {
+                (
+                    sk.clone(),
+                    entry.acp_session_id.clone(),
+                    entry.peer_info.clone(),
+                )
+            })
+            .collect();
+
+        if sessions_to_replay.is_empty() {
+            return;
+        }
+
+        for (session_key, _, _) in &sessions_to_replay {
+            self.acked_sessions.remove(session_key);
+        }
+
+        let Some(conn) = &self.slots[slot_index].connection else {
+            return;
+        };
+
+        tracing::info!(
+            channel = %channel_name,
+            count = sessions_to_replay.len(),
+            "replaying sessions to recovered channel"
+        );
+
+        for (session_key, acp_session_id, peer_info) in &sessions_to_replay {
+            let peer_info_json = serde_json::to_value(peer_info).unwrap_or_else(|e| {
+                tracing::warn!(
+                    channel = %channel_name,
+                    error = %e,
+                    "failed to serialize peerInfo for session replay, using null"
+                );
+                serde_json::Value::default()
+            });
+            let params = serde_json::json!({
+                "sessionId": acp_session_id,
+                "peerInfo": peer_info_json,
+            });
+            if let Err(e) = conn
+                .send_notification("channel/sessionCreated", params)
+                .await
+            {
+                tracing::warn!(
+                    channel = %channel_name,
+                    session_key = %session_key,
+                    error = %e,
+                    "failed to replay session to recovered channel"
+                );
             }
         }
     }
@@ -818,6 +882,7 @@ impl ChannelsManager {
                         acp_session_id: acp_session_id.clone(),
                         slot_index,
                         _agent_name: agent_name.to_string(),
+                        peer_info: send_msg.peer_info.clone(),
                     },
                 );
 
@@ -1300,6 +1365,11 @@ mod tests {
                 acp_session_id: "acp-sess-1".into(),
                 slot_index: 0,
                 _agent_name: "default".into(),
+                peer_info: PeerInfo {
+                    channel_name: "debug-http".into(),
+                    peer_id: "dev".into(),
+                    kind: "local".into(),
+                },
             },
         );
 
@@ -1322,6 +1392,11 @@ mod tests {
                 acp_session_id: "sess-alice".into(),
                 slot_index: 0,
                 _agent_name: "default".into(),
+                peer_info: PeerInfo {
+                    channel_name: "telegram".into(),
+                    peer_id: "alice".into(),
+                    kind: "direct".into(),
+                },
             },
         );
         table.insert(
@@ -1331,6 +1406,11 @@ mod tests {
                 acp_session_id: "sess-bob".into(),
                 slot_index: 0,
                 _agent_name: "default".into(),
+                peer_info: PeerInfo {
+                    channel_name: "telegram".into(),
+                    peer_id: "bob".into(),
+                    kind: "direct".into(),
+                },
             },
         );
 
@@ -1355,6 +1435,11 @@ mod tests {
                 acp_session_id: "acp-1".into(),
                 slot_index: 0,
                 _agent_name: "default".into(),
+                peer_info: PeerInfo {
+                    channel_name: "test".into(),
+                    peer_id: "dev".into(),
+                    kind: "local".into(),
+                },
             },
         );
 
@@ -1509,6 +1594,11 @@ mod tests {
                 acp_session_id: "sess-1".into(),
                 slot_index: 0,
                 _agent_name: "default".into(),
+                peer_info: PeerInfo {
+                    channel_name: "telegram".into(),
+                    peer_id: "alice".into(),
+                    kind: "direct".into(),
+                },
             },
         );
         m.send_ack_to_channel(&key).await;
@@ -1535,5 +1625,112 @@ mod tests {
         let channel_ack: ChannelAckConfig = config_ack.into();
         assert_eq!(channel_ack.reaction, false);
         assert_eq!(channel_ack.typing, false);
+    }
+
+    #[tokio::test]
+    async fn when_channel_crash_replays_sessions_then_acked_sessions_cleared() {
+        let mut m = ChannelsManager::new(
+            HashMap::new(),
+            default_init_timeout(),
+            default_exit_timeout(),
+            "default".into(),
+        );
+        m.slots.push(ChannelSlot {
+            name: "telegram".into(),
+            config: test_channel_config("telegram-channel", true, "default"),
+            connection: None,
+            channel_id: ChannelId::from("telegram"),
+            lifecycle: SlotLifecycle::new(
+                &CancellationToken::new(),
+                ExponentialBackoff::default(),
+                CrashTracker::default(),
+            ),
+        });
+
+        let key_alice = SessionKey::new("telegram", "direct", "alice");
+        let key_bob = SessionKey::new("telegram", "direct", "bob");
+        let key_other = SessionKey::new("slack", "direct", "carol");
+
+        m.routing_table.insert(
+            key_alice.clone(),
+            RoutingEntry {
+                _channel_id: ChannelId::from("telegram"),
+                acp_session_id: "sess-alice".into(),
+                slot_index: 0,
+                _agent_name: "default".into(),
+                peer_info: PeerInfo {
+                    channel_name: "telegram".into(),
+                    peer_id: "alice".into(),
+                    kind: "direct".into(),
+                },
+            },
+        );
+        m.routing_table.insert(
+            key_bob.clone(),
+            RoutingEntry {
+                _channel_id: ChannelId::from("telegram"),
+                acp_session_id: "sess-bob".into(),
+                slot_index: 0,
+                _agent_name: "default".into(),
+                peer_info: PeerInfo {
+                    channel_name: "telegram".into(),
+                    peer_id: "bob".into(),
+                    kind: "direct".into(),
+                },
+            },
+        );
+        m.routing_table.insert(
+            key_other.clone(),
+            RoutingEntry {
+                _channel_id: ChannelId::from("slack"),
+                acp_session_id: "sess-carol".into(),
+                slot_index: 1,
+                _agent_name: "default".into(),
+                peer_info: PeerInfo {
+                    channel_name: "slack".into(),
+                    peer_id: "carol".into(),
+                    kind: "direct".into(),
+                },
+            },
+        );
+
+        m.acked_sessions.insert(key_alice.clone());
+        m.acked_sessions.insert(key_bob.clone());
+        m.acked_sessions.insert(key_other.clone());
+
+        // given: acked_sessions has entries for slot 0 and slot 1
+        // when: replay_sessions_to_channel(0) with no connection
+        // then: only slot 0 acked_sessions are cleared
+        m.replay_sessions_to_channel(0).await;
+
+        assert!(!m.acked_sessions.contains(&key_alice));
+        assert!(!m.acked_sessions.contains(&key_bob));
+        assert!(m.acked_sessions.contains(&key_other));
+    }
+
+    #[tokio::test]
+    async fn when_no_sessions_for_slot_then_replay_is_noop() {
+        let mut m = ChannelsManager::new(
+            HashMap::new(),
+            default_init_timeout(),
+            default_exit_timeout(),
+            "default".into(),
+        );
+        m.slots.push(ChannelSlot {
+            name: "telegram".into(),
+            config: test_channel_config("telegram-channel", true, "default"),
+            connection: None,
+            channel_id: ChannelId::from("telegram"),
+            lifecycle: SlotLifecycle::new(
+                &CancellationToken::new(),
+                ExponentialBackoff::default(),
+                CrashTracker::default(),
+            ),
+        });
+
+        // given: no routing entries for slot 0
+        // when: replay_sessions_to_channel(0)
+        // then: returns early without error
+        m.replay_sessions_to_channel(0).await;
     }
 }

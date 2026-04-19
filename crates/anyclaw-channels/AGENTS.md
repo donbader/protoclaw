@@ -23,7 +23,7 @@ Manages channel subprocesses with per-channel crash isolation and session-keyed 
 
 ## Routing Model
 
-- `routing_table: HashMap<SessionKey, RoutingEntry>` — maps session key → (_channel_id, acp_session_id, slot_index)
+- `routing_table: HashMap<SessionKey, RoutingEntry>` — maps session key → (_channel_id, acp_session_id, slot_index, peer_info)
 - Inbound: `channel/sendMessage` → lookup/create session via `AgentsCommand::CreateSession` → `AgentsCommand::EnqueueMessage`
   - If `CreateSession` returns an error, the channel receives an error `channel/deliverMessage` (not a silent drop)
 - Outbound: `ChannelEvent::DeliverMessage` from agents → lookup routing table → `channel/deliverMessage` to correct channel
@@ -37,6 +37,15 @@ Each channel gets its own `ChannelSlot` with independent:
 - `disabled: bool` — set true on crash loop, channel stops restarting
 
 A crash in one channel does NOT affect other channels or the sidecar.
+
+## Crash Recovery Session Replay
+
+When a channel subprocess crashes and respawns, `handle_channel_crash()` calls `replay_sessions_to_channel()` which:
+
+1. Clears `acked_sessions` for all sessions routed to the crashed slot (so the next delivery re-sends `response_started`)
+2. Sends `channel/sessionCreated` for each active session in the routing table belonging to that slot, using the stored `peer_info`
+
+This ensures the new channel process has the session-to-peer mappings it needs to deliver in-flight messages. Without replay, the new process rejects deliveries with "unknown session" errors.
 
 ## Graceful Channel Shutdown
 
