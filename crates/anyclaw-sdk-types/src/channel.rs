@@ -71,6 +71,22 @@ pub struct PeerInfo {
     pub kind: String,
 }
 
+/// Identity of the user who sent a message, for access control decisions.
+///
+/// Channels populate this with platform-specific sender information so the
+/// manager can enforce allowlists and group policies without understanding
+/// platform-specific APIs.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SenderInfo {
+    /// Platform-specific user ID (e.g., Telegram numeric ID as string, Slack member ID).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sender_id: Option<String>,
+    /// Platform-specific username or display name (e.g., `"alice_dev"`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sender_name: Option<String>,
+}
+
 /// Metadata attached to an inbound user message, providing threading and reply context.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -113,6 +129,12 @@ pub struct ChannelSendMessage {
     /// Optional protocol extension metadata.
     #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
     pub meta: Option<serde_json::Value>,
+    /// Optional sender identity for manager-level access control.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sender_info: Option<SenderInfo>,
+    /// Whether the bot was mentioned in this message (for group mention gating).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub was_mentioned: Option<bool>,
 }
 
 /// Helper for channel implementations to extract thought content from DeliverMessage.
@@ -560,6 +582,8 @@ mod tests {
             content: vec![crate::acp::ContentPart::text("hello agent")],
             metadata: None,
             meta: None,
+            sender_info: None,
+            was_mentioned: None,
         };
         let json = serde_json::to_value(&msg).unwrap();
         assert_eq!(json["peerInfo"]["channelName"], "debug-http");
@@ -1163,6 +1187,8 @@ mod tests {
             content: vec![crate::acp::ContentPart::text("hello agent")],
             metadata: None,
             meta: None,
+            sender_info: None,
+            was_mentioned: None,
         };
         let json = serde_json::to_value(&original).unwrap();
         let restored: ChannelSendMessage = serde_json::from_value(json).unwrap();
@@ -1376,6 +1402,8 @@ mod tests {
             ],
             metadata: None,
             meta: None,
+            sender_info: None,
+            was_mentioned: None,
         };
         let json = serde_json::to_value(&original).unwrap();
         let restored: ChannelSendMessage = serde_json::from_value(json).unwrap();
@@ -1401,6 +1429,8 @@ mod tests {
                 thread_id: Some("thread-1".into()),
             }),
             meta: None,
+            sender_info: None,
+            was_mentioned: None,
         };
         let json = serde_json::to_value(&original).unwrap();
         assert_eq!(json["metadata"]["replyToMessageId"], "msg-99");
@@ -1527,5 +1557,89 @@ mod tests {
             }
             other => panic!("expected Result, got {:?}", other),
         }
+    }
+
+    #[rstest]
+    fn when_sender_info_round_trips_then_identical() {
+        let original = SenderInfo {
+            sender_id: Some("12345".into()),
+            sender_name: Some("alice_dev".into()),
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        assert_eq!(json["senderId"], "12345");
+        assert_eq!(json["senderName"], "alice_dev");
+        let restored: SenderInfo = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_sender_info_empty_then_fields_absent() {
+        let original = SenderInfo::default();
+        let json = serde_json::to_value(&original).unwrap();
+        assert!(json.get("senderId").is_none());
+        assert!(json.get("senderName").is_none());
+        let restored: SenderInfo = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_channel_send_message_has_sender_info_then_round_trips() {
+        let original = ChannelSendMessage {
+            peer_info: PeerInfo {
+                channel_name: "telegram".into(),
+                peer_id: "tg:42".into(),
+                kind: "group".into(),
+            },
+            content: vec![crate::acp::ContentPart::text("@bot hello")],
+            metadata: None,
+            meta: None,
+            sender_info: Some(SenderInfo {
+                sender_id: Some("99".into()),
+                sender_name: Some("alice".into()),
+            }),
+            was_mentioned: Some(true),
+        };
+        let json = serde_json::to_value(&original).unwrap();
+        assert_eq!(json["senderInfo"]["senderId"], "99");
+        assert_eq!(json["senderInfo"]["senderName"], "alice");
+        assert_eq!(json["wasMentioned"], true);
+        let restored: ChannelSendMessage = serde_json::from_value(json).unwrap();
+        assert_eq!(original, restored);
+    }
+
+    #[rstest]
+    fn when_channel_send_message_missing_new_fields_then_deserializes_as_none() {
+        let json = serde_json::json!({
+            "peerInfo": {
+                "channelName": "telegram",
+                "peerId": "tg:42",
+                "kind": "group"
+            },
+            "content": [{"type": "text", "text": "hello"}]
+        });
+        let msg: ChannelSendMessage = serde_json::from_value(json).unwrap();
+        assert!(msg.sender_info.is_none());
+        assert!(msg.was_mentioned.is_none());
+        assert!(msg.metadata.is_none());
+        assert!(msg.meta.is_none());
+    }
+
+    #[rstest]
+    fn when_channel_send_message_without_new_fields_then_fields_absent_in_json() {
+        let msg = ChannelSendMessage {
+            peer_info: PeerInfo {
+                channel_name: "debug-http".into(),
+                peer_id: "local".into(),
+                kind: "local".into(),
+            },
+            content: vec![crate::acp::ContentPart::text("hi")],
+            metadata: None,
+            meta: None,
+            sender_info: None,
+            was_mentioned: None,
+        };
+        let json = serde_json::to_value(&msg).unwrap();
+        assert!(json.get("senderInfo").is_none());
+        assert!(json.get("wasMentioned").is_none());
     }
 }

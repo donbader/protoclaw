@@ -46,6 +46,8 @@ impl Channel for SdkTestChannel {
                 content: vec![ContentPart::text(content_str)],
                 metadata: None,
                 meta: None,
+                sender_info: None,
+                was_mentioned: None,
             };
             outbound.send(send_msg).await.ok();
         }

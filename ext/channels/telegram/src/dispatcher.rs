@@ -240,6 +240,8 @@ pub async fn process_text_message(
         content,
         metadata,
         meta: None,
+        sender_info: None,
+        was_mentioned: None,
     };
     outbound
         .send(msg)
@@ -435,6 +437,8 @@ pub async fn process_media_message(
         content,
         metadata,
         meta: None,
+        sender_info: None,
+        was_mentioned: None,
     };
     outbound
         .send(msg)
