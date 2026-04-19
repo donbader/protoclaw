@@ -34,7 +34,7 @@ type StdioTriple = (
     Box<dyn tokio::io::AsyncRead + Unpin + Send>,
 );
 
-async fn build_backend(
+pub(crate) async fn build_backend(
     config: &AgentConfig,
     name: &str,
     log_level: Option<&str>,
@@ -108,7 +108,7 @@ fn spawn_writer_task(
     })
 }
 
-fn spawn_stderr_task(
+pub(crate) fn spawn_stderr_task(
     name: &str,
     stderr: Box<dyn tokio::io::AsyncRead + Unpin + Send>,
 ) -> tokio::task::JoinHandle<()> {

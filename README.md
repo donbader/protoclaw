@@ -91,7 +91,7 @@ We're working toward a stable v1.0. Here's where things stand:
 | Config validation CLI (`anyclaw validate`) | ✅ | Offline schema + semantic validation with `--strict` mode |
 | Structured JSON logging | ✅ | `log_format: json` for production log aggregators |
 | Extension defaults via initialize handshake | ✅ | |
-| Agent-initiated messages | ✅ | Agents can push to channels without user input (custom extension) |
+| Agent-initiated messages | ✅ | Via standard `session/update` notifications (agents self-prompt internally) |
 | Rich media delivery | ✅ | Images, files, audio between agents and channels (both directions) |
 | Reply/thread context | ✅ | Agent knows which message the user is replying to |
 | Rate limiting | planned | Per-session and per-channel depth caps with backpressure |
@@ -102,7 +102,7 @@ We're working toward a stable v1.0. Here's where things stand:
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| ACP protocol (JSON-RPC 2.0 over stdio) | ✅ | Uses official `agent-client-protocol-schema` for wire types |
+| ACP protocol (JSON-RPC 2.0 over stdio) | ✅ | Uses official `agent-client-protocol` SDK for typed dispatch and wire types |
 | ACP↔HTTP bridge (connect any REST/SSE agent) | ✅ | |
 | Docker workspace (run agents in containers) | ✅ | |
 | Session persistence (SQLite-backed) | ✅ | |
@@ -112,7 +112,7 @@ We're working toward a stable v1.0. Here's where things stand:
 | Permission system (agent → user approval flow) | ✅ | |
 | Platform commands (`/new`, `/cancel`) | ✅ | Built-in slash commands intercepted by the sidecar |
 | Dynamic command menus | ✅ | Agents push `available_commands_update` to channels at runtime |
-| Full ACP spec compliance | planned | Replace custom extensions (`session/push`, etc.) with upstream standard methods |
+| Full ACP spec compliance | in progress | SDK foundation added; wiring typed dispatch into manager is next |
 | Agent-to-agent communication | planned | Handoff, delegation, or direct IPC between agents |
 
 ### Channels
