@@ -61,6 +61,7 @@ pub(crate) enum AgentRunnerCommand {
     ListSessions {
         reply: oneshot::Sender<Result<ListSessionsResponse, AgentsError>>,
     },
+    Keepalive,
     Kill,
 }
 
@@ -302,6 +303,7 @@ async fn handle_runner_command(cmd: AgentRunnerCommand, conn: &ClientSideConnect
                 .map_err(|e| sdk_err_to_agents_err(&e));
             let _ = reply.send(result);
         }
+        AgentRunnerCommand::Keepalive => {}
         AgentRunnerCommand::Kill => {}
     }
 }

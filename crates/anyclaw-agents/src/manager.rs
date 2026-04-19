@@ -427,9 +427,7 @@ impl AgentsManager {
             };
             if runner
                 .cmd_tx
-                .send(AgentRunnerCommand::Cancel {
-                    session_id: String::new(),
-                })
+                .send(AgentRunnerCommand::Keepalive)
                 .await
                 .is_err()
             {
