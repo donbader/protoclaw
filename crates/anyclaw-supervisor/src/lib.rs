@@ -300,10 +300,7 @@ mod tests {
             supervisor: anyclaw_config::SupervisorConfig {
                 shutdown_timeout_secs: 3,
                 health_check_interval_secs: 60,
-                max_restarts: 5,
-                restart_window_secs: 60,
-                admin_port: 3000,
-                permission_timeout_secs: None,
+                ..Default::default()
             },
             log_level: "info".into(),
             log_format: anyclaw_config::LogFormat::Pretty,

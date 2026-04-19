@@ -212,9 +212,6 @@ mod tests {
             log_format: crate::LogFormat::Pretty,
             extensions_dir: "/usr/local/bin".into(),
             agents_manager: AgentsManagerConfig {
-                acp_timeout_secs: 30,
-                prompt_idle_timeout_secs: 120,
-                keepalive_interval_secs: 300,
                 shutdown_grace_ms: 5000,
                 agents: HashMap::from([(
                     "test-agent".into(),
@@ -242,6 +239,7 @@ mod tests {
                         options: HashMap::new(),
                     },
                 )]),
+                ..Default::default()
             },
             channels_manager: ChannelsManagerConfig::default(),
             tools_manager: ToolsManagerConfig::default(),

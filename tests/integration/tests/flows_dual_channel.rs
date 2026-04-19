@@ -143,9 +143,7 @@ fn build_dual_channel_config() -> anyclaw_config::AnyclawConfig {
             shutdown_timeout_secs: 5,
             health_check_interval_secs: 1,
             max_restarts: 3,
-            restart_window_secs: 60,
-            admin_port: 3000,
-            permission_timeout_secs: None,
+            ..Default::default()
         },
         log_level: "info".into(),
         log_format: anyclaw_config::LogFormat::Pretty,
