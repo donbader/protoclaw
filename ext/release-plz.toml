@@ -26,8 +26,10 @@ git_tag_name = "system-info-v{{ version }}"
 
 [[package]]
 name = "sdk-test-channel"
+publish = false
 release = false
 
 [[package]]
 name = "sdk-test-tool"
+publish = false
 release = false
