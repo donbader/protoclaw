@@ -1,4 +1,4 @@
-# debian:bookworm-slim
-FROM debian:bookworm-slim@sha256:4724b8cc51e33e398f0e2e15e18d5ec2851ff0c2280647e1310bc1642182655d
+# Must match CI runner (ubuntu-latest = 24.04) to avoid glibc version mismatch.
+FROM ubuntu:24.04
 COPY mock-agent /usr/local/bin/mock-agent
 ENTRYPOINT ["/usr/local/bin/mock-agent"]
