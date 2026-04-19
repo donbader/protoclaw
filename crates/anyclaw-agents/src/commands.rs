@@ -386,7 +386,23 @@ impl AgentsManager {
             let completion_tx = self.completion_tx.clone();
             let sk = session_key.clone();
             let idle_timeout_secs = self.manager_config.prompt_idle_timeout_secs;
+            let silent_agent_warn_secs = 30u64;
             tokio::spawn(async move {
+                let activity_for_warn = activity.clone();
+                let sk_for_warn = sk.clone();
+                tokio::spawn(async move {
+                    let warn_dur = Duration::from_secs(silent_agent_warn_secs);
+                    tokio::select! {
+                        _ = tokio::time::sleep(warn_dur) => {
+                            tracing::warn!(
+                                session_key = %sk_for_warn,
+                                elapsed_secs = silent_agent_warn_secs,
+                                "no session/update received since prompt was sent — agent may be unresponsive or dropping notifications"
+                            );
+                        }
+                        _ = activity_for_warn.notified() => {}
+                    }
+                });
                 let result = if idle_timeout_secs == 0 {
                     match reply_rx.await {
                         Ok(r) => Some(r),

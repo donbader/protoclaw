@@ -114,7 +114,7 @@ impl agent_client_protocol::Agent for MockHandler {
         let new_opts = AgentOptions::from_meta(args.meta.as_ref());
         *self.opts.borrow_mut() = new_opts;
 
-        let opts = self.opts.borrow();
+        let support_resume = self.opts.borrow().support_resume;
 
         #[allow(clippy::disallowed_types)]
         let defaults: serde_json::Value =
@@ -122,7 +122,7 @@ impl agent_client_protocol::Agent for MockHandler {
 
         let session_caps = {
             let caps = SessionCapabilities::new();
-            if opts.support_resume {
+            if support_resume {
                 caps.resume(SessionResumeCapabilities::new())
             } else {
                 caps
@@ -141,8 +141,6 @@ impl agent_client_protocol::Agent for MockHandler {
         let resp = InitializeResponse::new(args.protocol_version)
             .agent_capabilities(agent_caps)
             .meta(meta);
-
-        drop(opts);
 
         self.send_notification(SessionNotification::new(
             "__global__",
