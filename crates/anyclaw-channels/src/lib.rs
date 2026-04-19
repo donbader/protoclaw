@@ -5,6 +5,8 @@
 //! Manages channel subprocesses (Telegram, debug-http, etc.) with per-channel
 //! crash isolation and session-keyed routing between channels and the agent.
 
+/// Access control types and evaluation logic for channel message filtering.
+pub mod access_control;
 // D-03: ChannelEvent content and JSON-RPC method params are arbitrary agent/protocol JSON
 #[allow(clippy::disallowed_types)]
 /// [`ChannelConnection`] — subprocess spawn, JSON-RPC framing, port discovery.

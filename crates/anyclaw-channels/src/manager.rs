@@ -645,10 +645,83 @@ impl ChannelsManager {
         params: serde_json::Value,
         channel_name: &str,
     ) -> Option<SessionKey> {
-        let Ok(send_msg) = serde_json::from_value::<ChannelSendMessage>(params) else {
+        let Ok(mut send_msg) = serde_json::from_value::<ChannelSendMessage>(params) else {
             tracing::warn!(channel = %channel_name, "failed to parse channel/sendMessage params");
             return None;
         };
+
+        let options_value =
+            serde_json::to_value(&self.slots[slot_index].config.options).unwrap_or_default();
+        if options_value.get("access_control").is_some() {
+            use crate::access_control::{
+                AccessConfig, AccessDecision, SenderIdentity, evaluate_access,
+                should_suppress_reply_context,
+            };
+
+            let ac_cfg = AccessConfig::from_options(&options_value);
+
+            let sender = send_msg
+                .sender_info
+                .as_ref()
+                .map(|si| {
+                    let user_id = si.sender_id.as_deref().and_then(|s| s.parse::<i64>().ok());
+                    SenderIdentity {
+                        user_id,
+                        username: si.sender_name.clone(),
+                    }
+                })
+                .unwrap_or_default();
+
+            let is_group = matches!(send_msg.peer_info.kind.as_str(), "group" | "supergroup");
+            let bot_mentioned = send_msg.was_mentioned.unwrap_or(false);
+            let chat_id = send_msg
+                .peer_info
+                .peer_id
+                .split_once(':')
+                .and_then(|(_, id)| id.parse::<i64>().ok())
+                .unwrap_or(0);
+
+            match evaluate_access(&ac_cfg, chat_id, &sender, is_group, bot_mentioned) {
+                AccessDecision::Allow => {}
+                AccessDecision::Deny(reason) => {
+                    tracing::debug!(
+                        channel = %channel_name,
+                        peer_id = %send_msg.peer_info.peer_id,
+                        ?reason,
+                        "access denied, dropping message"
+                    );
+                    return None;
+                }
+                AccessDecision::SkipNoMention => {
+                    tracing::debug!(
+                        channel = %channel_name,
+                        peer_id = %send_msg.peer_info.peer_id,
+                        "skipping message: bot not mentioned"
+                    );
+                    return None;
+                }
+            }
+
+            if is_group {
+                let should_suppress = send_msg.metadata.as_ref().is_some_and(|metadata| {
+                    let reply_sender = SenderIdentity {
+                        user_id: metadata
+                            .reply_to_sender_id
+                            .as_deref()
+                            .and_then(|s| s.parse::<i64>().ok()),
+                        username: metadata.reply_to_sender.clone(),
+                    };
+                    should_suppress_reply_context(&ac_cfg, chat_id, &reply_sender, true)
+                });
+                if should_suppress {
+                    tracing::debug!(
+                        channel = %channel_name,
+                        "suppressing reply context: reply sender not in allowlist"
+                    );
+                    send_msg.metadata = None;
+                }
+            }
+        }
 
         let session_key = Self::build_session_key(&send_msg);
 
@@ -1535,5 +1608,45 @@ mod tests {
         let channel_ack: ChannelAckConfig = config_ack.into();
         assert_eq!(channel_ack.reaction, false);
         assert_eq!(channel_ack.typing, false);
+    }
+
+    #[rstest]
+    fn when_no_access_control_config_then_all_messages_pass() {
+        use crate::access_control::{
+            AccessConfig, AccessDecision, SenderIdentity, evaluate_access,
+        };
+
+        let options_value = serde_json::json!({ "some_other_key": "value" });
+        assert!(
+            options_value.get("access_control").is_none(),
+            "no access_control key means gate is skipped"
+        );
+
+        let cfg = AccessConfig::from_options(&options_value);
+        let sender = SenderIdentity::default();
+        assert_eq!(
+            evaluate_access(&cfg, 0, &sender, false, false),
+            AccessDecision::Allow
+        );
+        assert_eq!(
+            evaluate_access(&cfg, -100123, &sender, true, false),
+            AccessDecision::Allow
+        );
+    }
+
+    #[rstest]
+    fn when_sender_info_missing_then_fail_open_with_default_identity() {
+        use crate::access_control::{
+            AccessConfig, AccessDecision, SenderIdentity, evaluate_access,
+        };
+
+        let options_value = serde_json::json!({ "access_control": {} });
+        let cfg = AccessConfig::from_options(&options_value);
+        let sender = SenderIdentity::default();
+        assert_eq!(
+            evaluate_access(&cfg, 100, &sender, false, false),
+            AccessDecision::Allow,
+            "default config with wildcard allows default identity (no sender info)"
+        );
     }
 }
