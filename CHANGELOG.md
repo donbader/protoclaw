@@ -1,4 +1,13 @@
 
+## [0.11.0] — 2026-04-19
+
+
+### Added
+
+- Add context history buffering for group chats (#91) (#91)
+- Add manager-level access control for channel messages (#87) (#87)
+
+
 ## [0.10.0] — 2026-04-19
 
 
@@ -114,7 +123,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 Starting point for tracked binary releases. Prior versions were not formally documented.
 
-[Unreleased]: https://github.com/donbader/anyclaw/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/donbader/anyclaw/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/donbader/anyclaw/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/donbader/anyclaw/compare/v0.9.4...v0.10.0
 [0.9.4]: https://github.com/donbader/anyclaw/compare/v0.9.3...v0.9.4
 [0.9.3]: https://github.com/donbader/anyclaw/compare/v0.9.2...v0.9.3
