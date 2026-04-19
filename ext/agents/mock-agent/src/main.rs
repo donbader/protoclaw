@@ -98,9 +98,9 @@ impl MockHandler {
         }
     }
 
-    fn send_notification(&self, notif: SessionNotification) {
+    async fn send_notification(&self, notif: SessionNotification) {
         if let Some(conn) = self.conn.get() {
-            drop(conn.session_notification(notif));
+            let _ = conn.session_notification(notif).await;
         }
     }
 }
@@ -150,7 +150,8 @@ impl agent_client_protocol::Agent for MockHandler {
                 AvailableCommand::new("help", "Show available commands"),
                 AvailableCommand::new("status", "Show agent status"),
             ])),
-        ));
+        ))
+        .await;
 
         Ok(resp)
     }
@@ -222,7 +223,8 @@ impl agent_client_protocol::Agent for MockHandler {
                     SessionUpdate::AgentThoughtChunk(ContentChunk::new(ContentBlock::Text(
                         TextContent::new(thought),
                     ))),
-                ));
+                ))
+                .await;
                 tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
             }
 
@@ -236,7 +238,8 @@ impl agent_client_protocol::Agent for MockHandler {
             self.send_notification(SessionNotification::new(
                 session_id.clone(),
                 SessionUpdate::AgentMessageChunk(ContentChunk::new(echo_block)),
-            ));
+            ))
+            .await;
         }
 
         let mut result_content = if parts.len() == 1 {
@@ -259,7 +262,8 @@ impl agent_client_protocol::Agent for MockHandler {
             SessionUpdate::AgentMessageChunk(ContentChunk::new(ContentBlock::Text(
                 TextContent::new(result_content),
             ))),
-        ));
+        ))
+        .await;
 
         let new_count = count + 1;
         self.prompt_count.set(new_count);
