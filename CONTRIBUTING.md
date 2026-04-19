@@ -46,7 +46,7 @@ cargo fmt --all -- --check
 **Integration tests** (requires binaries built first):
 
 ```sh
-cargo build --bin mock-agent --bin debug-http --bin sdk-test-tool --bin sdk-test-channel
+cargo build --workspace --manifest-path ext/Cargo.toml
 cargo test -p anyclaw-integration-tests
 ```
 

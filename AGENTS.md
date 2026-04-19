@@ -77,10 +77,12 @@ SDK crates (for external implementors):
 ├── anyclaw-sdk-channel ─→ sdk-types, jsonrpc
 └── anyclaw-sdk-tool ───→ sdk-types
 
-Example/ext binaries:
-├── system-info (example) ──→ sdk-tool
-├── mock-agent (ext) ──→ serde_json, tokio, uuid
-└── acp-bridge (ext) ──→ sdk-types, jsonrpc, reqwest
+Example/ext binaries (separate workspace in ext/):
+├── system-info ──→ sdk-tool
+├── mock-agent ──→ (no SDK deps, third-party only)
+├── debug-http ──→ sdk-channel, sdk-types
+├── telegram-channel ──→ sdk-channel, sdk-types
+└── acp-bridge (not in workspace) ──→ sdk-types, jsonrpc, reqwest
 ```
 
 ## Conventions
@@ -129,8 +131,8 @@ All AI agents working on this codebase must follow the project's contribution an
 - **Code of Conduct**: Follow the [Rust Code of Conduct](https://www.rust-lang.org/policies/code-of-conduct). Be respectful and inclusive in all generated code comments, documentation, commit messages, and PR descriptions. See `CODE_OF_CONDUCT.md`.
 - **Commit messages**: Use [Conventional Commits](https://www.conventionalcommits.org/) — `<type>: <short description>`. Types: `feat`, `fix`, `docs`, `chore`, `refactor`, `test`, `ci`. Imperative mood, lowercase after type, no trailing period, max 72 chars. Body explains *why*, not *what*.
 - **PR descriptions**: Include `## Motivation`, `## Solution`, and `## Testing` sections.
-- **Before submitting**: Ensure `cargo test`, `cargo clippy --workspace`, and `cargo fmt --all -- --check` all pass.
-- **Integration tests**: Build required binaries first — `cargo build --bin mock-agent --bin debug-http --bin sdk-test-tool --bin sdk-test-channel`, then `cargo test -p anyclaw-integration-tests`.
+- **Before submitting**: Ensure `cargo test`, `cargo clippy --workspace`, and `cargo fmt --all -- --check` all pass for both the root workspace and `ext/` workspace (use `--manifest-path ext/Cargo.toml`).
+- **Integration tests**: Build ext/ binaries first — `cargo build --workspace --manifest-path ext/Cargo.toml`, then `cargo test -p anyclaw-integration-tests`.
 - **Test conventions**: rstest with BDD naming (`when_action_then_result`), no `test_` prefix, fixtures named `given_*`, parameterised cases use `#[case::label_name]`.
 - **License**: All contributions are licensed under MIT OR Apache-2.0.
 
@@ -139,11 +141,14 @@ Full details in `CONTRIBUTING.md` and `CODE_OF_CONDUCT.md`.
 ## Commands
 
 ```bash
-cargo build                                    # Build all workspace members
-cargo test                                     # Unit tests (all crates)
-cargo build --bin mock-agent --bin debug-http   # Required BEFORE integration tests
-cargo test -p integration                      # E2E tests (needs binaries built first)
-cargo clippy --workspace                       # Lint all crates
+cargo build                                              # Build root workspace (core + SDK crates)
+cargo build --workspace --manifest-path ext/Cargo.toml   # Build ext/ workspace (all extensions)
+cargo test                                               # Unit tests (root workspace)
+cargo test --workspace --manifest-path ext/Cargo.toml    # Unit tests (ext/ workspace)
+cargo build --workspace --manifest-path ext/Cargo.toml   # Required BEFORE integration tests
+cargo test -p anyclaw-integration-tests                  # E2E tests (needs ext/ binaries built first)
+cargo clippy --workspace                                 # Lint root workspace
+cargo clippy --workspace --manifest-path ext/Cargo.toml  # Lint ext/ workspace
 ```
 ## AGENTS.md Hierarchy
 

@@ -613,6 +613,7 @@ mod tests {
             .unwrap()
             .parent()
             .unwrap()
+            .join("ext")
             .join("target")
             .join("debug")
             .join("mock-agent");
@@ -641,6 +642,7 @@ mod tests {
             .unwrap()
             .parent()
             .unwrap()
+            .join("ext")
             .join("target")
             .join("debug")
             .join("mock-agent");
@@ -1476,6 +1478,7 @@ mod tests {
             .unwrap()
             .parent()
             .unwrap()
+            .join("ext")
             .join("target")
             .join("debug")
             .join("mock-agent");

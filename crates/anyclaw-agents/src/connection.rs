@@ -476,6 +476,7 @@ mod tests {
             .unwrap()
             .parent()
             .unwrap()
+            .join("ext")
             .join("target")
             .join("debug")
             .join("mock-agent");

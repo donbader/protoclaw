@@ -22,10 +22,10 @@ fn git_describe() -> Option<String> {
         let dir = String::from_utf8_lossy(&git_dir.stdout).trim().to_string();
         println!("cargo::rerun-if-changed={dir}/HEAD");
         // Also track the ref HEAD points to (e.g. refs/heads/main)
-        if let Ok(head) = std::fs::read_to_string(format!("{dir}/HEAD")) {
-            if let Some(ref_path) = head.strip_prefix("ref: ") {
-                println!("cargo::rerun-if-changed={dir}/{}", ref_path.trim());
-            }
+        if let Ok(head) = std::fs::read_to_string(format!("{dir}/HEAD"))
+            && let Some(ref_path) = head.strip_prefix("ref: ")
+        {
+            println!("cargo::rerun-if-changed={dir}/{}", ref_path.trim());
         }
     }
 

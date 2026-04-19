@@ -1,0 +1,60 @@
+name: Release Extensions
+run-name: "Release Extensions — ${{ github.event.head_commit.message }}"
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "ext/**"
+
+permissions:
+  pull-requests: write
+  contents: write
+
+jobs:
+  release-plz-release:
+    name: Tag
+    runs-on: ubuntu-latest
+    concurrency:
+      group: release-plz-ext-release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-stable
+          save-if: false
+      - name: Run release-plz release
+        uses: release-plz/action@v0.5
+        with:
+          command: release
+          manifest_path: ext/Cargo.toml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  release-plz-pr:
+    name: Release PR
+    runs-on: ubuntu-latest
+    concurrency:
+      group: release-plz-ext-pr
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-stable
+          save-if: false
+      - name: Run release-plz release-pr
+        uses: release-plz/action@v0.5
+        with:
+          command: release-pr
+          manifest_path: ext/Cargo.toml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

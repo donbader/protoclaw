@@ -32,7 +32,7 @@ jobs:
         with:
           prefix-key: coverage
       - name: Build required binaries
-        run: cargo build --locked --bin mock-agent --bin debug-http --bin sdk-test-tool --bin sdk-test-channel
+        run: cargo build --locked --workspace --manifest-path ext/Cargo.toml
       - name: Run tests with coverage
         run: cargo llvm-cov --no-report --workspace --exclude anyclaw-test-helpers
       - name: Generate LCOV report
