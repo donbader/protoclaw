@@ -3,7 +3,7 @@ FROM lukemathwalker/cargo-chef:latest-rust-1.94-alpine AS chef
 WORKDIR /build
 
 # mold linker + clang driver for faster link times
-RUN apk add --no-cache clang mold
+RUN apk add --no-cache clang mold jq
 
 # sccache for cross-run compilation caching via GHA cache backend
 ARG TARGETARCH
@@ -22,14 +22,12 @@ FROM chef AS planner
 COPY . .
 RUN cargo chef prepare --recipe-path recipe.json
 
-# Stage 3: Builder — cook deps from recipe, then build all workspace binaries
-# PROFILE: "release" (default) or "debug" (for dev builds)
+# Stage 3: Builder — cook deps from recipe, then build workspace binaries
 FROM chef AS builder
 ARG PROFILE=release
 ARG ANYCLAW_VERSION=unknown
 ENV ANYCLAW_VERSION=${ANYCLAW_VERSION}
 
-# Enable sccache when GHA credentials are available (CI only)
 ARG SCCACHE_GHA_ENABLED
 ENV RUSTC_WRAPPER=/usr/local/bin/sccache
 
@@ -53,19 +51,14 @@ RUN --mount=type=secret,id=actions_results_url,env=ACTIONS_RESULTS_URL \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/build/target \
     --mount=type=cache,target=/root/.cache/sccache \
-    cargo build $(if [ "$PROFILE" = "release" ]; then echo "--release"; fi) --locked \
-    --bin anyclaw \
-    --bin telegram-channel \
-    --bin debug-http \
-    --bin mock-agent \
-    --bin system-info \
+    cargo build $(if [ "$PROFILE" = "release" ]; then echo "--release"; fi) --locked --bin anyclaw \
+    && cp target/$PROFILE/anyclaw /tmp/ \
+    && cd ext \
+    && cargo build $(if [ "$PROFILE" = "release" ]; then echo "--release"; fi) --locked --workspace \
     && sccache --show-stats \
-    && cp target/$PROFILE/anyclaw \
-        target/$PROFILE/telegram-channel \
-        target/$PROFILE/debug-http \
-        target/$PROFILE/mock-agent \
-        target/$PROFILE/system-info \
-        /tmp/
+    && EXT_BINS=$(cargo metadata --format-version 1 --no-deps \
+         | jq -r '.packages[].targets[] | select(.kind[] == "bin") | .name') \
+    && for bin in $EXT_BINS; do cp /build/ext/target/$PROFILE/$bin /tmp/ 2>/dev/null || true; done
 
 # Stage 4: Core runtime — anyclaw only (static, no OS packages)
 FROM gcr.io/distroless/static-debian12:nonroot AS core

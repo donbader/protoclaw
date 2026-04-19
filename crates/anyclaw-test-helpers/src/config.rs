@@ -612,13 +612,13 @@ pub fn docker_agent_config_with_options(
 
 /// Build the Docker image `anyclaw-mock-agent:test` from the local workspace.
 ///
-/// Copies `target/debug/mock-agent` into a temporary build context alongside
+/// Copies `ext/target/debug/mock-agent` into a temporary build context alongside
 /// `tests/integration/Dockerfile.mock-agent`, then runs `docker build`.
 ///
 /// Returns `Ok(())` on success or `Err(String)` with the error output on failure.
 pub fn build_mock_agent_docker_image() -> Result<(), String> {
     let root = workspace_root();
-    let mock_agent_binary = root.join("target/debug/mock-agent");
+    let mock_agent_binary = root.join("ext/target/debug/mock-agent");
     let dockerfile = root.join("tests/integration/Dockerfile.mock-agent");
 
     if !mock_agent_binary.exists() {

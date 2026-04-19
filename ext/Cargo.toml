@@ -1,0 +1,57 @@
+[workspace]
+resolver = "2"
+members = [
+    "agents/mock-agent",
+    "channels/debug-http",
+    "channels/telegram",
+    "channels/sdk-test-channel",
+    "tools/sdk-test-tool",
+    "tools/system-info",
+]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.94"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/donbader/anyclaw"
+homepage = "https://github.com/donbader/anyclaw"
+
+# SDK crates — path deps to the core workspace
+[workspace.dependencies]
+anyclaw-sdk-types = { path = "../crates/anyclaw-sdk-types" }
+anyclaw-sdk-channel = { path = "../crates/anyclaw-sdk-channel" }
+anyclaw-sdk-tool = { path = "../crates/anyclaw-sdk-tool" }
+
+# Third-party — pinned to same versions as root workspace
+tokio = { version = "1.50", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = { package = "yaml_serde", version = "0.10" }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+axum = "0.8"
+tokio-stream = { version = "0.1", features = ["sync"] }
+uuid = { version = "1", features = ["v4"] }
+rstest = "0.26"
+tokio-test = "0.4"
+
+[workspace.lints.clippy]
+unwrap_used = "warn"
+expect_used = "allow"
+disallowed_types = "warn"
+needless_pass_by_value = "warn"
+redundant_closure_for_method_calls = "warn"
+manual_let_else = "warn"
+implicit_clone = "warn"
+cloned_instead_of_copied = "warn"
+flat_map_option = "warn"
+semicolon_if_nothing_returned = "warn"
+
+[workspace.lints.rust]
+unused_imports = "warn"
+dead_code = "warn"
+unused_variables = "warn"
+
+[profile.release]
+strip = true
+lto = "thin"

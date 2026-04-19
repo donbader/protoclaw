@@ -1,0 +1,33 @@
+[workspace]
+changelog_update = true
+semver_check = false
+git_release_enable = true
+git_tag_enable = true
+
+[[package]]
+name = "mock-agent"
+publish = false
+git_tag_name = "mock-agent-v{{ version }}"
+
+[[package]]
+name = "debug-http"
+publish = false
+git_tag_name = "debug-http-v{{ version }}"
+
+[[package]]
+name = "telegram-channel"
+publish = false
+git_tag_name = "telegram-channel-v{{ version }}"
+
+[[package]]
+name = "system-info"
+publish = false
+git_tag_name = "system-info-v{{ version }}"
+
+[[package]]
+name = "sdk-test-channel"
+release = false
+
+[[package]]
+name = "sdk-test-tool"
+release = false

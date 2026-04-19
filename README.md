@@ -167,12 +167,15 @@ Have an idea? [Open a feature request](https://github.com/donbader/anyclaw/issue
 ## Building from Source
 
 ```bash
-cargo build                                                              # Build all workspace members
-cargo test                                                               # Unit tests (all crates)
-cargo clippy --workspace                                                 # Lint all crates
+cargo build                                                              # Build core workspace
+cargo build --workspace --manifest-path ext/Cargo.toml                   # Build extension binaries
+cargo test                                                               # Unit tests (core)
+cargo test --workspace --manifest-path ext/Cargo.toml                    # Unit tests (extensions)
+cargo clippy --workspace                                                 # Lint core
+cargo clippy --workspace --manifest-path ext/Cargo.toml                  # Lint extensions
 
-# Integration tests require the mock binaries first:
-cargo build --bin mock-agent --bin debug-http --bin sdk-test-tool --bin sdk-test-channel
+# Integration tests require ext/ binaries built first:
+cargo build --workspace --manifest-path ext/Cargo.toml
 cargo test -p anyclaw-integration-tests
 ```
 

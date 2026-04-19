@@ -46,9 +46,13 @@ jobs:
           shared-key: ci-stable
           save-if: false
       - name: Fmt check
-        run: cargo fmt --all -- --check
+        run: |
+          cargo fmt --all -- --check
+          cargo fmt --all --manifest-path ext/Cargo.toml -- --check
       - name: Clippy
-        run: cargo clippy --locked --workspace -- -D warnings
+        run: |
+          cargo clippy --locked --workspace -- -D warnings
+          cargo clippy --locked --workspace --manifest-path ext/Cargo.toml -- -D warnings
 
   doc:
     needs: [changes]
@@ -64,7 +68,9 @@ jobs:
       - name: Check docs build
         env:
           RUSTDOCFLAGS: -D warnings
-        run: cargo doc --no-deps --workspace
+        run: |
+          cargo doc --no-deps --workspace
+          cargo doc --no-deps --workspace --manifest-path ext/Cargo.toml
 
   test:
     needs: [changes]
@@ -78,10 +84,12 @@ jobs:
           shared-key: ci-stable
           cache-on-failure: true
       - uses: taiki-e/install-action@nextest
-      - name: Build required binaries
-        run: cargo build --locked --bin mock-agent --bin debug-http --bin sdk-test-tool --bin sdk-test-channel
-      - name: Run tests
+      - name: Build ext/ binaries
+        run: cargo build --locked --workspace --manifest-path ext/Cargo.toml
+      - name: Run root workspace tests
         run: cargo nextest run --locked --workspace
+      - name: Run ext/ workspace tests
+        run: cargo nextest run --locked --workspace --manifest-path ext/Cargo.toml
 
   msrv:
     name: MSRV (1.94)
@@ -97,7 +105,9 @@ jobs:
         with:
           prefix-key: msrv
       - name: Check MSRV
-        run: cargo check --locked --workspace
+        run: |
+          cargo check --locked --workspace
+          cargo check --locked --workspace --manifest-path ext/Cargo.toml
 
   deny:
     name: cargo-deny
@@ -140,7 +150,8 @@ jobs:
           shared-key: ci-stable
           save-if: false
       - name: Build test binaries
-        run: cargo build --locked --bin mock-agent --bin debug-http
+        run: |
+          cargo build --locked --bin mock-agent --bin debug-http --manifest-path ext/Cargo.toml
       - name: Run Docker integration tests
         run: cargo test --locked -p anyclaw-integration-tests -- --ignored --test-threads=1
 
