@@ -9,54 +9,61 @@ on:
       - "ext/**"
 
 permissions:
-  pull-requests: write
   contents: write
 
 jobs:
-  release-plz-release:
-    name: Tag
+  tag:
+    name: Tag new versions
     runs-on: ubuntu-latest
     concurrency:
-      group: release-plz-ext-release
+      group: release-ext-tag
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: ci-stable
-          save-if: false
-      - name: Run release-plz release
-        uses: release-plz/action@v0.5
-        with:
-          command: release
-          manifest_path: ext/Cargo.toml
-          config: ext/release-plz.toml
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  release-plz-pr:
-    name: Release PR
-    runs-on: ubuntu-latest
-    concurrency:
-      group: release-plz-ext-pr
-      cancel-in-progress: true
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: ci-stable
-          save-if: false
-      - name: Run release-plz release-pr
-        uses: release-plz/action@v0.5
-        with:
-          command: release-pr
-          manifest_path: ext/Cargo.toml
-          config: ext/release-plz.toml
+      - name: Tag extension releases
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # Extension crates to tag: name, manifest path, tag prefix
+          declare -A CRATES=(
+            ["mock-agent"]="ext/agents/mock-agent/Cargo.toml"
+            ["debug-http"]="ext/channels/debug-http/Cargo.toml"
+            ["telegram-channel"]="ext/channels/telegram/Cargo.toml"
+            ["system-info"]="ext/tools/system-info/Cargo.toml"
+          )
+
+          created=0
+          for name in "${!CRATES[@]}"; do
+            manifest="${CRATES[$name]}"
+            if [ ! -f "$manifest" ]; then
+              echo "::warning::Manifest not found: $manifest"
+              continue
+            fi
+
+            version=$(grep '^version' "$manifest" | head -1 | sed 's/.*"\(.*\)"/\1/')
+            tag="${name}-v${version}"
+
+            if git rev-parse "refs/tags/${tag}" >/dev/null 2>&1; then
+              echo "Tag ${tag} already exists, skipping"
+              continue
+            fi
+
+            echo "Creating tag ${tag}"
+            git tag "$tag"
+            git push origin "$tag"
+
+            # Create GitHub release
+            gh release create "$tag" \
+              --title "${name} v${version}" \
+              --generate-notes \
+              --latest=false
+
+            created=$((created + 1))
+          done
+
+          echo "Created ${created} new tag(s)"
