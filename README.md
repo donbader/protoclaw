@@ -149,6 +149,8 @@ We're working toward a stable v1.0. Here's where things stand:
 | Multi-arch Docker images (amd64 + arm64) | ✅ | |
 | PR-only workflow with conventional commit enforcement | ✅ | |
 | Security audit + Trivy scanning | ✅ | |
+| Separate ext/ image (`ghcr.io/donbader/anyclaw-ext`) | ✅ | Extensions built independently from core |
+| Independent extension versioning | planned | Per-extension semver after SDK types reach 1.0 |
 
 ### Extension Ideas
 
