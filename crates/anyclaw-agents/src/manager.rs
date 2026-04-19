@@ -183,7 +183,7 @@ pub(crate) fn apply_agent_defaults(
 fn convert_initialize_response(
     resp: &agent_client_protocol::InitializeResponse,
 ) -> InitializeResult {
-    serde_json::to_value(resp)
+    let mut result = serde_json::to_value(resp)
         .and_then(serde_json::from_value)
         .unwrap_or_else(|e| {
             tracing::warn!(error = %e, "failed to convert SDK InitializeResponse, using defaults");
@@ -193,7 +193,17 @@ fn convert_initialize_response(
                 defaults: None,
                 meta: None,
             }
-        })
+        });
+
+    if result.defaults.is_none() {
+        if let Some(meta) = result.meta.as_ref().and_then(|m| m.as_object()) {
+            if let Some(defaults_val) = meta.get("defaults") {
+                result.defaults = serde_json::from_value(defaults_val.clone()).ok();
+            }
+        }
+    }
+
+    result
 }
 
 impl AgentsManager {
@@ -2643,6 +2653,39 @@ mod tests {
             "default must be applied for missing key"
         );
         assert_eq!(options.len(), 2);
+    }
+
+    #[rstest]
+    fn when_sdk_response_has_defaults_in_meta_then_convert_extracts_them() {
+        use agent_client_protocol::InitializeResponse as SdkResp;
+        use agent_client_protocol::ProtocolVersion;
+
+        let mut meta = serde_json::Map::new();
+        let mut defaults_map = serde_json::Map::new();
+        defaults_map.insert("model".into(), serde_json::json!("claude-3"));
+        defaults_map.insert("temperature".into(), serde_json::json!(0.7));
+        meta.insert("defaults".into(), serde_json::Value::Object(defaults_map));
+
+        let resp = SdkResp::new(ProtocolVersion::from(2u16)).meta(meta);
+        let result = convert_initialize_response(&resp);
+
+        let defaults = result
+            .defaults
+            .expect("defaults must be extracted from _meta");
+        assert_eq!(defaults["model"], serde_json::json!("claude-3"));
+        assert_eq!(defaults["temperature"], serde_json::json!(0.7));
+        assert_eq!(defaults.len(), 2);
+    }
+
+    #[rstest]
+    fn when_sdk_response_has_no_meta_then_defaults_is_none() {
+        use agent_client_protocol::InitializeResponse as SdkResp;
+        use agent_client_protocol::ProtocolVersion;
+
+        let resp = SdkResp::new(ProtocolVersion::from(2u16));
+        let result = convert_initialize_response(&resp);
+
+        assert!(result.defaults.is_none());
     }
 
     #[rstest]
