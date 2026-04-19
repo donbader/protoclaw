@@ -244,7 +244,7 @@ prop_compose! {
         content in proptest::collection::vec(arb_content_part(), 0..4),
         metadata in proptest::option::of(arb_message_metadata()),
     ) -> ChannelSendMessage {
-        ChannelSendMessage { peer_info, content, metadata, meta: None }
+        ChannelSendMessage { peer_info, content, metadata, meta: None, sender_info: None, was_mentioned: None }
     }
 }
 

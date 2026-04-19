@@ -153,6 +153,8 @@ mod tests {
                         )],
                         metadata: None,
                         meta: None,
+                        sender_info: None,
+                        was_mentioned: None,
                     })
                     .await;
             }

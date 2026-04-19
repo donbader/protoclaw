@@ -317,6 +317,8 @@ async fn handle_message(
             content: vec![ContentPart::text(body.message)],
             metadata: None,
             meta: None,
+            sender_info: None,
+            was_mentioned: None,
         };
         let _ = tx.send(msg).await;
     }
@@ -363,6 +365,8 @@ async fn handle_cancel(State(state): State<Arc<SharedState>>) -> Json<serde_json
             content: vec![ContentPart::text("__cancel__")],
             metadata: None,
             meta: None,
+            sender_info: None,
+            was_mentioned: None,
         };
         let _ = tx.send(msg).await;
     }

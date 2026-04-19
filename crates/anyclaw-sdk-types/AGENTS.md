@@ -22,8 +22,9 @@ Shared serde types used by all three SDK crates (agent, channel, tool) and by in
 - `ChannelCapabilities { streaming, rich_text, media }` — advertised during initialize
 - `ChannelInitializeParams { agent_name, ack_config, options }` / `ChannelInitializeResult` — handshake types. `options: HashMap<String, Value>` forwards channel-specific config from `anyclaw.yaml`
 - `DeliverMessage { session_id, content }` — anyclaw → channel (also used for agent-initiated push via per-part delivery)
-- `ChannelSendMessage { peer_info, content, metadata }` — channel → anyclaw. `content` is `Vec<ContentPart>`, `metadata` is `Option<MessageMetadata>` for reply/thread context
+- `ChannelSendMessage { peer_info, content, metadata, sender_info, was_mentioned }` — channel → anyclaw. `content` is `Vec<ContentPart>`, `metadata` is `Option<MessageMetadata>` for reply/thread context, `sender_info` is `Option<SenderInfo>` for access control, `was_mentioned` is `Option<bool>` for mention gating
 - `PeerInfo { channel_name, peer_id, kind }` — inbound message identity
+- `SenderInfo { sender_id, sender_name }` — optional sender identity for manager-level access control decisions
 - `MessageMetadata { reply_to_message_id, reply_to_text, reply_to_sender, reply_to_sender_id, reply_to_is_quote, reply_to_media_type, thread_id }` — optional reply/thread context on inbound messages
 - `ThoughtContent` — helper to extract `agent_thought_chunk` from `DeliverMessage.content`
 - `ContentKind` — typed dispatch enum over `DeliverMessage.content`: `Thought`, `MessageChunk`, `Result`, `UserMessageChunk`, `UsageUpdate`, `ToolCall`, `ToolCallUpdate`, `AvailableCommandsUpdate`, `Image`, `File`, `Audio`, `Unknown`
