@@ -761,7 +761,7 @@ impl ChannelsManager {
                 }
             }
 
-            if is_group {
+            if is_group && bot_mentioned {
                 let context_messages = {
                     let store = Arc::clone(&self.context_store);
                     match store.take_context(&send_msg.peer_info.peer_id).await {
@@ -1896,5 +1896,104 @@ mod tests {
     #[rstest]
     fn when_format_timestamp_called_with_3661_then_returns_hour_and_minute() {
         assert_eq!(format_timestamp(3661), "01:01");
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn given_require_mention_when_unmentioned_then_mentioned_then_context_prepended() {
+        use anyclaw_core::SqliteSessionStore;
+        use std::sync::Arc;
+
+        let store = SqliteSessionStore::open_in_memory().expect("in-memory store should open");
+        let store: Arc<dyn anyclaw_core::DynContextStore> = Arc::new(store);
+
+        let mut options: HashMap<String, serde_json::Value> = HashMap::new();
+        options.insert(
+            "access_control".into(),
+            serde_json::json!({
+                "require_mention": true
+            }),
+        );
+        let mut config = test_channel_config("test-binary", true, "default");
+        config.options = options;
+
+        let (tx, mut rx) = mpsc::channel::<AgentsCommand>(16);
+        let agents_handle = ManagerHandle::new(tx);
+
+        tokio::spawn(async move {
+            while let Some(cmd) = rx.recv().await {
+                match cmd {
+                    AgentsCommand::CreateSession { reply, .. } => {
+                        let _ = reply.send(Ok("acp-test-session".into()));
+                    }
+                    AgentsCommand::EnqueueMessage { reply, .. } => {
+                        let _ = reply.send(Ok(()));
+                    }
+                    _ => {}
+                }
+            }
+        });
+
+        let mut m = ChannelsManager::new(
+            make_channel_map(vec![("test-ch", config.clone())]),
+            default_init_timeout(),
+            default_exit_timeout(),
+            "default".into(),
+        )
+        .with_agents_handle(agents_handle)
+        .with_context_store(Arc::clone(&store));
+        m.slots.push(ChannelSlot {
+            name: "test-ch".into(),
+            config,
+            connection: None,
+            channel_id: ChannelId::from("test-ch"),
+            lifecycle: SlotLifecycle::new(
+                &CancellationToken::new(),
+                ExponentialBackoff::default(),
+                CrashTracker::default(),
+            ),
+        });
+
+        // Step 1: Send unmentioned message — should be stored as context, not forwarded
+        let unmentioned = serde_json::json!({
+            "peerInfo": {
+                "channelName": "test-ch",
+                "peerId": "telegram:-100123",
+                "kind": "group"
+            },
+            "content": [{ "type": "text", "text": "hey everyone" }],
+            "senderInfo": { "senderId": "42", "senderName": "alice" },
+            "wasMentioned": false
+        });
+        m.collect_send_message(0, unmentioned, "test-ch").await;
+
+        // Verify context was stored
+        let buffered = store.take_context("telegram:-100123").await.unwrap();
+        assert_eq!(buffered.len(), 1, "unmentioned message should be buffered");
+        assert_eq!(buffered[0].sender, "alice");
+        assert_eq!(buffered[0].content, "hey everyone");
+
+        // Re-store it (take_context drained it) so the mentioned path can retrieve it
+        store.store_context(&buffered[0], 50).await.unwrap();
+
+        // Step 2: Send mentioned message — should retrieve context and prepend
+        let mentioned = serde_json::json!({
+            "peerInfo": {
+                "channelName": "test-ch",
+                "peerId": "telegram:-100123",
+                "kind": "group"
+            },
+            "content": [{ "type": "text", "text": "@bot what do you think?" }],
+            "senderInfo": { "senderId": "99", "senderName": "bob" },
+            "wasMentioned": true
+        });
+        m.collect_send_message(0, mentioned, "test-ch").await;
+
+        // Verify context was drained by checking the store is now empty
+        let remaining = store.take_context("telegram:-100123").await.unwrap();
+        assert!(
+            remaining.is_empty(),
+            "context should be drained after mentioned message"
+        );
     }
 }
