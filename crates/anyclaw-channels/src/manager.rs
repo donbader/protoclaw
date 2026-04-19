@@ -1355,6 +1355,7 @@ mod tests {
         5
     }
 
+    #[rstest]
     #[test]
     fn when_channels_manager_name_queried_then_returns_expected_name() {
         let m = ChannelsManager::new(
@@ -1366,6 +1367,7 @@ mod tests {
         assert_eq!(m.name(), "channels");
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_channels_manager_started_with_no_channels_then_starts_successfully() {
         let mut m = ChannelsManager::new(
@@ -1379,6 +1381,7 @@ mod tests {
         assert!(m.slots.is_empty());
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_no_channels_configured_then_health_check_returns_healthy() {
         let m = ChannelsManager::new(
@@ -1390,6 +1393,7 @@ mod tests {
         assert!(!m.health_check().await);
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_channel_binary_invalid_then_manager_continues_without_it() {
         let configs = make_channel_map(vec![(
@@ -1408,6 +1412,7 @@ mod tests {
         assert!(m.slots[0].connection.is_none());
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_shutdown_command_sent_then_channels_manager_shuts_down() {
         let m = ChannelsManager::new(
@@ -1420,6 +1425,7 @@ mod tests {
         tx.send(ChannelsCommand::Shutdown).await.unwrap();
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_one_channel_crashes_then_other_channels_unaffected() {
         let parent = CancellationToken::new();
@@ -1441,6 +1447,7 @@ mod tests {
         assert!(!slot.lifecycle.disabled);
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_channel_crashes_repeatedly_then_channel_disabled_after_threshold() {
         let configs = make_channel_map(vec![(
@@ -1464,6 +1471,7 @@ mod tests {
         assert!(m.slots[0].connection.is_none());
     }
 
+    #[rstest]
     #[test]
     fn when_routing_entry_inserted_then_lookup_returns_it() {
         let mut table: HashMap<SessionKey, RoutingEntry> = HashMap::new();
@@ -1484,6 +1492,7 @@ mod tests {
         assert_eq!(entry.slot_index, 0);
     }
 
+    #[rstest]
     #[test]
     fn when_different_peers_route_then_different_sessions_created() {
         let mut table: HashMap<SessionKey, RoutingEntry> = HashMap::new();
@@ -1514,6 +1523,7 @@ mod tests {
         assert_eq!(table.get(&key_bob).unwrap().acp_session_id, "sess-bob");
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_deliver_event_received_then_routed_to_correct_agent_slot() {
         let mut m = ChannelsManager::new(
@@ -1546,6 +1556,7 @@ mod tests {
         let _ = event;
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_agents_handle_set_then_handle_stored_correctly() {
         let (tx, _rx) = mpsc::channel::<AgentsCommand>(16);
@@ -1560,6 +1571,7 @@ mod tests {
         assert!(m.agents_handle.is_some());
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_channel_events_receiver_set_then_stored_correctly() {
         let (_tx, rx) = mpsc::channel::<ChannelEvent>(16);
@@ -1573,6 +1585,7 @@ mod tests {
         assert!(m.channel_events_rx.is_some());
     }
 
+    #[rstest]
     #[test]
     fn when_channel_config_has_agent_field_then_that_agent_name_used() {
         let configs = make_channel_map(vec![(
@@ -1599,6 +1612,7 @@ mod tests {
         assert_eq!(m.agent_name_for_channel(0), "opencode");
     }
 
+    #[rstest]
     #[test]
     fn when_channel_config_has_no_agent_field_then_default_agent_used() {
         let configs = make_channel_map(vec![(
@@ -1625,6 +1639,7 @@ mod tests {
         assert_eq!(m.agent_name_for_channel(0), "default");
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_channel_is_disabled_then_not_spawned_on_start() {
         let configs = make_channel_map(vec![(
@@ -1645,6 +1660,7 @@ mod tests {
         );
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_ack_sent_for_session_with_no_routing_entry_then_is_noop() {
         let m = ChannelsManager::new(
@@ -1657,6 +1673,7 @@ mod tests {
         m.send_ack_to_channel(&unknown_key).await;
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_ack_sent_for_session_with_no_connection_then_is_noop() {
         let mut m = ChannelsManager::new(

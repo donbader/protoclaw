@@ -60,6 +60,7 @@ mod tests {
     use super::*;
     use rstest::rstest;
 
+    #[rstest]
     #[test]
     fn when_deliver_message_event_serialized_then_deserializes_correctly() {
         let event = ChannelEvent::DeliverMessage {
@@ -71,6 +72,7 @@ mod tests {
         assert!(matches!(deser, ChannelEvent::DeliverMessage { .. }));
     }
 
+    #[rstest]
     #[test]
     fn when_route_permission_event_serialized_then_deserializes_correctly() {
         let event = ChannelEvent::RoutePermission {
@@ -87,6 +89,7 @@ mod tests {
         assert!(matches!(deser, ChannelEvent::RoutePermission { .. }));
     }
 
+    #[rstest]
     #[test]
     fn when_route_permission_options_round_trip_then_typed_vec() {
         let event = ChannelEvent::RoutePermission {
@@ -115,6 +118,7 @@ mod tests {
         }
     }
 
+    #[rstest]
     #[test]
     fn when_ack_message_event_serialized_then_deserializes_correctly() {
         let event = ChannelEvent::AckMessage {
@@ -128,6 +132,7 @@ mod tests {
         assert!(matches!(deser, ChannelEvent::AckMessage { .. }));
     }
 
+    #[rstest]
     #[test]
     fn when_ack_message_has_no_message_id_then_serializes_as_null() {
         let event = ChannelEvent::AckMessage {

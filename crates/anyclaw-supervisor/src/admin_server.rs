@@ -72,3 +72,93 @@ async fn metrics_handler(
         body,
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use anyclaw_core::{HealthSnapshot, HealthStatus};
+    use axum::{body::to_bytes, extract::State, response::IntoResponse};
+    use metrics_exporter_prometheus::PrometheusBuilder;
+    use rstest::rstest;
+
+    fn given_shared_health(status: HealthStatus) -> SharedHealth {
+        let snapshot = HealthSnapshot {
+            status,
+            agents: Vec::new(),
+            channels: Vec::new(),
+            mcp_servers: Vec::new(),
+        };
+        Arc::new(RwLock::new(snapshot))
+    }
+
+    fn given_prometheus_handle() -> Arc<PrometheusHandle> {
+        let recorder = PrometheusBuilder::new().build_recorder();
+        Arc::new(recorder.handle())
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_healthy_then_health_handler_returns_200_with_json() {
+        let health = given_shared_health(HealthStatus::Healthy);
+        let handle = given_prometheus_handle();
+        let response = health_handler(State((health, handle)))
+            .await
+            .into_response();
+
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+        assert_eq!(
+            response
+                .headers()
+                .get(axum::http::header::CONTENT_TYPE)
+                .unwrap(),
+            "application/json"
+        );
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["status"], "healthy");
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_degraded_then_health_handler_returns_503_with_json() {
+        let health = given_shared_health(HealthStatus::Degraded);
+        let handle = given_prometheus_handle();
+        let response = health_handler(State((health, handle)))
+            .await
+            .into_response();
+
+        assert_eq!(
+            response.status(),
+            axum::http::StatusCode::SERVICE_UNAVAILABLE
+        );
+        assert_eq!(
+            response
+                .headers()
+                .get(axum::http::header::CONTENT_TYPE)
+                .unwrap(),
+            "application/json"
+        );
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["status"], "degraded");
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_metrics_requested_then_returns_200_with_prometheus_content_type() {
+        let health = given_shared_health(HealthStatus::Healthy);
+        let handle = given_prometheus_handle();
+        let response = metrics_handler(State((health, handle)))
+            .await
+            .into_response();
+
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+        assert_eq!(
+            response
+                .headers()
+                .get(axum::http::header::CONTENT_TYPE)
+                .unwrap(),
+            "text/plain; version=0.0.4; charset=utf-8"
+        );
+    }
+}

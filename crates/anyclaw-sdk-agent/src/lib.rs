@@ -29,7 +29,9 @@ mod tests {
         PermissionRequest, SessionNewParams, SessionNewResult, SessionPromptParams,
         SessionUpdateEvent, SessionUpdateType, TextContent,
     };
+    use rstest::rstest;
 
+    #[rstest]
     #[tokio::test]
     async fn when_generic_adapter_on_initialize_result_called_then_passthrough() {
         let adapter = GenericAcpAdapter;
@@ -45,6 +47,7 @@ mod tests {
         assert_eq!(input, output);
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_generic_adapter_on_session_new_result_called_then_passthrough() {
         let adapter = GenericAcpAdapter;
@@ -58,11 +61,13 @@ mod tests {
         assert_eq!(input, output);
     }
 
+    #[rstest]
     #[test]
     fn when_generic_adapter_cast_to_dyn_trait_object_then_compiles() {
         let _adapter: Box<dyn DynAgentAdapter> = Box::new(GenericAcpAdapter);
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_generic_adapter_on_initialize_params_called_then_passthrough() {
         let adapter = GenericAcpAdapter;
@@ -78,6 +83,7 @@ mod tests {
         assert_eq!(input, output);
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_generic_adapter_on_session_new_params_called_then_passthrough() {
         let adapter = GenericAcpAdapter;
@@ -93,6 +99,7 @@ mod tests {
         assert_eq!(input, output);
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_generic_adapter_on_session_prompt_params_called_then_passthrough() {
         let adapter = GenericAcpAdapter;
@@ -107,6 +114,7 @@ mod tests {
         assert_eq!(input, output);
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_generic_adapter_on_session_update_called_then_passthrough() {
         let adapter = GenericAcpAdapter;
@@ -123,6 +131,7 @@ mod tests {
         assert_eq!(input, output);
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_generic_adapter_on_permission_request_called_then_passthrough() {
         let adapter = GenericAcpAdapter;
@@ -140,6 +149,7 @@ mod tests {
         assert_eq!(input, output);
     }
 
+    #[rstest]
     #[test]
     fn when_agent_sdk_error_checked_then_implements_std_error() {
         let err = AgentSdkError::Protocol("test".into());
@@ -147,6 +157,7 @@ mod tests {
         assert!(err.to_string().contains("test"));
     }
 
+    #[rstest]
     #[test]
     fn when_protocol_error_created_then_wraps_string_message() {
         let err = AgentSdkError::Protocol("bad handshake".into());
@@ -168,6 +179,7 @@ mod tests {
         }
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_custom_adapter_overrides_hook_then_transformed_value_returned() {
         let adapter = InjectingAdapter;
@@ -183,6 +195,7 @@ mod tests {
         assert_eq!(output.session_id, "s1");
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_custom_adapter_non_overridden_hook_called_then_passthrough() {
         let adapter = InjectingAdapter;

@@ -621,3 +621,84 @@ impl AgentsManager {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::slot::AgentSlot;
+    use anyclaw_config::{
+        AgentConfig, AgentsManagerConfig, CrashTrackerConfig, LocalWorkspaceConfig, WorkspaceConfig,
+    };
+    use anyclaw_core::{ManagerHandle, ToolsCommand};
+    use rstest::rstest;
+    use std::collections::HashMap;
+
+    fn test_agent_config_with_max_crashes(max_crashes: u32) -> AgentConfig {
+        AgentConfig {
+            workspace: WorkspaceConfig::Local(LocalWorkspaceConfig {
+                binary: "test-binary".into(),
+                working_dir: None,
+                env: HashMap::new(),
+            }),
+            enabled: true,
+            tools: vec![],
+            acp_timeout_secs: None,
+            backoff: None,
+            crash_tracker: Some(CrashTrackerConfig {
+                max_crashes,
+                window_secs: 60,
+            }),
+            options: HashMap::new(),
+        }
+    }
+
+    fn make_tools_handle() -> (
+        ManagerHandle<ToolsCommand>,
+        tokio::sync::mpsc::Receiver<ToolsCommand>,
+    ) {
+        let (tx, rx) = tokio::sync::mpsc::channel(16);
+        (ManagerHandle::new(tx), rx)
+    }
+
+    fn make_manager_with_slot(config: AgentConfig) -> AgentsManager {
+        let (handle, _rx) = make_tools_handle();
+        let manager_config = AgentsManagerConfig {
+            agents: HashMap::new(),
+            ..Default::default()
+        };
+        let mut m = AgentsManager::new(manager_config, handle);
+        let cancel = m.parent_cancel.clone();
+        let slot = AgentSlot::new("test-agent".into(), config, &cancel);
+        m.slots.push(slot);
+        m
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_crash_loop_detected_then_prepare_restart_returns_false() {
+        tokio::time::pause();
+        let mut m = make_manager_with_slot(test_agent_config_with_max_crashes(1));
+        let result = m.prepare_restart(0, "test-agent").await;
+        assert!(!result);
+        assert!(m.slots[0].lifecycle.disabled);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_restart_allowed_then_prepare_restart_returns_true() {
+        tokio::time::pause();
+        let mut m = make_manager_with_slot(test_agent_config_with_max_crashes(3));
+        let result = m.prepare_restart(0, "test-agent").await;
+        assert!(result);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_restart_allowed_with_no_connection_then_returns_true() {
+        tokio::time::pause();
+        let mut m = make_manager_with_slot(test_agent_config_with_max_crashes(3));
+        assert!(m.slots[0].connection.is_none());
+        let result = m.prepare_restart(0, "test-agent").await;
+        assert!(result);
+    }
+}

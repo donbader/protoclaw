@@ -42,6 +42,7 @@ impl McpHost {
 mod tests {
     use super::*;
     use anyclaw_sdk_tool::ToolSdkError;
+    use rstest::rstest;
 
     // D-03: EchoTool implements the Tool trait which uses serde_json::Value
     // for input_schema/execute — extensible tool boundary, cannot be typed.
@@ -66,12 +67,14 @@ mod tests {
         }
     }
 
+    #[rstest]
     #[test]
     fn when_mcp_host_created_with_no_tools_then_tool_list_is_empty() {
         let host = McpHost::new(vec![]);
         assert!(host.tool_list().is_empty());
     }
 
+    #[rstest]
     #[test]
     fn when_mcp_host_created_with_tools_then_tool_list_contains_them() {
         let tools: Vec<Box<dyn DynTool>> = vec![Box::new(EchoTool)];
@@ -81,6 +84,7 @@ mod tests {
         assert_eq!(list[0].name.as_ref(), "echo");
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_known_tool_dispatched_via_mcp_host_then_returns_result() {
         let tools: Vec<Box<dyn DynTool>> = vec![Box::new(EchoTool)];
@@ -93,6 +97,7 @@ mod tests {
         assert!(result.is_error.is_none() || result.is_error == Some(false));
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_unknown_tool_dispatched_via_mcp_host_then_returns_error() {
         let host = McpHost::new(vec![]);

@@ -83,6 +83,7 @@ impl Tool for WasmTool {
 mod tests {
     use super::*;
     use anyclaw_config::WasmSandboxConfig;
+    use rstest::rstest;
 
     use std::collections::HashMap;
     use std::path::PathBuf;
@@ -102,6 +103,7 @@ mod tests {
         }
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_wasm_tool_created_with_nonexistent_file_then_returns_error() {
         let runner = Arc::new(WasmToolRunner::new().unwrap());
@@ -110,6 +112,7 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_wasm_tool_name_queried_then_returns_configured_name() {
         let dir = tempfile::tempdir().unwrap();
@@ -123,6 +126,7 @@ mod tests {
         assert_eq!(tool.name(), "test-tool");
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_wasm_tool_description_queried_then_returns_configured_description() {
         let dir = tempfile::tempdir().unwrap();
@@ -136,6 +140,7 @@ mod tests {
         assert_eq!(tool.description(), "A test WASM tool");
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_wasm_tool_has_schema_config_then_input_schema_parsed_correctly() {
         let dir = tempfile::tempdir().unwrap();
@@ -151,6 +156,7 @@ mod tests {
         assert!(schema.get("properties").is_some());
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_wasm_tool_has_no_schema_config_then_input_schema_defaults_to_empty_object() {
         let dir = tempfile::tempdir().unwrap();
@@ -166,6 +172,7 @@ mod tests {
         assert_eq!(tool.input_schema(), serde_json::json!({"type": "object"}));
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_wasm_tool_executes_echo_module_then_returns_json_output() {
         let dir = tempfile::tempdir().unwrap();

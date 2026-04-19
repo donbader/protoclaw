@@ -489,6 +489,7 @@ impl ToolsManager {
 mod tests {
     use super::*;
     use anyclaw_sdk_tool::{Tool, ToolSdkError};
+    use rstest::rstest;
 
     // D-03: DummyTool implements the Tool trait which uses serde_json::Value
     // for input_schema/execute — extensible tool boundary, cannot be typed.
@@ -515,6 +516,7 @@ mod tests {
         }
     }
 
+    #[rstest]
     #[test]
     fn when_build_server_config_then_sse_keepalive_is_enabled() {
         let ct = CancellationToken::new();
@@ -526,6 +528,7 @@ mod tests {
         );
     }
 
+    #[rstest]
     #[test]
     fn when_build_server_config_then_stateful_mode_is_enabled() {
         let ct = CancellationToken::new();
@@ -536,6 +539,7 @@ mod tests {
         );
     }
 
+    #[rstest]
     #[test]
     fn when_build_server_config_with_custom_host_then_host_is_in_allowed_list() {
         let ct = CancellationToken::new();
@@ -546,12 +550,14 @@ mod tests {
         );
     }
 
+    #[rstest]
     #[test]
     fn when_tools_manager_name_queried_then_returns_tools() {
         let m = ToolsManager::new(HashMap::new(), "127.0.0.1".into());
         assert_eq!(m.name(), "tools");
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_tools_manager_started_with_no_configs_then_server_url_registered() {
         let mut m = ToolsManager::new(HashMap::new(), "127.0.0.1".into());
@@ -559,12 +565,14 @@ mod tests {
         assert_eq!(m.server_urls().len(), 0);
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_no_tool_configs_then_health_check_returns_healthy() {
         let m = ToolsManager::new(HashMap::new(), "127.0.0.1".into());
         assert!(m.health_check().await);
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_tools_manager_started_then_health_check_returns_healthy() {
         let mut m = ToolsManager::new(HashMap::new(), "127.0.0.1".into());
@@ -575,6 +583,7 @@ mod tests {
         }
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_cancel_token_fired_then_tools_manager_run_stops() {
         let mut m = ToolsManager::new(HashMap::new(), "127.0.0.1".into());
@@ -591,6 +600,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_native_tools_registered_then_aggregate_list_contains_them() {
         let tools: Vec<Box<dyn DynTool>> = vec![
@@ -612,6 +622,7 @@ mod tests {
         assert!(names.contains(&"tool-b"));
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_known_tool_called_via_aggregated_server_then_returns_result() {
         let tools: Vec<Box<dyn DynTool>> = vec![Box::new(DummyTool {
@@ -625,6 +636,7 @@ mod tests {
         assert!(result.is_error.is_none() || result.is_error == Some(false));
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_unknown_tool_called_via_aggregated_server_then_returns_error() {
         let host = Arc::new(McpHost::new(vec![]));
@@ -635,6 +647,7 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_manager_given_native_tools_then_they_appear_in_host_tool_list() {
         let tools: Vec<Box<dyn DynTool>> = vec![Box::new(DummyTool {
@@ -653,6 +666,7 @@ mod tests {
         }
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_valid_wasm_config_provided_then_wasm_tool_loaded_into_host() {
         let dir = tempfile::tempdir().unwrap();
@@ -690,6 +704,7 @@ mod tests {
         }
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_invalid_wasm_path_provided_then_skipped_and_start_succeeds() {
         let tool_configs = HashMap::from([(
@@ -721,6 +736,7 @@ mod tests {
         }
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_wasm_and_native_tools_configured_then_both_appear_in_aggregate_list() {
         let dir = tempfile::tempdir().unwrap();
@@ -764,6 +780,7 @@ mod tests {
         }
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_get_mcp_urls_called_without_filter_then_returns_all_urls() {
         let mut m = ToolsManager::new(HashMap::new(), "127.0.0.1".into());
@@ -794,6 +811,7 @@ mod tests {
         }
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_get_mcp_urls_called_with_filter_then_returns_matching_urls_only() {
         let mut m = ToolsManager::new(HashMap::new(), "127.0.0.1".into());
@@ -822,6 +840,7 @@ mod tests {
         }
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_get_mcp_urls_filter_matches_nothing_then_returns_empty() {
         let mut m = ToolsManager::new(HashMap::new(), "127.0.0.1".into());
@@ -841,6 +860,7 @@ mod tests {
         }
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_mcp_server_is_disabled_then_not_spawned_on_start() {
         let tool_configs = HashMap::from([(
@@ -867,6 +887,7 @@ mod tests {
         }
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_route_call_with_unknown_tool_then_error_contains_tool_name() {
         let host = Arc::new(McpHost::new(vec![]));
@@ -882,6 +903,7 @@ mod tests {
         );
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_native_tool_exists_then_route_call_dispatches_to_native_not_external() {
         let tools: Vec<Box<dyn DynTool>> = vec![Box::new(DummyTool {
@@ -895,6 +917,7 @@ mod tests {
         assert!(result.is_ok(), "native tool should be found and dispatched");
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_no_external_servers_then_aggregate_list_equals_native_list() {
         let tools: Vec<Box<dyn DynTool>> = vec![
