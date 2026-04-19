@@ -303,7 +303,14 @@ async fn handle_runner_command(cmd: AgentRunnerCommand, conn: &ClientSideConnect
                 .map_err(|e| sdk_err_to_agents_err(&e));
             let _ = reply.send(result);
         }
-        AgentRunnerCommand::Keepalive => {}
+        AgentRunnerCommand::Keepalive => {
+            // TODO: The SDK's ClientSideConnection doesn't expose a raw notification
+            // method, so we can't send a keepalive JSON-RPC notification to prevent
+            // Docker attach connection idle timeouts. The old AgentConnection used
+            // send_notification("keepalive", {}) for this. Once the SDK adds a ping
+            // or raw-write API, wire it here.
+            tracing::trace!("keepalive received (no-op — SDK lacks raw notification API)");
+        }
         AgentRunnerCommand::Kill => {}
     }
 }

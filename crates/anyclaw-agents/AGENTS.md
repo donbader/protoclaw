@@ -54,11 +54,10 @@ Remaining `serde_json::Value` usages are documented D-03 extensible boundaries:
 | `session/resume` | client→agent | Restore session without replay (preferred over load) |
 | `session/update` | agent→client | Streaming agent response updates |
 | `session/request_permission` | agent→client | Agent requests user permission |
-| `session/push` | agent→client | Agent-initiated push message to session's channel |
 | `fs/read_text_file` | agent→client | Agent requests file read |
 | `fs/write_text_file` | agent→client | Agent requests file write |
 | `keepalive` | client→agent | Fire-and-forget notification to prevent idle Docker attach connection drops. Only sent to Docker-backed agents (local subprocess agents skip it). Agents silently ignore unknown notifications per JSON-RPC 2.0 spec §4.1. Non-compliant agents may log warnings but should not break. Interval configured via `keepalive_interval_secs` (default: 300s, 0 to disable). |
-| `_raw_response` | internal | Removed in v0.3.1 — replaced by `AgentConnection::send_raw()` which writes pre-built JSON-RPC directly to stdin without method envelope |
+| `_raw_response` | internal | Removed in v0.3.1 — replaced by SDK-based permission flow via `PendingPermission.sdk_reply` oneshot. Legacy `send_raw()` no longer used in production paths. |
 | `__jsonrpc_error` | internal | Sentinel method used in `AgentConnection` reader task to forward ACP-level JSON-RPC errors from the agent back to the manager as typed `AcpError` variants |
 
 ## Tracing Instrumentation
