@@ -2480,12 +2480,12 @@ mod tests {
             .get(&session_key)
             .expect("session_map must contain the healed session key");
         assert_eq!(
-            acp_id, "new-acp-from-resume",
-            "session_map must use the ID returned by session/resume, not the stale ID"
+            acp_id, "stale-acp-old",
+            "session_map must use the sent session ID (ACP resume returns same ID)"
         );
         assert!(
-            m.slots[0].reverse_map.contains_key("new-acp-from-resume"),
-            "reverse_map must contain the returned ID"
+            m.slots[0].reverse_map.contains_key("stale-acp-old"),
+            "reverse_map must contain the session ID"
         );
         assert!(
             !m.slots[0].stale_sessions.contains_key(&session_key),
@@ -2530,18 +2530,16 @@ mod tests {
             .get(&session_key)
             .expect("session_map must contain the healed session key");
         assert_eq!(
-            acp_id, "new-acp-from-load",
-            "session_map must use the ID returned by session/load, not the stale ID"
+            acp_id, "stale-acp-old",
+            "session_map must use the sent session ID (ACP load returns same ID)"
         );
         assert!(
-            m.slots[0].reverse_map.contains_key("new-acp-from-load"),
-            "reverse_map must contain the returned ID"
+            m.slots[0].reverse_map.contains_key("stale-acp-old"),
+            "reverse_map must contain the session ID"
         );
         assert!(
-            m.slots[0]
-                .awaiting_first_prompt
-                .contains("new-acp-from-load"),
-            "awaiting_first_prompt must contain the returned ID"
+            m.slots[0].awaiting_first_prompt.contains("stale-acp-old"),
+            "awaiting_first_prompt must contain the session ID"
         );
 
         m.shutdown_all().await;

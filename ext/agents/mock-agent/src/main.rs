@@ -27,7 +27,6 @@ struct AgentOptions {
     reject_load: bool,
     reject_resume: bool,
     support_resume: bool,
-    recovery_new_id: Option<String>,
     echo_prefix: String,
     echo_mcp_count: bool,
 }
@@ -42,7 +41,6 @@ impl Default for AgentOptions {
             reject_load: false,
             reject_resume: false,
             support_resume: false,
-            recovery_new_id: None,
             echo_prefix: "Echo".to_string(),
             echo_mcp_count: false,
         }
@@ -70,7 +68,6 @@ impl AgentOptions {
             reject_load: get_bool("reject_load").unwrap_or(false),
             reject_resume: get_bool("reject_resume").unwrap_or(false),
             support_resume: get_bool("support_resume").unwrap_or(false),
-            recovery_new_id: get_str("recovery_new_id"),
             echo_prefix: get_str("echo_prefix").unwrap_or_else(|| "Echo".to_string()),
             echo_mcp_count: get_bool("echo_mcp_count").unwrap_or(false),
         }
@@ -267,15 +264,16 @@ impl agent_client_protocol::Agent for MockHandler {
         self.prompt_count.set(new_count);
         let exit_after = self.opts.borrow().exit_after;
 
-        let resp = PromptResponse::new(StopReason::EndTurn);
-
         if let Some(limit) = exit_after
             && new_count >= limit
         {
-            std::process::exit(1);
+            tokio::task::spawn_local(async {
+                tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+                std::process::exit(1);
+            });
         }
 
-        Ok(resp)
+        Ok(PromptResponse::new(StopReason::EndTurn))
     }
 
     async fn cancel(&self, _args: CancelNotification) -> agent_client_protocol::Result<()> {
@@ -289,15 +287,7 @@ impl agent_client_protocol::Agent for MockHandler {
         if self.opts.borrow().reject_load {
             return Err(Error::new(-32000, "Session load rejected"));
         }
-        let sid = self
-            .opts
-            .borrow()
-            .recovery_new_id
-            .clone()
-            .or_else(|| self.session_id.borrow().clone())
-            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-        let _ = args;
-        *self.session_id.borrow_mut() = Some(sid.clone());
+        *self.session_id.borrow_mut() = Some(args.session_id.to_string());
         Ok(LoadSessionResponse::new())
     }
 
@@ -309,15 +299,7 @@ impl agent_client_protocol::Agent for MockHandler {
         if self.opts.borrow().reject_resume {
             return Err(Error::new(-32000, "Session resume rejected"));
         }
-        let sid = self
-            .opts
-            .borrow()
-            .recovery_new_id
-            .clone()
-            .or_else(|| self.session_id.borrow().clone())
-            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-        let _ = args;
-        *self.session_id.borrow_mut() = Some(sid.clone());
+        *self.session_id.borrow_mut() = Some(args.session_id.to_string());
         Ok(ResumeSessionResponse::new())
     }
 
