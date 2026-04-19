@@ -1,4 +1,17 @@
 
+## [0.10.0] — 2026-04-19
+
+
+### Added
+
+- Add keepalive pings to prevent agent idle connection drops (#77) (#77)
+
+
+### Fixed
+
+- Prevent duplicate telegram messages and improve crash loop detection (#75) (#75)
+
+
 ## [0.9.4] — 2026-04-18
 
 
@@ -101,7 +114,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 Starting point for tracked binary releases. Prior versions were not formally documented.
 
-[Unreleased]: https://github.com/donbader/anyclaw/compare/v0.9.4...HEAD
+[Unreleased]: https://github.com/donbader/anyclaw/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/donbader/anyclaw/compare/v0.9.4...v0.10.0
 [0.9.4]: https://github.com/donbader/anyclaw/compare/v0.9.3...v0.9.4
 [0.9.3]: https://github.com/donbader/anyclaw/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/donbader/anyclaw/compare/v0.9.1...v0.9.2
