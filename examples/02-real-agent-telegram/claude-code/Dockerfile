@@ -1,5 +1,7 @@
-ARG BUILDER_IMAGE=ghcr.io/donbader/anyclaw-builder:latest
-FROM ${BUILDER_IMAGE} AS builder
+ARG CORE_IMAGE=ghcr.io/donbader/anyclaw:latest
+ARG EXT_IMAGE=ghcr.io/donbader/anyclaw-ext:latest
+FROM ${CORE_IMAGE} AS core
+FROM ${EXT_IMAGE} AS ext
 
 # Deps stage: claude-agent-acp (ACP adapter wrapping Claude Agent SDK)
 # node:20-slim
@@ -22,10 +24,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY --from=claude-deps /usr/local/lib/node_modules /usr/local/lib/node_modules
 COPY --from=claude-deps /usr/local/bin /usr/local/bin
-COPY --from=builder /usr/local/bin/anyclaw /usr/local/bin/anyclaw
-COPY --from=builder /usr/local/bin/channels/debug-http /usr/local/bin/channels/debug-http
-COPY --from=builder /usr/local/bin/channels/telegram /usr/local/bin/channels/telegram
-COPY --from=builder /usr/local/bin/tools/system-info /usr/local/bin/tools/system-info
+COPY --from=core /usr/local/bin/anyclaw /usr/local/bin/anyclaw
+COPY --from=ext /usr/local/bin/channels/debug-http /usr/local/bin/channels/debug-http
+COPY --from=ext /usr/local/bin/channels/telegram /usr/local/bin/channels/telegram
+COPY --from=ext /usr/local/bin/tools/system-info /usr/local/bin/tools/system-info
 RUN mkdir -p /workspace && chown node:node /workspace
 WORKDIR /workspace
 COPY --chown=node:node anyclaw.yaml /anyclaw/anyclaw.yaml

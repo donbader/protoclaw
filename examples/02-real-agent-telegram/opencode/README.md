@@ -110,7 +110,7 @@ For the full config schema and all available options, see the [Configuration Ref
 | `anyclaw.yaml`           | Agent, channel, tool, and supervisor config                                   |
 | `opencode-config/`       | OpenCode config baked into agent image (minimal committed — customize as needed) |
 | `.env.example`           | Environment template                                                          |
-| `docker-compose.dev.yml` | Contributor-only: dev build override (passes `BUILDER_IMAGE` arg)             |
+| `docker-compose.dev.yml` | Contributor-only: dev build override (passes `CORE_IMAGE`/`EXT_IMAGE` args)   |
 
 ## Development
 
@@ -126,4 +126,4 @@ make -f ../dev/Makefile logs   # Follow anyclaw logs
 make -f ../dev/Makefile down   # Stop everything
 ```
 
-The shared `Makefile` builds `anyclaw-dev-base:latest` from the root `Dockerfile` (cargo-chef + mold + BuildKit cache mounts), then runs `docker compose` with the dev override which passes `BUILDER_IMAGE=anyclaw-dev-base:latest` to the same `Dockerfile` used in production.
+The shared `Makefile` builds `anyclaw-dev-core:latest` and `anyclaw-dev-ext:latest` from the root and ext/ Dockerfiles, then runs `docker compose` with the dev override which passes `CORE_IMAGE` and `EXT_IMAGE` args to the same `Dockerfile` used in production.

@@ -1,5 +1,5 @@
 # Shared dev workflow for agent variants
-# Run from a variant directory: make -f ../shared/Makefile dev
+# Run from a variant directory: make -f ../dev/Makefile dev
 #
 # Expects docker-compose.yml and docker-compose.dev.yml in CWD.
 
@@ -12,7 +12,8 @@ VERSION := $(shell git -C $(ROOT) describe --tags --always --dirty --match 'v*' 
 dev: dev-base up
 
 dev-base:
-	docker build -f $(ROOT)/Dockerfile --build-arg PROFILE=debug --build-arg ANYCLAW_VERSION=$(VERSION) --target builder-export -t anyclaw-dev-base:latest $(ROOT)
+	docker build -f $(ROOT)/Dockerfile --build-arg PROFILE=debug --build-arg ANYCLAW_VERSION=$(VERSION) --target core -t anyclaw-dev-core:latest $(ROOT)
+	docker build -f $(ROOT)/ext/Dockerfile --build-arg PROFILE=debug --target ext -t anyclaw-dev-ext:latest $(ROOT)
 
 up:
 	$(COMPOSE) up -d --build

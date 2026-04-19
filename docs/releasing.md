@@ -16,7 +16,10 @@ SDK crate releases are fully automated via [release-plz](https://release-plz.ien
 
 ## Binary (two-stage workflow)
 
-Anyclaw is distributed as Docker images — no native binary releases. The release is split into two workflows:
+Anyclaw is distributed as Docker images — no native binary releases. Two images are published:
+
+- `ghcr.io/donbader/anyclaw` — core binary only (distroless)
+- `ghcr.io/donbader/anyclaw-ext` — all ext/ binaries (distroless, for `COPY --from=` usage)
 
 ### Stage 1: Prepare (manual trigger)
 
@@ -43,7 +46,7 @@ gh workflow run release-prepare.yml -f version=0.10.0
 When the release PR merges to `main`, the publish workflow triggers automatically:
    - Extracts version from the `release/v*` branch name
    - Creates the `v<version>` git tag
-   - Builds multi-arch Docker images (amd64 + arm64)
+   - Builds multi-arch Docker images (amd64 + arm64) for both `core` and `ext`
    - Pushes to GHCR with tags: `<version>`, `<major>.<minor>`, `<sha>`, `latest`
    - Runs Trivy vulnerability scan
    - Verifies multi-arch manifest

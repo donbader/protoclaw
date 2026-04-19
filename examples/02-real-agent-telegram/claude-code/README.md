@@ -131,7 +131,7 @@ See [Claude Code settings docs](https://docs.anthropic.com/en/docs/claude-code/s
 | `.claude.json`           | Claude Code preferences and MCP config (baked into agent image)        |
 | `.env.example`           | Environment template (ANTHROPIC_API_KEY, Telegram)                     |
 | `test-auth.sh`           | Auth validation hook (sourced by `../dev/test.sh`)                     |
-| `docker-compose.dev.yml` | Contributor-only: dev build override (passes `BUILDER_IMAGE` arg)      |
+| `docker-compose.dev.yml` | Contributor-only: dev build override (passes `CORE_IMAGE`/`EXT_IMAGE` args) |
 
 ## Development
 

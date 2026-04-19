@@ -7,7 +7,7 @@ Anyclaw publishes two container images to GitHub Container Registry (ghcr.io) on
 | Image | Contents | Use Case |
 |-------|----------|----------|
 | `ghcr.io/donbader/anyclaw` | anyclaw binary only (distroless) | Minimal deployments where you supply your own extensions |
-| `ghcr.io/donbader/anyclaw-builder` | anyclaw + all ext/ binaries | Ready-to-run with all built-in agents, channels, and tools |
+| `ghcr.io/donbader/anyclaw-ext` | All built-in ext/ binaries (distroless) | Ready-to-use extensions — `COPY --from=` into your image |
 
 ## Tags
 
@@ -46,31 +46,24 @@ A weekly cleanup workflow (`.github/workflows/ghcr-cleanup.yml`) manages image l
 
 ## Usage
 
-Pull the builder image (includes all extensions):
-
-```sh
-docker pull ghcr.io/donbader/anyclaw-builder:latest
-```
-
-Use as a base for custom images:
+Use the ext image to compose your own setup:
 
 ```dockerfile
-FROM ghcr.io/donbader/anyclaw-builder:latest AS builder
+FROM ghcr.io/donbader/anyclaw:latest AS core
+FROM ghcr.io/donbader/anyclaw-ext:latest AS ext
 
 FROM node:20-slim AS my-app
-COPY --from=builder /usr/local/bin/anyclaw /usr/local/bin/anyclaw
-COPY --from=builder /usr/local/bin/channels/telegram /usr/local/bin/channels/telegram
-COPY --from=builder /usr/local/bin/tools/system-info /usr/local/bin/tools/system-info
+COPY --from=core /usr/local/bin/anyclaw /usr/local/bin/anyclaw
+COPY --from=ext /usr/local/bin/channels/telegram /usr/local/bin/channels/telegram
+COPY --from=ext /usr/local/bin/tools/system-info /usr/local/bin/tools/system-info
 ```
 
-Binary layout in the builder image follows the `@built-in/` convention:
+Binary layout in the ext image follows the `@built-in/` convention:
 
 ```
 /usr/local/bin/
-├── anyclaw
 ├── agents/
-│   ├── mock-agent
-│   └── opencode-wrapper
+│   └── mock-agent
 ├── channels/
 │   ├── telegram
 │   └── debug-http
