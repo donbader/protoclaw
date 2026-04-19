@@ -3,6 +3,7 @@ use std::sync::Arc;
 use anyclaw_sdk_channel::ChannelSdkError;
 use anyclaw_sdk_types::ChannelSendMessage;
 use anyclaw_sdk_types::MessageMetadata;
+use anyclaw_sdk_types::SenderInfo;
 use anyclaw_sdk_types::acp::ContentPart;
 use teloxide::net::Download;
 use teloxide::prelude::*;
@@ -146,29 +147,40 @@ fn sender_from_message(msg: &Message) -> SenderIdentity {
     }
 }
 
+fn sender_info_from_message(msg: &Message) -> Option<SenderInfo> {
+    let user = msg.from.as_ref()?;
+    Some(SenderInfo {
+        sender_id: Some(user.id.0.to_string()),
+        sender_name: user.username.clone(),
+    })
+}
+
+async fn bot_mentioned(msg: &Message, state: &SharedState) -> bool {
+    if !is_group_chat(&msg.chat) {
+        return false;
+    }
+    let username_guard = state.bot_username.read().await;
+    let bot_id = *state.bot_id.read().await;
+    let explicit = match username_guard.as_deref() {
+        Some(username) => {
+            entity_mentions_bot(msg, username) || {
+                let text = msg.text().or(msg.caption()).unwrap_or_default();
+                text_mentions_bot(text, username)
+            }
+        }
+        None => false,
+    };
+    let implicit = is_reply_to_bot(msg, bot_id);
+    explicit || implicit
+}
+
 async fn check_access(msg: &Message, state: &SharedState) -> AccessDecision {
     let is_group = is_group_chat(&msg.chat);
     let sender = sender_from_message(msg);
-    let bot_mentioned = if is_group {
-        let username_guard = state.bot_username.read().await;
-        let bot_id = *state.bot_id.read().await;
-        let explicit = match username_guard.as_deref() {
-            Some(username) => {
-                entity_mentions_bot(msg, username) || {
-                    let text = msg.text().or(msg.caption()).unwrap_or_default();
-                    text_mentions_bot(text, username)
-                }
-            }
-            None => false,
-        };
-        let implicit = is_reply_to_bot(msg, bot_id);
-        explicit || implicit
-    } else {
-        false
-    };
+    let mentioned = bot_mentioned(msg, state).await;
 
     let access_cfg = state.access_config.read().await;
-    evaluate_access(&access_cfg, msg.chat.id.0, &sender, is_group, bot_mentioned)
+    evaluate_access(&access_cfg, msg.chat.id.0, &sender, is_group, mentioned)
 }
 
 async fn maybe_suppress_reply_context(
@@ -213,12 +225,15 @@ pub fn chat_type_str(chat: &Chat) -> &str {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn process_text_message(
     chat_id: i64,
     chat_type: &str,
     text: &str,
     reply_image_url: Option<&str>,
     metadata: Option<MessageMetadata>,
+    sender_info: Option<SenderInfo>,
+    was_mentioned: Option<bool>,
     state: &SharedState,
 ) -> Result<(), ChannelSdkError> {
     let guard = state.outbound.lock().await;
@@ -240,8 +255,8 @@ pub async fn process_text_message(
         content,
         metadata,
         meta: None,
-        sender_info: None,
-        was_mentioned: None,
+        sender_info,
+        was_mentioned,
     };
     outbound
         .send(msg)
@@ -289,12 +304,16 @@ async fn handle_text_message(
         let chat_type = chat_type_str(&msg.chat);
         let reply_image = resolve_reply_photo(&bot, &msg).await;
         let metadata = maybe_suppress_reply_context(&msg, &state).await;
+        let si = sender_info_from_message(&msg);
+        let mentioned = Some(bot_mentioned(&msg, &state).await);
         let _ = process_text_message(
             msg.chat.id.0,
             chat_type,
             text,
             reply_image.as_deref(),
             metadata,
+            si,
+            mentioned,
             &state,
         )
         .await;
@@ -400,6 +419,8 @@ pub async fn process_media_message(
     image_url: Option<&str>,
     reply_image_url: Option<&str>,
     metadata: Option<MessageMetadata>,
+    sender_info: Option<SenderInfo>,
+    was_mentioned: Option<bool>,
     state: &SharedState,
 ) -> Result<(), ChannelSdkError> {
     let guard = state.outbound.lock().await;
@@ -437,8 +458,8 @@ pub async fn process_media_message(
         content,
         metadata,
         meta: None,
-        sender_info: None,
-        was_mentioned: None,
+        sender_info,
+        was_mentioned,
     };
     outbound
         .send(msg)
@@ -479,6 +500,8 @@ async fn handle_media_message(
 
     let chat_type = chat_type_str(&msg.chat);
     let metadata = maybe_suppress_reply_context(&msg, &state).await;
+    let si = sender_info_from_message(&msg);
+    let mentioned = Some(bot_mentioned(&msg, &state).await);
     let _ = process_media_message(
         msg.chat.id.0,
         chat_type,
@@ -487,6 +510,8 @@ async fn handle_media_message(
         image_url.as_deref(),
         reply_image.as_deref(),
         metadata,
+        si,
+        mentioned,
         &state,
     )
     .await;
@@ -530,7 +555,7 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(16);
         *state.outbound.lock().await = Some(tx);
 
-        process_text_message(12345, "private", "hello", None, None, &state)
+        process_text_message(12345, "private", "hello", None, None, None, None, &state)
             .await
             .unwrap();
 
@@ -546,7 +571,7 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(16);
         *state.outbound.lock().await = Some(tx);
 
-        process_text_message(100, "private", "hi", None, None, &state)
+        process_text_message(100, "private", "hi", None, None, None, None, &state)
             .await
             .unwrap();
 
@@ -560,7 +585,7 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(16);
         *state.outbound.lock().await = Some(tx);
 
-        process_text_message(-100123, "group", "hi", None, None, &state)
+        process_text_message(-100123, "group", "hi", None, None, None, None, &state)
             .await
             .unwrap();
 
@@ -571,7 +596,7 @@ mod tests {
     #[tokio::test]
     async fn process_text_does_nothing_when_outbound_is_none() {
         let state = SharedState::new();
-        let result = process_text_message(1, "private", "hi", None, None, &state).await;
+        let result = process_text_message(1, "private", "hi", None, None, None, None, &state).await;
         assert!(result.is_ok());
     }
 
@@ -581,7 +606,7 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(16);
         *state.outbound.lock().await = Some(tx);
 
-        process_text_message(1, "private", "", None, None, &state)
+        process_text_message(1, "private", "", None, None, None, None, &state)
             .await
             .unwrap();
 
@@ -711,6 +736,8 @@ mod tests {
             Some("https://api.telegram.org/file/bot123/photos/file_0.jpg"),
             None,
             None,
+            None,
+            None,
             &state,
         )
         .await
@@ -742,6 +769,8 @@ mod tests {
             Some("https://api.telegram.org/file/bot123/photos/file_0.jpg"),
             None,
             None,
+            None,
+            None,
             &state,
         )
         .await
@@ -770,6 +799,8 @@ mod tests {
             None,
             None,
             None,
+            None,
+            None,
             &state,
         )
         .await
@@ -788,9 +819,11 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(16);
         *state.outbound.lock().await = Some(tx);
 
-        process_media_message(12345, "private", "image", None, None, None, None, &state)
-            .await
-            .unwrap();
+        process_media_message(
+            12345, "private", "image", None, None, None, None, None, None, &state,
+        )
+        .await
+        .unwrap();
 
         let msg = rx.try_recv().unwrap();
         assert_eq!(msg.content, vec![ContentPart::text("[📷 Photo]")]);
@@ -799,8 +832,10 @@ mod tests {
     #[tokio::test]
     async fn when_process_media_does_nothing_when_outbound_none() {
         let state = SharedState::new();
-        let result =
-            process_media_message(1, "private", "image", None, None, None, None, &state).await;
+        let result = process_media_message(
+            1, "private", "image", None, None, None, None, None, None, &state,
+        )
+        .await;
         assert!(result.is_ok());
     }
 
@@ -815,6 +850,8 @@ mod tests {
             "private",
             "video",
             Some("my video"),
+            None,
+            None,
             None,
             None,
             None,
@@ -1040,6 +1077,8 @@ mod tests {
             "what is this?",
             Some("data:image/jpeg;base64,/9j/reply"),
             None,
+            None,
+            None,
             &state,
         )
         .await
@@ -1063,7 +1102,7 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(16);
         *state.outbound.lock().await = Some(tx);
 
-        process_text_message(1, "private", "hello", None, None, &state)
+        process_text_message(1, "private", "hello", None, None, None, None, &state)
             .await
             .unwrap();
 
@@ -1084,6 +1123,8 @@ mod tests {
             Some("cool video"),
             None,
             Some("data:image/jpeg;base64,/9j/reply"),
+            None,
+            None,
             None,
             &state,
         )
@@ -1115,6 +1156,8 @@ mod tests {
             None,
             Some("data:image/jpeg;base64,/9j/direct"),
             Some("data:image/jpeg;base64,/9j/reply"),
+            None,
+            None,
             None,
             &state,
         )
@@ -1180,5 +1223,65 @@ mod tests {
     #[rstest]
     fn when_text_mentions_bot_case_insensitive_then_true() {
         assert!(text_mentions_bot("Hello @MyBot", "mybot"));
+    }
+
+    #[tokio::test]
+    async fn when_process_text_with_sender_info_then_included_in_message() {
+        let state = SharedState::new();
+        let (tx, mut rx) = mpsc::channel(16);
+        *state.outbound.lock().await = Some(tx);
+
+        let si = Some(SenderInfo {
+            sender_id: Some("42".into()),
+            sender_name: Some("alice".into()),
+        });
+        process_text_message(12345, "group", "hi", None, None, si, Some(true), &state)
+            .await
+            .unwrap();
+
+        let msg = rx.try_recv().unwrap();
+        assert_eq!(
+            msg.sender_info.as_ref().unwrap().sender_id.as_deref(),
+            Some("42")
+        );
+        assert_eq!(
+            msg.sender_info.as_ref().unwrap().sender_name.as_deref(),
+            Some("alice")
+        );
+        assert_eq!(msg.was_mentioned, Some(true));
+    }
+
+    #[tokio::test]
+    async fn when_process_media_with_sender_info_then_included_in_message() {
+        let state = SharedState::new();
+        let (tx, mut rx) = mpsc::channel(16);
+        *state.outbound.lock().await = Some(tx);
+
+        let si = Some(SenderInfo {
+            sender_id: Some("99".into()),
+            sender_name: None,
+        });
+        process_media_message(
+            12345,
+            "group",
+            "image",
+            None,
+            None,
+            None,
+            None,
+            si,
+            Some(false),
+            &state,
+        )
+        .await
+        .unwrap();
+
+        let msg = rx.try_recv().unwrap();
+        assert_eq!(
+            msg.sender_info.as_ref().unwrap().sender_id.as_deref(),
+            Some("99")
+        );
+        assert!(msg.sender_info.as_ref().unwrap().sender_name.is_none());
+        assert_eq!(msg.was_mentioned, Some(false));
     }
 }
