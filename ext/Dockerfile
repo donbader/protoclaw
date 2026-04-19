@@ -44,6 +44,10 @@ RUN --mount=type=secret,id=actions_results_url,env=ACTIONS_RESULTS_URL \
     cd ext && cargo chef cook $(if [ "$PROFILE" = "release" ]; then echo "--release"; fi) --locked --recipe-path recipe-ext.json \
     && sccache --show-stats
 
+# Restore real source files over the stubs that cargo-chef cook created.
+# Without this, cargo build sees the stub sources and skips recompilation.
+COPY . .
+
 RUN --mount=type=secret,id=actions_results_url,env=ACTIONS_RESULTS_URL \
     --mount=type=secret,id=actions_runtime_token,env=ACTIONS_RUNTIME_TOKEN \
     --mount=type=cache,target=/usr/local/cargo/registry \

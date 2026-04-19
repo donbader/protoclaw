@@ -21,6 +21,8 @@ serde_json = { workspace = true }
 dashmap = { workspace = true }
 bollard = { workspace = true }
 uuid = { workspace = true }
+agent-client-protocol = { workspace = true }
+async-trait = { workspace = true }
 
 [dev-dependencies]
 tokio-test = { workspace = true }

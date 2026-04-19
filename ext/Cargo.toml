@@ -22,6 +22,11 @@ anyclaw-sdk-types = { path = "../crates/anyclaw-sdk-types" }
 anyclaw-sdk-channel = { path = "../crates/anyclaw-sdk-channel" }
 anyclaw-sdk-tool = { path = "../crates/anyclaw-sdk-tool" }
 
+# ACP SDK
+agent-client-protocol = { version = "0.10", features = ["unstable_session_resume"] }
+async-trait = "0.1"
+tokio-util = { version = "0.7", features = ["compat"] }
+
 # Third-party — pinned to same versions as root workspace
 tokio = { version = "1.50", default-features = false }
 serde = { version = "1", features = ["derive"] }
@@ -46,6 +51,7 @@ implicit_clone = "warn"
 cloned_instead_of_copied = "warn"
 flat_map_option = "warn"
 semicolon_if_nothing_returned = "warn"
+let_underscore_future = "deny"
 
 [workspace.lints.rust]
 unused_imports = "warn"

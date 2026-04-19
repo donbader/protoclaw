@@ -1,28 +1,32 @@
-// D-03: mock-agent is a standalone ACP test binary that speaks raw JSON-RPC over stdio.
-// It constructs protocol messages manually — there is no typed JSON-RPC envelope struct
-// because the mock intentionally exercises the raw wire format.
-#![allow(clippy::disallowed_types)]
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
 
-use serde_json::{Value, json};
-use std::sync::OnceLock;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use tokio::io::{AsyncBufReadExt, AsyncWrite, AsyncWriteExt, BufReader};
+use agent_client_protocol::SessionResumeCapabilities;
+use agent_client_protocol::{AgentCapabilities, McpCapabilities, PromptCapabilities};
+use agent_client_protocol::{
+    AgentSideConnection, AvailableCommand, AvailableCommandsUpdate, ContentBlock, ContentChunk,
+    Error, InitializeRequest, InitializeResponse, ListSessionsRequest, ListSessionsResponse,
+    LoadSessionRequest, LoadSessionResponse, NewSessionRequest, NewSessionResponse,
+    PermissionOption, PermissionOptionKind, PromptRequest, PromptResponse,
+    RequestPermissionRequest, ResumeSessionRequest, ResumeSessionResponse, SessionNotification,
+    SessionUpdate, StopReason, TextContent, ToolCallId, ToolCallUpdate, ToolCallUpdateFields,
+};
+use agent_client_protocol::{AuthenticateRequest, AuthenticateResponse, CancelNotification};
+use agent_client_protocol::{Client, SessionCapabilities};
+use async_trait::async_trait;
+use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
-static PROMPT_COUNT: AtomicUsize = AtomicUsize::new(0);
-static THINK_ENABLED: AtomicBool = AtomicBool::new(true);
-static AGENT_OPTIONS: OnceLock<AgentOptions> = OnceLock::new();
-static MCP_SERVER_COUNT: AtomicUsize = AtomicUsize::new(0);
+const DEFAULTS_YAML: &str = include_str!("../defaults.yaml");
 
 #[derive(Debug)]
 struct AgentOptions {
     exit_after: Option<usize>,
     thinking_time_ms: Option<u64>,
+    thinking_enabled: bool,
     request_permission: bool,
     reject_load: bool,
     reject_resume: bool,
     support_resume: bool,
-    /// When set, session/resume and session/load return this ID instead of the sent one.
-    recovery_new_id: Option<String>,
     echo_prefix: String,
     echo_mcp_count: bool,
 }
@@ -32,11 +36,11 @@ impl Default for AgentOptions {
         Self {
             exit_after: None,
             thinking_time_ms: None,
+            thinking_enabled: true,
             request_permission: false,
             reject_load: false,
             reject_resume: false,
             support_resume: false,
-            recovery_new_id: None,
             echo_prefix: "Echo".to_string(),
             echo_mcp_count: false,
         }
@@ -44,38 +48,301 @@ impl Default for AgentOptions {
 }
 
 impl AgentOptions {
-    fn from_initialize_params(params: &Value) -> Self {
-        let options = &params["options"];
+    #[allow(clippy::disallowed_types)]
+    fn from_meta(meta: Option<&serde_json::Map<String, serde_json::Value>>) -> Self {
+        let empty = serde_json::Map::new();
+        let opts_map = meta
+            .and_then(|m| m.get("options"))
+            .and_then(|v| v.as_object());
+        let opts = opts_map.unwrap_or(&empty);
+
+        let get_bool = |key: &str| opts.get(key).and_then(serde_json::Value::as_bool);
+        let get_u64 = |key: &str| opts.get(key).and_then(serde_json::Value::as_u64);
+        let get_str = |key: &str| opts.get(key).and_then(|v| v.as_str()).map(String::from);
+
         Self {
-            exit_after: options["exit_after"].as_u64().map(|v| v as usize),
-            thinking_time_ms: options["thinking_time_ms"].as_u64(),
-            request_permission: options["request_permission"].as_bool().unwrap_or(false),
-            reject_load: options["reject_load"].as_bool().unwrap_or(false),
-            reject_resume: options["reject_resume"].as_bool().unwrap_or(false),
-            support_resume: options["support_resume"].as_bool().unwrap_or(false),
-            recovery_new_id: options["recovery_new_id"].as_str().map(String::from),
-            echo_prefix: options["echo_prefix"]
-                .as_str()
-                .unwrap_or("Echo")
-                .to_string(),
-            echo_mcp_count: options["echo_mcp_count"].as_bool().unwrap_or(false),
+            exit_after: get_u64("exit_after").map(|v| v as usize),
+            thinking_time_ms: get_u64("thinking_time_ms"),
+            thinking_enabled: get_bool("thinking").unwrap_or(true),
+            request_permission: get_bool("request_permission").unwrap_or(false),
+            reject_load: get_bool("reject_load").unwrap_or(false),
+            reject_resume: get_bool("reject_resume").unwrap_or(false),
+            support_resume: get_bool("support_resume").unwrap_or(false),
+            echo_prefix: get_str("echo_prefix").unwrap_or_else(|| "Echo".to_string()),
+            echo_mcp_count: get_bool("echo_mcp_count").unwrap_or(false),
         }
     }
 }
 
-fn opts() -> &'static AgentOptions {
-    AGENT_OPTIONS
-        .get()
-        .expect("initialize must be called first")
+type ConnCell = Rc<std::cell::OnceCell<AgentSideConnection>>;
+
+struct MockHandler {
+    conn: ConnCell,
+    opts: RefCell<AgentOptions>,
+    session_id: RefCell<Option<String>>,
+    mcp_server_count: Cell<usize>,
+    prompt_count: Cell<usize>,
 }
 
-#[tokio::main]
+impl MockHandler {
+    fn new(conn: ConnCell) -> Self {
+        Self {
+            conn,
+            opts: RefCell::new(AgentOptions::default()),
+            session_id: RefCell::new(None),
+            mcp_server_count: Cell::new(0),
+            prompt_count: Cell::new(0),
+        }
+    }
+
+    async fn send_notification(&self, notif: SessionNotification) {
+        if let Some(conn) = self.conn.get() {
+            let _ = conn.session_notification(notif).await;
+        }
+    }
+}
+
+#[async_trait(?Send)]
+impl agent_client_protocol::Agent for MockHandler {
+    async fn initialize(
+        &self,
+        args: InitializeRequest,
+    ) -> agent_client_protocol::Result<InitializeResponse> {
+        let new_opts = AgentOptions::from_meta(args.meta.as_ref());
+        *self.opts.borrow_mut() = new_opts;
+
+        let support_resume = self.opts.borrow().support_resume;
+
+        #[allow(clippy::disallowed_types)]
+        let defaults: serde_json::Value =
+            serde_yaml::from_str(DEFAULTS_YAML).expect("defaults.yaml must be valid YAML");
+
+        let session_caps = {
+            let caps = SessionCapabilities::new();
+            if support_resume {
+                caps.resume(SessionResumeCapabilities::new())
+            } else {
+                caps
+            }
+        };
+
+        let agent_caps = AgentCapabilities::new()
+            .load_session(true)
+            .mcp_capabilities(McpCapabilities::new().http(true).sse(true))
+            .prompt_capabilities(PromptCapabilities::new().embedded_context(true))
+            .session_capabilities(session_caps);
+
+        let mut meta = serde_json::Map::new();
+        meta.insert("defaults".to_string(), defaults);
+
+        let resp = InitializeResponse::new(args.protocol_version)
+            .agent_capabilities(agent_caps)
+            .meta(meta);
+
+        self.send_notification(SessionNotification::new(
+            "__global__",
+            SessionUpdate::AvailableCommandsUpdate(AvailableCommandsUpdate::new(vec![
+                AvailableCommand::new("help", "Show available commands"),
+                AvailableCommand::new("status", "Show agent status"),
+            ])),
+        ))
+        .await;
+
+        Ok(resp)
+    }
+
+    async fn authenticate(
+        &self,
+        _args: AuthenticateRequest,
+    ) -> agent_client_protocol::Result<AuthenticateResponse> {
+        Err(Error::method_not_found())
+    }
+
+    async fn new_session(
+        &self,
+        args: NewSessionRequest,
+    ) -> agent_client_protocol::Result<NewSessionResponse> {
+        self.mcp_server_count.set(args.mcp_servers.len());
+        let sid = uuid::Uuid::new_v4().to_string();
+        *self.session_id.borrow_mut() = Some(sid.clone());
+        Ok(NewSessionResponse::new(sid))
+    }
+
+    async fn prompt(&self, args: PromptRequest) -> agent_client_protocol::Result<PromptResponse> {
+        let session_id = args.session_id.to_string();
+        let parts = args.prompt;
+        let count = self.prompt_count.get();
+
+        let (request_permission, think, thinking_time_ms, prefix, echo_mcp_count) = {
+            let opts = self.opts.borrow();
+            (
+                opts.request_permission,
+                opts.thinking_enabled,
+                opts.thinking_time_ms,
+                opts.echo_prefix.clone(),
+                opts.echo_mcp_count,
+            )
+        };
+
+        if request_permission
+            && count == 0
+            && let Some(conn) = self.conn.get()
+        {
+            let tool_call = ToolCallUpdate::new(
+                ToolCallId::new("perm-1"),
+                ToolCallUpdateFields::new().title("shell: Run echo command"),
+            );
+            let req = RequestPermissionRequest::new(
+                session_id.clone(),
+                tool_call,
+                vec![
+                    PermissionOption::new(
+                        "allow_once",
+                        "Allow once",
+                        PermissionOptionKind::AllowOnce,
+                    ),
+                    PermissionOption::new(
+                        "reject_once",
+                        "Reject",
+                        PermissionOptionKind::RejectOnce,
+                    ),
+                ],
+            );
+            let _ = conn.request_permission(req).await;
+        }
+
+        if think {
+            for thought in ["Analyzing your message...", "Formulating response..."] {
+                self.send_notification(SessionNotification::new(
+                    session_id.clone(),
+                    SessionUpdate::AgentThoughtChunk(ContentChunk::new(ContentBlock::Text(
+                        TextContent::new(thought),
+                    ))),
+                ))
+                .await;
+                tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+            }
+
+            if let Some(ms) = thinking_time_ms {
+                tokio::time::sleep(tokio::time::Duration::from_millis(ms)).await;
+            }
+        }
+
+        for part in &parts {
+            let echo_block = echo_content_block(part, &prefix);
+            self.send_notification(SessionNotification::new(
+                session_id.clone(),
+                SessionUpdate::AgentMessageChunk(ContentChunk::new(echo_block)),
+            ))
+            .await;
+        }
+
+        let mut result_content = if parts.len() == 1 {
+            if let ContentBlock::Text(t) = &parts[0] {
+                format!("{prefix}: {}", t.text)
+            } else {
+                "Echoed 1 content part".to_string()
+            }
+        } else {
+            format!("Echoed {} content parts", parts.len())
+        };
+
+        if echo_mcp_count {
+            let mcp = self.mcp_server_count.get();
+            result_content.push_str(&format!(" [mcp:{mcp}]"));
+        }
+
+        self.send_notification(SessionNotification::new(
+            session_id.clone(),
+            SessionUpdate::AgentMessageChunk(ContentChunk::new(ContentBlock::Text(
+                TextContent::new(result_content),
+            ))),
+        ))
+        .await;
+
+        let new_count = count + 1;
+        self.prompt_count.set(new_count);
+        let exit_after = self.opts.borrow().exit_after;
+
+        if let Some(limit) = exit_after
+            && new_count >= limit
+        {
+            tokio::task::spawn_local(async {
+                tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+                std::process::exit(1);
+            });
+        }
+
+        Ok(PromptResponse::new(StopReason::EndTurn))
+    }
+
+    async fn cancel(&self, _args: CancelNotification) -> agent_client_protocol::Result<()> {
+        Ok(())
+    }
+
+    async fn load_session(
+        &self,
+        args: LoadSessionRequest,
+    ) -> agent_client_protocol::Result<LoadSessionResponse> {
+        if self.opts.borrow().reject_load {
+            return Err(Error::new(-32000, "Session load rejected"));
+        }
+        *self.session_id.borrow_mut() = Some(args.session_id.to_string());
+        Ok(LoadSessionResponse::new())
+    }
+
+    #[allow(unreachable_patterns)]
+    async fn resume_session(
+        &self,
+        args: ResumeSessionRequest,
+    ) -> agent_client_protocol::Result<ResumeSessionResponse> {
+        if self.opts.borrow().reject_resume {
+            return Err(Error::new(-32000, "Session resume rejected"));
+        }
+        *self.session_id.borrow_mut() = Some(args.session_id.to_string());
+        Ok(ResumeSessionResponse::new())
+    }
+
+    async fn list_sessions(
+        &self,
+        _args: ListSessionsRequest,
+    ) -> agent_client_protocol::Result<ListSessionsResponse> {
+        Ok(ListSessionsResponse::new(vec![]))
+    }
+}
+
+fn echo_content_block(block: &ContentBlock, prefix: &str) -> ContentBlock {
+    match block {
+        ContentBlock::Text(t) => {
+            ContentBlock::Text(TextContent::new(format!("{prefix}: {}", t.text)))
+        }
+        ContentBlock::Image(img) => ContentBlock::Image(img.clone()),
+        ContentBlock::Audio(audio) => ContentBlock::Audio(audio.clone()),
+        ContentBlock::ResourceLink(link) => ContentBlock::Text(TextContent::new(format!(
+            "{prefix}: [resource {}]",
+            link.uri
+        ))),
+        ContentBlock::Resource(res) => {
+            let uri = match &res.resource {
+                agent_client_protocol::EmbeddedResourceResource::TextResourceContents(r) => {
+                    r.uri.clone()
+                }
+                agent_client_protocol::EmbeddedResourceResource::BlobResourceContents(r) => {
+                    r.uri.clone()
+                }
+                _ => String::from("unknown"),
+            };
+            ContentBlock::Text(TextContent::new(format!("{prefix}: [resource {uri}]")))
+        }
+        _ => ContentBlock::Text(TextContent::new(format!("{prefix}: [unknown content]"))),
+    }
+}
+
+#[tokio::main(flavor = "current_thread")]
 async fn main() {
     let stdin = tokio::io::stdin();
     let mut stdout = tokio::io::stdout();
 
-    // Simulate real-world agents (e.g. Node.js) that emit non-JSON startup noise to stdout.
-    // The host's reader loop must skip these lines instead of terminating.
     if std::env::args().any(|a| a == "--noisy-startup") {
         use tokio::io::AsyncWriteExt;
         stdout
@@ -86,723 +353,339 @@ async fn main() {
         stdout.flush().await.ok();
     }
 
-    let reader = BufReader::new(stdin);
-    let mut lines = reader.lines();
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let conn_cell: ConnCell = Rc::new(std::cell::OnceCell::new());
+            let handler = Rc::new(MockHandler::new(Rc::clone(&conn_cell)));
 
-    let mut session_id: Option<String> = None;
+            let (conn, io_task) = AgentSideConnection::new(
+                Rc::clone(&handler),
+                stdout.compat_write(),
+                stdin.compat(),
+                |fut| {
+                    tokio::task::spawn_local(fut);
+                },
+            );
 
-    while let Ok(Some(line)) = lines.next_line().await {
-        if line.trim().is_empty() {
-            continue;
-        }
+            conn_cell.set(conn).expect("conn_cell set once");
 
-        let msg: Value = match serde_json::from_str(&line) {
-            Ok(v) => v,
-            Err(_) => continue,
-        };
-
-        let method = msg["method"].as_str().unwrap_or("");
-        let id = msg.get("id").cloned();
-
-        match method {
-            "initialize" => {
-                handle_initialize(&mut stdout, id, &msg).await;
-            }
-            "session/new" => {
-                session_id = Some(handle_session_new(&mut stdout, id, &msg).await);
-            }
-            "session/prompt" => {
-                let sid = session_id.clone().unwrap_or_else(|| "unknown".to_string());
-                let Some(parts) = extract_prompt_parts(&msg) else {
-                    let resp = json!({
-                        "jsonrpc": "2.0",
-                        "id": id,
-                        "error": { "code": -32602, "message": "session/prompt requires 'prompt' (array of content parts)" }
-                    });
-                    write_message(&mut stdout, &resp).await;
-                    continue;
-                };
-                let think = THINK_ENABLED.load(Ordering::SeqCst);
-                handle_session_prompt(
-                    &mut stdout,
-                    id,
-                    &sid,
-                    &parts,
-                    opts().request_permission,
-                    think,
-                    &mut lines,
-                )
-                .await;
-
-                let count = PROMPT_COUNT.fetch_add(1, Ordering::SeqCst) + 1;
-                if let Some(limit) = opts().exit_after
-                    && count >= limit
-                {
-                    std::process::exit(1);
-                }
-            }
-            "session/cancel" => {
-                handle_session_cancel(&mut stdout, id).await;
-            }
-            "session/load" => {
-                handle_session_load(&mut stdout, id, opts().reject_load, &mut session_id).await;
-            }
-            "session/resume" => {
-                handle_session_resume(&mut stdout, id, opts().reject_resume, &mut session_id).await;
-            }
-            _ => {
-                let resp = json!({
-                    "jsonrpc": "2.0",
-                    "id": id,
-                    "error": { "code": -32601, "message": "Method not found" }
-                });
-                write_message(&mut stdout, &resp).await;
-            }
-        }
-    }
-}
-
-async fn write_message<W: AsyncWrite + Unpin>(writer: &mut W, msg: &Value) {
-    let mut line = serde_json::to_string(msg).expect("failed to serialize");
-    line.push('\n');
-    writer
-        .write_all(line.as_bytes())
-        .await
-        .expect("failed to write");
-    writer.flush().await.expect("failed to flush");
-}
-
-fn extract_prompt_parts(msg: &Value) -> Option<Vec<Value>> {
-    let prompt = msg["params"]["prompt"].as_array()?;
-    if prompt.is_empty() {
-        return None;
-    }
-    Some(prompt.clone())
-}
-
-async fn handle_initialize(stdout: &mut tokio::io::Stdout, id: Option<Value>, msg: &Value) {
-    let params = &msg["params"];
-    let think = params["options"]["thinking"].as_bool().unwrap_or(true);
-    THINK_ENABLED.store(think, Ordering::SeqCst);
-
-    let _ = AGENT_OPTIONS.set(AgentOptions::from_initialize_params(params));
-
-    let session_caps = if opts().support_resume {
-        json!({ "resume": {} })
-    } else {
-        json!({})
-    };
-
-    const DEFAULTS_YAML: &str = include_str!("../defaults.yaml");
-    let defaults: serde_json::Value =
-        serde_yaml::from_str(DEFAULTS_YAML).expect("embedded defaults.yaml must be valid YAML");
-
-    let resp = json!({
-        "jsonrpc": "2.0",
-        "id": id,
-        "result": {
-            "protocolVersion": 2,
-            "agentCapabilities": {
-                "loadSession": true,
-                "mcpCapabilities": { "http": true, "sse": true },
-                "promptCapabilities": { "embeddedContext": true },
-                "sessionCapabilities": session_caps
-            },
-            "defaults": defaults
-        }
-    });
-    write_message(stdout, &resp).await;
-
-    let commands_update = json!({
-        "jsonrpc": "2.0",
-        "method": "session/update",
-        "params": {
-            "sessionId": "__global__",
-            "update": {
-                "sessionUpdate": "available_commands_update",
-                "commands": [
-                    { "name": "help", "description": "Show available commands" },
-                    { "name": "status", "description": "Show agent status" }
-                ]
-            }
-        }
-    });
-    write_message(stdout, &commands_update).await;
-}
-
-async fn handle_session_new<W: AsyncWrite + Unpin>(
-    stdout: &mut W,
-    id: Option<Value>,
-    msg: &Value,
-) -> String {
-    let params = &msg["params"];
-
-    if !params.get("cwd").is_some_and(serde_json::Value::is_string) {
-        let resp = json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "error": { "code": -32602, "message": "session/new requires 'cwd' (string)" }
-        });
-        write_message(stdout, &resp).await;
-        return String::new();
-    }
-
-    if !params
-        .get("mcpServers")
-        .is_some_and(serde_json::Value::is_array)
-    {
-        let resp = json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "error": { "code": -32602, "message": "session/new requires 'mcpServers' (array)" }
-        });
-        write_message(stdout, &resp).await;
-        return String::new();
-    }
-
-    let count = params["mcpServers"].as_array().map(Vec::len).unwrap_or(0);
-    MCP_SERVER_COUNT.store(count, Ordering::SeqCst);
-
-    let sid = uuid::Uuid::new_v4().to_string();
-    let resp = json!({
-        "jsonrpc": "2.0",
-        "id": id,
-        "result": { "sessionId": sid }
-    });
-    write_message(stdout, &resp).await;
-    sid
-}
-
-async fn handle_session_prompt<W: AsyncWrite + Unpin>(
-    stdout: &mut W,
-    id: Option<Value>,
-    session_id: &str,
-    parts: &[Value],
-    request_permission: bool,
-    think: bool,
-    lines: &mut tokio::io::Lines<BufReader<tokio::io::Stdin>>,
-) {
-    let count = PROMPT_COUNT.load(Ordering::SeqCst);
-
-    if request_permission && count == 0 {
-        let perm_req = json!({
-            "jsonrpc": "2.0",
-            "id": 9000,
-            "method": "session/request_permission",
-            "params": {
-                "sessionId": session_id,
-                "tool": "shell",
-                "description": "Run echo command",
-                "options": [
-                    { "id": "allow_once", "label": "Allow once" },
-                    { "id": "reject_once", "label": "Reject" }
-                ]
-            }
-        });
-        write_message(stdout, &perm_req).await;
-
-        if let Ok(Some(resp_line)) = lines.next_line().await {
-            let _resp: Value = serde_json::from_str(&resp_line).unwrap_or(json!(null));
-        }
-    }
-
-    if think {
-        for thought in ["Analyzing your message...", "Formulating response..."] {
-            let chunk = json!({
-                "jsonrpc": "2.0",
-                "method": "session/update",
-                "params": {
-                    "sessionId": session_id,
-                    "update": {
-                        "sessionUpdate": "agent_thought_chunk",
-                        "content": { "type": "text", "text": thought }
-                    }
-                }
-            });
-            write_message(stdout, &chunk).await;
-            tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
-        }
-
-        if let Some(ms) = AGENT_OPTIONS.get().and_then(|o| o.thinking_time_ms) {
-            tokio::time::sleep(tokio::time::Duration::from_millis(ms)).await;
-        }
-    }
-
-    let prefix = AGENT_OPTIONS
-        .get()
-        .map(|o| o.echo_prefix.as_str())
-        .unwrap_or("Echo");
-
-    let echo_mcp_count = AGENT_OPTIONS
-        .get()
-        .map(|o| o.echo_mcp_count)
-        .unwrap_or(false);
-
-    // Echo each content part back with an appropriate agent_message_chunk.
-    for part in parts {
-        let part_type = part["type"].as_str().unwrap_or("");
-        let content = match part_type {
-            "text" => {
-                let text = part["text"].as_str().unwrap_or("");
-                json!({ "type": "text", "text": format!("{prefix}: {text}") })
-            }
-            "image" => {
-                let url = part["uri"]
-                    .as_str()
-                    .or_else(|| part["url"].as_str())
-                    .unwrap_or("");
-                json!({ "type": "image", "data": "", "mimeType": part["mimeType"].as_str().unwrap_or("image/png"), "uri": url })
-            }
-            "resource" | "resource_link" => {
-                let uri = if part_type == "resource_link" {
-                    part["uri"].as_str().unwrap_or("")
-                } else {
-                    part["resource"]["uri"].as_str().unwrap_or("")
-                };
-                json!({ "type": "text", "text": format!("{prefix}: [resource {uri}]") })
-            }
-            "audio" => {
-                json!({
-                    "type": "audio",
-                    "data": part["data"],
-                    "mimeType": part["mimeType"]
-                })
-            }
-            _ => {
-                // Unknown part type — echo as text description.
-                json!({ "type": "text", "text": format!("{prefix}: [unknown part type '{part_type}']") })
-            }
-        };
-
-        let chunk = json!({
-            "jsonrpc": "2.0",
-            "method": "session/update",
-            "params": {
-                "sessionId": session_id,
-                "update": {
-                    "sessionUpdate": "agent_message_chunk",
-                    "content": content
-                }
-            }
-        });
-        write_message(stdout, &chunk).await;
-    }
-
-    // Build the result summary string.
-    let mut result_content = if parts.len() == 1 && parts[0]["type"].as_str() == Some("text") {
-        let text = parts[0]["text"].as_str().unwrap_or("");
-        format!("{prefix}: {text}")
-    } else {
-        let noun = if parts.len() == 1 { "part" } else { "parts" };
-        format!("Echoed {} content {noun}", parts.len())
-    };
-
-    if echo_mcp_count {
-        let mcp = MCP_SERVER_COUNT.load(Ordering::SeqCst);
-        result_content.push_str(&format!(" [mcp:{mcp}]"));
-    }
-
-    let result_notif = json!({
-        "jsonrpc": "2.0",
-        "method": "session/update",
-        "params": {
-            "sessionId": session_id,
-            "update": {
-                "sessionUpdate": "result",
-                "content": result_content
-            }
-        }
-    });
-    write_message(stdout, &result_notif).await;
-
-    let resp = json!({ "jsonrpc": "2.0", "id": id, "result": { "stopReason": "end_turn" } });
-    write_message(stdout, &resp).await;
-}
-
-async fn handle_session_cancel(stdout: &mut tokio::io::Stdout, id: Option<Value>) {
-    let resp = json!({ "jsonrpc": "2.0", "id": id, "result": {} });
-    write_message(stdout, &resp).await;
-}
-
-async fn handle_session_load(
-    stdout: &mut tokio::io::Stdout,
-    id: Option<Value>,
-    reject: bool,
-    session_id: &mut Option<String>,
-) {
-    if reject {
-        let resp = json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "error": { "code": -32000, "message": "Session load rejected" }
-        });
-        write_message(stdout, &resp).await;
-    } else {
-        let sid = opts()
-            .recovery_new_id
-            .clone()
-            .or_else(|| session_id.clone())
-            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-        *session_id = Some(sid.clone());
-        let resp = json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "result": { "sessionId": sid }
-        });
-        write_message(stdout, &resp).await;
-    }
-}
-
-async fn handle_session_resume(
-    stdout: &mut tokio::io::Stdout,
-    id: Option<Value>,
-    reject: bool,
-    session_id: &mut Option<String>,
-) {
-    if reject {
-        let resp = json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "error": { "code": -32000, "message": "Session resume rejected" }
-        });
-        write_message(stdout, &resp).await;
-    } else {
-        let sid = opts()
-            .recovery_new_id
-            .clone()
-            .or_else(|| session_id.clone())
-            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-        *session_id = Some(sid.clone());
-        let resp = json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "result": { "sessionId": sid }
-        });
-        write_message(stdout, &resp).await;
-    }
+            io_task.await.ok();
+        })
+        .await;
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::Value;
+    use agent_client_protocol::{
+        Agent, AgentSideConnection, ClientSideConnection, NewSessionRequest, PromptRequest,
+        SessionNotification,
+    };
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
-    async fn collect_parts_output(parts: Vec<Value>, think: bool) -> Vec<Value> {
-        use tokio::io::AsyncBufReadExt;
-
-        let (reader, mut writer) = tokio::io::duplex(8192);
-
-        let write_handle = tokio::spawn(async move {
-            let stdin = tokio::io::stdin();
-            let buf = BufReader::new(stdin);
-            let mut lines = buf.lines();
-            handle_session_prompt(
-                &mut writer,
-                Some(json!(1)),
-                "test-session",
-                &parts,
-                false,
-                think,
-                &mut lines,
-            )
-            .await;
-            drop(writer);
-        });
-
-        let buf_reader = tokio::io::BufReader::new(reader);
-        let mut read_lines = buf_reader.lines();
-        let mut messages = Vec::new();
-        while let Ok(Some(line)) = read_lines.next_line().await {
-            if let Ok(v) = serde_json::from_str::<Value>(&line) {
-                messages.push(v);
-            }
-        }
-        write_handle.await.unwrap();
-        messages
+    fn make_handler() -> Rc<MockHandler> {
+        let conn_cell: ConnCell = Rc::new(std::cell::OnceCell::new());
+        Rc::new(MockHandler::new(conn_cell))
     }
 
-    fn text_parts(text: &str) -> Vec<Value> {
-        vec![json!({"type": "text", "text": text})]
+    struct CollectingClient {
+        notifications: Rc<RefCell<Vec<SessionNotification>>>,
+    }
+
+    impl CollectingClient {
+        fn new(notifications: Rc<RefCell<Vec<SessionNotification>>>) -> Self {
+            Self { notifications }
+        }
+    }
+
+    #[async_trait(?Send)]
+    impl agent_client_protocol::Client for CollectingClient {
+        async fn request_permission(
+            &self,
+            _args: agent_client_protocol::RequestPermissionRequest,
+        ) -> agent_client_protocol::Result<agent_client_protocol::RequestPermissionResponse>
+        {
+            use agent_client_protocol::{
+                PermissionOptionId, RequestPermissionOutcome, RequestPermissionResponse,
+                SelectedPermissionOutcome,
+            };
+            Ok(RequestPermissionResponse::new(
+                RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
+                    PermissionOptionId::new("allow_once"),
+                )),
+            ))
+        }
+
+        async fn session_notification(
+            &self,
+            args: SessionNotification,
+        ) -> agent_client_protocol::Result<()> {
+            self.notifications.borrow_mut().push(args);
+            Ok(())
+        }
+    }
+
+    async fn make_connected_pair() -> (
+        ClientSideConnection,
+        Rc<RefCell<Vec<SessionNotification>>>,
+        Rc<MockHandler>,
+    ) {
+        let (client_rx, agent_tx) = tokio::io::duplex(65536);
+        let (agent_rx, client_tx) = tokio::io::duplex(65536);
+
+        let conn_cell: ConnCell = Rc::new(std::cell::OnceCell::new());
+        let handler = Rc::new(MockHandler::new(Rc::clone(&conn_cell)));
+
+        let (agent_conn, agent_io) = AgentSideConnection::new(
+            Rc::clone(&handler),
+            agent_tx.compat_write(),
+            agent_rx.compat(),
+            |fut| {
+                tokio::task::spawn_local(fut);
+            },
+        );
+
+        conn_cell.set(agent_conn).expect("set once");
+
+        let notifications: Rc<RefCell<Vec<SessionNotification>>> =
+            Rc::new(RefCell::new(Vec::new()));
+        let (client_conn, client_io) = ClientSideConnection::new(
+            CollectingClient::new(Rc::clone(&notifications)),
+            client_tx.compat_write(),
+            client_rx.compat(),
+            |fut| {
+                tokio::task::spawn_local(fut);
+            },
+        );
+
+        tokio::task::spawn_local(async move {
+            agent_io.await.ok();
+        });
+        tokio::task::spawn_local(async move {
+            client_io.await.ok();
+        });
+
+        (client_conn, notifications, handler)
     }
 
     #[tokio::test]
     async fn no_thought_chunks_when_think_disabled() {
-        // Single text part: 1 echo chunk + result_notif + rpc_response = 3 messages
-        let msgs = collect_parts_output(text_parts("hello"), false).await;
-        assert_eq!(msgs.len(), 3);
-        for msg in &msgs {
-            if let Some(params) = msg.get("params") {
-                let update_type = params
-                    .get("update")
-                    .and_then(|u| u.get("sessionUpdate"))
-                    .and_then(|t| t.as_str());
-                assert_ne!(update_type, Some("agent_thought_chunk"),);
-            }
-        }
+        let local = tokio::task::LocalSet::new();
+        local
+            .run_until(async {
+                let (client, notifications, _handler) = make_connected_pair().await;
+
+                let mut meta = serde_json::Map::new();
+                let mut options = serde_json::Map::new();
+                options.insert("thinking".into(), serde_json::json!(false));
+                meta.insert("options".into(), serde_json::Value::Object(options));
+                let init_req =
+                    InitializeRequest::new(agent_client_protocol::ProtocolVersion::from(2u16))
+                        .meta(meta);
+                client.initialize(init_req).await.expect("initialize");
+
+                let session = client
+                    .new_session(NewSessionRequest::new("/workspace").mcp_servers(vec![]))
+                    .await
+                    .expect("new_session");
+
+                client
+                    .prompt(PromptRequest::new(
+                        session.session_id.clone(),
+                        vec![ContentBlock::Text(TextContent::new("hello"))],
+                    ))
+                    .await
+                    .expect("prompt");
+
+                let thought_count = notifications
+                    .borrow()
+                    .iter()
+                    .filter(|n| matches!(n.update, SessionUpdate::AgentThoughtChunk(_)))
+                    .count();
+
+                assert_eq!(
+                    thought_count, 0,
+                    "no thoughts when thinking_enabled=false (default from no options)"
+                );
+            })
+            .await;
     }
 
     #[tokio::test]
-    async fn thought_chunks_emitted_when_think_enabled() {
-        // Single text part: 2 thoughts + 1 echo chunk + result_notif + rpc_response = 5 messages
-        let msgs = collect_parts_output(text_parts("hello"), true).await;
-        assert_eq!(msgs.len(), 5);
+    async fn echo_prefix_in_text_response() {
+        let local = tokio::task::LocalSet::new();
+        local
+            .run_until(async {
+                let handler = make_handler();
+                *handler.opts.borrow_mut() = AgentOptions {
+                    thinking_enabled: false,
+                    echo_prefix: "Echo".to_string(),
+                    ..AgentOptions::default()
+                };
 
-        let t1 = &msgs[0]["params"]["update"];
-        assert_eq!(t1["sessionUpdate"], "agent_thought_chunk");
-        assert_eq!(t1["content"]["type"], "text");
-        assert_eq!(t1["content"]["text"], "Analyzing your message...");
-
-        let t2 = &msgs[1]["params"]["update"];
-        assert_eq!(t2["sessionUpdate"], "agent_thought_chunk");
-        assert_eq!(t2["content"]["type"], "text");
-        assert_eq!(t2["content"]["text"], "Formulating response...");
+                let parts = vec![ContentBlock::Text(TextContent::new("hello"))];
+                let block = echo_content_block(&parts[0], "Echo");
+                match block {
+                    ContentBlock::Text(t) => assert_eq!(t.text, "Echo: hello"),
+                    _ => panic!("expected text"),
+                }
+            })
+            .await;
     }
 
     #[tokio::test]
-    async fn echo_still_works_after_thoughts() {
-        let msgs = collect_parts_output(text_parts("test msg"), true).await;
+    async fn echo_image_block_unchanged() {
+        let local = tokio::task::LocalSet::new();
+        local
+            .run_until(async {
+                use agent_client_protocol::ImageContent;
+                let img = ContentBlock::Image(ImageContent::new("base64data", "image/png"));
+                let result = echo_content_block(&img, "Echo");
+                match result {
+                    ContentBlock::Image(i) => {
+                        assert_eq!(i.data, "base64data");
+                        assert_eq!(i.mime_type, "image/png");
+                    }
+                    _ => panic!("expected image"),
+                }
+            })
+            .await;
+    }
 
-        let echo_chunk = &msgs[2]["params"]["update"];
-        assert_eq!(echo_chunk["sessionUpdate"], "agent_message_chunk");
-        assert_eq!(echo_chunk["content"]["type"], "text");
-        assert_eq!(echo_chunk["content"]["text"], "Echo: test msg");
+    #[tokio::test]
+    async fn echo_audio_block_unchanged() {
+        let local = tokio::task::LocalSet::new();
+        local
+            .run_until(async {
+                use agent_client_protocol::AudioContent;
+                let audio = ContentBlock::Audio(AudioContent::new("audio_data", "audio/mpeg"));
+                let result = echo_content_block(&audio, "Echo");
+                match result {
+                    ContentBlock::Audio(a) => {
+                        assert_eq!(a.data, "audio_data");
+                        assert_eq!(a.mime_type, "audio/mpeg");
+                    }
+                    _ => panic!("expected audio"),
+                }
+            })
+            .await;
+    }
 
-        let result = &msgs[3]["params"]["update"];
-        assert_eq!(result["sessionUpdate"], "result");
-        assert_eq!(result["content"], "Echo: test msg");
+    #[tokio::test]
+    async fn echo_resource_link_as_text() {
+        let local = tokio::task::LocalSet::new();
+        local
+            .run_until(async {
+                use agent_client_protocol::ResourceLink;
+                let link = ContentBlock::ResourceLink(ResourceLink::new(
+                    "report.pdf",
+                    "https://example.com/report.pdf",
+                ));
+                let result = echo_content_block(&link, "Echo");
+                match result {
+                    ContentBlock::Text(t) => {
+                        assert!(t.text.contains("report.pdf"), "should contain uri");
+                    }
+                    _ => panic!("expected text"),
+                }
+            })
+            .await;
     }
 
     #[test]
-    fn extract_prompt_parts_valid_array() {
-        let msg = json!({
-            "params": {
-                "prompt": [{"type": "text", "text": "hello world"}]
-            }
-        });
-        let parts = extract_prompt_parts(&msg).expect("should extract parts");
-        assert_eq!(parts.len(), 1);
-        assert_eq!(parts[0]["type"], "text");
-        assert_eq!(parts[0]["text"], "hello world");
+    fn agent_options_from_meta_defaults() {
+        let opts = AgentOptions::from_meta(None);
+        assert!(opts.thinking_enabled);
+        assert_eq!(opts.echo_prefix, "Echo");
+        assert!(!opts.request_permission);
+        assert!(!opts.reject_load);
+        assert!(!opts.support_resume);
     }
 
     #[test]
-    fn extract_prompt_parts_missing_prompt() {
-        let msg = json!({ "params": {} });
-        assert!(extract_prompt_parts(&msg).is_none());
-    }
+    fn agent_options_from_meta_custom() {
+        let mut meta = serde_json::Map::new();
+        let mut options = serde_json::Map::new();
+        options.insert("exit_after".into(), serde_json::json!(3));
+        options.insert("thinking".into(), serde_json::json!(false));
+        options.insert("echo_prefix".into(), serde_json::json!("Bot"));
+        options.insert("request_permission".into(), serde_json::json!(true));
+        options.insert("support_resume".into(), serde_json::json!(true));
+        meta.insert("options".into(), serde_json::Value::Object(options));
 
-    #[test]
-    fn extract_prompt_parts_old_message_format_rejected() {
-        let msg = json!({
-            "params": {
-                "message": {"role": "user", "content": [{"type": "text", "text": "hello"}]}
-            }
-        });
-        assert!(extract_prompt_parts(&msg).is_none());
-    }
-
-    #[test]
-    fn extract_prompt_parts_prompt_not_array() {
-        let msg = json!({
-            "params": {
-                "prompt": "hello"
-            }
-        });
-        assert!(extract_prompt_parts(&msg).is_none());
-    }
-
-    #[test]
-    fn extract_prompt_parts_wrapped_message_format_rejected() {
-        let msg = json!({
-            "params": {
-                "prompt": [{"role": "user", "content": [{"type": "text", "text": "hello"}]}]
-            }
-        });
-        // Parts are returned (the array is valid), but they won't match known types when echoed.
-        let parts = extract_prompt_parts(&msg).expect("should extract parts");
-        assert_eq!(parts.len(), 1);
-    }
-
-    #[test]
-    fn when_prompt_has_image_part_then_extracts_it() {
-        let msg = json!({
-            "params": {
-                "prompt": [{"type": "image", "url": "https://example.com/img.png"}]
-            }
-        });
-        let parts = extract_prompt_parts(&msg).expect("should extract parts");
-        assert_eq!(parts.len(), 1);
-        assert_eq!(parts[0]["type"], "image");
-        assert_eq!(parts[0]["url"], "https://example.com/img.png");
-    }
-
-    #[test]
-    fn when_prompt_has_mixed_parts_then_extracts_all() {
-        let msg = json!({
-            "params": {
-                "prompt": [
-                    {"type": "text", "text": "look at this"},
-                    {"type": "image", "data": "", "mimeType": "image/png", "uri": "https://example.com/img.png"},
-                    {"type": "resource_link", "uri": "https://example.com/doc.pdf", "name": "doc.pdf", "mimeType": "application/pdf"}
-                ]
-            }
-        });
-        let parts = extract_prompt_parts(&msg).expect("should extract parts");
-        assert_eq!(parts.len(), 3);
-        assert_eq!(parts[0]["type"], "text");
-        assert_eq!(parts[1]["type"], "image");
-        assert_eq!(parts[2]["type"], "resource_link");
+        let opts = AgentOptions::from_meta(Some(&meta));
+        assert_eq!(opts.exit_after, Some(3));
+        assert!(!opts.thinking_enabled);
+        assert_eq!(opts.echo_prefix, "Bot");
+        assert!(opts.request_permission);
+        assert!(opts.support_resume);
     }
 
     #[tokio::test]
-    async fn when_image_part_then_echoes_image_chunk() {
-        let parts = vec![
-            json!({"type": "image", "data": "", "mimeType": "image/png", "uri": "https://example.com/img.png"}),
-        ];
-        let msgs = collect_parts_output(parts, false).await;
-        assert_eq!(msgs.len(), 3);
-        let echo = &msgs[0]["params"]["update"];
-        assert_eq!(echo["sessionUpdate"], "agent_message_chunk");
-        assert_eq!(echo["content"]["type"], "image");
-        assert_eq!(echo["content"]["uri"], "https://example.com/img.png");
-
-        let result = &msgs[1]["params"]["update"];
-        assert_eq!(result["sessionUpdate"], "result");
-        assert_eq!(result["content"], "Echoed 1 content part");
+    async fn new_session_stores_session_id() {
+        let local = tokio::task::LocalSet::new();
+        local
+            .run_until(async {
+                let handler = make_handler();
+                let req = NewSessionRequest::new("/workspace").mcp_servers(vec![]);
+                let resp = handler.new_session(req).await.expect("new_session");
+                assert!(!resp.session_id.to_string().is_empty());
+                assert_eq!(
+                    handler.session_id.borrow().as_deref(),
+                    Some(resp.session_id.to_string().as_str())
+                );
+            })
+            .await;
     }
 
     #[tokio::test]
-    async fn when_mixed_parts_then_echoes_all_and_summarizes() {
-        let parts = vec![
-            json!({"type": "text", "text": "check this out"}),
-            json!({"type": "image", "data": "", "mimeType": "image/png", "uri": "https://example.com/pic.jpg"}),
-        ];
-        let msgs = collect_parts_output(parts, false).await;
-        assert_eq!(msgs.len(), 4);
-
-        let text_chunk = &msgs[0]["params"]["update"];
-        assert_eq!(text_chunk["sessionUpdate"], "agent_message_chunk");
-        assert_eq!(text_chunk["content"]["type"], "text");
-        assert_eq!(text_chunk["content"]["text"], "Echo: check this out");
-
-        let image_chunk = &msgs[1]["params"]["update"];
-        assert_eq!(image_chunk["sessionUpdate"], "agent_message_chunk");
-        assert_eq!(image_chunk["content"]["type"], "image");
-
-        let result = &msgs[2]["params"]["update"];
-        assert_eq!(result["sessionUpdate"], "result");
-        assert_eq!(result["content"], "Echoed 2 content parts");
+    async fn new_session_counts_mcp_servers() {
+        let local = tokio::task::LocalSet::new();
+        local
+            .run_until(async {
+                use agent_client_protocol::{McpServer, McpServerHttp};
+                let handler = make_handler();
+                let servers = vec![McpServer::Http(McpServerHttp::new(
+                    "tools",
+                    "http://127.0.0.1:1234/mcp",
+                ))];
+                let req = NewSessionRequest::new("/workspace").mcp_servers(servers);
+                handler.new_session(req).await.expect("new_session");
+                assert_eq!(handler.mcp_server_count.get(), 1);
+            })
+            .await;
     }
 
     #[tokio::test]
-    async fn when_file_part_then_echoes_file_chunk() {
-        let parts = vec![json!({
-            "type": "resource_link",
-            "uri": "https://example.com/report.pdf",
-            "name": "report.pdf",
-            "mimeType": "application/pdf"
-        })];
-        let msgs = collect_parts_output(parts, false).await;
-        assert_eq!(msgs.len(), 3);
-        let echo = &msgs[0]["params"]["update"];
-        assert_eq!(echo["content"]["type"], "text");
-        assert!(
-            echo["content"]["text"]
-                .as_str()
-                .unwrap()
-                .contains("report.pdf")
-        );
+    async fn load_session_returns_ok_by_default() {
+        let local = tokio::task::LocalSet::new();
+        local
+            .run_until(async {
+                use agent_client_protocol::LoadSessionRequest;
+                let handler = make_handler();
+                *handler.session_id.borrow_mut() = Some("existing-sid".to_string());
+                let req = LoadSessionRequest::new("existing-sid", "/workspace");
+                let result = handler.load_session(req).await;
+                assert!(result.is_ok());
+            })
+            .await;
     }
 
     #[tokio::test]
-    async fn when_audio_part_then_echoes_audio_chunk() {
-        let parts = vec![json!({
-            "type": "audio",
-            "data": "https://example.com/clip.mp3",
-            "mimeType": "audio/mpeg"
-        })];
-        let msgs = collect_parts_output(parts, false).await;
-        assert_eq!(msgs.len(), 3);
-        let echo = &msgs[0]["params"]["update"];
-        assert_eq!(echo["content"]["type"], "audio");
-        assert_eq!(echo["content"]["data"], "https://example.com/clip.mp3");
-        assert_eq!(echo["content"]["mimeType"], "audio/mpeg");
-    }
-
-    async fn collect_session_new_output(params: Value) -> Vec<Value> {
-        use tokio::io::AsyncBufReadExt;
-
-        let (reader, mut writer) = tokio::io::duplex(8192);
-        let msg = json!({ "jsonrpc": "2.0", "id": 1, "method": "session/new", "params": params });
-
-        let write_handle = tokio::spawn(async move {
-            handle_session_new(&mut writer, Some(json!(1)), &msg).await;
-            drop(writer);
-        });
-
-        let buf_reader = tokio::io::BufReader::new(reader);
-        let mut read_lines = buf_reader.lines();
-        let mut messages = Vec::new();
-        while let Ok(Some(line)) = read_lines.next_line().await {
-            if let Ok(v) = serde_json::from_str::<Value>(&line) {
-                messages.push(v);
-            }
-        }
-        write_handle.await.unwrap();
-        messages
-    }
-
-    #[tokio::test]
-    async fn session_new_valid_params() {
-        let msgs = collect_session_new_output(json!({
-            "cwd": "/workspace",
-            "mcpServers": []
-        }))
-        .await;
-        assert_eq!(msgs.len(), 1);
-        assert!(msgs[0]["result"]["sessionId"].is_string());
-    }
-
-    #[tokio::test]
-    async fn session_new_missing_cwd_returns_error() {
-        let msgs = collect_session_new_output(json!({
-            "mcpServers": []
-        }))
-        .await;
-        assert_eq!(msgs.len(), 1);
-        assert_eq!(msgs[0]["error"]["code"], -32602);
-        assert!(
-            msgs[0]["error"]["message"]
-                .as_str()
-                .unwrap()
-                .contains("cwd")
-        );
-    }
-
-    #[tokio::test]
-    async fn session_new_missing_mcp_servers_returns_error() {
-        let msgs = collect_session_new_output(json!({
-            "cwd": "/workspace"
-        }))
-        .await;
-        assert_eq!(msgs.len(), 1);
-        assert_eq!(msgs[0]["error"]["code"], -32602);
-        assert!(
-            msgs[0]["error"]["message"]
-                .as_str()
-                .unwrap()
-                .contains("mcpServers")
-        );
-    }
-
-    #[tokio::test]
-    async fn session_new_cwd_not_string_returns_error() {
-        let msgs = collect_session_new_output(json!({
-            "cwd": 123,
-            "mcpServers": []
-        }))
-        .await;
-        assert_eq!(msgs.len(), 1);
-        assert_eq!(msgs[0]["error"]["code"], -32602);
+    async fn load_session_rejected_when_option_set() {
+        let local = tokio::task::LocalSet::new();
+        local
+            .run_until(async {
+                use agent_client_protocol::LoadSessionRequest;
+                let handler = make_handler();
+                handler.opts.borrow_mut().reject_load = true;
+                let req = LoadSessionRequest::new("sid", "/workspace");
+                let result = handler.load_session(req).await;
+                assert!(result.is_err());
+            })
+            .await;
     }
 }

@@ -11,7 +11,8 @@ Manages the agent subprocess lifecycle and implements the ACP (Agent Client Prot
 | `fs_sandbox.rs` | Filesystem sandboxing: path validation (`validate_fs_path`, `validate_fs_write_path`), `handle_fs_read`, `handle_fs_write` |
 | `session_recovery.rs` | Crash recovery: `handle_crash`, session restore (`try_restore_session`, `heal_session`), stale container cleanup |
 | `incoming.rs` | Incoming message dispatch: `handle_incoming`, session update forwarding, tool event normalization, permission requests, `handle_prompt_completion`, completion-triggered queue drain and re-dispatch |
-| `connection.rs` | `AgentConnection` — subprocess spawn, typed JSON-RPC framing over piped stdio, direct bridge to manager |
+| `connection.rs` | `AgentConnection` — subprocess spawn, typed JSON-RPC framing over piped stdio (legacy, used in tests) |
+| `sdk_runner.rs` | `AgentRunnerHandle` — SDK-based agent runner using `ClientSideConnection` on a dedicated `LocalSet` thread, event forwarding task |
 | `platform_commands.rs` | `PlatformCommand` — typed platform commands with `Serialize`, `platform_commands_json()` for D-03 merging |
 | `slot.rs` | `AgentSlot` — per-agent state: session maps, capabilities, pending permissions |
 | `acp_types.rs` | ACP wire types: re-exports from `anyclaw-sdk-types` (`InitializeParams`, `SessionNewParams`, etc.) |
@@ -53,11 +54,10 @@ Remaining `serde_json::Value` usages are documented D-03 extensible boundaries:
 | `session/resume` | client→agent | Restore session without replay (preferred over load) |
 | `session/update` | agent→client | Streaming agent response updates |
 | `session/request_permission` | agent→client | Agent requests user permission |
-| `session/push` | agent→client | Agent-initiated push message to session's channel |
 | `fs/read_text_file` | agent→client | Agent requests file read |
 | `fs/write_text_file` | agent→client | Agent requests file write |
 | `keepalive` | client→agent | Fire-and-forget notification to prevent idle Docker attach connection drops. Only sent to Docker-backed agents (local subprocess agents skip it). Agents silently ignore unknown notifications per JSON-RPC 2.0 spec §4.1. Non-compliant agents may log warnings but should not break. Interval configured via `keepalive_interval_secs` (default: 300s, 0 to disable). |
-| `_raw_response` | internal | Removed in v0.3.1 — replaced by `AgentConnection::send_raw()` which writes pre-built JSON-RPC directly to stdin without method envelope |
+| `_raw_response` | internal | Removed in v0.3.1 — replaced by SDK-based permission flow via `PendingPermission.sdk_reply` oneshot. Legacy `send_raw()` no longer used in production paths. |
 | `__jsonrpc_error` | internal | Sentinel method used in `AgentConnection` reader task to forward ACP-level JSON-RPC errors from the agent back to the manager as typed `AcpError` variants |
 
 ## Tracing Instrumentation
@@ -101,14 +101,24 @@ When an agent finishes processing a prompt, two signals arrive:
 
 `handle_prompt_completion()` parses `PromptResponse { stop_reason }` from the RPC response body. The extracted `stop_reason: StopReason` is forwarded inside `ChannelEvent::SessionComplete`, carrying the canonical completion reason (per ACP spec) to channels. `PromptCompletion` carries `stop_reason: StopReason` as its primary completion field.
 
-## Connection Architecture (Bridge Collapse)
+## Connection Architecture (SDK Runner)
 
-`AgentConnection` supports two spawn modes:
+The manager uses `AgentRunnerHandle` (from `sdk_runner.rs`) for all agent communication. Each agent gets a dedicated `std::thread` with a `new_current_thread` tokio runtime + `LocalSet`, bridging the `!Send` SDK (`agent-client-protocol` uses `Rc`, `LocalBoxFuture`) to the manager's multi-threaded runtime via `tokio::sync::mpsc` channels.
 
-- **`spawn(config, name)`** — standalone mode. Creates its own internal `(incoming_tx, incoming_rx)` channel. Used in tests and when the caller manages its own receive loop.
-- **`spawn_with_bridge(config, name, slot_idx, bridge_tx)`** — bridge mode. The reader task pushes `SlotIncoming { slot_idx, msg }` directly to the manager's shared `incoming_tx`. No intermediate channel, no bridge task.
+- **`spawn_agent_runner(config, name, log_level)`** — spawns the subprocess, creates the SDK `ClientSideConnection`, returns `AgentRunnerHandle { cmd_tx, event_rx, backend }`.
+- **`spawn_event_forwarder(slot_idx, event_rx, incoming_tx)`** — tokio task that converts `AgentRunnerEvent` variants to `IncomingMessage` variants and pushes `SlotIncoming` to the manager's shared `incoming_tx`. `ConnectionClosed` maps to `SlotIncoming { msg: None }`.
+- **`AgentRunnerCommand`** — typed enum sent via `cmd_tx`: `Initialize`, `NewSession`, `Prompt`, `Cancel`, `LoadSession`, `ResumeSession`, `ForkSession`, `ListSessions`, `Kill`. Each request variant carries a `oneshot::Sender` for the reply.
+- **`AgentRunnerEvent`** — typed enum received via `event_rx`: `SessionNotification`, `PermissionRequest { args, reply }`, `FsRead { args, reply }`, `FsWrite { args, reply }`, `ConnectionClosed`. Permission/FS events carry reply oneshots that block the SDK until answered.
+- **`IncomingMessage`** — extended with SDK variants: `SdkSessionNotification`, `SdkPermissionRequest`, `SdkFsRead`, `SdkFsWrite`. Legacy `AgentRequest`/`AgentNotification` variants kept for `AgentConnection` test infrastructure.
 
-The manager always uses `spawn_with_bridge()` in both `start()` and `handle_crash()`. This eliminates the two-hop latency that previously caused premature `SessionComplete` — the old design had a `spawn_incoming_bridge()` task forwarding from the connection's internal channel to the manager's channel, and events could be stuck in the bridge queue when `try_recv()` drained `incoming_rx`.
+The `AgentConnection` type is retained for backward-compatible tests but is no longer used in production paths. All production spawn/initialize/session flows go through `spawn_agent_runner`.
+
+### Legacy Connection Architecture (Bridge Collapse)
+
+`AgentConnection` supported two spawn modes (now legacy, kept for tests):
+
+- **`spawn(config, name)`** — standalone mode with internal incoming channel.
+- **`spawn_with_bridge(config, name, slot_idx, bridge_tx)`** — bridge mode pushing directly to manager's `incoming_tx`.
 
 ## Tool Event Normalization
 
@@ -121,16 +131,17 @@ This keeps `ContentKind` in `anyclaw-sdk-types` agent-agnostic — it only reads
 
 ## Anti-Patterns (this crate)
 
-- Do not reintroduce `spawn_incoming_bridge()` or any intermediate forwarding channel between `AgentConnection` and the manager's `incoming_rx` — the two-hop latency causes premature `SessionComplete` when `try_recv()` sees an empty channel while events are still in the bridge queue.
+- Do not reintroduce raw JSON-RPC `send_request`/`send_notification` calls for ACP methods — all agent communication goes through typed `AgentRunnerCommand` variants via `cmd_tx`. The SDK enforces spec compliance at the transport level.
 - Do not send `SessionComplete` from the streaming path (`handle_incoming` in `incoming.rs`) — it races with the RPC response and can cause duplicate completions that skip queued messages.
 - Do not skip the `incoming_rx` drain in `handle_prompt_completion` (`incoming.rs`) — without it, `select!` can process the RPC response before all streaming events are forwarded, causing lost updates.
+- Permission responses go through `PendingPermission.sdk_reply` oneshot — the SDK blocks until the reply is sent. Do not drop the oneshot without sending a response (the SDK side will get `RecvError`).
 - `handle_crash` lives in `session_recovery.rs` — crash recovery, respawn, and session restore logic is co-located there.
 - `handle_incoming` and `handle_prompt_completion` live in `incoming.rs` — all agent→manager message dispatch is co-located there.
 - `handle_command`, `create_session`, `prompt_session`, `fork_session`, `list_sessions`, `cancel_session`, `flush_and_dispatch` live in `commands.rs` — all command dispatch, session CRUD, and queue dispatch is co-located there.
 - Platform commands (`/new`, `/cancel`) bypass the session queue entirely — they are intercepted in the `EnqueueMessage` handler before any queue interaction. Do not route them through the queue.
 - Do not move the session queue back to channels — it enforces an agent constraint (one-prompt-at-a-time) and must stay in agents for `/cancel` to bypass it.
-- `_raw_response` sentinel removed in v0.3.1 — replaced by `AgentConnection::send_raw()` which writes pre-built JSON-RPC directly to stdin without wrapping in a method envelope. Do not reintroduce `_raw_response`.
-- Permission responses go through `send_raw()` because they're responses to agent-initiated requests, not client-initiated ones.
+- `_raw_response` sentinel removed in v0.3.1 — replaced by SDK-based permission flow via `PendingPermission.sdk_reply` oneshot. Do not reintroduce `_raw_response`.
+- Permission responses go through `sdk_reply` oneshot, not `send_raw()` — the SDK blocks until the reply is sent.
 - `__jsonrpc_error` is a read-side sentinel — the connection reader task uses it to forward errors without losing the error context. Do not repurpose it.
 - `cmd_rx.take().expect("cmd_rx must exist")` — consumed once at `run()` start. Never call `run()` twice.
 - Use `unwrap_or_else(|| { tracing::warn!(...); Default::default() })` rather than bare `unwrap_or_default()` when falling back silently — the tracing call makes the fallback visible in logs.

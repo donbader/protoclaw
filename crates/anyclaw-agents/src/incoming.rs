@@ -1,49 +1,59 @@
 use std::sync::atomic::Ordering;
 
-use anyclaw_jsonrpc::types::{JsonRpcRequest, JsonRpcResponse, RequestId};
+use anyclaw_jsonrpc::types::{JsonRpcRequest, RequestId};
 use anyclaw_sdk_types::{ChannelEvent, PermissionOption};
 use tokio::sync::mpsc;
 
-use crate::acp_types::{
-    SessionPushParams, SessionUpdateEvent, SessionUpdateType, content_block_to_part,
-};
+use crate::acp_types::{SessionUpdateEvent, SessionUpdateType};
 use crate::connection::IncomingMessage;
 use crate::manager::{AgentsManager, PendingPermission, SlotIncoming};
 
 impl AgentsManager {
     pub(crate) async fn handle_incoming(&mut self, slot_idx: usize, msg: IncomingMessage) {
-        let request = match msg {
-            IncomingMessage::AgentNotification(r) | IncomingMessage::AgentRequest(r) => r,
-        };
-
-        match request.method.as_str() {
-            "session/update" => {
-                // D-03: session/update params are forwarded as raw content to channels
-                // (with timestamp injection, tool normalization, command merging).
-                // Must stay as Value for content mutation pipeline.
-                let params = request.params.unwrap_or(serde_json::Value::Null);
+        match msg {
+            IncomingMessage::AgentNotification(ref request)
+            | IncomingMessage::AgentRequest(ref request) => {
+                match request.method.as_str() {
+                    "session/update" => {
+                        // D-03: session/update params are forwarded as raw content to channels
+                        // (with timestamp injection, tool normalization, command merging).
+                        // Must stay as Value for content mutation pipeline.
+                        let params = request.params.clone().unwrap_or(serde_json::Value::Null);
+                        self.handle_session_update(slot_idx, params).await;
+                    }
+                    "session/request_permission" => {
+                        self.handle_permission_request(slot_idx, request).await;
+                    }
+                    "fs/read_text_file" => {
+                        Self::handle_fs_read(&self.slots[slot_idx], request).await;
+                    }
+                    "fs/write_text_file" => {
+                        Self::handle_fs_write(&self.slots[slot_idx], request).await;
+                    }
+                    _ => {
+                        Self::send_error_response(
+                            &self.slots[slot_idx],
+                            request,
+                            -32601,
+                            "Method not found",
+                        )
+                        .await;
+                    }
+                }
+            }
+            IncomingMessage::SdkSessionNotification(notif) => {
+                let params = serde_json::to_value(&notif).unwrap_or(serde_json::Value::Null);
                 self.handle_session_update(slot_idx, params).await;
             }
-            "session/request_permission" => {
-                self.handle_permission_request(slot_idx, &request).await;
+            IncomingMessage::SdkPermissionRequest { args, reply } => {
+                self.handle_sdk_permission_request(slot_idx, args, reply)
+                    .await;
             }
-            "session/push" | "_session/push" => {
-                self.handle_session_push(slot_idx, &request).await;
+            IncomingMessage::SdkFsRead { args, reply } => {
+                Self::handle_sdk_fs_read(&self.slots[slot_idx], args, reply).await;
             }
-            "fs/read_text_file" => {
-                Self::handle_fs_read(&self.slots[slot_idx], &request).await;
-            }
-            "fs/write_text_file" => {
-                Self::handle_fs_write(&self.slots[slot_idx], &request).await;
-            }
-            _ => {
-                Self::send_error_response(
-                    &self.slots[slot_idx],
-                    &request,
-                    -32601,
-                    "Method not found",
-                )
-                .await;
+            IncomingMessage::SdkFsWrite { args, reply } => {
+                Self::handle_sdk_fs_write(&self.slots[slot_idx], args, reply).await;
             }
         }
     }
@@ -271,6 +281,77 @@ impl AgentsManager {
                     description,
                     options,
                     received_at: std::time::Instant::now(),
+                    sdk_reply: None,
+                },
+            );
+        } else {
+            tracing::warn!(
+                agent = %self.slots[slot_idx].name(),
+                %request_id,
+                "permission not routable to channel via JSON-RPC path, dropping"
+            );
+        }
+    }
+
+    pub(crate) async fn handle_sdk_permission_request(
+        &mut self,
+        slot_idx: usize,
+        args: agent_client_protocol::RequestPermissionRequest,
+        reply: tokio::sync::oneshot::Sender<
+            agent_client_protocol::Result<agent_client_protocol::RequestPermissionResponse>,
+        >,
+    ) {
+        let request_id = args.tool_call.tool_call_id.to_string();
+
+        let description = args
+            .tool_call
+            .fields
+            .title
+            .as_deref()
+            .unwrap_or("Permission requested")
+            .to_string();
+
+        let options: Vec<PermissionOption> = args
+            .options
+            .iter()
+            .map(|o| PermissionOption {
+                option_id: o.option_id.to_string(),
+                label: o.name.clone(),
+            })
+            .collect();
+
+        tracing::info!(agent = %self.slots[slot_idx].name(), %request_id, %description, "SDK permission requested");
+
+        let session_id_str = args.session_id.to_string();
+        let routed = if let Some(session_key) = self.slots[slot_idx]
+            .reverse_map
+            .get(&session_id_str)
+            .cloned()
+            && let Some(sender) = &self.channels_sender
+        {
+            sender
+                .send(ChannelEvent::RoutePermission {
+                    session_key,
+                    request_id: request_id.clone(),
+                    description: description.clone(),
+                    options: options.clone(),
+                })
+                .await
+                .is_ok()
+        } else {
+            false
+        };
+
+        if routed {
+            let dummy_request = JsonRpcRequest::new("session/request_permission", None, None);
+            self.slots[slot_idx].pending_permissions.insert(
+                request_id,
+                PendingPermission {
+                    request: dummy_request,
+                    description,
+                    options,
+                    received_at: std::time::Instant::now(),
+                    sdk_reply: Some(reply),
                 },
             );
         } else {
@@ -283,80 +364,65 @@ impl AgentsManager {
                 .first()
                 .map(|o| o.option_id.clone())
                 .unwrap_or_else(|| "once".to_string());
-            if let Some(conn) = self.slots[slot_idx].connection.as_ref() {
-                let resp = JsonRpcResponse::success(
-                    request.id.clone(),
-                    serde_json::json!({
-                        "requestId": request_id,
-                        "optionId": auto_option,
-                    }),
-                );
-                let _ = conn.send_raw(resp).await;
+            use agent_client_protocol::{RequestPermissionOutcome, SelectedPermissionOutcome};
+            let response = agent_client_protocol::RequestPermissionResponse::new(
+                RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(auto_option)),
+            );
+            let _ = reply.send(Ok(response));
+        }
+    }
+
+    pub(crate) async fn handle_sdk_fs_read(
+        slot: &crate::slot::AgentSlot,
+        args: agent_client_protocol::ReadTextFileRequest,
+        reply: tokio::sync::oneshot::Sender<
+            agent_client_protocol::Result<agent_client_protocol::ReadTextFileResponse>,
+        >,
+    ) {
+        let path_str = args.path.to_string_lossy().to_string();
+        let sandbox_root = crate::fs_sandbox::resolve_agent_cwd(&slot.config.workspace);
+        match crate::fs_sandbox::validate_fs_path(&sandbox_root, &path_str) {
+            Ok(resolved) => match tokio::fs::read_to_string(&resolved).await {
+                Ok(content) => {
+                    let _ = reply.send(Ok(agent_client_protocol::ReadTextFileResponse::new(
+                        content,
+                    )));
+                }
+                Err(e) => {
+                    let _ = reply.send(Err(
+                        agent_client_protocol::Error::internal_error().data(e.to_string())
+                    ));
+                }
+            },
+            Err(e) => {
+                let _ = reply.send(Err(agent_client_protocol::Error::invalid_params().data(e)));
             }
         }
     }
 
-    pub(crate) async fn handle_session_push(&mut self, slot_idx: usize, request: &JsonRpcRequest) {
-        let Some(params_val) = request.params.as_ref() else {
-            Self::send_error_response(&self.slots[slot_idx], request, -32602, "Missing params")
-                .await;
-            return;
-        };
-        let push_params = match serde_json::from_value::<SessionPushParams>(params_val.clone()) {
-            Ok(p) => p,
-            Err(e) => {
-                tracing::warn!(error = %e, "session/push params deserialization failed");
-                Self::send_error_response(&self.slots[slot_idx], request, -32602, "Invalid params")
-                    .await;
-                return;
-            }
-        };
-
-        let Some(session_key) = self.slots[slot_idx]
-            .reverse_map
-            .get(&push_params.session_id)
-            .cloned()
-        else {
-            tracing::warn!(
-                session_id = %push_params.session_id,
-                "session/push: no session mapping found"
-            );
-            Self::send_error_response(&self.slots[slot_idx], request, -32001, "Unknown session")
-                .await;
-            return;
-        };
-
-        let Some(sender) = &self.channels_sender else {
-            tracing::warn!("session/push: no channels sender available");
-            Self::send_error_response(
-                &self.slots[slot_idx],
-                request,
-                -32603,
-                "Channels not available",
-            )
-            .await;
-            return;
-        };
-
-        for block in push_params.content {
-            let part = content_block_to_part(block);
-            let content = serde_json::json!({
-                "update": {
-                    "sessionUpdate": "agent_message_chunk",
-                    "content": part,
+    pub(crate) async fn handle_sdk_fs_write(
+        slot: &crate::slot::AgentSlot,
+        args: agent_client_protocol::WriteTextFileRequest,
+        reply: tokio::sync::oneshot::Sender<
+            agent_client_protocol::Result<agent_client_protocol::WriteTextFileResponse>,
+        >,
+    ) {
+        let path_str = args.path.to_string_lossy().to_string();
+        let sandbox_root = crate::fs_sandbox::resolve_agent_cwd(&slot.config.workspace);
+        match crate::fs_sandbox::validate_fs_write_path(&sandbox_root, &path_str) {
+            Ok(resolved) => match tokio::fs::write(&resolved, &args.content).await {
+                Ok(()) => {
+                    let _ = reply.send(Ok(agent_client_protocol::WriteTextFileResponse::new()));
                 }
-            });
-            let _ = sender
-                .send(ChannelEvent::DeliverMessage {
-                    session_key: session_key.clone(),
-                    content,
-                })
-                .await;
-        }
-
-        if let Some(conn) = self.slots[slot_idx].connection.as_ref() {
-            let resp = JsonRpcResponse::success(request.id.clone(), serde_json::json!({}));
-            let _ = conn.send_raw(resp).await;
+                Err(e) => {
+                    let _ = reply.send(Err(
+                        agent_client_protocol::Error::internal_error().data(e.to_string())
+                    ));
+                }
+            },
+            Err(e) => {
+                let _ = reply.send(Err(agent_client_protocol::Error::invalid_params().data(e)));
+            }
         }
     }
 

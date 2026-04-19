@@ -25,6 +25,35 @@ pub enum IncomingMessage {
     AgentRequest(JsonRpcRequest),
     /// Agent-initiated JSON-RPC notification (has method, no id).
     AgentNotification(JsonRpcRequest),
+    /// Typed session notification from the SDK runner (session/update).
+    SdkSessionNotification(agent_client_protocol::SessionNotification),
+    /// Typed permission request from the SDK runner (blocks until reply).
+    SdkPermissionRequest {
+        /// Permission request arguments.
+        args: agent_client_protocol::RequestPermissionRequest,
+        /// Reply channel to unblock the SDK.
+        reply: tokio::sync::oneshot::Sender<
+            agent_client_protocol::Result<agent_client_protocol::RequestPermissionResponse>,
+        >,
+    },
+    /// Typed FS read request from the SDK runner (blocks until reply).
+    SdkFsRead {
+        /// FS read arguments (path).
+        args: agent_client_protocol::ReadTextFileRequest,
+        /// Reply channel to unblock the SDK.
+        reply: tokio::sync::oneshot::Sender<
+            agent_client_protocol::Result<agent_client_protocol::ReadTextFileResponse>,
+        >,
+    },
+    /// Typed FS write request from the SDK runner (blocks until reply).
+    SdkFsWrite {
+        /// FS write arguments (path + content).
+        args: agent_client_protocol::WriteTextFileRequest,
+        /// Reply channel to unblock the SDK.
+        reply: tokio::sync::oneshot::Sender<
+            agent_client_protocol::Result<agent_client_protocol::WriteTextFileResponse>,
+        >,
+    },
 }
 
 type StdioTriple = (
@@ -34,7 +63,7 @@ type StdioTriple = (
     Box<dyn tokio::io::AsyncRead + Unpin + Send>,
 );
 
-async fn build_backend(
+pub(crate) async fn build_backend(
     config: &AgentConfig,
     name: &str,
     log_level: Option<&str>,
@@ -108,7 +137,7 @@ fn spawn_writer_task(
     })
 }
 
-fn spawn_stderr_task(
+pub(crate) fn spawn_stderr_task(
     name: &str,
     stderr: Box<dyn tokio::io::AsyncRead + Unpin + Send>,
 ) -> tokio::task::JoinHandle<()> {
@@ -286,6 +315,7 @@ impl AgentConnection {
         }
     }
 
+    #[allow(dead_code)] // Kept for AgentConnection test infrastructure
     pub(crate) async fn spawn_with_bridge(
         config: &AgentConfig,
         name: &str,
@@ -531,7 +561,7 @@ mod tests {
         let mut conn = AgentConnection::spawn(&config, "test-agent").await.unwrap();
 
         let params = serde_json::json!({
-            "protocolVersion": 1,
+            "protocolVersion": 2,
             "capabilities": {}
         });
         let rx = conn.send_request("initialize", params).await.unwrap();
@@ -552,7 +582,7 @@ mod tests {
         let mut conn = AgentConnection::spawn(&config, "test-agent").await.unwrap();
 
         let params = serde_json::json!({
-            "protocolVersion": 1,
+            "protocolVersion": 2,
             "capabilities": {}
         });
         let rx = conn.send_request("initialize", params).await.unwrap();

@@ -38,6 +38,8 @@ pub mod manager;
 #[allow(clippy::disallowed_types)]
 /// Typed platform commands with serialization boundary for agent content merging.
 pub mod platform_commands;
+/// SDK-based agent runner using `ClientSideConnection` on a dedicated `LocalSet` thread.
+pub(crate) mod sdk_runner;
 /// Per-session FIFO message queue (migrated from channels — agent concurrency concern).
 pub(crate) mod session_queue;
 /// Crash recovery, session restore, and stale container cleanup.

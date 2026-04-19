@@ -20,9 +20,8 @@ pub use agent_client_protocol_schema::SessionCapabilities;
 
 /// ACP content block types — re-exported from `agent_client_protocol_schema`.
 ///
-/// `ContentBlock` is the ACP wire type used in `session/prompt` (outbound to agent)
-/// and `session/push` (inbound from agent). Internally, anyclaw uses `ContentPart`
-/// (URL-based), converting at the agent wire boundary.
+/// `ContentBlock` is the ACP wire type used in `session/prompt` (outbound to agent).
+/// Internally, anyclaw uses `ContentPart` (URL-based), converting at the agent wire boundary.
 pub use agent_client_protocol_schema::{
     AudioContent, BlobResourceContents, ContentBlock, EmbeddedResource, EmbeddedResourceResource,
     ImageContent, ResourceLink, TextContent, TextResourceContents,
@@ -293,27 +292,9 @@ pub struct SessionCancelParams {
     pub session_id: String,
 }
 
-/// Parameters for the `session/push` request (agent → supervisor).
-///
-/// Allows the agent to proactively send content to the session's channel
-/// without a prior user prompt.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct SessionPushParams {
-    /// ID of the session to push content into.
-    pub session_id: String,
-    /// ACP wire content blocks to inject into the session.
-    pub content: Vec<ContentBlock>,
-    /// Optional protocol extension metadata.
-    #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
-    pub meta: Option<serde_json::Value>,
-}
-
-/// Result returned by the agent in response to `session/push`.
-///
-/// Currently empty — placeholder for future acknowledgement fields.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct SessionPushResult {}
+// `SessionPushParams` / `SessionPushResult` removed — `session/push` is no longer supported.
+// Agent-initiated messages flow through standard `session/update` notifications.
+// See: ACP spec compliance migration (Phase 1).
 
 /// Parameters for the `session/fork` request (supervisor → agent).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -1203,44 +1184,6 @@ mod tests {
             caps.session_capabilities.list.is_some(),
             "session list capability should be present"
         );
-    }
-
-    #[rstest]
-    fn when_session_push_params_serialized_then_matches_wire_format() {
-        let params = SessionPushParams {
-            session_id: "ses-push-1".into(),
-            content: vec![ContentBlock::from("hello push")],
-            meta: None,
-        };
-        let json = serde_json::to_value(&params).unwrap();
-        assert_eq!(json["sessionId"], "ses-push-1");
-        let content = &json["content"];
-        assert!(content.is_array());
-        assert_eq!(content[0]["type"], "text");
-        assert_eq!(content[0]["text"], "hello push");
-    }
-
-    #[rstest]
-    fn when_session_push_params_round_trips_then_identical() {
-        let params = SessionPushParams {
-            session_id: "ses-push-2".into(),
-            content: vec![
-                ContentBlock::from("text part"),
-                ContentBlock::Image(ImageContent::new("http://example.com/img.png", "image/png")),
-            ],
-            meta: None,
-        };
-        let json = serde_json::to_string(&params).expect("serialize");
-        let deserialized: SessionPushParams = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(params, deserialized);
-    }
-
-    #[rstest]
-    fn when_session_push_result_round_trips_then_identical() {
-        let result = SessionPushResult {};
-        let json = serde_json::to_string(&result).expect("serialize");
-        let deserialized: SessionPushResult = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(result, deserialized);
     }
 
     #[rstest]
