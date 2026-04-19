@@ -1,6 +1,6 @@
 [package]
 name = "anyclaw-sdk-channel"
-version = "0.3.8"
+version = "0.3.9"
 description = "Channel SDK for anyclaw — build messaging channel integrations"
 edition.workspace = true
 rust-version.workspace = true
