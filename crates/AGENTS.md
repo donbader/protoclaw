@@ -7,7 +7,7 @@
 | Crate | Type | Files | Purpose |
 |-------|------|-------|---------|
 | `anyclaw` | binary | 7 | CLI entry point, Supervisor, init/status commands |
-| `anyclaw-core` | lib | 7 | Manager trait, backoff, crash tracker, ChannelEvent, message types |
+| `anyclaw-core` | lib | 10 | Manager trait, backoff, crash tracker, ChannelEvent, message types, session + context stores |
 | `anyclaw-agents` | lib | 6 | ACP protocol, AgentsManager, agent subprocess lifecycle |
 | `anyclaw-channels` | lib | 6 | ChannelsManager, channel subprocess routing, debug-http integration |
 | `anyclaw-tools` | lib | 7 | ToolsManager, McpHost, WasmToolRunner, WasmTool |
