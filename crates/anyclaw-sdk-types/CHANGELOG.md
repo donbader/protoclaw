@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1](https://github.com/donbader/anyclaw/compare/anyclaw-sdk-types-v0.9.0...anyclaw-sdk-types-v0.9.1) - 2026-04-19
+
+### Other
+
+- improve test coverage and enforce rstest consistency ([#93](https://github.com/donbader/anyclaw/pull/93))
+
 ## [0.9.0](https://github.com/donbader/anyclaw/compare/anyclaw-sdk-types-v0.8.2...anyclaw-sdk-types-v0.9.0) - 2026-04-19
 
 ### Added
