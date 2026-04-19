@@ -351,6 +351,7 @@ impl AgentsManager {
                     "name": u.name,
                     "type": "http",
                     "url": u.url,
+                    "headers": [],
                 })
             })
             .collect()

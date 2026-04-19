@@ -63,7 +63,7 @@ impl AgentOptions {
         Self {
             exit_after: get_u64("exit_after").map(|v| v as usize),
             thinking_time_ms: get_u64("thinking_time_ms"),
-            thinking_enabled: get_bool("thinking").unwrap_or(false),
+            thinking_enabled: get_bool("thinking").unwrap_or(true),
             request_permission: get_bool("request_permission").unwrap_or(false),
             reject_load: get_bool("reject_load").unwrap_or(false),
             reject_resume: get_bool("reject_resume").unwrap_or(false),
@@ -478,8 +478,13 @@ mod tests {
             .run_until(async {
                 let (client, notifications, _handler) = make_connected_pair().await;
 
+                let mut meta = serde_json::Map::new();
+                let mut options = serde_json::Map::new();
+                options.insert("thinking".into(), serde_json::json!(false));
+                meta.insert("options".into(), serde_json::Value::Object(options));
                 let init_req =
-                    InitializeRequest::new(agent_client_protocol::ProtocolVersion::from(2u16));
+                    InitializeRequest::new(agent_client_protocol::ProtocolVersion::from(2u16))
+                        .meta(meta);
                 client.initialize(init_req).await.expect("initialize");
 
                 let session = client
@@ -593,7 +598,7 @@ mod tests {
     #[test]
     fn agent_options_from_meta_defaults() {
         let opts = AgentOptions::from_meta(None);
-        assert!(!opts.thinking_enabled);
+        assert!(opts.thinking_enabled);
         assert_eq!(opts.echo_prefix, "Echo");
         assert!(!opts.request_permission);
         assert!(!opts.reject_load);
