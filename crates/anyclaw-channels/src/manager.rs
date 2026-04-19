@@ -679,7 +679,14 @@ impl ChannelsManager {
                 .peer_id
                 .split_once(':')
                 .and_then(|(_, id)| id.parse::<i64>().ok())
-                .unwrap_or(0);
+                .unwrap_or_else(|| {
+                    tracing::warn!(
+                        channel = %channel_name,
+                        peer_id = %send_msg.peer_info.peer_id,
+                        "failed to parse chat_id from peer_id, per-group config will not apply"
+                    );
+                    0
+                });
 
             match evaluate_access(&ac_cfg, chat_id, &sender, is_group, bot_mentioned) {
                 AccessDecision::Allow => {}
@@ -1648,5 +1655,117 @@ mod tests {
             AccessDecision::Allow,
             "default config with wildcard allows default identity (no sender info)"
         );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn given_access_control_configured_when_sender_denied_then_message_dropped() {
+        let mut options: HashMap<String, serde_json::Value> = HashMap::new();
+        options.insert(
+            "access_control".into(),
+            serde_json::json!({
+                "group_policy": "allowlist",
+                "allowed_users": [99]
+            }),
+        );
+        let mut config = test_channel_config("test-binary", true, "default");
+        config.options = options;
+
+        let mut m = ChannelsManager::new(
+            make_channel_map(vec![("test-ch", config.clone())]),
+            default_init_timeout(),
+            default_exit_timeout(),
+            "default".into(),
+        );
+        m.slots.push(ChannelSlot {
+            name: "test-ch".into(),
+            config,
+            connection: None,
+            channel_id: ChannelId::from("test-ch"),
+            lifecycle: SlotLifecycle::new(
+                &CancellationToken::new(),
+                ExponentialBackoff::default(),
+                CrashTracker::default(),
+            ),
+        });
+
+        let params = serde_json::json!({
+            "peerInfo": {
+                "channelName": "test-ch",
+                "peerId": "telegram:-100123",
+                "kind": "group"
+            },
+            "content": [{ "type": "text", "text": "hello" }],
+            "senderInfo": { "senderId": "42", "senderName": "alice" },
+            "wasMentioned": true
+        });
+
+        let result = m.collect_send_message(0, params, "test-ch").await;
+        assert!(result.is_none(), "denied sender should produce None");
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn given_access_control_configured_when_reply_sender_not_allowed_then_metadata_suppressed()
+     {
+        let mut options: HashMap<String, serde_json::Value> = HashMap::new();
+        options.insert(
+            "access_control".into(),
+            serde_json::json!({
+                "group_policy": "allowlist",
+                "allowed_users": [42]
+            }),
+        );
+        let mut config = test_channel_config("test-binary", true, "default");
+        config.options = options;
+
+        let (tx, mut rx) = mpsc::channel::<AgentsCommand>(16);
+        let agents_handle = ManagerHandle::new(tx);
+
+        tokio::spawn(async move {
+            while let Some(cmd) = rx.recv().await {
+                if let AgentsCommand::CreateSession { reply, .. } = cmd {
+                    let _ = reply.send(Ok("acp-test-session".into()));
+                }
+            }
+        });
+
+        let mut m = ChannelsManager::new(
+            make_channel_map(vec![("test-ch", config.clone())]),
+            default_init_timeout(),
+            default_exit_timeout(),
+            "default".into(),
+        )
+        .with_agents_handle(agents_handle);
+        m.slots.push(ChannelSlot {
+            name: "test-ch".into(),
+            config,
+            connection: None,
+            channel_id: ChannelId::from("test-ch"),
+            lifecycle: SlotLifecycle::new(
+                &CancellationToken::new(),
+                ExponentialBackoff::default(),
+                CrashTracker::default(),
+            ),
+        });
+
+        let params = serde_json::json!({
+            "peerInfo": {
+                "channelName": "test-ch",
+                "peerId": "telegram:-100123",
+                "kind": "group"
+            },
+            "content": [{ "type": "text", "text": "hello" }],
+            "senderInfo": { "senderId": "42", "senderName": "alice" },
+            "wasMentioned": true,
+            "metadata": {
+                "replyToMessageId": "msg-1",
+                "replyToText": "some text",
+                "replyToSender": "eve",
+                "replyToSenderId": "999"
+            }
+        });
+
+        let _result = m.collect_send_message(0, params, "test-ch").await;
     }
 }

@@ -7,6 +7,7 @@ Manages channel subprocesses with per-channel crash isolation and session-keyed 
 | File | Purpose |
 |------|---------|
 | `manager.rs` | `ChannelsManager` — routing table, crash isolation, event-driven StreamMap loop |
+| `access_control.rs` | Access control types, evaluation logic, and config parsing from `options.access_control` |
 | `connection.rs` | `ChannelConnection` — subprocess spawn, JSON-RPC framing, port discovery |
 | `debug_http.rs` | `DebugHttpChannel` — in-process debug channel (not subprocess) |
 | `error.rs` | `ChannelsError` |
