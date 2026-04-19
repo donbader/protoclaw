@@ -1,14 +1,16 @@
 # Local dev override: build from workspace source instead of ghcr.io
-# NOT used directly — use `make dev` which builds the base image first.
+# NOT used directly — use `make dev` which builds the base images first.
 services:
   anyclaw:
     build:
       args:
-        BUILDER_IMAGE: anyclaw-dev-base:latest
+        CORE_IMAGE: anyclaw-dev-core:latest
+        EXT_IMAGE: anyclaw-dev-ext:latest
     volumes:
       - ./anyclaw.yaml:/anyclaw/anyclaw.yaml:ro
 
   opencode-agent-image:
     build:
       args:
-        BUILDER_IMAGE: anyclaw-dev-base:latest
+        CORE_IMAGE: anyclaw-dev-core:latest
+        EXT_IMAGE: anyclaw-dev-ext:latest

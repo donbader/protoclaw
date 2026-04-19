@@ -113,32 +113,31 @@ jobs:
           cache-from: type=registry,ref=ghcr.io/donbader/anyclaw:cache-core-${{ matrix.arch }}
           cache-to: type=registry,ref=ghcr.io/donbader/anyclaw:cache-core-${{ matrix.arch }},mode=max
 
-      - name: Build and push builder-export
-        id: builder-export
+      - name: Build and push ext
+        id: ext
         uses: docker/build-push-action@v7
         with:
           context: .
-          target: builder-export
+          file: ext/Dockerfile
+          target: ext
           platforms: ${{ matrix.platform }}
           build-args: |
             SCCACHE_GHA_ENABLED=true
-            ANYCLAW_VERSION=${{ needs.resolve.outputs.version }}
           secrets: |
             actions_results_url=${{ env.ACTIONS_RESULTS_URL }}
             actions_runtime_token=${{ env.ACTIONS_RUNTIME_TOKEN }}
-          outputs: type=image,name=ghcr.io/donbader/anyclaw-builder,push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=ghcr.io/donbader/anyclaw-ext,push-by-digest=true,name-canonical=true,push=true
           cache-from: |
-            type=registry,ref=ghcr.io/donbader/anyclaw:cache-builder-${{ matrix.arch }}
-            type=registry,ref=ghcr.io/donbader/anyclaw:cache-core-${{ matrix.arch }}
-          cache-to: type=registry,ref=ghcr.io/donbader/anyclaw:cache-builder-${{ matrix.arch }},mode=max
+            type=registry,ref=ghcr.io/donbader/anyclaw:cache-ext-${{ matrix.arch }}
+          cache-to: type=registry,ref=ghcr.io/donbader/anyclaw:cache-ext-${{ matrix.arch }},mode=max
 
       - name: Export digests
         run: |
-          mkdir -p /tmp/digests/core /tmp/digests/builder-export
+          mkdir -p /tmp/digests/core /tmp/digests/ext
           core_digest="${{ steps.core.outputs.digest }}"
-          builder_digest="${{ steps.builder-export.outputs.digest }}"
+          ext_digest="${{ steps.ext.outputs.digest }}"
           touch "/tmp/digests/core/${core_digest#sha256:}"
-          touch "/tmp/digests/builder-export/${builder_digest#sha256:}"
+          touch "/tmp/digests/ext/${ext_digest#sha256:}"
 
       - name: Upload core digest
         uses: actions/upload-artifact@v7
@@ -148,11 +147,11 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-      - name: Upload builder-export digest
+      - name: Upload ext digest
         uses: actions/upload-artifact@v7
         with:
-          name: digest-builder-export-${{ matrix.arch }}
-          path: /tmp/digests/builder-export/*
+          name: digest-ext-${{ matrix.arch }}
+          path: /tmp/digests/ext/*
           if-no-files-found: error
           retention-days: 1
 
@@ -168,8 +167,8 @@ jobs:
         include:
           - target: core
             image: ghcr.io/donbader/anyclaw
-          - target: builder-export
-            image: ghcr.io/donbader/anyclaw-builder
+          - target: ext
+            image: ghcr.io/donbader/anyclaw-ext
     steps:
       - name: Download amd64 digest
         uses: actions/download-artifact@v8

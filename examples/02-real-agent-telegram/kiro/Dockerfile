@@ -1,5 +1,7 @@
-ARG BUILDER_IMAGE=ghcr.io/donbader/anyclaw-builder:latest
-FROM ${BUILDER_IMAGE} AS builder
+ARG CORE_IMAGE=ghcr.io/donbader/anyclaw:latest
+ARG EXT_IMAGE=ghcr.io/donbader/anyclaw-ext:latest
+FROM ${CORE_IMAGE} AS core
+FROM ${EXT_IMAGE} AS ext
 
 # Deps stage: download kiro-cli binary
 # kiro-cli is a native binary distributed as a zip, not an npm package.
@@ -24,10 +26,10 @@ RUN ARCH=$(case "${TARGETARCH}" in \
 FROM debian:bookworm-slim@sha256:4724b8cc51e33e398f0e2e15e18d5ec2851ff0c2280647e1310bc1642182655d AS example-02-kiro
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates && rm -rf /var/lib/apt/lists/*
-COPY --from=builder /usr/local/bin/anyclaw /usr/local/bin/anyclaw
-COPY --from=builder /usr/local/bin/channels/debug-http /usr/local/bin/channels/debug-http
-COPY --from=builder /usr/local/bin/channels/telegram /usr/local/bin/channels/telegram
-COPY --from=builder /usr/local/bin/tools/system-info /usr/local/bin/tools/system-info
+COPY --from=core /usr/local/bin/anyclaw /usr/local/bin/anyclaw
+COPY --from=ext /usr/local/bin/channels/debug-http /usr/local/bin/channels/debug-http
+COPY --from=ext /usr/local/bin/channels/telegram /usr/local/bin/channels/telegram
+COPY --from=ext /usr/local/bin/tools/system-info /usr/local/bin/tools/system-info
 RUN useradd -m -s /bin/bash anyclaw && \
     mkdir -p /workspace && chown anyclaw:anyclaw /workspace
 WORKDIR /workspace

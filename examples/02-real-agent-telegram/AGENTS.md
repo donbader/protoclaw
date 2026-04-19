@@ -42,8 +42,10 @@ cd <your-agent>/
 Multi-stage build with four targets. Modify the deps and agent stages:
 
 ```
-ARG BUILDER_IMAGE=ghcr.io/donbader/anyclaw-builder:latest
-builder          ← ${BUILDER_IMAGE} (overridden to anyclaw-dev-base:latest for dev builds)
+ARG CORE_IMAGE=ghcr.io/donbader/anyclaw:latest
+ARG EXT_IMAGE=ghcr.io/donbader/anyclaw-ext:latest
+core             ← ${CORE_IMAGE} (overridden to anyclaw-dev-core:latest for dev builds)
+ext              ← ${EXT_IMAGE} (overridden to anyclaw-dev-ext:latest for dev builds)
 <agent>-deps     ← Install the agent CLI or ACP adapter (npm, curl, apt, etc.)
 example-<name>   ← Anyclaw sidecar + ext/ binaries + anyclaw.yaml
 <agent>-agent    ← Agent image (spawned by bollard at runtime)
@@ -110,21 +112,23 @@ services:
 
 ### 4. docker-compose.dev.yml
 
-Dev override that swaps the builder image via build arg. No separate Dockerfile needed:
+Dev override that swaps the source images via build args. No separate Dockerfile needed:
 
 ```yaml
 services:
   anyclaw:
     build:
       args:
-        BUILDER_IMAGE: anyclaw-dev-base:latest
+        CORE_IMAGE: anyclaw-dev-core:latest
+        EXT_IMAGE: anyclaw-dev-ext:latest
     volumes:
       - ./anyclaw.yaml:/workspace/anyclaw.yaml:ro
 
   <agent>-agent-image:
     build:
       args:
-        BUILDER_IMAGE: anyclaw-dev-base:latest
+        CORE_IMAGE: anyclaw-dev-core:latest
+        EXT_IMAGE: anyclaw-dev-ext:latest
 ```
 
 Not invoked directly — use `make -f ../dev/Makefile dev` instead.

@@ -9,7 +9,7 @@ cp .env.example .env
 docker compose up
 ```
 
-Uses pre-built images from `ghcr.io/donbader/anyclaw-builder` — no Rust compilation needed.
+Uses pre-built images from `ghcr.io/donbader/anyclaw-ext` — no Rust compilation needed.
 
 Send a message:
 

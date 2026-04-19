@@ -17,7 +17,7 @@ services:
     restart: unless-stopped
 
   anyclaw:
-    image: ghcr.io/donbader/anyclaw-builder:latest
+    image: ghcr.io/donbader/anyclaw-ext:latest
     ports:
       - "8080:8080"
     volumes:
