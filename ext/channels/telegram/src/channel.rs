@@ -226,15 +226,6 @@ impl Channel for TelegramChannel {
         {
             *self.state.finalization_delay_ms.write().await = v;
         }
-        let options_value = serde_json::Value::Object(
-            params
-                .options
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect(),
-        );
-        *self.state.access_config.write().await =
-            crate::access_control::AccessConfig::from_options(&options_value);
         let token = params
             .options
             .get("bot_token")
