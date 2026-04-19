@@ -61,8 +61,26 @@ jobs:
           shared-key: ci-stable
           save-if: false
       - name: Run release-plz release-pr
+        id: release-pr
         uses: release-plz/action@v0.5
         with:
           command: release-pr
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Sync ext/Cargo.lock in release PR
+        if: ${{ steps.release-pr.outputs.prs_created == 'true' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          pr_number=${{ fromJSON(steps.release-pr.outputs.pr).number }}
+          gh pr checkout "$pr_number"
+          cargo update --manifest-path ext/Cargo.toml
+          if git diff --quiet ext/Cargo.lock; then
+            echo "ext/Cargo.lock unchanged"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add ext/Cargo.lock
+            git commit -m "chore: sync ext/Cargo.lock after SDK version bump"
+            git push
+          fi
