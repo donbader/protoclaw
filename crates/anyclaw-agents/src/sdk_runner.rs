@@ -15,7 +15,9 @@ use tokio::sync::{mpsc, oneshot};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 use crate::backend::ProcessBackend;
+use crate::connection::IncomingMessage;
 use crate::error::AgentsError;
+use crate::manager::SlotIncoming;
 
 // D-03: options and mcp_servers are deployment-defined schemas that cannot be typed at this layer
 #[allow(clippy::disallowed_types)]
@@ -310,7 +312,7 @@ fn sdk_err_to_agents_err(e: &AcpSdkError) -> AgentsError {
 
 pub(crate) struct AgentRunnerHandle {
     pub(crate) cmd_tx: mpsc::Sender<AgentRunnerCommand>,
-    pub(crate) event_rx: mpsc::Receiver<AgentRunnerEvent>,
+    pub(crate) event_rx: Option<mpsc::Receiver<AgentRunnerEvent>>,
     pub(crate) backend: Box<dyn ProcessBackend>,
     thread_handle: Option<std::thread::JoinHandle<()>>,
 }
@@ -322,12 +324,18 @@ impl AgentRunnerHandle {
         Ok(())
     }
 
+    #[allow(dead_code)] // Used by session_recovery crash detection
     pub(crate) fn is_alive(&mut self) -> bool {
         self.backend.is_alive()
     }
 
+    #[allow(dead_code)] // Used by session_recovery crash detection
     pub(crate) async fn wait(&mut self) -> Result<std::process::ExitStatus, AgentsError> {
         self.backend.wait().await
+    }
+
+    pub(crate) fn take_event_rx(&mut self) -> mpsc::Receiver<AgentRunnerEvent> {
+        self.event_rx.take().expect("event_rx already taken")
     }
 }
 
@@ -367,9 +375,42 @@ pub(crate) async fn spawn_agent_runner(
 
     Ok(AgentRunnerHandle {
         cmd_tx,
-        event_rx,
+        event_rx: Some(event_rx),
         backend,
         thread_handle: Some(thread_handle),
+    })
+}
+
+pub(crate) fn spawn_event_forwarder(
+    slot_idx: usize,
+    mut event_rx: mpsc::Receiver<AgentRunnerEvent>,
+    incoming_tx: mpsc::Sender<SlotIncoming>,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        while let Some(event) = event_rx.recv().await {
+            let is_closed = matches!(event, AgentRunnerEvent::ConnectionClosed);
+
+            let msg = match event {
+                AgentRunnerEvent::SessionNotification(notif) => {
+                    Some(IncomingMessage::SdkSessionNotification(notif))
+                }
+                AgentRunnerEvent::PermissionRequest { args, reply } => {
+                    Some(IncomingMessage::SdkPermissionRequest { args, reply })
+                }
+                AgentRunnerEvent::FsRead { args, reply } => {
+                    Some(IncomingMessage::SdkFsRead { args, reply })
+                }
+                AgentRunnerEvent::FsWrite { args, reply } => {
+                    Some(IncomingMessage::SdkFsWrite { args, reply })
+                }
+                AgentRunnerEvent::ConnectionClosed => None,
+            };
+
+            let slot_msg = SlotIncoming { slot_idx, msg };
+            if incoming_tx.send(slot_msg).await.is_err() || is_closed {
+                break;
+            }
+        }
     })
 }
 

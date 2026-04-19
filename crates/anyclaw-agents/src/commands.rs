@@ -4,18 +4,15 @@ use std::time::Duration;
 use anyclaw_core::{
     AgentStatusInfo, AgentsCommand, PendingPermissionInfo, PersistedSession, SessionKey,
 };
-use anyclaw_jsonrpc::types::JsonRpcResponse;
 use anyclaw_sdk_types::ChannelEvent;
 use anyclaw_sdk_types::acp::StopReason;
 
 use anyclaw_sdk_types::MessageMetadata;
 
-use crate::acp_types::{
-    ContentPart, PromptResponse, SessionCancelParams, SessionForkParams, SessionForkResult,
-    SessionListParams, SessionPromptParams, content_parts_to_blocks,
-};
+use crate::acp_types::{ContentPart, content_parts_to_blocks};
 use crate::error::AgentsError;
 use crate::manager::{AgentsManager, PromptCompletion};
+use crate::sdk_runner::AgentRunnerCommand;
 use crate::slot::find_slot_by_name;
 
 async fn send_prompt_error(
@@ -49,15 +46,14 @@ impl AgentsManager {
             }
             AgentsCommand::CancelOperation => {
                 for slot in &self.slots {
-                    if let Some(conn) = &slot.connection {
+                    if let Some(runner) = &slot.runner {
                         for acp_id in slot.session_map.values() {
-                            let params = serde_json::to_value(SessionCancelParams {
-                                session_id: acp_id.clone(),
-                            })
-                            .ok();
-                            if let Some(p) = params {
-                                let _ = conn.send_notification("session/cancel", p).await;
-                            }
+                            let _ = runner
+                                .cmd_tx
+                                .send(AgentRunnerCommand::Cancel {
+                                    session_id: acp_id.clone(),
+                                })
+                                .await;
                         }
                     }
                 }
@@ -69,18 +65,17 @@ impl AgentsManager {
                 for slot in &mut self.slots {
                     if let Some(perm) = slot.pending_permissions.remove(&request_id) {
                         tracing::info!(agent = %slot.name(), %request_id, %option_id, "permission response received from channel");
-                        if let Some(conn) = slot.connection.as_ref() {
-                            let resp = JsonRpcResponse::success(
-                                perm.request.id.clone(),
-                                serde_json::json!({
-                                    "outcome": {
-                                        "outcome": "selected",
-                                        "optionId": option_id,
-                                    }
-                                }),
+                        if let Some(reply_tx) = perm.sdk_reply {
+                            use agent_client_protocol::{
+                                RequestPermissionOutcome, SelectedPermissionOutcome,
+                            };
+                            let response = agent_client_protocol::RequestPermissionResponse::new(
+                                RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
+                                    option_id.clone(),
+                                )),
                             );
-                            let _ = conn.send_raw(resp).await;
-                            tracing::info!(agent = %slot.name(), %request_id, "permission response sent to agent");
+                            let _ = reply_tx.send(Ok(response));
+                            tracing::info!(agent = %slot.name(), %request_id, "permission response sent to agent via SDK reply");
                         }
                         break;
                     }
@@ -109,7 +104,7 @@ impl AgentsManager {
                     .iter()
                     .map(|slot| AgentStatusInfo {
                         name: slot.name().to_string(),
-                        connected: slot.connection.is_some(),
+                        connected: slot.runner.is_some(),
                         session_count: slot.session_map.len(),
                     })
                     .collect();
@@ -196,23 +191,25 @@ impl AgentsManager {
         slot: &crate::slot::AgentSlot,
         message: &str,
     ) -> Result<(), AgentsError> {
-        let conn = slot
-            .connection
-            .as_ref()
-            .ok_or(AgentsError::ConnectionClosed)?;
+        let runner = slot.runner.as_ref().ok_or(AgentsError::ConnectionClosed)?;
         let acp_id = slot
             .session_map
             .values()
             .next()
             .ok_or(AgentsError::ConnectionClosed)?;
 
-        let params = serde_json::to_value(SessionPromptParams {
-            session_id: acp_id.clone(),
-            prompt: content_parts_to_blocks(vec![ContentPart::text(message)]),
-            meta: None,
-        })?;
+        let content = content_parts_to_blocks(vec![ContentPart::text(message)]);
 
-        let _response_rx = conn.send_request("session/prompt", params).await?;
+        let (reply_tx, _reply_rx) = tokio::sync::oneshot::channel();
+        runner
+            .cmd_tx
+            .send(AgentRunnerCommand::Prompt {
+                session_id: acp_id.clone(),
+                content,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| AgentsError::ConnectionClosed)?;
         Ok(())
     }
 
@@ -344,19 +341,23 @@ impl AgentsManager {
         }
         prompt_parts.extend_from_slice(content);
 
-        let slot = &self.slots[slot_idx];
-        let conn = slot
-            .connection
+        let runner = self.slots[slot_idx]
+            .runner
             .as_ref()
             .ok_or(AgentsError::ConnectionClosed)?;
 
-        let params = serde_json::to_value(SessionPromptParams {
-            session_id: acp_session_id.clone(),
-            prompt: content_parts_to_blocks(prompt_parts),
-            meta: None,
-        })?;
+        let blocks = content_parts_to_blocks(prompt_parts);
 
-        let response_rx = conn.send_request("session/prompt", params).await?;
+        let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+        runner
+            .cmd_tx
+            .send(AgentRunnerCommand::Prompt {
+                session_id: acp_session_id.clone(),
+                content: blocks,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| AgentsError::ConnectionClosed)?;
 
         {
             let now = std::time::SystemTime::now()
@@ -386,9 +387,9 @@ impl AgentsManager {
             let sk = session_key.clone();
             let idle_timeout_secs = self.manager_config.prompt_idle_timeout_secs;
             tokio::spawn(async move {
-                let response = if idle_timeout_secs == 0 {
-                    match response_rx.await {
-                        Ok(resp) => resp,
+                let result = if idle_timeout_secs == 0 {
+                    match reply_rx.await {
+                        Ok(r) => Some(r),
                         Err(_) => {
                             send_prompt_error(&completion_tx, sk, "Agent connection lost", false)
                                 .await;
@@ -399,12 +400,12 @@ impl AgentsManager {
                     let idle_dur = Duration::from_secs(idle_timeout_secs);
                     let deadline = tokio::time::sleep(idle_dur);
                     tokio::pin!(deadline);
-                    tokio::pin!(response_rx);
+                    tokio::pin!(reply_rx);
                     loop {
                         tokio::select! {
-                            result = &mut response_rx => {
-                                match result {
-                                    Ok(resp) => break resp,
+                            r = &mut reply_rx => {
+                                match r {
+                                    Ok(r) => break Some(r),
                                     Err(_) => {
                                         send_prompt_error(
                                             &completion_tx,
@@ -441,51 +442,28 @@ impl AgentsManager {
                     }
                 };
 
-                {
-                    // Check if the agent returned a JSON-RPC error
-                    let mut session_expired = false;
-                    let stop_reason;
-                    let mut error_msg = None;
-                    if let Some(error) = &response.error {
-                        let msg = &error.message;
-                        error_msg = Some(msg.clone());
+                let (stop_reason, error_msg, session_expired) = match result {
+                    Some(Ok(prompt_resp)) => (prompt_resp.stop_reason, None, false),
+                    Some(Err(e)) => {
+                        let msg = e.to_string();
                         tracing::warn!(session_key = %sk, error = %msg, "agent returned error for prompt");
-
-                        // Detect "session not found" so the stale mapping gets
-                        // invalidated in handle_prompt_completion, allowing the
-                        // next prompt to trigger heal_session.
-                        let combined = format!(
-                            "{} {}",
-                            msg,
-                            error
-                                .data
-                                .as_ref()
-                                .map(std::string::ToString::to_string)
-                                .unwrap_or_default()
-                        );
-                        if combined.to_lowercase().contains("session not found") {
-                            session_expired = true;
-                        }
-                        stop_reason = anyclaw_sdk_types::acp::StopReason::Refusal;
-                    } else {
-                        let prompt_resp: PromptResponse =
-                                serde_json::from_value(response.result.unwrap_or_default())
-                                    .unwrap_or_else(|e| {
-                                        tracing::warn!(session_key = %sk, error = %e, "failed to parse PromptResponse, defaulting");
-                                        PromptResponse { stop_reason: anyclaw_sdk_types::acp::StopReason::EndTurn }
-                                    });
-                        stop_reason = prompt_resp.stop_reason;
+                        let expired = msg.to_lowercase().contains("session not found");
+                        (StopReason::Refusal, Some(msg), expired)
                     }
-                    let _ = completion_tx
-                        .send(PromptCompletion {
-                            session_key: sk,
-                            session_expired,
-                            idle_timed_out: false,
-                            error_message: error_msg,
-                            stop_reason,
-                        })
-                        .await;
-                }
+                    None => {
+                        return;
+                    }
+                };
+
+                let _ = completion_tx
+                    .send(PromptCompletion {
+                        session_key: sk,
+                        session_expired,
+                        idle_timed_out: false,
+                        error_message: error_msg,
+                        stop_reason,
+                    })
+                    .await;
             });
         }
 
@@ -617,31 +595,40 @@ impl AgentsManager {
             .ok_or(AgentsError::ConnectionClosed)?
             .clone();
 
-        let conn = slot
-            .connection
-            .as_ref()
-            .ok_or(AgentsError::ConnectionClosed)?;
-        let params = serde_json::to_value(SessionForkParams {
-            session_id: acp_session_id,
-        })?;
-        let rx = conn.send_request("session/fork", params).await?;
+        let runner = slot.runner.as_ref().ok_or(AgentsError::ConnectionClosed)?;
 
-        let acp_timeout = Self::acp_timeout_for(&self.slots[slot_idx].config, &self.manager_config);
-        let resp = tokio::time::timeout(acp_timeout, rx)
+        let cwd = crate::fs_sandbox::resolve_agent_cwd(&slot.config.workspace)
+            .to_string_lossy()
+            .into_owned();
+
+        let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+        runner
+            .cmd_tx
+            .send(AgentRunnerCommand::ForkSession {
+                session_id: acp_session_id,
+                cwd,
+                reply: reply_tx,
+            })
             .await
-            .map_err(|_| AgentsError::Timeout(acp_timeout))?
             .map_err(|_| AgentsError::ConnectionClosed)?;
 
-        let result: SessionForkResult = serde_json::from_value(resp.result.unwrap_or_default())?;
+        let acp_timeout = Self::acp_timeout_for(&self.slots[slot_idx].config, &self.manager_config);
+        let resp = tokio::time::timeout(acp_timeout, reply_rx)
+            .await
+            .map_err(|_| AgentsError::Timeout(acp_timeout))?
+            .map_err(|_| AgentsError::ConnectionClosed)?
+            .map_err(|e| {
+                AgentsError::Protocol(crate::acp_error::AcpError::Transport(e.to_string()))
+            })?;
 
-        let fork_key = SessionKey::new(session_key.channel_name(), "fork", &result.session_id);
+        let forked_id = resp.session_id.to_string();
+        let fork_key = SessionKey::new(session_key.channel_name(), "fork", &forked_id);
         let slot = &mut self.slots[slot_idx];
-        slot.session_map
-            .insert(fork_key.clone(), result.session_id.clone());
-        slot.reverse_map.insert(result.session_id.clone(), fork_key);
+        slot.session_map.insert(fork_key.clone(), forked_id.clone());
+        slot.reverse_map.insert(forked_id.clone(), fork_key);
 
-        tracing::info!(agent = %agent_name, forked_session_id = %result.session_id, "session forked");
-        Ok(result.session_id)
+        tracing::info!(agent = %agent_name, forked_session_id = %forked_id, "session forked");
+        Ok(forked_id)
     }
 
     pub(crate) async fn list_sessions(
@@ -656,21 +643,26 @@ impl AgentsManager {
             return Err(AgentsError::CapabilityNotSupported("list".into()));
         }
 
-        let conn = slot
-            .connection
-            .as_ref()
-            .ok_or(AgentsError::ConnectionClosed)?;
-        let params = serde_json::to_value(SessionListParams {})?;
-        let rx = conn.send_request("session/list", params).await?;
+        let runner = slot.runner.as_ref().ok_or(AgentsError::ConnectionClosed)?;
 
-        let acp_timeout = Self::acp_timeout_for(&slot.config, &self.manager_config);
-        let resp = tokio::time::timeout(acp_timeout, rx)
+        let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+        runner
+            .cmd_tx
+            .send(AgentRunnerCommand::ListSessions { reply: reply_tx })
             .await
-            .map_err(|_| AgentsError::Timeout(acp_timeout))?
             .map_err(|_| AgentsError::ConnectionClosed)?;
 
-        let typed: anyclaw_sdk_types::SessionListResult =
-            serde_json::from_value(resp.result.unwrap_or_default())?;
+        let acp_timeout = Self::acp_timeout_for(&slot.config, &self.manager_config);
+        let resp = tokio::time::timeout(acp_timeout, reply_rx)
+            .await
+            .map_err(|_| AgentsError::Timeout(acp_timeout))?
+            .map_err(|_| AgentsError::ConnectionClosed)?
+            .map_err(|e| {
+                AgentsError::Protocol(crate::acp_error::AcpError::Transport(e.to_string()))
+            })?;
+        let typed: anyclaw_sdk_types::SessionListResult = serde_json::to_value(&resp)
+            .and_then(serde_json::from_value)
+            .map_err(AgentsError::Json)?;
         Ok(typed)
     }
 
@@ -689,14 +681,14 @@ impl AgentsManager {
             .ok_or(AgentsError::ConnectionClosed)?
             .clone();
 
-        let conn = slot
-            .connection
-            .as_ref()
-            .ok_or(AgentsError::ConnectionClosed)?;
-        let params = serde_json::to_value(SessionCancelParams {
-            session_id: acp_session_id,
-        })?;
-        conn.send_notification("session/cancel", params).await?;
+        let runner = slot.runner.as_ref().ok_or(AgentsError::ConnectionClosed)?;
+        runner
+            .cmd_tx
+            .send(AgentRunnerCommand::Cancel {
+                session_id: acp_session_id,
+            })
+            .await
+            .map_err(|_| AgentsError::ConnectionClosed)?;
         Ok(())
     }
 
@@ -715,14 +707,17 @@ impl AgentsManager {
             })
             .ok_or(AgentsError::ConnectionClosed)?;
 
-        let conn = self.slots[slot_idx]
-            .connection
+        let runner = self.slots[slot_idx]
+            .runner
             .as_ref()
             .ok_or(AgentsError::ConnectionClosed)?;
-        let params = serde_json::to_value(SessionCancelParams {
-            session_id: acp_session_id,
-        })?;
-        conn.send_notification("session/cancel", params).await?;
+        runner
+            .cmd_tx
+            .send(AgentRunnerCommand::Cancel {
+                session_id: acp_session_id,
+            })
+            .await
+            .map_err(|_| AgentsError::ConnectionClosed)?;
         Ok(())
     }
 }

@@ -9,7 +9,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::PendingPermission;
 use crate::acp_types::{InitializeResult, SessionCapabilities};
-use crate::connection::AgentConnection;
+use crate::sdk_runner::AgentRunnerHandle;
 
 /// Per-agent runtime state: connection, session maps, capabilities, and pending permissions.
 ///
@@ -18,7 +18,7 @@ use crate::connection::AgentConnection;
 pub struct AgentSlot {
     pub(crate) name: String,
     pub(crate) config: AgentConfig,
-    pub(crate) connection: Option<AgentConnection>,
+    pub(crate) runner: Option<AgentRunnerHandle>,
     pub(crate) lifecycle: SlotLifecycle,
     pub(crate) agent_capabilities: Option<InitializeResult>,
     /// Negotiated ACP protocol version, set after successful initialize handshake.
@@ -78,7 +78,7 @@ impl AgentSlot {
         Self {
             name,
             config,
-            connection: None,
+            runner: None,
             lifecycle,
             agent_capabilities: None,
             protocol_version: 0,
@@ -143,7 +143,7 @@ mod tests {
         let slot = AgentSlot::new("test-agent".into(), test_agent_config(true), &cancel);
 
         assert_eq!(slot.name(), "test-agent");
-        assert!(slot.connection.is_none());
+        assert!(slot.runner.is_none());
         assert!(!slot.lifecycle.disabled);
         assert!(slot.agent_capabilities.is_none());
         assert!(slot.session_map.is_empty());

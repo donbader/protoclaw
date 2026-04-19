@@ -5,11 +5,10 @@ use anyclaw_config::WorkspaceConfig;
 use anyclaw_core::{CrashAction, SessionKey};
 use anyclaw_sdk_types::ChannelEvent;
 
-use crate::acp_types::SessionLoadParams;
-use crate::connection::AgentConnection;
 use crate::error::AgentsError;
 use crate::fs_sandbox::resolve_agent_cwd;
 use crate::manager::AgentsManager;
+use crate::sdk_runner::{AgentRunnerCommand, spawn_agent_runner, spawn_event_forwarder};
 
 impl AgentsManager {
     pub(crate) async fn handle_crash(&mut self, slot_idx: usize) {
@@ -32,15 +31,15 @@ impl AgentsManager {
         match slot.lifecycle.record_crash_and_check() {
             CrashAction::Disabled => {
                 tracing::error!(agent = %agent_name, crash_loop = true, "agent crash loop detected — disabling slot");
-                if let Some(mut old_conn) = slot.connection.take() {
-                    let _ = old_conn.kill().await;
+                if let Some(mut old_runner) = slot.runner.take() {
+                    let _ = old_runner.kill().await;
                 }
                 false
             }
             CrashAction::RestartAfter(delay) => {
                 tracing::warn!(agent = %agent_name, "agent process exited, attempting recovery");
-                if let Some(mut old_conn) = slot.connection.take()
-                    && let Err(e) = old_conn.kill().await
+                if let Some(mut old_runner) = slot.runner.take()
+                    && let Err(e) = old_runner.kill().await
                 {
                     tracing::debug!(agent = %agent_name, error = %e, "failed to clean up old connection (may already be dead)");
                 }
@@ -100,32 +99,26 @@ impl AgentsManager {
         slot_idx: usize,
         agent_name: &str,
     ) -> bool {
-        let incoming_tx = self.incoming_tx.clone();
         let log_level = self.log_level.clone();
         let config = self.slots[slot_idx].config.clone();
 
-        let conn = match AgentConnection::spawn_with_bridge(
-            &config,
-            agent_name,
-            slot_idx,
-            incoming_tx,
-            log_level.as_deref(),
-        )
-        .await
-        {
-            Ok(conn) => conn,
+        let mut runner = match spawn_agent_runner(&config, agent_name, log_level.as_deref()).await {
+            Ok(r) => r,
             Err(e) => {
                 tracing::error!(agent = %agent_name, error = %e, "failed to respawn agent");
                 return false;
             }
         };
 
+        let event_rx = runner.take_event_rx();
+        spawn_event_forwarder(slot_idx, event_rx, self.incoming_tx.clone());
+
         let acp_timeout = Self::acp_timeout_for(&config, &self.manager_config);
         let slot = &mut self.slots[slot_idx];
-        slot.connection = Some(conn);
+        slot.runner = Some(runner);
         if let Err(e) = Self::initialize_agent(slot, acp_timeout).await {
             tracing::error!(agent = %agent_name, error = %e, "failed to re-initialize agent");
-            slot.connection = None;
+            slot.runner = None;
             return false;
         }
 
@@ -159,37 +152,31 @@ impl AgentsManager {
                 .to_string_lossy()
                 .into_owned();
             let mcp_servers = self.fetch_mcp_servers(slot_idx).await;
-            let params = serde_json::json!({
-                "sessionId": first_acp_id,
-                "cwd": cwd,
-                "mcpServers": serde_json::to_value(&mcp_servers).unwrap_or_default(),
-            });
 
-            let conn = self.slots[slot_idx]
-                .connection
+            let runner = self.slots[slot_idx]
+                .runner
                 .as_ref()
-                .expect("connection just spawned");
-            let Ok(rx) = conn.send_request("session/resume", params).await else {
-                tracing::warn!(agent = %agent_name, "session/resume failed, starting fresh session");
-                return false;
-            };
+                .expect("runner just spawned");
 
-            match tokio::time::timeout(acp_timeout, rx).await {
-                Ok(Ok(resp))
-                    if resp
-                        .result
-                        .as_ref()
-                        .and_then(|r| r.get("sessionId"))
-                        .and_then(|v| v.as_str())
-                        .is_some() =>
-                {
-                    let returned_id = resp
-                        .result
-                        .as_ref()
-                        .and_then(|r| r.get("sessionId"))
-                        .and_then(|v| v.as_str())
-                        .expect("guard verified sessionId is present")
-                        .to_owned();
+            let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+            if runner
+                .cmd_tx
+                .send(AgentRunnerCommand::ResumeSession {
+                    session_id: first_acp_id.clone(),
+                    cwd,
+                    mcp_servers,
+                    reply: reply_tx,
+                })
+                .await
+                .is_err()
+            {
+                tracing::warn!(agent = %agent_name, "session/resume send failed, starting fresh session");
+                return false;
+            }
+
+            match tokio::time::timeout(acp_timeout, reply_rx).await {
+                Ok(Ok(Ok(_resp))) => {
+                    let returned_id = first_acp_id.clone();
                     tracing::info!(
                         agent = %agent_name,
                         step = "resume_attempted",
@@ -205,7 +192,6 @@ impl AgentsManager {
                         };
                         slot.session_map.insert(key, id);
                     }
-                    // No awaiting_first_prompt for resume — no replay needed.
                     slot.lifecycle.backoff.reset();
                     return true;
                 }
@@ -224,41 +210,31 @@ impl AgentsManager {
             .to_string_lossy()
             .into_owned();
         let mcp_servers = self.fetch_mcp_servers(slot_idx).await;
-        let params = serde_json::to_value(SessionLoadParams {
-             session_id: first_acp_id.clone(),
-             cwd: Some(cwd),
-             mcp_servers: Some(mcp_servers),
-         })
-         .unwrap_or_else(|e| {
-             tracing::warn!(error = %e, agent = %agent_name, "failed to serialize session/load params, using empty object");
-             serde_json::json!({})
-         });
 
-        let conn = self.slots[slot_idx]
-            .connection
+        let runner = self.slots[slot_idx]
+            .runner
             .as_ref()
-            .expect("connection just spawned");
-        let Ok(rx) = conn.send_request("session/load", params).await else {
-            tracing::warn!(agent = %agent_name, "session/load failed, starting fresh session");
-            return false;
-        };
+            .expect("runner just spawned");
 
-        match tokio::time::timeout(acp_timeout, rx).await {
-            Ok(Ok(resp))
-                if resp
-                    .result
-                    .as_ref()
-                    .and_then(|r| r.get("sessionId"))
-                    .and_then(|v| v.as_str())
-                    .is_some() =>
-            {
-                let returned_id = resp
-                    .result
-                    .as_ref()
-                    .and_then(|r| r.get("sessionId"))
-                    .and_then(|v| v.as_str())
-                    .expect("guard verified sessionId is present")
-                    .to_owned();
+        let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+        if runner
+            .cmd_tx
+            .send(AgentRunnerCommand::LoadSession {
+                session_id: first_acp_id.clone(),
+                cwd,
+                mcp_servers,
+                reply: reply_tx,
+            })
+            .await
+            .is_err()
+        {
+            tracing::warn!(agent = %agent_name, "session/load send failed, starting fresh session");
+            return false;
+        }
+
+        match tokio::time::timeout(acp_timeout, reply_rx).await {
+            Ok(Ok(Ok(_resp))) => {
+                let returned_id = first_acp_id.clone();
                 tracing::info!(agent = %agent_name, "session restored via session/load");
                 let slot = &mut self.slots[slot_idx];
                 for (key, val) in slot.stale_sessions.drain() {
@@ -283,9 +259,6 @@ impl AgentsManager {
     }
 
     pub(crate) async fn restore_or_start_session(&mut self, slot_idx: usize, agent_name: &str) {
-        // Drain session_map into stale_sessions so they survive the crash boundary.
-        // try_restore_session reads from stale_sessions; prompt_session uses them for
-        // self-healing on the next prompt if session/load isn't attempted here.
         let slot = &mut self.slots[slot_idx];
         slot.stale_sessions.extend(slot.session_map.drain());
         slot.awaiting_first_prompt.clear();
@@ -309,7 +282,7 @@ impl AgentsManager {
             }
             Err(e) => {
                 tracing::error!(agent = %agent_name, error = %e, "failed to start new session after crash");
-                slot.connection = None;
+                slot.runner = None;
             }
         }
     }
@@ -353,26 +326,26 @@ impl AgentsManager {
                 .to_string_lossy()
                 .into_owned();
             let mcp_servers = self.fetch_mcp_servers(slot_idx).await;
-            let params = serde_json::json!({
-                "sessionId": acp_id,
-                "cwd": cwd,
-                "mcpServers": serde_json::to_value(&mcp_servers).unwrap_or_default(),
-            });
 
-            let conn = self.slots[slot_idx]
-                .connection
+            let runner = self.slots[slot_idx]
+                .runner
                 .as_ref()
                 .ok_or(AgentsError::ConnectionClosed)?;
 
-            if let Ok(rx) = conn.send_request("session/resume", params).await
-                && let Ok(Ok(resp)) = tokio::time::timeout(acp_timeout, rx).await
-                && let Some(returned_id) = resp
-                    .result
-                    .as_ref()
-                    .and_then(|r| r.get("sessionId"))
-                    .and_then(|v| v.as_str())
-                    .map(str::to_owned)
+            let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+            if runner
+                .cmd_tx
+                .send(AgentRunnerCommand::ResumeSession {
+                    session_id: acp_id.to_string(),
+                    cwd,
+                    mcp_servers,
+                    reply: reply_tx,
+                })
+                .await
+                .is_ok()
+                && let Ok(Ok(Ok(_resp))) = tokio::time::timeout(acp_timeout, reply_rx).await
             {
+                let returned_id = acp_id.to_string();
                 tracing::info!(
                     agent = %agent_name,
                     session_key = %session_key,
@@ -393,7 +366,6 @@ impl AgentsManager {
                     .insert(session_key.clone(), returned_id.clone());
                 slot.reverse_map
                     .insert(returned_id.clone(), session_key.clone());
-                // No awaiting_first_prompt for resume — no replay needed.
                 self.update_session_store(agent_name, session_key, &returned_id)
                     .await;
                 return Ok(());
@@ -410,32 +382,26 @@ impl AgentsManager {
                 .to_string_lossy()
                 .into_owned();
             let mcp_servers = self.fetch_mcp_servers(slot_idx).await;
-            let params = match serde_json::to_value(SessionLoadParams {
-                session_id: acp_id.clone(),
-                cwd: Some(cwd),
-                mcp_servers: Some(mcp_servers),
-            }) {
-                Ok(v) => v,
-                Err(e) => {
-                    tracing::warn!(agent = %agent_name, error = %e, "failed to serialize session/load params");
-                    serde_json::json!({})
-                }
-            };
 
-            let conn = self.slots[slot_idx]
-                .connection
+            let runner = self.slots[slot_idx]
+                .runner
                 .as_ref()
                 .ok_or(AgentsError::ConnectionClosed)?;
 
-            if let Ok(rx) = conn.send_request("session/load", params).await
-                && let Ok(Ok(resp)) = tokio::time::timeout(acp_timeout, rx).await
-                && let Some(returned_id) = resp
-                    .result
-                    .as_ref()
-                    .and_then(|r| r.get("sessionId"))
-                    .and_then(|v| v.as_str())
-                    .map(str::to_owned)
+            let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+            if runner
+                .cmd_tx
+                .send(AgentRunnerCommand::LoadSession {
+                    session_id: acp_id.clone(),
+                    cwd,
+                    mcp_servers,
+                    reply: reply_tx,
+                })
+                .await
+                .is_ok()
+                && let Ok(Ok(Ok(_resp))) = tokio::time::timeout(acp_timeout, reply_rx).await
             {
+                let returned_id = acp_id.clone();
                 tracing::info!(
                     agent = %agent_name,
                     session_key = %session_key,
@@ -697,7 +663,7 @@ mod tests {
     async fn when_restart_allowed_with_no_connection_then_returns_true() {
         tokio::time::pause();
         let mut m = make_manager_with_slot(test_agent_config_with_max_crashes(3));
-        assert!(m.slots[0].connection.is_none());
+        assert!(m.slots[0].runner.is_none());
         let result = m.prepare_restart(0, "test-agent").await;
         assert!(result);
     }

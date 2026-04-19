@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use anyclaw_config::WorkspaceConfig;
-use anyclaw_jsonrpc::types::{JsonRpcRequest, JsonRpcResponse};
+use anyclaw_jsonrpc::types::JsonRpcRequest;
 
 use crate::manager::AgentsManager;
 use crate::slot::AgentSlot;
@@ -242,32 +242,19 @@ impl AgentsManager {
     // D-03: FS response result is agent-defined JSON — typed at the agent boundary, not here
     #[allow(clippy::disallowed_types)]
     pub(crate) async fn send_success_response(
-        slot: &AgentSlot,
+        _slot: &AgentSlot,
         request: &JsonRpcRequest,
-        result: serde_json::Value,
+        _result: serde_json::Value,
     ) {
-        if let Some(conn) = slot.connection.as_ref() {
-            let resp = JsonRpcResponse::success(request.id.clone(), result);
-            let _ = conn.send_raw(resp).await;
-        }
+        tracing::debug!(method = %request.method, "send_success_response called on legacy JSON-RPC path (no-op)");
     }
 
     pub(crate) async fn send_error_response(
-        slot: &AgentSlot,
+        _slot: &AgentSlot,
         request: &JsonRpcRequest,
         code: i64,
         message: &str,
     ) {
-        if let Some(conn) = slot.connection.as_ref() {
-            let resp = JsonRpcResponse::error(
-                request.id.clone(),
-                anyclaw_jsonrpc::types::JsonRpcError {
-                    code,
-                    message: message.to_string(),
-                    data: None,
-                },
-            );
-            let _ = conn.send_raw(resp).await;
-        }
+        tracing::debug!(method = %request.method, code, message, "send_error_response called on legacy JSON-RPC path (no-op)");
     }
 }

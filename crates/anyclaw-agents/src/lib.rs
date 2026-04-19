@@ -39,7 +39,6 @@ pub mod manager;
 /// Typed platform commands with serialization boundary for agent content merging.
 pub mod platform_commands;
 /// SDK-based agent runner using `ClientSideConnection` on a dedicated `LocalSet` thread.
-#[allow(dead_code)] // Not wired into AgentsManager yet — follow-up PR
 pub(crate) mod sdk_runner;
 /// Per-session FIFO message queue (migrated from channels — agent concurrency concern).
 pub(crate) mod session_queue;

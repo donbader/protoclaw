@@ -25,6 +25,35 @@ pub enum IncomingMessage {
     AgentRequest(JsonRpcRequest),
     /// Agent-initiated JSON-RPC notification (has method, no id).
     AgentNotification(JsonRpcRequest),
+    /// Typed session notification from the SDK runner (session/update).
+    SdkSessionNotification(agent_client_protocol::SessionNotification),
+    /// Typed permission request from the SDK runner (blocks until reply).
+    SdkPermissionRequest {
+        /// Permission request arguments.
+        args: agent_client_protocol::RequestPermissionRequest,
+        /// Reply channel to unblock the SDK.
+        reply: tokio::sync::oneshot::Sender<
+            agent_client_protocol::Result<agent_client_protocol::RequestPermissionResponse>,
+        >,
+    },
+    /// Typed FS read request from the SDK runner (blocks until reply).
+    SdkFsRead {
+        /// FS read arguments (path).
+        args: agent_client_protocol::ReadTextFileRequest,
+        /// Reply channel to unblock the SDK.
+        reply: tokio::sync::oneshot::Sender<
+            agent_client_protocol::Result<agent_client_protocol::ReadTextFileResponse>,
+        >,
+    },
+    /// Typed FS write request from the SDK runner (blocks until reply).
+    SdkFsWrite {
+        /// FS write arguments (path + content).
+        args: agent_client_protocol::WriteTextFileRequest,
+        /// Reply channel to unblock the SDK.
+        reply: tokio::sync::oneshot::Sender<
+            agent_client_protocol::Result<agent_client_protocol::WriteTextFileResponse>,
+        >,
+    },
 }
 
 type StdioTriple = (
@@ -286,6 +315,7 @@ impl AgentConnection {
         }
     }
 
+    #[allow(dead_code)] // Kept for AgentConnection test infrastructure
     pub(crate) async fn spawn_with_bridge(
         config: &AgentConfig,
         name: &str,

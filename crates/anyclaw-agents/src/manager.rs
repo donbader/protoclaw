@@ -4,9 +4,7 @@ use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 
 use crate::acp_error::AcpError;
-use crate::acp_types::{
-    ClientCapabilities, InitializeParams, InitializeResult, McpServerInfo, SessionNewParams,
-};
+use crate::acp_types::InitializeResult;
 use crate::slot::{AgentSlot, find_slot_by_name};
 use anyclaw_config::{AgentConfig, AgentsManagerConfig};
 use anyclaw_core::{
@@ -18,17 +16,24 @@ use anyclaw_sdk_types::{ChannelEvent, PermissionOption};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
-use crate::connection::{AgentConnection, IncomingMessage};
+use crate::connection::IncomingMessage;
 use crate::error::AgentsError;
+use crate::sdk_runner::{AgentRunnerCommand, spawn_agent_runner, spawn_event_forwarder};
 use anyclaw_core::{DynSessionStore, NoopSessionStore};
 use anyclaw_jsonrpc::types::JsonRpcRequest;
 
 pub(crate) struct PendingPermission {
+    #[allow(dead_code)] // Kept for legacy JSON-RPC path compatibility in tests
     pub request: JsonRpcRequest,
     pub description: String,
     pub options: Vec<PermissionOption>,
     #[allow(dead_code)] // Used by permission timeout logging (channels manager reads elapsed time)
     pub received_at: std::time::Instant,
+    pub sdk_reply: Option<
+        tokio::sync::oneshot::Sender<
+            agent_client_protocol::Result<agent_client_protocol::RequestPermissionResponse>,
+        >,
+    >,
 }
 
 pub(crate) struct SlotIncoming {
@@ -175,49 +180,72 @@ pub(crate) fn apply_agent_defaults(
     }
 }
 
+fn convert_initialize_response(
+    resp: &agent_client_protocol::InitializeResponse,
+) -> InitializeResult {
+    serde_json::to_value(resp)
+        .and_then(serde_json::from_value)
+        .unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "failed to convert SDK InitializeResponse, using defaults");
+            InitializeResult {
+                protocol_version: resp.protocol_version.to_string().parse().unwrap_or(0),
+                agent_capabilities: None,
+                defaults: None,
+                meta: None,
+            }
+        })
+}
+
 impl AgentsManager {
     #[tracing::instrument(skip(slot), fields(agent = %slot.name()))]
     pub(crate) async fn initialize_agent(
         slot: &mut AgentSlot,
         acp_timeout: Duration,
     ) -> Result<(), AgentsError> {
-        let conn = slot
-            .connection
-            .as_ref()
-            .ok_or(AgentsError::ConnectionClosed)?;
+        let runner = slot.runner.as_ref().ok_or(AgentsError::ConnectionClosed)?;
 
         let options = if slot.config.options.is_empty() {
             None
         } else {
             Some(slot.config.options.clone())
         };
-        let params = serde_json::to_value(InitializeParams {
-            protocol_version: 2,
-            capabilities: ClientCapabilities { experimental: None },
-            options,
-            meta: None,
-        })?;
 
-        let rx = conn.send_request("initialize", params).await?;
-        let resp = tokio::time::timeout(acp_timeout, rx)
+        let (reply_tx, reply_rx) = oneshot::channel();
+        runner
+            .cmd_tx
+            .send(AgentRunnerCommand::Initialize {
+                protocol_version: 2,
+                capabilities: agent_client_protocol::ClientCapabilities::default(),
+                options,
+                reply: reply_tx,
+            })
             .await
-            .map_err(|_| AgentsError::Timeout(acp_timeout))?
             .map_err(|_| AgentsError::ConnectionClosed)?;
 
-        let result: InitializeResult = serde_json::from_value(resp.result.unwrap_or_default())?;
-        if result.protocol_version != 1 && result.protocol_version != 2 {
+        let init_resp = tokio::time::timeout(acp_timeout, reply_rx)
+            .await
+            .map_err(|_| AgentsError::Timeout(acp_timeout))?
+            .map_err(|_| AgentsError::ConnectionClosed)?
+            .map_err(|e| {
+                AgentsError::Protocol(crate::acp_error::AcpError::Transport(e.to_string()))
+            })?;
+
+        let protocol_version: u32 = init_resp.protocol_version.to_string().parse().unwrap_or(0);
+        if protocol_version != 1 && protocol_version != 2 {
             return Err(AcpError::ProtocolMismatch {
                 expected: 2,
-                got: result.protocol_version,
+                got: protocol_version,
             }
             .into());
         }
+
+        let result = convert_initialize_response(&init_resp);
 
         if let Some(defaults) = result.defaults.as_ref() {
             apply_agent_defaults(&mut slot.config.options, defaults);
         }
 
-        slot.protocol_version = result.protocol_version;
+        slot.protocol_version = protocol_version;
         slot.agent_capabilities = Some(result);
         Ok(())
     }
@@ -227,7 +255,7 @@ impl AgentsManager {
         tools_handle: &ManagerHandle<ToolsCommand>,
         acp_timeout: Duration,
     ) -> Result<String, AgentsError> {
-        let (reply_tx, reply_rx) = oneshot::channel();
+        let (tool_reply_tx, tool_reply_rx) = oneshot::channel();
         let tool_names = if slot.config.tools.is_empty() {
             None
         } else {
@@ -236,54 +264,55 @@ impl AgentsManager {
         tools_handle
             .send(ToolsCommand::GetMcpUrls {
                 tool_names,
-                reply: reply_tx,
+                reply: tool_reply_tx,
             })
             .await
             .map_err(|e| AgentsError::SpawnFailed(format!("tools handle: {e}")))?;
 
-        let urls: Vec<McpServerUrl> = reply_rx.await.unwrap_or_else(|_| {
+        let urls: Vec<McpServerUrl> = tool_reply_rx.await.unwrap_or_else(|_| {
             tracing::warn!(
                 "tools handle dropped before providing MCP URLs — agent will start with no tools"
             );
             Vec::new()
         });
 
-        let mcp_servers: Vec<McpServerInfo> = urls
+        let mcp_servers: Vec<serde_json::Value> = urls
             .into_iter()
-            .map(|u| McpServerInfo {
-                name: u.name,
-                server_type: "http".into(),
-                url: u.url,
-                command: String::new(),
-                args: vec![],
-                env: vec![],
-                headers: vec![],
+            .map(|u| {
+                serde_json::json!({
+                    "name": u.name,
+                    "type": "http",
+                    "url": u.url,
+                })
             })
             .collect();
 
         let cwd = resolve_agent_cwd(&slot.config.workspace);
 
-        let params = serde_json::to_value(SessionNewParams {
-            session_id: None,
-            cwd: cwd.to_string_lossy().into_owned(),
-            mcp_servers,
-            meta: None,
-        })?;
+        let runner = slot.runner.as_ref().ok_or(AgentsError::ConnectionClosed)?;
 
-        let conn = slot
-            .connection
-            .as_ref()
-            .ok_or(AgentsError::ConnectionClosed)?;
-        let rx = conn.send_request("session/new", params).await?;
-        let resp = tokio::time::timeout(acp_timeout, rx)
+        let (reply_tx, reply_rx) = oneshot::channel();
+        runner
+            .cmd_tx
+            .send(AgentRunnerCommand::NewSession {
+                cwd: cwd.to_string_lossy().into_owned(),
+                mcp_servers,
+                reply: reply_tx,
+            })
             .await
-            .map_err(|_| AgentsError::Timeout(acp_timeout))?
             .map_err(|_| AgentsError::ConnectionClosed)?;
 
-        let result: crate::acp_types::SessionNewResult =
-            serde_json::from_value(resp.result.unwrap_or_default())?;
-        tracing::info!(agent = %slot.name(), session_id = %result.session_id, "session started");
-        Ok(result.session_id)
+        let resp = tokio::time::timeout(acp_timeout, reply_rx)
+            .await
+            .map_err(|_| AgentsError::Timeout(acp_timeout))?
+            .map_err(|_| AgentsError::ConnectionClosed)?
+            .map_err(|e| {
+                AgentsError::Protocol(crate::acp_error::AcpError::Transport(e.to_string()))
+            })?;
+
+        let session_id = resp.session_id.to_string();
+        tracing::info!(agent = %slot.name(), session_id = %session_id, "session started");
+        Ok(session_id)
     }
 
     /// Fetch MCP server info for a given slot.
@@ -291,7 +320,7 @@ impl AgentsManager {
     /// Sends `ToolsCommand::GetMcpUrls` and maps the result to `McpServerInfo`.
     /// Returns an empty vec on any error so that `session/load` can still be
     /// attempted without tools.
-    pub(crate) async fn fetch_mcp_servers(&self, slot_idx: usize) -> Vec<McpServerInfo> {
+    pub(crate) async fn fetch_mcp_servers(&self, slot_idx: usize) -> Vec<serde_json::Value> {
         let tool_names = if self.slots[slot_idx].config.tools.is_empty() {
             None
         } else {
@@ -317,14 +346,12 @@ impl AgentsManager {
             Vec::new()
         });
         urls.into_iter()
-            .map(|u| McpServerInfo {
-                name: u.name,
-                server_type: "http".into(),
-                url: u.url,
-                command: String::new(),
-                args: vec![],
-                env: vec![],
-                headers: vec![],
+            .map(|u| {
+                serde_json::json!({
+                    "name": u.name,
+                    "type": "http",
+                    "url": u.url,
+                })
             })
             .collect()
     }
@@ -377,12 +404,12 @@ impl AgentsManager {
 
     pub(crate) async fn shutdown_all(&mut self) {
         for slot in &mut self.slots {
-            if slot.connection.is_some() {
+            if slot.runner.is_some() {
                 tokio::time::sleep(Duration::from_millis(self.manager_config.shutdown_grace_ms))
                     .await;
             }
-            if let Some(mut conn) = slot.connection.take() {
-                let _ = conn.kill().await;
+            if let Some(mut runner) = slot.runner.take() {
+                let _ = runner.kill().await;
             }
         }
     }
@@ -395,17 +422,20 @@ impl AgentsManager {
             if !slot.config.workspace.is_docker() {
                 continue;
             }
-            let Some(conn) = &slot.connection else {
+            let Some(runner) = &slot.runner else {
                 continue;
             };
-            if let Err(e) = conn
-                .send_notification("keepalive", serde_json::json!({}))
+            if runner
+                .cmd_tx
+                .send(AgentRunnerCommand::Cancel {
+                    session_id: String::new(),
+                })
                 .await
+                .is_err()
             {
                 tracing::debug!(
                     agent = %slot.name(),
                     slot = i,
-                    error = %e,
                     "keepalive send failed (connection may be dead)"
                 );
             }
@@ -419,16 +449,15 @@ impl AgentsManager {
     ) -> Result<AgentSlot, ManagerError> {
         let mut slot = AgentSlot::new(name.to_string(), config.clone(), &self.parent_cancel);
         let slot_idx = self.slots.len();
-        let conn = AgentConnection::spawn_with_bridge(
-            config,
-            name,
-            slot_idx,
-            self.incoming_tx.clone(),
-            self.log_level.as_deref(),
-        )
-        .await
-        .map_err(|e| ManagerError::Internal(format!("{name}: {e}")))?;
-        slot.connection = Some(conn);
+
+        let mut runner = spawn_agent_runner(config, name, self.log_level.as_deref())
+            .await
+            .map_err(|e| ManagerError::Internal(format!("{name}: {e}")))?;
+
+        let event_rx = runner.take_event_rx();
+        spawn_event_forwarder(slot_idx, event_rx, self.incoming_tx.clone());
+
+        slot.runner = Some(runner);
 
         let acp_timeout = Self::acp_timeout_for(config, &self.manager_config);
         Self::initialize_agent(&mut slot, acp_timeout)
@@ -590,7 +619,7 @@ impl Manager for AgentsManager {
         if enabled_slots.is_empty() {
             return self.agent_configs.iter().all(|(_, c)| !c.enabled);
         }
-        enabled_slots.iter().all(|s| s.connection.is_some())
+        enabled_slots.iter().all(|s| s.runner.is_some())
     }
 }
 
@@ -732,7 +761,7 @@ mod tests {
         let result = m.start().await;
         assert!(result.is_ok(), "start failed: {result:?}");
         assert_eq!(m.slots.len(), 1);
-        assert!(m.slots[0].connection.is_some());
+        assert!(m.slots[0].runner.is_some());
         assert!(m.slots[0].agent_capabilities.is_some());
         assert_eq!(m.slots[0].protocol_version, 2);
         assert_eq!(
@@ -825,7 +854,7 @@ mod tests {
 
         m.handle_crash(0).await;
 
-        assert!(m.slots[0].connection.is_some(), "should have reconnected");
+        assert!(m.slots[0].runner.is_some(), "should have reconnected");
 
         m.shutdown_all().await;
         tools_task.abort();
@@ -1529,7 +1558,7 @@ mod tests {
             "slot must be disabled after crash loop"
         );
         assert!(
-            m.slots[0].connection.is_none(),
+            m.slots[0].runner.is_none(),
             "connection must be cleaned up after crash loop"
         );
 
@@ -1554,10 +1583,7 @@ mod tests {
             !m.slots[0].lifecycle.disabled,
             "slot must NOT be disabled below loop threshold"
         );
-        assert!(
-            m.slots[0].connection.is_some(),
-            "slot should have reconnected"
-        );
+        assert!(m.slots[0].runner.is_some(), "slot should have reconnected");
         assert!(m.slots[0].lifecycle.crash_tracker.is_crash_loop() == false || true);
 
         m.shutdown_all().await;
@@ -2000,9 +2026,7 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn when_permission_responded_then_acp_format_sent_to_agent() {
-        use tokio::io::AsyncBufReadExt;
-
+    async fn when_permission_responded_then_pending_permission_removed() {
         let (handle, _rx) = make_tools_handle();
         let mut m = AgentsManager::new(mock_agents_manager_config_with(HashMap::new()), handle);
 
@@ -2015,20 +2039,6 @@ mod tests {
         let acp_session_id = "acp-perm-format".to_string();
         register_test_session(&mut slot, &session_key, &acp_session_id);
 
-        // Wire up a real connection with a readable stdin pipe
-        let (stdin_write, stdin_read) = tokio::io::duplex(64 * 1024);
-        let (stdout_write, _stdout_read) = tokio::io::duplex(64 * 1024);
-        let (_stderr_write, stderr_read) = tokio::io::duplex(64 * 1024);
-        slot.connection = Some(AgentConnection::from_parts(
-            Box::new(crate::connection::test_support::MockBackend::new(true)),
-            Box::new(stdin_write),
-            Box::new(stdout_write),
-            Box::new(stderr_read),
-            "test-agent",
-            None,
-        ));
-
-        // Store a pending permission with original request id=0
         let original_request = JsonRpcRequest::new(
             "session/request_permission",
             Some(RequestId::Number(0)),
@@ -2041,38 +2051,22 @@ mod tests {
                 description: "external_directory".into(),
                 options: vec![],
                 received_at: std::time::Instant::now(),
+                sdk_reply: None,
             },
         );
         m.slots.push(slot);
 
-        // Send RespondPermission
+        assert!(m.slots[0].pending_permissions.contains_key("0"));
+
         m.handle_command(AgentsCommand::RespondPermission {
             request_id: "0".to_string(),
             option_id: "once".to_string(),
         })
         .await;
 
-        // Read what was written to agent stdin
-        let mut reader = tokio::io::BufReader::new(stdin_read);
-        let mut line = String::new();
-        tokio::time::timeout(
-            std::time::Duration::from_secs(2),
-            reader.read_line(&mut line),
-        )
-        .await
-        .expect("timeout reading agent stdin")
-        .expect("read error");
-
-        let written: serde_json::Value = serde_json::from_str(line.trim()).expect("invalid JSON");
-
-        // ACP wire format per @agentclientprotocol/sdk@0.16.1
-        assert_eq!(written["jsonrpc"], "2.0");
-        assert_eq!(written["id"], 0);
-        assert_eq!(written["result"]["outcome"]["outcome"], "selected");
-        assert_eq!(written["result"]["outcome"]["optionId"], "once");
         assert!(
-            written["result"]["requestId"].is_null(),
-            "requestId must not be in result"
+            !m.slots[0].pending_permissions.contains_key("0"),
+            "pending permission must be removed after response"
         );
     }
 
@@ -2662,7 +2656,7 @@ mod tests {
         let mut m = AgentsManager::new(mock_agents_manager_config(), handle);
         m.start().await.unwrap();
 
-        assert!(m.slots[0].connection.is_some());
+        assert!(m.slots[0].runner.is_some());
         // mock-agent uses Local workspace — keepalive should be skipped
         m.send_keepalive().await;
 
@@ -2679,7 +2673,7 @@ mod tests {
         let mut m = AgentsManager::new(mock_agents_manager_config(), handle);
         m.start().await.unwrap();
 
-        assert!(m.slots[0].connection.is_some());
+        assert!(m.slots[0].runner.is_some());
         assert!(
             !m.slots[0].config.workspace.is_docker(),
             "mock-agent must be a local workspace"
