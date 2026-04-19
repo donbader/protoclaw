@@ -306,6 +306,7 @@ mod tests {
     use std::collections::HashMap;
 
     use super::*;
+    use rstest::rstest;
 
     fn cat_channel_config() -> ChannelConfig {
         ChannelConfig {
@@ -321,6 +322,7 @@ mod tests {
         }
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_channel_subprocess_spawned_then_reports_alive() {
         let config = cat_channel_config();
@@ -330,6 +332,7 @@ mod tests {
         conn.kill().await.unwrap();
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_nonexistent_channel_binary_spawned_then_returns_error() {
         let config = ChannelConfig {
@@ -348,6 +351,7 @@ mod tests {
         assert!(matches!(result.unwrap_err(), ChannelsError::SpawnFailed(_)));
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_request_sent_to_channel_then_response_correlated_correctly() {
         // `cat` echoes stdin to stdout — we send a JSON-RPC response-shaped message
@@ -383,6 +387,7 @@ mod tests {
         drop(conn);
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_channel_process_exits_then_recv_incoming_returns_none() {
         // Use `true` which exits immediately
@@ -411,6 +416,7 @@ mod tests {
         );
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_channel_id_accessor_called_then_returns_configured_id() {
         let config = cat_channel_config();
@@ -420,6 +426,7 @@ mod tests {
         conn.kill().await.unwrap();
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_capabilities_not_set_then_accessor_returns_none() {
         let config = cat_channel_config();
@@ -429,6 +436,7 @@ mod tests {
         conn.kill().await.unwrap();
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_set_capabilities_called_then_accessor_returns_caps() {
         let config = cat_channel_config();
@@ -448,6 +456,7 @@ mod tests {
         conn.kill().await.unwrap();
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_port_rx_called_then_returns_watch_receiver_with_initial_zero() {
         let config = cat_channel_config();
@@ -459,6 +468,7 @@ mod tests {
         conn.kill().await.unwrap();
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_channel_sends_notification_then_recv_incoming_returns_it() {
         // cat echoes what we send. Send a notification-shaped JSON (method, no id).

@@ -887,4 +887,39 @@ mod tests {
         let result = build_reply_context(&m).unwrap();
         assert_eq!(result, "[Replying to unknown sender id:999]\n[/Replying]");
     }
+
+    #[rstest]
+    fn when_single_text_part_then_extracts_text() {
+        let content = vec![ContentPart::Text {
+            text: "hello world".into(),
+        }];
+        assert_eq!(extract_command_text(&content), Some("hello world"));
+    }
+
+    #[rstest]
+    fn when_content_empty_then_returns_none() {
+        let content: Vec<ContentPart> = vec![];
+        assert!(extract_command_text(&content).is_none());
+    }
+
+    #[rstest]
+    fn when_multiple_parts_then_returns_none() {
+        let content = vec![
+            ContentPart::Text {
+                text: "first".into(),
+            },
+            ContentPart::Text {
+                text: "second".into(),
+            },
+        ];
+        assert!(extract_command_text(&content).is_none());
+    }
+
+    #[rstest]
+    fn when_single_non_text_part_then_returns_none() {
+        let content = vec![ContentPart::Image {
+            url: "https://example.com/img.png".into(),
+        }];
+        assert!(extract_command_text(&content).is_none());
+    }
 }

@@ -73,6 +73,121 @@ pub(crate) fn validate_fs_write_path(
     Ok(canonical_parent.join(filename))
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use anyclaw_config::{DockerWorkspaceConfig, LocalWorkspaceConfig, StringOrArray};
+    use rstest::rstest;
+    use std::collections::HashMap;
+    use tempfile::TempDir;
+
+    fn given_local_workspace(working_dir: Option<PathBuf>) -> WorkspaceConfig {
+        WorkspaceConfig::Local(LocalWorkspaceConfig {
+            binary: StringOrArray::from("test-agent"),
+            working_dir,
+            env: HashMap::new(),
+        })
+    }
+
+    fn given_docker_workspace(working_dir: Option<PathBuf>) -> WorkspaceConfig {
+        WorkspaceConfig::Docker(DockerWorkspaceConfig {
+            image: "test-image:latest".into(),
+            entrypoint: None,
+            volumes: vec![],
+            env: HashMap::new(),
+            memory_limit: None,
+            cpu_limit: None,
+            docker_host: None,
+            network: None,
+            pull_policy: Default::default(),
+            working_dir,
+            extra_hosts: vec![],
+        })
+    }
+
+    #[rstest]
+    fn when_local_workspace_has_working_dir_then_resolves_to_it() {
+        let ws = given_local_workspace(Some(PathBuf::from("/tmp/agent")));
+        assert_eq!(resolve_agent_cwd(&ws), PathBuf::from("/tmp/agent"));
+    }
+
+    #[rstest]
+    fn when_local_workspace_has_no_working_dir_then_resolves_to_current_dir() {
+        let ws = given_local_workspace(None);
+        let cwd = resolve_agent_cwd(&ws);
+        assert!(!cwd.as_os_str().is_empty());
+    }
+
+    #[rstest]
+    fn when_docker_workspace_has_working_dir_then_resolves_to_it() {
+        let ws = given_docker_workspace(Some(PathBuf::from("/workspace")));
+        assert_eq!(resolve_agent_cwd(&ws), PathBuf::from("/workspace"));
+    }
+
+    #[rstest]
+    fn when_docker_workspace_has_no_working_dir_then_resolves_to_current_dir() {
+        let ws = given_docker_workspace(None);
+        let cwd = resolve_agent_cwd(&ws);
+        assert!(!cwd.as_os_str().is_empty());
+    }
+
+    #[rstest]
+    fn when_absolute_path_inside_sandbox_then_validate_fs_path_returns_ok() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("file.txt");
+        std::fs::write(&file, "").unwrap();
+        let result = validate_fs_path(dir.path(), file.to_str().unwrap());
+        assert!(result.is_ok());
+    }
+
+    #[rstest]
+    fn when_relative_path_inside_sandbox_then_validate_fs_path_returns_ok() {
+        let dir = TempDir::new().unwrap();
+        std::fs::write(dir.path().join("rel.txt"), "").unwrap();
+        let result = validate_fs_path(dir.path(), "rel.txt");
+        assert!(result.is_ok());
+    }
+
+    #[rstest]
+    fn when_path_traverses_outside_sandbox_then_validate_fs_path_returns_err() {
+        let dir = TempDir::new().unwrap();
+        let result = validate_fs_path(dir.path(), "../outside.txt");
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn when_path_does_not_exist_then_validate_fs_path_returns_err() {
+        let dir = TempDir::new().unwrap();
+        let result = validate_fs_path(dir.path(), "nonexistent.txt");
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn when_write_path_parent_inside_sandbox_then_validate_fs_write_path_returns_ok() {
+        let dir = TempDir::new().unwrap();
+        let result = validate_fs_write_path(dir.path(), "newfile.txt");
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap(),
+            dir.path().canonicalize().unwrap().join("newfile.txt")
+        );
+    }
+
+    #[rstest]
+    fn when_write_path_parent_outside_sandbox_then_validate_fs_write_path_returns_err() {
+        let dir = TempDir::new().unwrap();
+        let result = validate_fs_write_path(dir.path(), "../outside/file.txt");
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn when_write_path_parent_does_not_exist_then_validate_fs_write_path_returns_err() {
+        let dir = TempDir::new().unwrap();
+        let result = validate_fs_write_path(dir.path(), "nonexistent_subdir/file.txt");
+        assert!(result.is_err());
+    }
+}
+
 impl AgentsManager {
     pub(crate) async fn handle_fs_read(slot: &AgentSlot, request: &JsonRpcRequest) {
         // D-03: fs request params have agent-defined path/content fields

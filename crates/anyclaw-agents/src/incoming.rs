@@ -510,6 +510,177 @@ impl AgentsManager {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use rstest::rstest;
+
+    use super::{AgentsManager, normalize_tool_event_fields};
+    use crate::acp_types::SessionUpdateType;
+    use anyclaw_sdk_types::acp::ContentPart;
+
+    #[rstest]
+    #[case::agent_thought_chunk(
+        SessionUpdateType::AgentThoughtChunk { content: ContentPart::default(), message_id: None },
+        "agent_thought_chunk"
+    )]
+    #[case::agent_message_chunk(
+        SessionUpdateType::AgentMessageChunk { content: ContentPart::default(), message_id: None },
+        "agent_message_chunk"
+    )]
+    #[case::result(
+        SessionUpdateType::Result { content: None, is_error: false },
+        "result"
+    )]
+    #[case::tool_call(
+        SessionUpdateType::ToolCall { tool_call_id: None, name: None, input: None },
+        "tool_call"
+    )]
+    #[case::tool_call_update(
+        SessionUpdateType::ToolCallUpdate {
+            tool_call_id: "tc-1".into(),
+            name: None,
+            status: None,
+            input: None,
+            output: None,
+        },
+        "tool_call_update"
+    )]
+    #[case::plan(
+        SessionUpdateType::Plan { content: ContentPart::default() },
+        "plan"
+    )]
+    #[case::usage_update(
+        SessionUpdateType::UsageUpdate {
+            input_tokens: None,
+            output_tokens: None,
+            cache_read_tokens: None,
+            cache_write_tokens: None,
+        },
+        "usage_update"
+    )]
+    #[case::user_message_chunk(
+        SessionUpdateType::UserMessageChunk { content: ContentPart::default(), message_id: None },
+        "user_message_chunk"
+    )]
+    #[case::available_commands_update(
+        SessionUpdateType::AvailableCommandsUpdate { commands: vec![] },
+        "available_commands_update"
+    )]
+    #[case::current_mode_update(
+        SessionUpdateType::CurrentModeUpdate { mode: None },
+        "extension:current_mode"
+    )]
+    #[case::config_option_update(
+        SessionUpdateType::ConfigOptionUpdate { extra: HashMap::new() },
+        "extension:config_option"
+    )]
+    #[case::session_info_update(
+        SessionUpdateType::SessionInfoUpdate { extra: HashMap::new() },
+        "extension:session_info"
+    )]
+    fn when_session_update_type_name_called_then_returns_correct_string(
+        #[case] variant: SessionUpdateType,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(AgentsManager::session_update_type_name(&variant), expected);
+    }
+
+    #[rstest]
+    fn when_add_received_timestamp_given_object_then_inserts_received_at_ms_as_u64() {
+        let mut value = serde_json::json!({"sessionId": "s1"});
+        AgentsManager::add_received_timestamp(&mut value);
+        let ts = value["_received_at_ms"].as_u64();
+        assert!(ts.is_some(), "_received_at_ms should be a u64");
+        assert!(ts.unwrap() > 0, "_received_at_ms should be non-zero");
+    }
+
+    #[rstest]
+    #[case::array(serde_json::json!([1, 2, 3]))]
+    #[case::string(serde_json::json!("hello"))]
+    #[case::null(serde_json::Value::Null)]
+    fn when_add_received_timestamp_given_non_object_then_value_unchanged(
+        #[case] mut value: serde_json::Value,
+    ) {
+        let original = value.clone();
+        AgentsManager::add_received_timestamp(&mut value);
+        assert_eq!(value, original);
+    }
+
+    #[rstest]
+    fn when_tool_call_has_title_but_no_name_then_title_renamed_to_name() {
+        let mut content = serde_json::json!({"update": {"title": "my_tool"}});
+        normalize_tool_event_fields(&mut content, "tool_call");
+        let update = &content["update"];
+        assert_eq!(update["name"], "my_tool");
+        assert!(update.get("title").is_none());
+    }
+
+    #[rstest]
+    fn when_tool_call_has_both_title_and_name_then_title_not_renamed() {
+        let mut content =
+            serde_json::json!({"update": {"title": "old_title", "name": "real_name"}});
+        normalize_tool_event_fields(&mut content, "tool_call");
+        let update = &content["update"];
+        assert_eq!(update["name"], "real_name");
+        assert_eq!(update["title"], "old_title");
+    }
+
+    #[rstest]
+    fn when_tool_call_update_has_raw_output_and_no_output_then_output_promoted() {
+        let mut content = serde_json::json!({
+            "update": {"rawOutput": {"output": "the result"}}
+        });
+        normalize_tool_event_fields(&mut content, "tool_call_update");
+        assert_eq!(content["update"]["output"], "the result");
+    }
+
+    #[rstest]
+    fn when_tool_call_update_has_raw_output_but_output_exists_then_output_not_overwritten() {
+        let mut content = serde_json::json!({
+            "update": {"rawOutput": {"output": "raw"}, "output": "existing"}
+        });
+        normalize_tool_event_fields(&mut content, "tool_call_update");
+        assert_eq!(content["update"]["output"], "existing");
+    }
+
+    #[rstest]
+    fn when_tool_call_has_raw_input_and_no_input_then_input_promoted() {
+        let mut content = serde_json::json!({
+            "update": {"rawInput": {"arg": "val"}}
+        });
+        normalize_tool_event_fields(&mut content, "tool_call");
+        assert_eq!(content["update"]["input"]["arg"], "val");
+    }
+
+    #[rstest]
+    fn when_tool_call_has_empty_raw_input_then_input_not_promoted() {
+        let mut content = serde_json::json!({"update": {"rawInput": {}}});
+        normalize_tool_event_fields(&mut content, "tool_call");
+        assert!(content["update"].get("input").is_none());
+    }
+
+    #[rstest]
+    #[case::agent_message_chunk("agent_message_chunk")]
+    #[case::result("result")]
+    #[case::usage_update("usage_update")]
+    fn when_non_tool_update_type_then_content_unchanged(#[case] update_type: &str) {
+        let mut content = serde_json::json!({"update": {"title": "ignored"}});
+        let original = content.clone();
+        normalize_tool_event_fields(&mut content, update_type);
+        assert_eq!(content, original);
+    }
+
+    #[rstest]
+    fn when_content_has_no_update_key_then_no_changes_made() {
+        let mut content = serde_json::json!({"other": {"title": "ignored"}});
+        let original = content.clone();
+        normalize_tool_event_fields(&mut content, "tool_call");
+        assert_eq!(content, original);
+    }
+}
+
 // D-03: agent content mutation — normalizes agent-specific wire quirks (title→name, rawOutput→output)
 // into the canonical format that ContentKind expects. Operates on raw JSON structure.
 pub(crate) fn normalize_tool_event_fields(content: &mut serde_json::Value, update_type: &str) {

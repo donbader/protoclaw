@@ -141,7 +141,9 @@ mod tests {
     use super::*;
     use anyclaw_core::AgentsCommand;
     use anyclaw_core::ManagerHandle;
+    use rstest::rstest;
 
+    #[rstest]
     #[test]
     fn when_debug_http_channel_created_then_instance_initialized() {
         let (tx, _rx) = tokio::sync::mpsc::channel::<AgentsCommand>(16);
@@ -190,6 +192,7 @@ mod tests {
         (addr.port(), cancel, rx)
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_debug_http_health_endpoint_called_then_response_has_required_keys() {
         let (port, cancel, mut agents_rx) = spawn_test_server().await;
@@ -225,6 +228,7 @@ mod tests {
         cancel.cancel();
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_debug_http_health_endpoint_called_then_agent_has_connected_field() {
         let (port, cancel, mut agents_rx) = spawn_test_server().await;
@@ -255,6 +259,7 @@ mod tests {
         cancel.cancel();
     }
 
+    #[rstest]
     #[tokio::test]
     async fn when_debug_http_health_endpoint_called_then_channels_field_is_array() {
         let (port, cancel, mut agents_rx) = spawn_test_server().await;

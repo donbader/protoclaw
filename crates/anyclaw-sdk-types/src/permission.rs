@@ -55,6 +55,7 @@ mod tests {
     use super::*;
     use rstest::rstest;
 
+    #[rstest]
     #[test]
     fn when_serializing_permission_option_then_uses_camel_case() {
         let opt = PermissionOption {
@@ -69,6 +70,7 @@ mod tests {
         assert_eq!(deser, opt);
     }
 
+    #[rstest]
     #[test]
     fn when_serializing_permission_request_then_uses_camel_case() {
         let req = PermissionRequest {
@@ -94,6 +96,7 @@ mod tests {
         assert_eq!(deser, req);
     }
 
+    #[rstest]
     #[test]
     fn when_serializing_permission_response_then_uses_camel_case() {
         let resp = PermissionResponse {
@@ -108,6 +111,7 @@ mod tests {
         assert_eq!(deser, resp);
     }
 
+    #[rstest]
     #[test]
     fn when_deserializing_permission_option_with_name_alias_then_maps_to_label() {
         let json = serde_json::json!({"optionId": "once", "name": "Allow once"});
@@ -116,6 +120,7 @@ mod tests {
         assert_eq!(opt.option_id, "once");
     }
 
+    #[rstest]
     #[test]
     fn when_serializing_channel_request_permission_then_uses_camel_case() {
         let req = ChannelRequestPermission {

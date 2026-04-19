@@ -527,6 +527,7 @@ mod tests {
     use super::*;
     use rstest::rstest;
 
+    #[rstest]
     #[test]
     fn when_serializing_channel_capabilities_then_uses_camel_case() {
         let caps = ChannelCapabilities {
@@ -542,6 +543,7 @@ mod tests {
         assert_eq!(deser, caps);
     }
 
+    #[rstest]
     #[test]
     fn when_serializing_peer_info_then_uses_camel_case() {
         let info = PeerInfo {
@@ -557,6 +559,7 @@ mod tests {
         assert_eq!(deser, info);
     }
 
+    #[rstest]
     #[test]
     fn when_serializing_deliver_message_then_uses_camel_case() {
         let msg = DeliverMessage {
@@ -571,6 +574,7 @@ mod tests {
         assert_eq!(deser, msg);
     }
 
+    #[rstest]
     #[test]
     fn when_serializing_channel_send_message_then_uses_camel_case() {
         let msg = ChannelSendMessage {
@@ -592,6 +596,7 @@ mod tests {
         assert_eq!(deser, msg);
     }
 
+    #[rstest]
     #[test]
     fn when_serializing_channel_respond_permission_then_uses_camel_case() {
         let resp = ChannelRespondPermission {
@@ -606,6 +611,7 @@ mod tests {
         assert_eq!(deser, resp);
     }
 
+    #[rstest]
     #[test]
     fn when_serializing_channel_initialize_params_then_uses_camel_case() {
         let params = ChannelInitializeParams {
@@ -621,6 +627,7 @@ mod tests {
         assert_eq!(deser, params);
     }
 
+    #[rstest]
     #[test]
     fn when_content_type_is_agent_thought_chunk_then_extracts_thought() {
         let content = serde_json::json!({
@@ -634,6 +641,7 @@ mod tests {
         assert_eq!(thought.content, "Analyzing...");
     }
 
+    #[rstest]
     #[test]
     fn when_content_type_is_not_agent_thought_chunk_then_returns_none() {
         let content = serde_json::json!({
@@ -644,6 +652,7 @@ mod tests {
         assert!(ThoughtContent::from_content(&content).is_none());
     }
 
+    #[rstest]
     #[test]
     fn when_serializing_thought_content_then_uses_camel_case() {
         let thought = ThoughtContent {
@@ -658,6 +667,7 @@ mod tests {
         assert_eq!(deser, thought);
     }
 
+    #[rstest]
     #[test]
     fn when_deliver_message_content_is_thought_then_extracts_thought() {
         let msg = DeliverMessage {
@@ -673,6 +683,7 @@ mod tests {
         assert_eq!(thought.content, "deep thought");
     }
 
+    #[rstest]
     #[test]
     fn when_serializing_channel_initialize_result_then_uses_camel_case() {
         let result = ChannelInitializeResult {
@@ -691,6 +702,7 @@ mod tests {
         assert_eq!(deser, result);
     }
 
+    #[rstest]
     #[test]
     fn when_serializing_ack_notification_then_uses_camel_case() {
         let ack = AckNotification {
@@ -709,6 +721,7 @@ mod tests {
         assert_eq!(deser, ack);
     }
 
+    #[rstest]
     #[test]
     fn when_ack_notification_has_no_message_id_then_field_is_null() {
         let ack = AckNotification {
@@ -723,6 +736,7 @@ mod tests {
         assert_eq!(deser.message_id, None);
     }
 
+    #[rstest]
     #[test]
     fn when_serializing_ack_lifecycle_notification_then_uses_camel_case() {
         let lifecycle = AckLifecycleNotification {
@@ -737,6 +751,7 @@ mod tests {
         assert_eq!(deser, lifecycle);
     }
 
+    #[rstest]
     #[test]
     fn when_serializing_channel_ack_config_then_uses_camel_case() {
         let cfg = ChannelAckConfig {
@@ -755,6 +770,7 @@ mod tests {
         assert_eq!(deser, cfg);
     }
 
+    #[rstest]
     #[test]
     fn when_channel_initialize_params_has_ack_then_ack_serialized_nested() {
         let params = ChannelInitializeParams {
@@ -775,6 +791,7 @@ mod tests {
         assert_eq!(deser, params);
     }
 
+    #[rstest]
     #[test]
     fn when_channel_initialize_params_has_no_ack_field_then_ack_is_none() {
         let json = serde_json::json!({
@@ -1035,6 +1052,7 @@ mod tests {
         }
     }
 
+    #[rstest]
     #[test]
     fn when_session_created_serialized_then_uses_camel_case() {
         let sc = SessionCreated {
