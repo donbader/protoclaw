@@ -1,7 +1,9 @@
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyclaw_config::{AckConfig, ChannelConfig};
+use anyclaw_core::context_store::{ContextMessage, DynContextStore, NoopContextStore};
 use anyclaw_core::types::ChannelId;
 use anyclaw_core::{
     AgentsCommand, CrashAction, CrashTracker, ExponentialBackoff, Manager, ManagerError,
@@ -84,6 +86,7 @@ pub struct ChannelsManager {
     agents_handle: Option<ManagerHandle<AgentsCommand>>,
     channel_events_rx: Option<mpsc::Receiver<ChannelEvent>>,
     acked_sessions: HashSet<SessionKey>,
+    context_store: Arc<dyn DynContextStore>,
 }
 
 impl ChannelsManager {
@@ -108,6 +111,7 @@ impl ChannelsManager {
             agents_handle: None,
             channel_events_rx: None,
             acked_sessions: HashSet::new(),
+            context_store: Arc::new(NoopContextStore),
         }
     }
 
@@ -137,6 +141,12 @@ impl ChannelsManager {
     /// Set the channel events receiver for agent updates routed back.
     pub fn with_channel_events_rx(mut self, rx: mpsc::Receiver<ChannelEvent>) -> Self {
         self.channel_events_rx = Some(rx);
+        self
+    }
+
+    /// Set a context store for buffering unmentioned group-chat messages.
+    pub fn with_context_store(mut self, store: Arc<dyn DynContextStore>) -> Self {
+        self.context_store = store;
         self
     }
 
@@ -705,7 +715,75 @@ impl ChannelsManager {
                         peer_id = %send_msg.peer_info.peer_id,
                         "skipping message: bot not mentioned"
                     );
+                    let limit = options_value
+                        .get("context_history_limit")
+                        .and_then(serde_json::Value::as_u64)
+                        .unwrap_or(50) as usize;
+                    if limit > 0 {
+                        let sender_name = send_msg
+                            .sender_info
+                            .as_ref()
+                            .and_then(|si| si.sender_name.as_deref())
+                            .unwrap_or("unknown")
+                            .to_string();
+                        let text_content = send_msg
+                            .content
+                            .iter()
+                            .filter_map(|part| {
+                                if let ContentPart::Text { text } = part {
+                                    Some(text.as_str())
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                            .join(" ");
+                        let timestamp = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_secs() as i64)
+                            .unwrap_or(0);
+                        let ctx_msg = ContextMessage {
+                            group_key: send_msg.peer_info.peer_id.clone(),
+                            sender: sender_name,
+                            content: text_content,
+                            timestamp,
+                        };
+                        let store = Arc::clone(&self.context_store);
+                        if let Err(e) = store.store_context(&ctx_msg, limit).await {
+                            tracing::warn!(
+                                error = %e,
+                                peer_id = %send_msg.peer_info.peer_id,
+                                "failed to store context message"
+                            );
+                        }
+                    }
                     return None;
+                }
+            }
+
+            if is_group {
+                let context_messages = {
+                    let store = Arc::clone(&self.context_store);
+                    match store.take_context(&send_msg.peer_info.peer_id).await {
+                        Ok(msgs) => msgs,
+                        Err(e) => {
+                            tracing::warn!(
+                                error = %e,
+                                peer_id = %send_msg.peer_info.peer_id,
+                                "failed to retrieve context messages"
+                            );
+                            vec![]
+                        }
+                    }
+                };
+                if !context_messages.is_empty() {
+                    let context_block = format_context_block(&context_messages);
+                    send_msg.content.insert(
+                        0,
+                        ContentPart::Text {
+                            text: context_block,
+                        },
+                    );
                 }
             }
 
@@ -1224,6 +1302,23 @@ impl Manager for ChannelsManager {
             .iter()
             .any(|s| s.connection.is_some() && !s.lifecycle.disabled)
     }
+}
+
+fn format_context_block(messages: &[ContextMessage]) -> String {
+    let mut out = String::from("[Recent group messages for context]\n");
+    for msg in messages {
+        let time = format_timestamp(msg.timestamp);
+        out.push_str(&format!("[{}, {}] {}\n", msg.sender, time, msg.content));
+    }
+    out.push_str("\n[Current message]\n");
+    out
+}
+
+fn format_timestamp(unix_secs: i64) -> String {
+    let secs_in_day = unix_secs % 86400;
+    let h = secs_in_day / 3600;
+    let m = (secs_in_day % 3600) / 60;
+    format!("{h:02}:{m:02}")
 }
 
 #[cfg(test)]
@@ -1767,5 +1862,39 @@ mod tests {
         });
 
         let _result = m.collect_send_message(0, params, "test-ch").await;
+    }
+
+    #[rstest]
+    fn when_format_context_block_called_then_includes_header_and_footer() {
+        use anyclaw_core::context_store::ContextMessage;
+        let messages = vec![
+            ContextMessage {
+                group_key: "telegram:-100123456".to_string(),
+                sender: "alice".to_string(),
+                content: "hello".to_string(),
+                timestamp: 0,
+            },
+            ContextMessage {
+                group_key: "telegram:-100123456".to_string(),
+                sender: "bob".to_string(),
+                content: "hi there".to_string(),
+                timestamp: 3600,
+            },
+        ];
+        let result = format_context_block(&messages);
+        assert!(result.starts_with("[Recent group messages for context]"));
+        assert!(result.contains("[alice, 00:00] hello"));
+        assert!(result.contains("[bob, 01:00] hi there"));
+        assert!(result.ends_with("[Current message]\n"));
+    }
+
+    #[rstest]
+    fn when_format_timestamp_called_with_zero_then_returns_midnight() {
+        assert_eq!(format_timestamp(0), "00:00");
+    }
+
+    #[rstest]
+    fn when_format_timestamp_called_with_3661_then_returns_hour_and_minute() {
+        assert_eq!(format_timestamp(3661), "01:01");
     }
 }

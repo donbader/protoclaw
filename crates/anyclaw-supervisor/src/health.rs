@@ -5,7 +5,7 @@ use anyclaw_tools::ToolsCommand;
 
 use crate::ManagerSlot;
 use crate::Supervisor;
-use crate::factory::create_manager;
+use crate::factory::{Stores, create_manager};
 
 impl Supervisor {
     pub(crate) async fn check_and_restart_managers(
@@ -83,6 +83,10 @@ impl Supervisor {
                 self.agents_cmd_tx.as_ref(),
                 None,
                 None,
+                Some(Stores {
+                    session: std::sync::Arc::clone(&self.session_store),
+                    context: std::sync::Arc::clone(&self.context_store),
+                }),
             );
             if let Err(e) = manager.start().await {
                 tracing::error!(manager = %slot.name, error = %e, "restart boot failed");
