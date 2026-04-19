@@ -13,6 +13,9 @@ Foundation crate used by all internal crates. Defines the Manager contract, resi
 | `constants.rs` | Named constants: internal guards (`CMD_CHANNEL_CAPACITY`, `EVENT_CHANNEL_CAPACITY`) and default values (`DEFAULT_BACKOFF_BASE_MS`, `DEFAULT_CRASH_MAX`) |
 | `agents_command.rs` | `AgentsCommand` enum for cross-manager dispatch (`EnqueueMessage`, `CancelSession`, `CreateSession`, etc.) |
 | `tools_command.rs` | `ToolsCommand` enum for cross-manager dispatch |
+| `session_store.rs` | `SessionStore` trait, `DynSessionStore`, `NoopSessionStore` |
+| `sqlite_session_store.rs` | `SqliteSessionStore` (rusqlite, bundled) — implements both `SessionStore` and `ContextStore` |
+| `context_store.rs` | `ContextStore` trait, `DynContextStore`, `NoopContextStore`, `ContextMessage` — buffers unmentioned group messages for context |
 
 ## Manager Trait
 

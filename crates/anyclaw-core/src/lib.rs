@@ -12,6 +12,8 @@ pub mod agents_command;
 pub mod backoff;
 /// Named constants for internal guards and default values.
 pub mod constants;
+/// Context buffering trait and no-op implementation for group chat history.
+pub mod context_store;
 /// Error types shared across the supervisor and manager layers.
 pub mod error;
 /// Runtime health snapshot types used by the admin `/health` endpoint.
@@ -32,6 +34,7 @@ pub mod types;
 pub use agents_command::*;
 pub use backoff::*;
 pub use constants::*;
+pub use context_store::*;
 pub use error::*;
 pub use health::*;
 pub use manager::*;

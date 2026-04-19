@@ -7,7 +7,7 @@ Manages channel subprocesses with per-channel crash isolation and session-keyed 
 | File | Purpose |
 |------|---------|
 | `manager.rs` | `ChannelsManager` — routing table, crash isolation, event-driven StreamMap loop |
-| `access_control.rs` | Access control types, evaluation logic, and config parsing from `options.access_control` |
+| `access_control.rs` | Access control types and evaluation logic; uses `SenderInfo`/`was_mentioned` from inbound messages for allowlist, group policy, and mention-gating decisions |
 | `connection.rs` | `ChannelConnection` — subprocess spawn, JSON-RPC framing, port discovery |
 | `debug_http.rs` | `DebugHttpChannel` — in-process debug channel (not subprocess) |
 | `error.rs` | `ChannelsError` |
@@ -67,7 +67,11 @@ Ack notification (`channel/ackMessage`) and typing indicator (`channel/typingInd
 
 ## Message Flow
 
-Channels is a pure message forwarder — it does not queue or batch messages. Inbound messages are forwarded to agents via `AgentsCommand::EnqueueMessage`. Agents owns the session queue and handles batching, merging, and dispatch internally.
+Inbound `channel/sendMessage` is intercepted by access control before forwarding. If `options.access_control` is configured, the manager evaluates `SenderInfo` and `was_mentioned` against allowlists and group policies. Denied messages are silently dropped. When `require_mention` is true and the bot is not mentioned, the message is stored as context via `ContextStore` (from `anyclaw-core`). When the bot IS mentioned, buffered context is retrieved, formatted, and prepended to the message content before forwarding to agents.
+
+Reply context suppression also happens at the manager level — if the reply's original sender is not in the allowlist, `metadata` is stripped before forwarding.
+
+Messages that pass access control are forwarded to agents via `AgentsCommand::EnqueueMessage`. Agents owns the session queue and handles batching, merging, and dispatch internally.
 
 ## Anti-Patterns (this crate)
 

@@ -1,7 +1,10 @@
 use std::sync::Arc;
 
 use anyclaw_config::{AnyclawConfig, SessionStoreConfig};
-use anyclaw_core::{DynSessionStore, Manager, ManagerError, ManagerHandle, NoopSessionStore};
+use anyclaw_core::{
+    DynContextStore, DynSessionStore, Manager, ManagerError, ManagerHandle, NoopContextStore,
+    NoopSessionStore, SqliteSessionStore,
+};
 use tokio_util::sync::CancellationToken;
 
 use anyclaw_agents::{AgentsCommand, AgentsManager};
@@ -9,25 +12,43 @@ use anyclaw_channels::ChannelsManager;
 use anyclaw_core::ChannelEvent;
 use anyclaw_tools::{ToolsCommand, ToolsManager};
 
-pub(crate) fn build_session_store(config: &SessionStoreConfig) -> Arc<dyn DynSessionStore> {
+pub(crate) struct Stores {
+    pub session: Arc<dyn DynSessionStore>,
+    pub context: Arc<dyn DynContextStore>,
+}
+
+pub(crate) fn build_stores(config: &SessionStoreConfig) -> Stores {
     match config {
-        SessionStoreConfig::None => Arc::new(NoopSessionStore),
+        SessionStoreConfig::None => Stores {
+            session: Arc::new(NoopSessionStore),
+            context: Arc::new(NoopContextStore),
+        },
         SessionStoreConfig::Sqlite(sqlite_cfg) => {
             let result = match &sqlite_cfg.path {
-                Some(path) => anyclaw_core::SqliteSessionStore::open(path),
-                None => anyclaw_core::SqliteSessionStore::open_in_memory(),
+                Some(path) => SqliteSessionStore::open(path),
+                None => SqliteSessionStore::open_in_memory(),
             };
             match result {
-                Ok(s) => Arc::new(s),
+                Ok(s) => {
+                    let shared = Arc::new(s);
+                    Stores {
+                        session: Arc::clone(&shared) as Arc<dyn DynSessionStore>,
+                        context: shared as Arc<dyn DynContextStore>,
+                    }
+                }
                 Err(e) => {
-                    tracing::error!(error = %e, "failed to open session store, falling back to noop");
-                    Arc::new(NoopSessionStore)
+                    tracing::error!(error = %e, "failed to open store, falling back to noop");
+                    Stores {
+                        session: Arc::new(NoopSessionStore),
+                        context: Arc::new(NoopContextStore),
+                    }
                 }
             }
         }
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn create_manager(
     name: &str,
     config: &AnyclawConfig,
@@ -36,6 +57,7 @@ pub(crate) fn create_manager(
     agents_cmd_tx: Option<&tokio::sync::mpsc::Sender<AgentsCommand>>,
     channel_events_tx: Option<tokio::sync::mpsc::Sender<ChannelEvent>>,
     channel_events_rx: Option<tokio::sync::mpsc::Receiver<ChannelEvent>>,
+    stores: Option<Stores>,
 ) -> ManagerKind {
     match name {
         "tools" => {
@@ -48,7 +70,9 @@ pub(crate) fn create_manager(
         }
         "agents" => {
             let handle = anyclaw_core::ManagerHandle::new(tools_tx.clone());
-            let session_store = build_session_store(&config.session_store);
+            let session_store = stores
+                .map(|s| s.session)
+                .unwrap_or_else(|| Arc::new(NoopSessionStore));
             let mut agents = AgentsManager::new(config.agents_manager.clone(), handle)
                 .with_log_level(config.log_level.clone())
                 .with_session_store(session_store);
@@ -64,6 +88,9 @@ pub(crate) fn create_manager(
             let tx = agents_cmd_tx.expect("agents_cmd_tx required for channels manager");
             let agents_handle = ManagerHandle::new(tx.clone());
             let default_agent = config.default_agent_name().unwrap_or("default").to_string();
+            let context_store = stores
+                .map(|s| s.context)
+                .unwrap_or_else(|| Arc::new(NoopContextStore));
             let mut cm = ChannelsManager::new(
                 config.channels_manager.channels.clone(),
                 config.channels_manager.init_timeout_secs,
@@ -72,7 +99,8 @@ pub(crate) fn create_manager(
             )
             .with_agents_handle(agents_handle)
             .with_permission_timeout(config.supervisor.permission_timeout_secs)
-            .with_log_level(config.log_level.clone());
+            .with_log_level(config.log_level.clone())
+            .with_context_store(context_store);
             if let Some(rx) = channel_events_rx {
                 cm = cm.with_channel_events_rx(rx);
             }

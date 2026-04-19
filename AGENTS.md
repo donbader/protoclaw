@@ -51,6 +51,7 @@ anyclaw/
 | Change config schema | `crates/anyclaw-config/src/types.rs` | Serde structs (`WorkspaceConfig` enum, `AgentConfig`) |
 | Change session persistence | `crates/anyclaw-core/src/session_store.rs` | SessionStore trait, DynSessionStore, NoopSessionStore |
 | Change SQLite store impl | `crates/anyclaw-core/src/sqlite_session_store.rs` | SqliteSessionStore (rusqlite, bundled) |
+| Change context history buffer | `crates/anyclaw-core/src/context_store.rs` | ContextStore trait, DynContextStore, NoopContextStore — buffers unmentioned group messages |
 | Modify JSON-RPC framing | `crates/anyclaw-jsonrpc/src/codec.rs` | LinesCodec-based, line-delimited JSON |
 | Build channel SDK | `crates/anyclaw-sdk-channel/` | Channel trait + ChannelHarness |
 | Build tool SDK | `crates/anyclaw-sdk-tool/` | Tool trait + ToolServer |

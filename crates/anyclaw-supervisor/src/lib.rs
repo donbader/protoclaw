@@ -7,7 +7,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyclaw_config::{AnyclawConfig, resolve_all_binary_paths};
-use anyclaw_core::{CrashTracker, ExponentialBackoff, HealthSnapshot, SlotLifecycle};
+use anyclaw_core::{
+    CrashTracker, DynContextStore, DynSessionStore, ExponentialBackoff, HealthSnapshot,
+    SlotLifecycle,
+};
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 
@@ -48,6 +51,8 @@ pub struct Supervisor {
     agents_cmd_tx: Option<tokio::sync::mpsc::Sender<anyclaw_agents::AgentsCommand>>,
     channels_cmd_tx: Option<tokio::sync::mpsc::Sender<anyclaw_channels::ChannelsCommand>>,
     channel_events_tx: Option<tokio::sync::mpsc::Sender<ChannelEvent>>,
+    session_store: Arc<dyn DynSessionStore>,
+    context_store: Arc<dyn DynContextStore>,
     channel_events_rx: Option<tokio::sync::mpsc::Receiver<ChannelEvent>>,
     debug_http_port_tx: tokio::sync::watch::Sender<u16>,
     debug_http_port_rx: tokio::sync::watch::Receiver<u16>,
@@ -79,6 +84,7 @@ impl Supervisor {
         let (channel_events_tx, channel_events_rx) =
             tokio::sync::mpsc::channel(anyclaw_core::constants::EVENT_CHANNEL_CAPACITY);
         let (debug_http_port_tx, debug_http_port_rx) = tokio::sync::watch::channel(0u16);
+        let stores = factory::build_stores(&config.session_store);
         Self {
             config,
             tools_tx: None,
@@ -90,6 +96,8 @@ impl Supervisor {
             debug_http_port_rx,
             boot_notify: None,
             health: Arc::new(RwLock::new(HealthSnapshot::default())),
+            session_store: stores.session,
+            context_store: stores.context,
         }
     }
 
@@ -208,6 +216,10 @@ impl Supervisor {
                 self.agents_cmd_tx.as_ref(),
                 ce_tx,
                 ce_rx,
+                Some(factory::Stores {
+                    session: Arc::clone(&self.session_store),
+                    context: Arc::clone(&self.context_store),
+                }),
             );
 
             if slot.name == "agents"

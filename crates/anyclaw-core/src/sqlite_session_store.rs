@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use rusqlite::{Connection, params};
 
+use crate::context_store::{ContextMessage, ContextStore};
 use crate::session_store::{PersistedSession, SessionStore, SessionStoreError};
 
 /// SQLite-backed [`SessionStore`] implementation using rusqlite (bundled).
@@ -44,7 +45,16 @@ impl SqliteSessionStore {
                  created_at      INTEGER NOT NULL,
                  last_active_at  INTEGER NOT NULL,
                  closed          INTEGER NOT NULL DEFAULT 0
-             );",
+             );
+             CREATE TABLE IF NOT EXISTS context_messages (
+                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                 group_key   TEXT NOT NULL,
+                 sender      TEXT NOT NULL,
+                 content     TEXT NOT NULL,
+                 timestamp   INTEGER NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS idx_context_messages_group_key
+                 ON context_messages (group_key);",
         )
         .map_err(|e| SessionStoreError::Backend(e.to_string()))
     }
@@ -170,6 +180,94 @@ impl SessionStore for SqliteSessionStore {
         })
         .await
         .map_err(|e| SessionStoreError::Backend(e.to_string()))?
+    }
+}
+
+impl ContextStore for SqliteSessionStore {
+    fn store_context(
+        &self,
+        msg: &ContextMessage,
+        limit: usize,
+    ) -> impl Future<Output = Result<(), SessionStoreError>> + Send {
+        let conn = Arc::clone(&self.conn);
+        let msg = msg.clone();
+        async move {
+            if limit == 0 {
+                return Ok(());
+            }
+            let limit = limit as i64;
+            tokio::task::spawn_blocking(move || {
+                let conn = conn
+                    .lock()
+                    .map_err(|e| SessionStoreError::Backend(e.to_string()))?;
+                conn.execute(
+                    "INSERT INTO context_messages (group_key, sender, content, timestamp)
+                     VALUES (?1, ?2, ?3, ?4)",
+                    params![msg.group_key, msg.sender, msg.content, msg.timestamp],
+                )
+                .map_err(|e| SessionStoreError::Backend(e.to_string()))?;
+                conn.execute(
+                    "DELETE FROM context_messages
+                     WHERE group_key = ?1
+                       AND id NOT IN (
+                           SELECT id FROM context_messages
+                           WHERE group_key = ?1
+                           ORDER BY id DESC
+                           LIMIT ?2
+                       )",
+                    params![msg.group_key, limit],
+                )
+                .map_err(|e| SessionStoreError::Backend(e.to_string()))?;
+                Ok(())
+            })
+            .await
+            .map_err(|e| SessionStoreError::Backend(e.to_string()))?
+        }
+    }
+
+    fn take_context(
+        &self,
+        group_key: &str,
+    ) -> impl Future<Output = Result<Vec<ContextMessage>, SessionStoreError>> + Send {
+        let conn = Arc::clone(&self.conn);
+        let group_key = group_key.to_string();
+        async move {
+            tokio::task::spawn_blocking(move || {
+                let conn = conn
+                    .lock()
+                    .map_err(|e| SessionStoreError::Backend(e.to_string()))?;
+                let mut stmt = conn
+                    .prepare(
+                        "SELECT group_key, sender, content, timestamp
+                         FROM context_messages
+                         WHERE group_key = ?1
+                         ORDER BY id ASC",
+                    )
+                    .map_err(|e| SessionStoreError::Backend(e.to_string()))?;
+                let rows = stmt
+                    .query_map(params![group_key], |row| {
+                        Ok(ContextMessage {
+                            group_key: row.get(0)?,
+                            sender: row.get(1)?,
+                            content: row.get(2)?,
+                            timestamp: row.get(3)?,
+                        })
+                    })
+                    .map_err(|e| SessionStoreError::Backend(e.to_string()))?;
+                let messages: Result<Vec<ContextMessage>, SessionStoreError> = rows
+                    .map(|r| r.map_err(|e| SessionStoreError::Backend(e.to_string())))
+                    .collect();
+                let messages = messages?;
+                conn.execute(
+                    "DELETE FROM context_messages WHERE group_key = ?1",
+                    params![group_key],
+                )
+                .map_err(|e| SessionStoreError::Backend(e.to_string()))?;
+                Ok(messages)
+            })
+            .await
+            .map_err(|e| SessionStoreError::Backend(e.to_string()))?
+        }
     }
 }
 
@@ -374,5 +472,134 @@ mod tests {
             .await
             .expect("load via clone should succeed");
         assert_eq!(sessions.len(), 1);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_store_context_called_then_take_context_returns_messages(
+        given_an_in_memory_store: SqliteSessionStore,
+    ) {
+        let msg = ContextMessage {
+            group_key: "telegram:-100123456".to_string(),
+            sender: "alice".to_string(),
+            content: "hello".to_string(),
+            timestamp: 1_000_000,
+        };
+        ContextStore::store_context(&given_an_in_memory_store, &msg, 50)
+            .await
+            .expect("store_context should succeed");
+
+        let messages = ContextStore::take_context(&given_an_in_memory_store, "telegram:-100123456")
+            .await
+            .expect("take_context should succeed");
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].sender, "alice");
+        assert_eq!(messages[0].content, "hello");
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_take_context_called_then_messages_are_deleted(
+        given_an_in_memory_store: SqliteSessionStore,
+    ) {
+        let msg = ContextMessage {
+            group_key: "telegram:-100123456".to_string(),
+            sender: "bob".to_string(),
+            content: "hi".to_string(),
+            timestamp: 1_000_001,
+        };
+        ContextStore::store_context(&given_an_in_memory_store, &msg, 50)
+            .await
+            .expect("store_context should succeed");
+        ContextStore::take_context(&given_an_in_memory_store, "telegram:-100123456")
+            .await
+            .expect("first take should succeed");
+
+        let second = ContextStore::take_context(&given_an_in_memory_store, "telegram:-100123456")
+            .await
+            .expect("second take should succeed");
+        assert!(second.is_empty());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_store_context_exceeds_limit_then_oldest_trimmed(
+        given_an_in_memory_store: SqliteSessionStore,
+    ) {
+        for i in 0..5i64 {
+            let msg = ContextMessage {
+                group_key: "telegram:-100123456".to_string(),
+                sender: format!("user{i}"),
+                content: format!("msg{i}"),
+                timestamp: 1_000_000 + i,
+            };
+            ContextStore::store_context(&given_an_in_memory_store, &msg, 3)
+                .await
+                .expect("store_context should succeed");
+        }
+
+        let messages = ContextStore::take_context(&given_an_in_memory_store, "telegram:-100123456")
+            .await
+            .expect("take_context should succeed");
+        assert_eq!(messages.len(), 3);
+        assert_eq!(messages[0].content, "msg2");
+        assert_eq!(messages[2].content, "msg4");
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_store_context_with_limit_zero_then_not_stored(
+        given_an_in_memory_store: SqliteSessionStore,
+    ) {
+        let msg = ContextMessage {
+            group_key: "telegram:-100123456".to_string(),
+            sender: "carol".to_string(),
+            content: "should not store".to_string(),
+            timestamp: 1_000_002,
+        };
+        ContextStore::store_context(&given_an_in_memory_store, &msg, 0)
+            .await
+            .expect("store_context with limit 0 should succeed");
+
+        let messages = ContextStore::take_context(&given_an_in_memory_store, "telegram:-100123456")
+            .await
+            .expect("take_context should succeed");
+        assert!(messages.is_empty());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_take_context_on_empty_group_then_returns_empty_vec(
+        given_an_in_memory_store: SqliteSessionStore,
+    ) {
+        let result =
+            ContextStore::take_context(&given_an_in_memory_store, "telegram:-100000000").await;
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn when_context_messages_stored_then_returned_in_insertion_order(
+        given_an_in_memory_store: SqliteSessionStore,
+    ) {
+        for i in 0..3i64 {
+            let msg = ContextMessage {
+                group_key: "telegram:-100123456".to_string(),
+                sender: format!("user{i}"),
+                content: format!("msg{i}"),
+                timestamp: 1_000_000 + i,
+            };
+            ContextStore::store_context(&given_an_in_memory_store, &msg, 50)
+                .await
+                .expect("store_context should succeed");
+        }
+
+        let messages = ContextStore::take_context(&given_an_in_memory_store, "telegram:-100123456")
+            .await
+            .expect("take_context should succeed");
+        assert_eq!(messages[0].content, "msg0");
+        assert_eq!(messages[1].content, "msg1");
+        assert_eq!(messages[2].content, "msg2");
     }
 }
