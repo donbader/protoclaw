@@ -145,6 +145,7 @@ jobs:
     needs: [test]
     if: needs.test.result == 'success'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
@@ -157,6 +158,25 @@ jobs:
           cargo build --locked --bin mock-agent --bin debug-http --manifest-path ext/Cargo.toml
       - name: Run Docker integration tests
         run: cargo test --locked -p anyclaw-integration-tests -- --ignored --test-threads=1
+      - name: Dump Docker diagnostics on failure
+        if: failure()
+        run: |
+          echo "=== docker ps -a ==="
+          docker ps -a --filter "label=anyclaw.managed=true" --no-trunc
+          echo ""
+          echo "=== Container logs ==="
+          for id in $(docker ps -aq --filter "label=anyclaw.managed=true"); do
+            name=$(docker inspect --format '{{.Name}}' "$id" 2>/dev/null || echo "$id")
+            echo "--- $name ($id) ---"
+            docker logs "$id" 2>&1 | tail -100
+            echo ""
+          done
+          echo "=== docker images (mock-agent) ==="
+          docker images | grep -E "anyclaw|mock-agent" || echo "No anyclaw images found"
+          echo ""
+          echo "=== mock-agent binary check ==="
+          file ext/target/debug/mock-agent
+          ldd ext/target/debug/mock-agent 2>&1 || true
 
   ci-pass:
     name: CI Result
