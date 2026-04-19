@@ -14,35 +14,43 @@ SDK crate releases are fully automated via [release-plz](https://release-plz.ien
 
 **Workflow:** `.github/workflows/release-sdk.yml`
 
-## Binary (one-click workflow_dispatch)
+## Binary (two-stage workflow)
 
-Anyclaw is distributed as Docker images — no native binary releases. The entire release is a single click:
+Anyclaw is distributed as Docker images — no native binary releases. The release is split into two workflows:
 
-1. Go to Actions → "Release" → Run workflow
+### Stage 1: Prepare (manual trigger)
+
+1. Go to Actions → "Release — Prepare" → Run workflow
 2. Optionally provide a version (e.g. `0.10.0`). If left empty, version is auto-detected from conventional commits since the last tag (feat → minor bump, otherwise → patch bump).
-3. The workflow handles everything:
+3. The workflow:
    - Detects version from commits (if not provided)
    - Generates changelog entries via git-cliff
    - Bumps `crates/anyclaw/Cargo.toml`
-   - Commits to `main` and pushes
+   - Creates a `release/v<version>` branch and opens a PR
+   - Enables auto-merge (squash) on the PR
+
+**Workflow:** `.github/workflows/release-prepare.yml`
+
+**CLI shortcut:**
+
+```bash
+gh workflow run release-prepare.yml
+gh workflow run release-prepare.yml -f version=0.10.0
+```
+
+### Stage 2: Publish (automatic on PR merge)
+
+When the release PR merges to `main`, the publish workflow triggers automatically:
+   - Extracts version from the `release/v*` branch name
    - Creates the `v<version>` git tag
    - Builds multi-arch Docker images (amd64 + arm64)
    - Pushes to GHCR with tags: `<version>`, `<major>.<minor>`, `<sha>`, `latest`
    - Runs Trivy vulnerability scan
    - Verifies multi-arch manifest
 
-**Workflow:** `.github/workflows/release.yml`
-
-**CLI shortcut:**
-
-```bash
-gh workflow run release.yml
-gh workflow run release.yml -f version=0.10.0
-```
+**Workflow:** `.github/workflows/release-publish.yml`
 
 **Versioning:** The binary follows [semver](https://semver.org/). Bump minor for new features, patch for bugfixes.
-
-**Run-name:** Each run shows as "Release v0.X.Y" in the Actions tab for easy identification.
 
 ## When to Release
 

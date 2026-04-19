@@ -10,7 +10,8 @@ on:
       - "docs/**"
       - "LICENSE-*"
       - ".github/workflows/ghcr-cleanup.yml"
-      - ".github/workflows/release.yml"
+      - ".github/workflows/release-prepare.yml"
+      - ".github/workflows/release-publish.yml"
 
 permissions:
   pull-requests: write

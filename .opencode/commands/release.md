@@ -27,25 +27,43 @@ Preview what the workflow will auto-detect:
    - Only `fix:`, `perf:`, `refactor:` → bump patch
 4. Suggest the version and ask the user to confirm before proceeding
 
-### 2. Trigger release workflow
+### 2. Trigger the prepare workflow
 
 ```bash
-gh workflow run release.yml -f version=<version>
+gh workflow run release-prepare.yml -f version=<version>
 ```
 
 Or without version (auto-detect):
 
 ```bash
-gh workflow run release.yml
+gh workflow run release-prepare.yml
 ```
 
-The workflow handles everything: changelog generation (git-cliff), Cargo.toml bump, commit to main, git tag, multi-arch Docker build, GHCR push, and Trivy scan.
+This creates a `release/v<version>` branch with changelog + version bump, opens a PR, and enables auto-merge.
 
-### 3. Verify
+### 3. Verify the prepare workflow
 
 ```bash
-gh run list --workflow=release.yml --limit 3
+gh run list --workflow=release-prepare.yml --limit 3
 ```
 
-Confirm the release workflow is running. Report the GHCR image URL when done:
+Confirm the PR was created. The user reviews and merges (or auto-merge completes after CI passes).
+
+### 4. Publish happens automatically
+
+When the release PR merges, the **Release — Publish** workflow triggers automatically. It:
+- Extracts the version from the `release/v*` branch name
+- Creates the `v<version>` git tag
+- Builds multi-arch Docker images (amd64 + arm64)
+- Pushes to GHCR with tags: `<version>`, `<major>.<minor>`, `<sha>`, `latest`
+- Runs Trivy vulnerability scan
+- Verifies multi-arch manifest
+
+### 5. Verify the publish workflow
+
+```bash
+gh run list --workflow=release-publish.yml --limit 3
+```
+
+Confirm the release completed. Report the GHCR image URL:
 `ghcr.io/donbader/anyclaw:<version>`

@@ -190,5 +190,5 @@ All changes go through pull requests — no direct commits to `main`.
 
 ### Release Process
 - SDK crate releases are automated via release-plz on push to `main`
-- Binary releases are triggered via `gh workflow run release.yml` (version auto-detected, or `-f version=<version>`)
+- Binary releases are triggered via `gh workflow run release-prepare.yml` (version auto-detected, or `-f version=<version>`). Merging the resulting PR automatically triggers the publish workflow.
 - See `docs/releasing.md` for the full process
