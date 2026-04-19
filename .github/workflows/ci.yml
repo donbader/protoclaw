@@ -159,7 +159,7 @@ jobs:
       - name: Run Docker integration tests
         run: cargo test --locked -p anyclaw-integration-tests -- --ignored --test-threads=1
       - name: Dump Docker diagnostics on failure
-        if: failure()
+        if: ${{ !success() }}
         run: |
           echo "=== docker ps -a ==="
           docker ps -a --filter "label=anyclaw.managed=true" --no-trunc
