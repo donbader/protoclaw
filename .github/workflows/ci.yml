@@ -28,11 +28,14 @@ jobs:
           filters: |
             code:
               - '**'
-              - '!**.md'
+              - '!**/*.md'
               - '!docs/**'
               - '!LICENSE-*'
               - '!.github/workflows/ghcr-cleanup.yml'
-              - '!.github/workflows/release.yml'
+              - '!.github/workflows/release-prepare.yml'
+              - '!.github/workflows/release-publish.yml'
+              - '!.github/workflows/release-sdk.yml'
+              - '!.github/workflows/release-ext.yml'
 
   lint:
     needs: [changes]
@@ -121,14 +124,14 @@ jobs:
           command: check bans licenses sources
 
   validate-examples:
-    needs: [test]
-    if: needs.test.result == 'success'
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - name: Validate docker-compose files
         run: |
-          for f in examples/*/docker-compose.yml; do
+          find examples -name 'docker-compose.yml' | while read -r f; do
             echo "Validating $f..."
             dir=$(dirname "$f")
             if [ ! -f "$dir/.env" ] && [ -f "$dir/.env.example" ]; then
