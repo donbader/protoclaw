@@ -33,6 +33,7 @@ jobs:
         with:
           command: release
           manifest_path: ext/Cargo.toml
+          config: ext/release-plz.toml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -56,5 +57,6 @@ jobs:
         with:
           command: release-pr
           manifest_path: ext/Cargo.toml
+          config: ext/release-plz.toml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
